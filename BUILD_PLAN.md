@@ -133,10 +133,16 @@ The existing CLI keeps working; the web app calls the same core.
 
 ---
 
-## 9. Decisions needed before Phase 0
+## 9. Decisions — LOCKED (2026-07-20)
 
-- **Video storage:** Cloudflare R2 (recommended) vs Railway volume only vs Backblaze B2.
-- **Access control:** single shared password/token (recommended) vs fully public vs multi-user login.
-- **Backend language:** FastAPI/Python reusing our code (recommended) vs rewrite in Node.
+- **Video storage:** ✅ **Railway persistent volume** (no external bucket). Finished clips + compilations live on the volume; downloads stream through the FastAPI backend. Note: Railway egress counts toward the Railway bill, and large (~1 GB) downloads are served from the container — acceptable for a personal tool. The Export panel gets a delete control to keep the volume from filling.
+- **Access control:** ✅ **Single shared password/token** gating the whole app + API.
+- **Backend language:** ✅ **FastAPI / Python**, reusing `scrape.py` + `compile.py` as core modules.
 
-Once approved + these three answered, I start at Phase 0.
+**Adjustment from these choices:** the R2 bucket in §2 is dropped — all storage is the Railway volume; `file_key`/`output_key` in §3 become volume paths, and `/download` streams the file (with the access token) instead of a signed URL.
+
+---
+
+## 10. Status
+
+Plan approved-pending: decisions locked, **awaiting final go-ahead to start Phase 0.**
