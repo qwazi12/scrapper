@@ -1,9 +1,32 @@
 # scrapper
 
-Personal watch-later video downloader. Paste links into `urls.txt` (or pass
-them on the command line), run `scrape.py`, and videos land in `downloads/`
-organized by site. Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it
-works for X/Twitter, YouTube, TikTok, Instagram, and ~1800 other sites.
+Personal watch-later video downloader + a storyboard web app that scrapes many
+links and stitches the ones you pick into a single downloadable compilation.
+Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it works for X/Twitter,
+YouTube, TikTok, Instagram, and ~1800 other sites.
+
+Two ways to use it:
+- **CLI** — `scrape.py` + `compile.py` (below).
+- **Web app** — storyboard UI (`frontend/`, Next.js → Vercel) talking to a
+  scrape/compile engine (`backend/`, FastAPI → Railway). See
+  [BUILD_PLAN.md](BUILD_PLAN.md) for architecture and the reliability strategy.
+
+## Web app (local)
+
+```bash
+# 1) backend (FastAPI engine — needs ffmpeg + yt-dlp)
+cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cd .. && DATA_DIR="$PWD/data" backend/.venv/bin/python -m uvicorn backend.app.main:app --port 8000
+
+# 2) frontend (in another terminal)
+cd frontend && npm install
+NEXT_PUBLIC_API_BASE=http://127.0.0.1:8000 npm run dev   # http://localhost:3000
+```
+
+Paste links → **Scrape** → tick the clips you want → **Extract** → **Download**.
+Config lives in `backend/.env.example` and `frontend/.env.example`.
+
+## CLI
 
 ## Setup
 

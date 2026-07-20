@@ -167,4 +167,11 @@ is a config flag. Layer 4 (proxy) held in reserve.
 
 ## 11. Status
 
-Plan approved-pending: decisions locked + reliability layers adopted, **awaiting final go-ahead to start Phase 0.**
+- ✅ **Phase 0** — repo restructured into `backend/` + `frontend/`.
+- ✅ **Phase 1** — FastAPI backend + worker + all reliability layers + observability. Tested end-to-end locally (X clips scraped → compiled → downloaded).
+- ✅ **Phase 2** — Next.js storyboard frontend. Clean build, verified in-browser against the local backend.
+- ⏳ **Phase 3** — deploy backend to Railway (Postgres + volume, `api.scrapper.nodepilot.dev`). **Needs your `railway login`.**
+- ⏳ **Phase 4** — deploy frontend to Vercel (`scrapper.nodepilot.dev`). **Needs your `vercel login`.**
+- ⏳ **Phase 5** — post-deploy polish (retention controls, alert webhook wiring).
+
+**Run locally now:** see [README.md](README.md) → "Web app (local)".

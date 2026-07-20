@@ -9,7 +9,8 @@ survives across machines.
 - **Videos live in:** `downloads/` (local only, gitignored)
 - **Dedup ledger:** `archive.txt` — delete a line to allow re-download
 - **Full logs:** `logs/scraper.log` (every yt-dlp line) and `logs/manifest.jsonl` (one JSON record per video)
-- **Web app build plan:** [`BUILD_PLAN.md`](BUILD_PLAN.md) — hosting the scraper as a storyboard web app on Vercel (UI) + Railway (scrape/compile engine) at `scrapper.nodepilot.dev`. **Status: awaiting approval.**
+- **Web app:** [`BUILD_PLAN.md`](BUILD_PLAN.md) — storyboard web app: Next.js UI (`frontend/`, → Vercel) + FastAPI scrape/compile engine (`backend/`, → Railway) at `scrapper.nodepilot.dev`. **Built & tested locally (Phases 0–2 done); Phases 3–4 = deploy, awaiting your `railway login` / `vercel login`.**
+- **Reliability:** all 5 anti-blocking layers implemented — nightly yt-dlp self-update, burner cookies upload, retries+backoff, proxy support, standalone hybrid worker — plus observability (per-source success tracking + alert webhook). See BUILD_PLAN §10.
 
 ## How to use
 
