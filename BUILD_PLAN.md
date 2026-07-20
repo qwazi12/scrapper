@@ -143,6 +143,28 @@ The existing CLI keeps working; the web app calls the same core.
 
 ---
 
-## 10. Status
+## 10. Reliability & anti-blocking (layered defense)
 
-Plan approved-pending: decisions locked, **awaiting final go-ahead to start Phase 0.**
+No setup guarantees 100% uptime against a platform (esp. X) that actively blocks
+downloading. Goal: *rarely fails, self-heals on platform changes, alerts when it
+genuinely can't.* ~90% of breakage is stale yt-dlp + datacenter IPs — both fixable.
+
+| Layer | What | Cost | When |
+|---|---|---|---|
+| 1 | **Self-healing engine** — nightly `pip install -U yt-dlp` before jobs; fixes most "suddenly stopped working" | free | day one |
+| 2 | **Auth cookies** — `cookies.txt` from a **burner** X account, uploaded via UI; clears most 403/rate-limit | free | day one |
+| 3 | **Retries + backoff + queue** — exponential backoff, self-rate-limit between clips, `archive.txt` idempotency | free (in-code) | day one |
+| 4 | **Residential proxy** — yt-dlp `--proxy` to defeat datacenter-IP blocks | ~$1–3/GB | reserve, only if cloud gets blocked |
+| 5 | **Hybrid worker** — Railway hosts API+queue+UI; scraping runs on a worker with a **residential IP** (your Mac / home mini-PC) pulling jobs. Sidesteps datacenter blocking entirely | free (home box) | config flag, enable if needed |
+
+Plus **observability:** health-check job, per-source success-rate in the Logs
+panel, and failure-spike alert (email/webhook) so you know before a video goes missing.
+
+**Adopted:** Layers 1–3 built in from day one. Worker designed so Layer 5 (hybrid)
+is a config flag. Layer 4 (proxy) held in reserve.
+
+---
+
+## 11. Status
+
+Plan approved-pending: decisions locked + reliability layers adopted, **awaiting final go-ahead to start Phase 0.**
