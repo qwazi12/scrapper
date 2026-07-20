@@ -9,6 +9,7 @@ survives across machines.
 - **Videos live in:** `downloads/` (local only, gitignored)
 - **Dedup ledger:** `archive.txt` — delete a line to allow re-download
 - **Full logs:** `logs/scraper.log` (every yt-dlp line) and `logs/manifest.jsonl` (one JSON record per video)
+- **Web app build plan:** [`BUILD_PLAN.md`](BUILD_PLAN.md) — hosting the scraper as a storyboard web app on Vercel (UI) + Railway (scrape/compile engine) at `scrapper.nodepilot.dev`. **Status: awaiting approval.**
 
 ## How to use
 
