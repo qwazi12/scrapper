@@ -1,0 +1,13 @@
+# Watch-later queue — one URL per line. Lines starting with # are ignored.
+# Run `python3 scrape.py` to download everything here (already-downloaded
+# videos are skipped automatically via archive.txt).
+
+https://x.com/polo_man404/status/2077960811314626848
+https://x.com/omoelerinjare1/status/2079200808701394982
+https://x.com/angrycomicgirl/status/2079078793507987730
+https://x.com/rizzolosophy/status/2079230097803141195
+https://x.com/daveay7/status/2079157229974892826
+https://x.com/daveay7/status/2079176965454442780
+https://x.com/susylicious2023/status/2079255519022215551
+https://x.com/susylicious2023/status/2078463350250295600
+https://x.com/cat5smashicane/status/2078831310215262503
