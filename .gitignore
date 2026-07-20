@@ -1,9 +1,24 @@
 # Video files stay local — never pushed to GitHub
 downloads/
+data/
 
 # Python
 __pycache__/
 *.pyc
+.venv/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+.vercel/
 
 # macOS
 .DS_Store
