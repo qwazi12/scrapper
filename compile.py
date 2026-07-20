@@ -3,13 +3,16 @@
 compile.py — stitch downloaded videos into one compilation MP4.
 
 Usage:
-    python3 compile.py                     # compile every video in download order
-    python3 compile.py file1.mp4 file2.mp4 # compile specific files in given order
+    python3 compile.py                       # portrait (1080x1920), download order
+    python3 compile.py --landscape           # landscape (1920x1080)
+    python3 compile.py file1.mp4 file2.mp4   # specific files, given order
+    python3 compile.py --landscape a.mp4 b.mp4
 
-Videos are normalized to 1080x1920 @ 30fps (scaled to fit, black-bar padded)
-so mixed-size Twitter videos concat cleanly. Uses the macOS hardware encoder
-(h264_videotoolbox) for speed. Output lands in downloads/ as
-compilation_YYYY-MM-DD_HHMM.mp4 (gitignored, like all videos).
+Orientation flag (--landscape / --portrait) may appear anywhere in the args.
+Videos are normalized to the target canvas @ 30fps (scaled to fit, black-bar
+padded) so mixed-size Twitter videos concat cleanly. Uses the macOS hardware
+encoder (h264_videotoolbox) for speed. Output lands in downloads/ as
+compilation_YYYY-MM-DD_HHMM[_landscape].mp4 (gitignored, like all videos).
 """
 
 import datetime
@@ -22,7 +25,9 @@ ROOT = pathlib.Path(__file__).resolve().parent
 DOWNLOADS = ROOT / "downloads"
 MANIFEST = ROOT / "logs" / "manifest.jsonl"
 
-WIDTH, HEIGHT, FPS = 1080, 1920, 30
+FPS = 30
+PORTRAIT = (1080, 1920)
+LANDSCAPE = (1920, 1080)
 
 
 def files_in_download_order() -> list[pathlib.Path]:
@@ -34,6 +39,13 @@ def files_in_download_order() -> list[pathlib.Path]:
         rec = json.loads(line)
         for f in rec.get("files", []):
             p = pathlib.Path(f["path"])
+            # Manifest stores absolute paths; if the repo has moved, remap to
+            # the current downloads/ dir by the path tail after "downloads/".
+            if not p.exists():
+                parts = p.parts
+                if "downloads" in parts:
+                    tail = parts[parts.index("downloads") + 1:]
+                    p = DOWNLOADS.joinpath(*tail)
             if p.exists() and p not in seen:
                 seen.add(p)
                 files.append(p)
@@ -41,8 +53,13 @@ def files_in_download_order() -> list[pathlib.Path]:
 
 
 def main() -> int:
-    if len(sys.argv) > 1:
-        files = [pathlib.Path(a).resolve() for a in sys.argv[1:]]
+    args = sys.argv[1:]
+    landscape = "--landscape" in args
+    args = [a for a in args if a not in ("--landscape", "--portrait")]
+    WIDTH, HEIGHT = LANDSCAPE if landscape else PORTRAIT
+
+    if args:
+        files = [pathlib.Path(a).resolve() for a in args]
         missing = [f for f in files if not f.exists()]
         if missing:
             sys.exit(f"Not found: {', '.join(map(str, missing))}")
@@ -52,7 +69,8 @@ def main() -> int:
         sys.exit("Need at least 2 videos to compile.")
 
     stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
-    out = DOWNLOADS / f"compilation_{stamp}.mp4"
+    suffix = "_landscape" if landscape else ""
+    out = DOWNLOADS / f"compilation_{stamp}{suffix}.mp4"
 
     cmd = ["ffmpeg", "-hide_banner", "-y"]
     for f in files:
