@@ -18,10 +18,10 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..core import engine
-from . import logbus, worker
+from . import logbus, rescan, worker
 from .auth import require_token
 from .config import settings
-from .db import get_session, init_db
+from .db import SessionLocal, get_session, init_db
 from .models import Clip, Compilation, IngestJob, LogEntry, Status
 from .schemas import (
     ClipOut,
@@ -48,6 +48,13 @@ _AUTH = [Depends(require_token)]
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    # Self-heal: rebuild any missing clip/compilation rows from files on the
+    # volume, so a lost or rolled-back DB recovers automatically.
+    try:
+        with SessionLocal() as s:
+            rescan.rescan_library(s)
+    except Exception as exc:  # never block startup on recovery
+        logbus.log("error", "startup_rescan_failed", str(exc))
     if settings.worker_mode != "web_only":
         worker.start_background()
     logbus.log("info", "startup", f"API up (worker_mode={settings.worker_mode})")
@@ -137,9 +144,33 @@ def delete_clip(clip_id: int, s: Session = Depends(get_session)) -> dict:
         p = getattr(clip, attr)
         if p and pathlib.Path(p).exists():
             pathlib.Path(p).unlink(missing_ok=True)
+    # Also drop the sidecar .info.json so a full rescan won't re-adopt it,
+    # and clear the video id from the dedup archive so it can be re-downloaded.
+    if clip.file_path:
+        pathlib.Path(clip.file_path).with_suffix(".info.json").unlink(missing_ok=True)
+    if clip.video_id:
+        _forget_in_archive(clip.video_id)
     s.delete(clip)
     s.commit()
     return {"deleted": clip_id}
+
+
+def _forget_in_archive(video_id: str) -> None:
+    """Remove a video id from archive.txt so yt-dlp will re-download it later."""
+    arc = settings.archive_path
+    if not arc.exists():
+        return
+    try:
+        kept = [ln for ln in arc.read_text().splitlines() if video_id not in ln]
+        arc.write_text("\n".join(kept) + ("\n" if kept else ""))
+    except Exception as exc:  # non-fatal
+        logbus.log("warning", "archive_cleanup_failed", str(exc), video_id=video_id)
+
+
+@app.post("/api/rescan", dependencies=_AUTH)
+def rescan_now(s: Session = Depends(get_session)) -> dict:
+    """Rebuild clip + compilation rows from the video files on the volume."""
+    return rescan.rescan_library(s)
 
 
 @app.get("/api/clips/{clip_id}/thumb", dependencies=_AUTH)

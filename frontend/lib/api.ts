@@ -113,6 +113,12 @@ export const api = {
       body: JSON.stringify({ urls }),
     }),
 
+  rescan: () =>
+    req<{ clips_added: number; compilations_added: number }>("/api/rescan", {
+      method: "POST",
+      headers: headers(false),
+    }),
+
   select: (id: number, selected: boolean) =>
     req<{ id: number; selected: boolean }>(`/api/clips/${id}/select`, {
       method: "POST",

@@ -227,8 +227,21 @@ function SettingsBar({ onSaved }: { onSaved: () => void }) {
     }
   }
 
+  async function rescan() {
+    try {
+      const r = await api.rescan();
+      alert(`Rescan complete — recovered ${r.clips_added} clip(s) and ${r.compilations_added} compilation(s) from disk.`);
+      onSaved();
+    } catch (e: any) {
+      alert(`Rescan failed: ${e.message}`);
+    }
+  }
+
   return (
-    <div style={{ marginBottom: 12, textAlign: "right" }}>
+    <div style={{ marginBottom: 12, textAlign: "right", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <button onClick={rescan} title="Rebuild the library from video files on the server (recovers anything missing)">
+        ↻ Rescan library
+      </button>
       <button onClick={() => setOpen((o) => !o)}>⚙ Connection & cookies</button>
       {open && (
         <div
