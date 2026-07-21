@@ -3,14 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
-  apiBase,
   Clip,
   Compilation,
   fmtBytes,
   fmtDuration,
   LogLine,
   Stats,
-  token,
 } from "@/lib/api";
 
 export default function Page() {
@@ -40,11 +38,9 @@ export default function Page() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Live log stream via SSE.
+  // Live log stream via SSE (token rides as a query param — EventSource can't set headers).
   useEffect(() => {
-    const t = token();
-    const url = `${apiBase()}/api/events${t ? `?` : ``}`;
-    const es = new EventSource(url + (t ? "" : ""));
+    const es = new EventSource(api.eventsUrl());
     es.onmessage = (e) => {
       try {
         const line = JSON.parse(e.data) as LogLine;

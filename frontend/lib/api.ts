@@ -86,10 +86,18 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Browser-native GETs (<img src>, <a href> download, EventSource) can't set
+// headers, so the token rides as a query param on those URLs.
+function withToken(url: string): string {
+  const t = token();
+  return t ? `${url}?token=${encodeURIComponent(t)}` : url;
+}
+
 export const api = {
   base: apiBase,
-  thumbUrl: (id: number) => `${apiBase()}/api/clips/${id}/thumb`,
-  downloadUrl: (id: number) => `${apiBase()}/api/compilations/${id}/download`,
+  thumbUrl: (id: number) => withToken(`${apiBase()}/api/clips/${id}/thumb`),
+  downloadUrl: (id: number) => withToken(`${apiBase()}/api/compilations/${id}/download`),
+  eventsUrl: () => withToken(`${apiBase()}/api/events`),
 
   health: () => req<{ ok: boolean }>("/api/health"),
   stats: () => req<Stats>("/api/stats", { headers: headers(false) }),
