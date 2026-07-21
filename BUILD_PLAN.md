@@ -165,13 +165,26 @@ is a config flag. Layer 4 (proxy) held in reserve.
 
 ---
 
-## 11. Status
+## 11. Status — DEPLOYED & LIVE ✅
 
 - ✅ **Phase 0** — repo restructured into `backend/` + `frontend/`.
-- ✅ **Phase 1** — FastAPI backend + worker + all reliability layers + observability. Tested end-to-end locally (X clips scraped → compiled → downloaded).
-- ✅ **Phase 2** — Next.js storyboard frontend. Clean build, verified in-browser against the local backend.
-- ⏳ **Phase 3** — deploy backend to Railway (Postgres + volume, `api.scrapper.nodepilot.dev`). **Needs your `railway login`.**
-- ⏳ **Phase 4** — deploy frontend to Vercel (`scrapper.nodepilot.dev`). **Needs your `vercel login`.**
-- ⏳ **Phase 5** — post-deploy polish (retention controls, alert webhook wiring).
+- ✅ **Phase 1** — FastAPI backend + worker + all reliability layers + observability.
+- ✅ **Phase 2** — Next.js storyboard frontend.
+- ✅ **Phase 3** — backend deployed to **Railway** (persistent volume at `/data`, shared-token auth, self-updating yt-dlp). Verified: X scrape → compile → download all work from the cloud; volume persists across redeploys.
+- ✅ **Phase 4** — frontend deployed to **Vercel**, live at **https://scrapper.nodepilot.dev** (custom domain auto-wired via Vercel-managed DNS). CORS locked to that origin.
 
-**Run locally now:** see [README.md](README.md) → "Web app (local)".
+### Live URLs
+| What | URL |
+|---|---|
+| **App (use this)** | https://scrapper.nodepilot.dev |
+| Vercel alias | https://scrapper-mauve-seven.vercel.app |
+| Backend API | https://scrapper-production-d348.up.railway.app |
+
+**Access token** is stored locally in `data/access_token.txt` (gitignored) and set as the Railway `ACCESS_TOKEN` var. Enter it once in the app's **⚙ Connection & cookies** panel; it's saved in your browser.
+
+### Storage note
+Went with **SQLite-on-the-volume** rather than a separate Postgres service — simpler, no extra cost, and fine for a single-user tool. Data lives on the Railway volume and survives deploys/restarts. Postgres remains a one-command upgrade (`railway add -d postgres` + set `DATABASE_URL`) if ever needed.
+
+### Optional follow-ups (not blocking)
+- `api.scrapper.nodepilot.dev` → Railway (cleaner API domain; needs a CNAME + frontend rebuild). Backend currently on its `.up.railway.app` URL, which is invisible to users.
+- Wire `ALERT_WEBHOOK_URL` (Slack/Discord) for failure-spike alerts.

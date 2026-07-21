@@ -6,10 +6,12 @@ Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it works for X/Twitter,
 YouTube, TikTok, Instagram, and ~1800 other sites.
 
 Two ways to use it:
+- **Web app (live):** **https://scrapper.nodepilot.dev** — storyboard UI
+  (`frontend/`, Next.js → Vercel) talking to a scrape/compile engine
+  (`backend/`, FastAPI → Railway). Enter the shared access token once in the
+  **⚙ Connection & cookies** panel. See [BUILD_PLAN.md](BUILD_PLAN.md) for the
+  architecture and reliability strategy.
 - **CLI** — `scrape.py` + `compile.py` (below).
-- **Web app** — storyboard UI (`frontend/`, Next.js → Vercel) talking to a
-  scrape/compile engine (`backend/`, FastAPI → Railway). See
-  [BUILD_PLAN.md](BUILD_PLAN.md) for architecture and the reliability strategy.
 
 ## Web app (local)
 
