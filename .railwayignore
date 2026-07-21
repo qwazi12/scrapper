@@ -1,0 +1,10 @@
+# Keep the build context small — the Dockerfile only needs backend/ + the CLI scripts.
+data/
+downloads/
+frontend/
+logs/
+.venv/
+backend/.venv/
+**/__pycache__/
+**/node_modules/
+*.mp4
