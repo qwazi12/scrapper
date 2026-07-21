@@ -39,6 +39,8 @@ def scrape(
     archive_path: pathlib.Path,
     cookies_path: pathlib.Path | None = None,
     proxy: str | None = None,
+    sleep_preset: bool = True,
+    cookies_from_browser: str | None = None,
 ) -> ScrapeResult:
     """Download a single URL. Returns a ScrapeResult with per-clip metadata."""
     result = ScrapeResult(url=url)
@@ -59,8 +61,17 @@ def scrape(
         "--no-progress",
         "--print", "after_move:__DONE__ %(filepath)s",
     ]
+    # Anti-ban pacing: 0.75s between requests + randomized 10-20s between
+    # downloads. Slower on purpose — this is what keeps a headless server from
+    # looking like a scraper to YouTube/TikTok/X.
+    if sleep_preset:
+        cmd += ["-t", "sleep"]
+    # A cookies.txt file wins; otherwise pull straight from a local browser
+    # profile (only possible where a browser actually exists).
     if cookies_path and cookies_path.exists():
         cmd += ["--cookies", str(cookies_path)]
+    elif cookies_from_browser:
+        cmd += ["--cookies-from-browser", cookies_from_browser]
     if proxy:
         cmd += ["--proxy", proxy]
     cmd.append(url)

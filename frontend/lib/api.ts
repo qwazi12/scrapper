@@ -39,6 +39,7 @@ export type Stats = {
   clips_failed: number;
   compilations: number;
   storage_bytes: number;
+  retention_days: number;
   sources: { source: string; recent: number; success_rate: number | null; alerting: boolean }[];
   engine: { yt_dlp: string | null; ffmpeg: boolean; python: string };
 };
@@ -150,6 +151,18 @@ export const api = {
     return res.json();
   },
 };
+
+/** Days left before the retention sweep deletes this item ("2d", "today", null). */
+export function expiresIn(createdAt: string, retentionDays: number): string | null {
+  if (!retentionDays || retentionDays <= 0) return null;
+  const due = new Date(createdAt).getTime() + retentionDays * 86400_000;
+  const msLeft = due - Date.now();
+  if (msLeft <= 0) return "due";
+  const days = Math.floor(msLeft / 86400_000);
+  if (days >= 1) return `${days}d`;
+  const hours = Math.max(1, Math.floor(msLeft / 3600_000));
+  return `${hours}h`;
+}
 
 export function fmtBytes(n: number | null): string {
   if (!n) return "—";

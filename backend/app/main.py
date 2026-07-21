@@ -18,7 +18,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..core import engine
-from . import logbus, rescan, worker
+from . import cleanup, logbus, rescan, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
@@ -88,6 +88,7 @@ def stats(s: Session = Depends(get_session)) -> dict:
         "compilations": len(comps),
         "storage_bytes": sum((c.size_bytes or 0) for c in clips)
         + sum((c.size_bytes or 0) for c in comps),
+        "retention_days": settings.retention_days,
         "sources": logbus.source_stats(),
         "engine": engine.health(),
     }
@@ -140,31 +141,10 @@ def delete_clip(clip_id: int, s: Session = Depends(get_session)) -> dict:
     clip = s.get(Clip, clip_id)
     if not clip:
         raise HTTPException(404, "clip not found")
-    for attr in ("file_path", "thumb_path"):
-        p = getattr(clip, attr)
-        if p and pathlib.Path(p).exists():
-            pathlib.Path(p).unlink(missing_ok=True)
-    # Also drop the sidecar .info.json so a full rescan won't re-adopt it,
-    # and clear the video id from the dedup archive so it can be re-downloaded.
-    if clip.file_path:
-        pathlib.Path(clip.file_path).with_suffix(".info.json").unlink(missing_ok=True)
-    if clip.video_id:
-        _forget_in_archive(clip.video_id)
+    cleanup.remove_clip_files(clip)
     s.delete(clip)
     s.commit()
     return {"deleted": clip_id}
-
-
-def _forget_in_archive(video_id: str) -> None:
-    """Remove a video id from archive.txt so yt-dlp will re-download it later."""
-    arc = settings.archive_path
-    if not arc.exists():
-        return
-    try:
-        kept = [ln for ln in arc.read_text().splitlines() if video_id not in ln]
-        arc.write_text("\n".join(kept) + ("\n" if kept else ""))
-    except Exception as exc:  # non-fatal
-        logbus.log("warning", "archive_cleanup_failed", str(exc), video_id=video_id)
 
 
 @app.post("/api/rescan", dependencies=_AUTH)
@@ -251,8 +231,7 @@ def delete_compilation(comp_id: int, s: Session = Depends(get_session)) -> dict:
     comp = s.get(Compilation, comp_id)
     if not comp:
         raise HTTPException(404, "not found")
-    if comp.output_path and pathlib.Path(comp.output_path).exists():
-        pathlib.Path(comp.output_path).unlink(missing_ok=True)
+    cleanup.remove_compilation_files(comp)
     s.delete(comp)
     s.commit()
     return {"deleted": comp_id}

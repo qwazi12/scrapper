@@ -5,6 +5,7 @@ import {
   api,
   Clip,
   Compilation,
+  expiresIn,
   fmtBytes,
   fmtDuration,
   LogLine,
@@ -56,8 +57,8 @@ export default function Page() {
       <StatusBar stats={stats} connected={connected} clips={clips} comps={comps} />
       <SettingsBar onSaved={refresh} />
       <IngestPanel onIngested={refresh} />
-      <Storyboard clips={clips} onChange={refresh} />
-      <ExportPanel comps={comps} onChange={refresh} />
+      <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+      <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
       <LogsPanel logs={logs} />
     </main>
   );
@@ -338,7 +339,7 @@ function statusColor(s: string): string {
   );
 }
 
-function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }) {
+function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChange: () => void; retentionDays: number }) {
   const [orientation, setOrientation] = useState("portrait");
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -435,13 +436,14 @@ function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }
               <Th w={90}>resolution</Th>
               <Th w={70}>size</Th>
               <Th w={80}>status</Th>
+              <Th w={70}>expires</Th>
               <Th w={50}></Th>
             </tr>
           </thead>
           <tbody>
             {clips.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
+                <td colSpan={11} style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
                   No clips yet — paste links above and hit Scrape.
                 </td>
               </tr>
@@ -494,6 +496,9 @@ function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }
                   <span style={{ color: statusColor(c.status) }}>● {c.status}</span>
                 </Td>
                 <Td>
+                  <ExpiryTag createdAt={c.created_at} retentionDays={retentionDays} />
+                </Td>
+                <Td>
                   <button className="danger" onClick={() => del(c)} style={{ padding: "3px 7px" }}>
                     ✕
                   </button>
@@ -518,8 +523,23 @@ function Td({ children }: { children?: React.ReactNode }) {
   return <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>{children}</td>;
 }
 
+/** Countdown to the retention sweep. Goes amber in the last day. */
+function ExpiryTag({ createdAt, retentionDays }: { createdAt: string; retentionDays: number }) {
+  const left = expiresIn(createdAt, retentionDays);
+  if (!left) return <span style={{ color: "var(--muted)" }}>—</span>;
+  const urgent = left === "due" || left.endsWith("h");
+  return (
+    <span
+      title={`Auto-deleted ${retentionDays} days after it was added`}
+      style={{ color: urgent ? "var(--yellow)" : "var(--muted)" }}
+    >
+      {left}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------------ */
-function ExportPanel({ comps, onChange }: { comps: Compilation[]; onChange: () => void }) {
+function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[]; onChange: () => void; retentionDays: number }) {
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState(false);
 
@@ -612,6 +632,9 @@ function ExportPanel({ comps, onChange }: { comps: Compilation[]; onChange: () =
             <span style={{ color: statusColor(c.status) }}>
               ● {c.status}
               {c.status === "running" ? ` ${Math.round(c.progress * 100)}%` : ""}
+            </span>
+            <span style={{ color: "var(--muted)" }}>
+              expires <ExpiryTag createdAt={c.created_at} retentionDays={retentionDays} />
             </span>
             {c.error && <span style={{ color: "var(--red)" }}>{c.error}</span>}
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>

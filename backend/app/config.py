@@ -38,6 +38,24 @@ class Settings(BaseSettings):
     per_clip_delay_seconds: float = 2.0     # self-rate-limit between clips
     proxy_url: str = ""                     # Layer 4: yt-dlp --proxy (reserve)
 
+    # yt-dlp `-t sleep` preset: 0.75s between HTTP requests and a randomized
+    # 10-20s pause between downloads. The single most effective anti-ban knob
+    # on a headless server — keeps request patterns from looking automated.
+    ytdlp_sleep_preset: bool = True
+
+    # Read cookies straight from a locally-installed browser instead of an
+    # uploaded cookies.txt (e.g. "chrome", "firefox", "safari", "edge", "brave").
+    # Only works where a real browser profile exists — your Mac or a hybrid
+    # worker — NOT on the headless Railway container. For the cloud, use
+    # scripts/sync_cookies.py to push browser cookies up to /api/cookies.
+    cookies_from_browser: str = ""
+
+    # --- Retention (auto-delete) -----------------------------------------
+    # Each clip/compilation gets its own rolling timer from its created_at, so
+    # something scraped Thursday expires the following Tuesday. 0 disables.
+    retention_days: int = 5
+    retention_sweep_minutes: int = 30       # how often the worker sweeps
+
     # --- Worker ----------------------------------------------------------
     # "web" runs API + in-process worker (default, all-in-one).
     # "web_only" runs API but no worker (pair with a remote worker).

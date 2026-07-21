@@ -16,6 +16,7 @@ import time
 
 from ..core import compiler, engine
 from ..core.scraper import platform_of, scrape
+from . import cleanup
 from .config import settings
 from .db import SessionLocal, init_db
 from .logbus import log, record_outcome
@@ -80,6 +81,8 @@ def _scrape_one(job_id: int, url: str) -> None:
             archive_path=settings.archive_path,
             cookies_path=settings.cookies_path,
             proxy=settings.proxy_url or None,
+            sleep_preset=settings.ytdlp_sleep_preset,
+            cookies_from_browser=settings.cookies_from_browser or None,
         )
         if result.ok:
             break
@@ -204,11 +207,28 @@ def _drain_once() -> bool:
     return False
 
 
+_last_purge = 0.0
+
+
+def _maybe_purge_expired() -> None:
+    """Retention sweep on its own cadence, independent of job traffic."""
+    global _last_purge
+    if settings.retention_days <= 0:
+        return
+    now = time.time()
+    if now - _last_purge < settings.retention_sweep_minutes * 60:
+        return
+    _last_purge = now
+    with SessionLocal() as s:
+        cleanup.purge_expired(s)
+
+
 def run_loop() -> None:
     log("info", "worker_start", f"worker loop up (mode={settings.worker_mode})")
     while not _stop.is_set():
         try:
             _maybe_update_engine()
+            _maybe_purge_expired()
             did = _drain_once()
         except Exception as exc:  # keep the loop alive no matter what
             log("error", "worker_error", str(exc))
