@@ -173,6 +173,36 @@ def rescan_now(s: Session = Depends(get_session)) -> dict:
     return rescan.rescan_library(s)
 
 
+@app.get("/api/debug/storage", dependencies=_AUTH)
+def debug_storage() -> dict:
+    """Ops helper: what's actually on the volume, and where."""
+    root = settings.data_path
+    mp4s, biggest = [], []
+    total = 0
+    for p in root.rglob("*"):
+        try:
+            if p.is_file():
+                sz = p.stat().st_size
+                total += sz
+                if p.suffix == ".mp4":
+                    mp4s.append(str(p))
+                biggest.append((sz, str(p)))
+        except Exception:
+            pass
+    biggest.sort(reverse=True)
+    return {
+        "root": str(root),
+        "data_dir_env": settings.data_dir,
+        "downloads_path": str(settings.downloads_path),
+        "compilations_path": str(settings.compilations_path),
+        "top_level": sorted(x.name for x in root.iterdir()),
+        "total_mb": round(total / 1e6, 1),
+        "mp4_count": len(mp4s),
+        "mp4_sample": mp4s[:20],
+        "biggest_10": [{"mb": round(s / 1e6, 1), "path": p} for s, p in biggest[:10]],
+    }
+
+
 @app.get("/api/clips/{clip_id}/thumb", dependencies=_AUTH)
 def clip_thumb(clip_id: int, s: Session = Depends(get_session)):
     clip = s.get(Clip, clip_id)
