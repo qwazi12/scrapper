@@ -328,16 +328,36 @@ function statusColor(s: string): string {
 function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }) {
   const [orientation, setOrientation] = useState("portrait");
   const [busy, setBusy] = useState(false);
-  const selectedCount = clips.filter((c) => c.selected && c.status === "done").length;
+  const [deleting, setDeleting] = useState(false);
+  const selectedForCompile = clips.filter((c) => c.selected && c.status === "done").length;
+  const selectedIds = clips.filter((c) => c.selected).map((c) => c.id);
+  const allChecked = clips.length > 0 && selectedIds.length === clips.length;
 
   async function toggle(c: Clip) {
     await api.select(c.id, !c.selected).catch(() => {});
+    onChange();
+  }
+  async function toggleAll(check: boolean) {
+    await Promise.all(
+      clips.filter((c) => c.selected !== check).map((c) => api.select(c.id, check).catch(() => {}))
+    );
     onChange();
   }
   async function del(c: Clip) {
     if (!confirm(`Delete "${c.title || c.source_url}"? Removes the downloaded file too.`)) return;
     await api.deleteClip(c.id).catch(() => {});
     onChange();
+  }
+  async function deleteSelected() {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} selected clip(s)? This removes the downloaded files too.`)) return;
+    setDeleting(true);
+    try {
+      await Promise.all(selectedIds.map((id) => api.deleteClip(id).catch(() => {})));
+      onChange();
+    } finally {
+      setDeleting(false);
+    }
   }
   async function extract() {
     setBusy(true);
@@ -372,8 +392,11 @@ function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }
               </button>
             ))}
           </div>
-          <button className="primary" onClick={extract} disabled={busy || selectedCount < 1}>
-            {busy ? "Queuing…" : `🎬 Extract ${selectedCount} → 1 video`}
+          <button className="primary" onClick={extract} disabled={busy || selectedForCompile < 1}>
+            {busy ? "Queuing…" : `🎬 Extract ${selectedForCompile} → 1 video`}
+          </button>
+          <button className="danger" onClick={deleteSelected} disabled={deleting || selectedIds.length < 1}>
+            {deleting ? "Deleting…" : `🗑 Delete ${selectedIds.length}`}
           </button>
         </div>
       }
@@ -382,7 +405,15 @@ function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
             <tr style={{ color: "var(--muted)", textAlign: "left" }}>
-              <Th w={36}>✓</Th>
+              <Th w={36}>
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  onChange={(e) => toggleAll(e.target.checked)}
+                  title="select all"
+                  style={{ width: 16, height: 16, cursor: "pointer" }}
+                />
+              </Th>
               <Th w={40}>#</Th>
               <Th w={90}>thumb</Th>
               <Th w={70}>platform</Th>
@@ -415,7 +446,6 @@ function Storyboard({ clips, onChange }: { clips: Clip[]; onChange: () => void }
                   <input
                     type="checkbox"
                     checked={c.selected}
-                    disabled={c.status !== "done"}
                     onChange={() => toggle(c)}
                     style={{ width: 16, height: 16, cursor: "pointer" }}
                   />
@@ -477,13 +507,63 @@ function Td({ children }: { children?: React.ReactNode }) {
 
 /* ------------------------------------------------------------------ */
 function ExportPanel({ comps, onChange }: { comps: Compilation[]; onChange: () => void }) {
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const validIds = comps.map((c) => c.id);
+  const selectedIds = [...sel].filter((id) => validIds.includes(id));
+  const allChecked = comps.length > 0 && selectedIds.length === comps.length;
+
+  function toggle(id: number) {
+    setSel((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+  function toggleAll(check: boolean) {
+    setSel(check ? new Set(validIds) : new Set());
+  }
   async function del(c: Compilation) {
     if (!confirm("Delete this compilation file?")) return;
     await api.deleteCompilation(c.id).catch(() => {});
     onChange();
   }
+  async function deleteSelected() {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} selected compilation(s)?`)) return;
+    setDeleting(true);
+    try {
+      await Promise.all(selectedIds.map((id) => api.deleteCompilation(id).catch(() => {})));
+      setSel(new Set());
+      onChange();
+    } finally {
+      setDeleting(false);
+    }
+  }
   return (
-    <Panel title={`Export — ${comps.length} compilation(s)`}>
+    <Panel
+      title={`Export — ${comps.length} compilation(s)`}
+      right={
+        comps.length > 0 ? (
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <label style={{ color: "var(--muted)", display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={(e) => toggleAll(e.target.checked)}
+                style={{ width: 15, height: 15, cursor: "pointer" }}
+              />
+              select all
+            </label>
+            <button className="danger" onClick={deleteSelected} disabled={deleting || selectedIds.length < 1}>
+              {deleting ? "Deleting…" : `🗑 Delete ${selectedIds.length}`}
+            </button>
+          </div>
+        ) : null
+      }
+    >
       {comps.length === 0 && (
         <div style={{ color: "var(--muted)", padding: "8px 0" }}>
           No compilations yet — select clips above and hit Extract.
@@ -503,6 +583,12 @@ function ExportPanel({ comps, onChange }: { comps: Compilation[]; onChange: () =
               borderRadius: 8,
             }}
           >
+            <input
+              type="checkbox"
+              checked={sel.has(c.id)}
+              onChange={() => toggle(c.id)}
+              style={{ width: 16, height: 16, cursor: "pointer" }}
+            />
             <span style={{ fontWeight: 700 }}>#{c.id}</span>
             <span style={{ padding: "2px 7px", background: "var(--chip)", borderRadius: 4, fontSize: 11 }}>
               {c.orientation}
