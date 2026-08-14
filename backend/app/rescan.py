@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,26 @@ def _read_info(video: pathlib.Path) -> dict:
         except Exception:
             return {}
     return {}
+
+
+# Downloads are named "{uploader_id}_{video_id}_{title}.mp4" inside an
+# "{extractor}/" dir, so the filename alone carries enough to rebuild a row
+# when the .info.json sidecar is missing.
+_NAME_RE = re.compile(r"^(?P<uploader>.+?)_(?P<vid>\d{6,})_(?P<title>.*)$")
+
+
+def _from_filename(video: pathlib.Path) -> dict:
+    """Best-effort metadata from the filename, for sidecar-less files."""
+    m = _NAME_RE.match(video.stem)
+    if not m:
+        return {}
+    uploader, vid, title = m.group("uploader"), m.group("vid"), m.group("title")
+    extractor = video.parent.name.lower()
+    meta = {"uploader": uploader, "id": vid, "title": title or None, "extractor": extractor}
+    # Only reconstruct a URL where the scheme is unambiguous.
+    if extractor in ("twitter", "x"):
+        meta["webpage_url"] = f"https://x.com/{uploader}/status/{vid}"
+    return meta
 
 
 def _existing_mp4s() -> list[pathlib.Path]:
@@ -61,11 +82,13 @@ def rescan_library(s: Session) -> dict:
         vpath = str(video)
         if vpath in known:
             continue
-        info = _read_info(video)
+        # Prefer the sidecar; fall back to the filename so a missing
+        # .info.json still yields a readable row instead of a raw path.
+        info = _read_info(video) or _from_filename(video)
         thumb = video.with_suffix(".jpg")
         url = info.get("webpage_url") or info.get("original_url") or ""
         s.add(Clip(
-            source_url=url or vpath,
+            source_url=url or video.name,
             platform=platform_of(url) if url else (info.get("extractor") or None),
             video_id=info.get("id"),
             uploader=info.get("uploader") or info.get("uploader_id"),
@@ -82,6 +105,32 @@ def rescan_library(s: Session) -> dict:
         added_clips += 1
     if added_clips:
         s.commit()
+
+    # 2b. Repair rows adopted before we could read their metadata (missing
+    # title/uploader, or a source_url that is really just a path).
+    repaired = 0
+    for clip in s.query(Clip).all():
+        if not clip.file_path or clip.status in (Status.queued, Status.running):
+            continue
+        looks_like_path = clip.source_url.startswith("/") or clip.source_url.endswith(".mp4")
+        if clip.title and clip.uploader and not looks_like_path:
+            continue
+        video = pathlib.Path(clip.file_path)
+        info = _read_info(video) or _from_filename(video)
+        if not info:
+            continue
+        clip.title = clip.title or info.get("title")
+        clip.uploader = clip.uploader or info.get("uploader") or info.get("uploader_id")
+        clip.video_id = clip.video_id or info.get("id")
+        clip.platform = clip.platform or info.get("extractor")
+        url = info.get("webpage_url") or info.get("original_url")
+        if url and looks_like_path:
+            clip.source_url = url
+            clip.platform = platform_of(url)
+        repaired += 1
+    if repaired:
+        s.commit()
+        log("info", "rescan_repair", f"backfilled metadata on {repaired} clip(s)")
 
     # 3. Reconcile compilations with the compilations dir.
     comp_files = {str(p) for p in settings.compilations_path.glob("*.mp4")}
@@ -126,6 +175,7 @@ def rescan_library(s: Session) -> dict:
     return {
         "clips_added": added_clips, "compilations_added": added_comps,
         "clips_pruned": pruned_clips, "compilations_pruned": pruned_comps,
+        "clips_repaired": repaired,
     }
 
 
