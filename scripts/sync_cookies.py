@@ -30,6 +30,16 @@ import urllib.request
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / "data" / "deploy.env"
 
+
+def _ssl_ctx():
+    """python.org builds on macOS ship no CA store; use certifi's when present."""
+    try:
+        import certifi
+        import ssl
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
+
 # A cheap page on each site that yt-dlp can touch to trigger the cookie export.
 PROBE = {
     "x": "https://x.com/robots.txt",
@@ -83,7 +93,7 @@ def upload(server: str, token: str, jar: pathlib.Path) -> None:
             "x-access-token": token,
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=60, context=_ssl_ctx()) as r:
         print(f"uploaded → {r.status} {r.read().decode()[:200]}")
 
 

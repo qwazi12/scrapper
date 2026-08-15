@@ -22,3 +22,4 @@ frontend/out/
 
 # macOS
 .DS_Store
+data/deploy.env

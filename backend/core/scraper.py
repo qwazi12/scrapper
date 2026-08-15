@@ -44,6 +44,22 @@ _PERMANENT: tuple[tuple[str, str], ...] = (
 )
 
 
+def pacing_args(url: str, sleep_preset: bool) -> list[str]:
+    """Anti-ban pacing, tuned per platform.
+
+    `-t sleep` expands to --sleep-requests 0.75 plus a randomized 10-20s pause
+    *before each download*. That pause is what keeps X happy, but it is fatal on
+    YouTube: its media URLs are rejected (HTTP 403) if the fetch comes that long
+    after extraction. So YouTube keeps the between-request politeness and drops
+    the pre-download sleep; everything else gets the full preset.
+    """
+    if not sleep_preset:
+        return []
+    if platform_of(url) == "youtube":
+        return ["--sleep-requests", "0.75"]
+    return ["-t", "sleep"]
+
+
 def classify_error(raw: str) -> tuple[bool, str]:
     """Map a raw yt-dlp error to (is_permanent, short_message).
 
@@ -96,11 +112,7 @@ def scrape(
         "--no-progress",
         "--print", "after_move:__DONE__ %(filepath)s",
     ]
-    # Anti-ban pacing: 0.75s between requests + randomized 10-20s between
-    # downloads. Slower on purpose — this is what keeps a headless server from
-    # looking like a scraper to YouTube/TikTok/X.
-    if sleep_preset:
-        cmd += ["-t", "sleep"]
+    cmd += pacing_args(url, sleep_preset)
     # A cookies.txt file wins; otherwise pull straight from a local browser
     # profile (only possible where a browser actually exists).
     if cookies_path and cookies_path.exists():

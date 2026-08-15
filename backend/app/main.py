@@ -11,7 +11,7 @@ import pathlib
 import queue
 import time
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import desc
@@ -177,7 +177,9 @@ async def upload_clip(
     clip_id: int,
     file: UploadFile = File(...),
     thumb: UploadFile | None = File(default=None),
-    meta: str = "{}",
+    # Must be Form(...) — a bare `str` default is read as a query param, which
+    # silently drops the multipart field and loses all the metadata.
+    meta: str = Form(default="{}"),
     s: Session = Depends(get_session),
 ) -> dict:
     """Accept a video downloaded by a local worker and attach it to its clip."""

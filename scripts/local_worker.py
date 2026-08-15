@@ -30,6 +30,17 @@ import uuid
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / "data" / "deploy.env"
+VERBOSE = False
+
+
+def _ssl_ctx():
+    """python.org builds on macOS ship no CA store; use certifi's when present."""
+    try:
+        import certifi
+        import ssl
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
 
 
 def load_env() -> dict:
@@ -46,8 +57,20 @@ def load_env() -> dict:
 def api_get(server: str, token: str, path: str):
     req = urllib.request.Request(f"{server.rstrip('/')}{path}",
                                  headers={"x-access-token": token})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=60, context=_ssl_ctx()) as r:
         return json.loads(r.read().decode())
+
+
+def pacing_args(url: str) -> list[str]:
+    """Mirror of the server's pacing rule (backend/core/scraper.py).
+
+    `-t sleep` pauses 10-20s before each download — good manners on X, but fatal
+    on YouTube, whose media URLs return 403 when fetched that long after
+    extraction. YouTube keeps only the between-request politeness.
+    """
+    if "youtube.com" in url or "youtu.be" in url:
+        return ["--sleep-requests", "0.75"]
+    return ["-t", "sleep"]
 
 
 def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[pathlib.Path, dict]:
@@ -55,7 +78,7 @@ def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[path
     out_tpl = str(workdir / "%(uploader_id)s_%(id)s_%(title).60B.%(ext)s")
     cmd = [
         "yt-dlp",
-        "-t", "sleep",                     # same polite pacing as the server
+        *pacing_args(url),                 # same platform-aware pacing as the server
         "--output", out_tpl,
         "--format", "bv*+ba/b",
         "--merge-output-format", "mp4",
@@ -69,11 +92,18 @@ def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[path
         cmd += ["--cookies-from-browser", browser]
     cmd.append(url)
 
+    if VERBOSE:
+        print("     $ " + " ".join(cmd))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     videos = sorted(workdir.glob("*.mp4"))
     if proc.returncode != 0 or not videos:
-        tail = (proc.stderr or proc.stdout).strip().splitlines()
-        raise RuntimeError(tail[-1] if tail else "yt-dlp failed")
+        out = (proc.stderr or proc.stdout).strip()
+        if VERBOSE:
+            print("     --- yt-dlp output ---")
+            for line in out.splitlines()[-15:]:
+                print("     " + line)
+        errs = [l for l in out.splitlines() if l.startswith("ERROR")]
+        raise RuntimeError(errs[-1] if errs else (out.splitlines() or ["yt-dlp failed"])[-1])
 
     video = videos[0]
     info_path = video.with_suffix(".info.json")
@@ -114,7 +144,7 @@ def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dic
             "Content-Length": str(len(body)),
         },
     )
-    with urllib.request.urlopen(req, timeout=1800) as r:
+    with urllib.request.urlopen(req, timeout=1800, context=_ssl_ctx()) as r:
         return json.loads(r.read().decode())
 
 
@@ -152,6 +182,7 @@ def main() -> int:
     ap.add_argument("--server", default=env.get("SERVER_URL", ""))
     ap.add_argument("--token", default=env.get("ACCESS_TOKEN", ""))
     ap.add_argument("--browser", default="", help="chrome | firefox | safari | edge | brave")
+    ap.add_argument("--verbose", action="store_true", help="print the yt-dlp command and full output")
     ap.add_argument("--watch", action="store_true", help="keep polling instead of exiting")
     ap.add_argument("--interval", type=int, default=120, help="seconds between polls in --watch")
     args = ap.parse_args()
@@ -159,6 +190,8 @@ def main() -> int:
     if not args.server or not args.token:
         sys.exit("Need --server and --token (or SERVER_URL/ACCESS_TOKEN in data/deploy.env)")
 
+    global VERBOSE
+    VERBOSE = args.verbose
     browser = args.browser or None
     if not args.watch:
         n = drain(args.server, args.token, browser)
