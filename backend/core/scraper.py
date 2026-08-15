@@ -45,8 +45,14 @@ _PERMANENT: tuple[tuple[str, str], ...] = (
 
 
 def classify_error(raw: str) -> tuple[bool, str]:
-    """Map a raw yt-dlp error to (is_permanent, short_message)."""
+    """Map a raw yt-dlp error to (is_permanent, short_message).
+
+    yt-dlp renders typographic quotes ("you're not a bot" with U+2019), so fold
+    curly quotes to ASCII before matching or the patterns silently never fire.
+    """
     low = (raw or "").lower()
+    for fancy, plain in (("’", "'"), ("‘", "'"), ("“", '"'), ("”", '"')):
+        low = low.replace(fancy, plain)
     for needle, friendly in _PERMANENT:
         if needle in low:
             return True, friendly
