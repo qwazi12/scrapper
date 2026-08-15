@@ -153,6 +153,81 @@ def rescan_now(s: Session = Depends(get_session)) -> dict:
     return rescan.rescan_library(s)
 
 
+# --- hybrid local worker (Reliability Layer 5) -------------------------------
+# YouTube/TikTok refuse this container's datacenter IP outright. A worker on a
+# residential connection (the user's Mac) claims those blocked URLs, downloads
+# them at home, and uploads the result back here.
+@app.get("/api/clips/blocked", dependencies=_AUTH)
+def blocked_clips(s: Session = Depends(get_session)) -> list[dict]:
+    """URLs this server could not fetch, for a local worker to pick up."""
+    rows = (
+        s.query(Clip)
+        .filter(Clip.status == Status.failed, Clip.file_path.is_(None))
+        .order_by(Clip.id)
+        .all()
+    )
+    return [
+        {"id": c.id, "source_url": c.source_url, "platform": c.platform, "error": c.error}
+        for c in rows
+    ]
+
+
+@app.post("/api/clips/{clip_id}/upload", dependencies=_AUTH)
+async def upload_clip(
+    clip_id: int,
+    file: UploadFile = File(...),
+    thumb: UploadFile | None = File(default=None),
+    meta: str = "{}",
+    s: Session = Depends(get_session),
+) -> dict:
+    """Accept a video downloaded by a local worker and attach it to its clip."""
+    clip = s.get(Clip, clip_id)
+    if not clip:
+        raise HTTPException(404, "clip not found")
+
+    try:
+        info = json.loads(meta) if meta else {}
+    except json.JSONDecodeError:
+        info = {}
+
+    dest_dir = settings.downloads_path / (clip.platform or info.get("extractor") or "other")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = pathlib.Path(file.filename or f"clip_{clip_id}.mp4").name
+    dest = dest_dir / safe_name
+
+    size = 0
+    with dest.open("wb") as fh:
+        while chunk := await file.read(1024 * 1024):
+            fh.write(chunk)
+            size += len(chunk)
+
+    if thumb is not None:
+        thumb_dest = dest.with_suffix(".jpg")
+        thumb_dest.write_bytes(await thumb.read())
+        clip.thumb_path = str(thumb_dest)
+
+    if info:
+        dest.with_suffix(".info.json").write_text(json.dumps(info))
+
+    clip.file_path = str(dest)
+    clip.size_bytes = size
+    clip.video_id = info.get("id") or clip.video_id
+    clip.uploader = info.get("uploader") or info.get("uploader_id") or clip.uploader
+    clip.title = info.get("title") or clip.title
+    clip.duration = info.get("duration") or clip.duration
+    clip.width = info.get("width") or clip.width
+    clip.height = info.get("height") or clip.height
+    clip.status = Status.done
+    clip.error = None
+    clip.selected = True
+    s.commit()
+
+    logbus.log("info", "local_upload",
+               f"{clip.title or clip.source_url} ({round(size / 1e6)} MB) via local worker",
+               source=clip.platform)
+    return {"clip_id": clip_id, "size_bytes": size, "status": "done"}
+
+
 @app.get("/api/debug/storage", dependencies=_AUTH)
 def debug_storage() -> dict:
     """Ops helper: what's actually on the volume, and where."""

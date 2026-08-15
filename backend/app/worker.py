@@ -39,7 +39,11 @@ def _maybe_update_engine() -> None:
     if now.hour == settings.ytdlp_update_hour and _last_update_day != now.day:
         _last_update_day = now.day
         ok, msg = engine.update_ytdlp()
-        log("info" if ok else "warning", "engine_update", msg)
+        # A no-op daily check is not news — keep it at debug so the log stays
+        # readable. Only an actual version change (or a failure) is worth info.
+        changed = "->" in msg
+        level = "info" if changed else "debug"
+        log(level if ok else "warning", "engine_update", msg)
 
 
 def _process_ingest(job_id: int) -> None:
@@ -85,6 +89,11 @@ def _scrape_one(job_id: int, url: str) -> None:
             cookies_from_browser=settings.cookies_from_browser or None,
         )
         if result.ok:
+            break
+        if result.permanent:
+            # No amount of retrying fixes auth/removed/blocked — and re-hitting a
+            # bot check is the exact pattern the platform is watching for.
+            log("warning", "scrape_blocked", f"{url}: {result.error}", source=src)
             break
         wait = settings.retry_backoff_seconds * (2 ** (attempt - 1))
         log("warning", "scrape_retry", f"{url} attempt {attempt} failed: {result.error}",

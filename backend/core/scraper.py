@@ -21,7 +21,36 @@ class ScrapeResult:
     already: bool = False           # was in the archive already
     clips: list[dict] = field(default_factory=list)
     error: str | None = None
+    permanent: bool = False         # retrying will not help; fail fast
     log_lines: list[str] = field(default_factory=list)
+
+
+# Failures that a retry cannot fix. Retrying these just burns time and, for the
+# bot-check case, hammers the platform in exactly the pattern it is watching for.
+# Each entry maps a yt-dlp error fragment to a short, actionable message.
+_PERMANENT: tuple[tuple[str, str], ...] = (
+    ("sign in to confirm you're not a bot",
+     "Blocked as a bot — this server's datacenter IP is refused. Run the local worker "
+     "(scripts/local_worker.py) from home, or add cookies."),
+    ("sign in to confirm your age",
+     "Age-restricted — needs cookies from a signed-in account."),
+    ("this video is private", "Video is private."),
+    ("video unavailable", "Video unavailable (removed or region-blocked)."),
+    ("members-only", "Members-only video — needs an account with access."),
+    ("requested format is not available", "No downloadable format offered."),
+    ("unsupported url", "Unsupported link for this site."),
+    ("account is suspended", "The uploader's account is suspended."),
+    ("removed by the uploader", "Removed by the uploader."),
+)
+
+
+def classify_error(raw: str) -> tuple[bool, str]:
+    """Map a raw yt-dlp error to (is_permanent, short_message)."""
+    low = (raw or "").lower()
+    for needle, friendly in _PERMANENT:
+        if needle in low:
+            return True, friendly
+    return False, (raw or "yt-dlp failed")
 
 
 def platform_of(url: str) -> str:
@@ -86,7 +115,8 @@ def scrape(
 
     if proc.returncode != 0:
         tail = proc.stderr.strip().splitlines()
-        result.error = tail[-1] if tail else "yt-dlp failed"
+        raw = tail[-1] if tail else "yt-dlp failed"
+        result.permanent, result.error = classify_error(raw)
         return result
 
     if not final_paths:

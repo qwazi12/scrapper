@@ -523,6 +523,15 @@ function Td({ children }: { children?: React.ReactNode }) {
   return <td style={{ padding: "8px 10px", verticalAlign: "middle" }}>{children}</td>;
 }
 
+/** Today's lines show just the time; older ones carry a date so daily
+ *  entries (like the nightly engine check) stop looking like duplicates. */
+function fmtLogTime(iso: string): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString();
+  const isToday = d.toDateString() === new Date().toDateString();
+  return isToday ? time : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
+}
+
 /** Countdown to the retention sweep. Goes amber in the last day. */
 function ExpiryTag({ createdAt, retentionDays }: { createdAt: string; retentionDays: number }) {
   const left = expiresIn(createdAt, retentionDays);
@@ -681,7 +690,7 @@ function LogsPanel({ logs }: { logs: LogLine[] }) {
         {logs.length === 0 && <div style={{ color: "var(--muted)" }}>waiting for activity…</div>}
         {logs.map((l, i) => (
           <div key={i}>
-            <span style={{ color: "var(--muted)" }}>{new Date(l.created_at).toLocaleTimeString()} </span>
+            <span style={{ color: "var(--muted)" }}>{fmtLogTime(l.created_at)} </span>
             <span style={{ color: color(l.level) }}>[{l.event}] </span>
             <span style={{ color: color(l.level) }}>{l.message}</span>
           </div>
