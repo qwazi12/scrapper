@@ -61,6 +61,21 @@ def api_get(server: str, token: str, path: str):
         return json.loads(r.read().decode())
 
 
+def js_runtime_args() -> list[str]:
+    """Enable a JavaScript runtime for YouTube signature deciphering.
+
+    YouTube requires JS execution to sign media URLs; without a runtime yt-dlp
+    warns and every download 403s. Only `deno` is enabled by default, so find
+    whichever runtime is actually installed and point yt-dlp at it.
+    """
+    import shutil
+    for name in ("deno", "node", "bun"):          # yt-dlp's priority order
+        path = shutil.which(name)
+        if path:
+            return ["--js-runtimes", f"{name}:{path}"]
+    return []
+
+
 def pacing_args(url: str) -> list[str]:
     """Mirror of the server's pacing rule (backend/core/scraper.py).
 
@@ -78,6 +93,7 @@ def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[path
     out_tpl = str(workdir / "%(uploader_id)s_%(id)s_%(title).60B.%(ext)s")
     cmd = [
         "yt-dlp",
+        *js_runtime_args(),                # YouTube needs JS to sign media URLs
         *pacing_args(url),                 # same platform-aware pacing as the server
         "--output", out_tpl,
         "--format", "bv*+ba/b",

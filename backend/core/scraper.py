@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -42,6 +43,20 @@ _PERMANENT: tuple[tuple[str, str], ...] = (
     ("account is suspended", "The uploader's account is suspended."),
     ("removed by the uploader", "Removed by the uploader."),
 )
+
+
+def js_runtime_args() -> list[str]:
+    """Enable a JavaScript runtime for YouTube signature deciphering.
+
+    YouTube requires JS execution to sign its media URLs. Without a runtime
+    yt-dlp warns that extraction is deprecated and every download 403s. Only
+    `deno` is enabled by default, so point yt-dlp at whichever is installed.
+    """
+    for name in ("deno", "node", "bun"):          # yt-dlp's priority order
+        path = shutil.which(name)
+        if path:
+            return ["--js-runtimes", f"{name}:{path}"]
+    return []
 
 
 def pacing_args(url: str, sleep_preset: bool) -> list[str]:
@@ -99,6 +114,7 @@ def scrape(
 
     cmd = [
         "yt-dlp",
+        *js_runtime_args(),
         "--download-archive", str(archive_path),
         "--output", out_template,
         "--format", "bv*+ba/b",

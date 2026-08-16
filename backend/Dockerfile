@@ -1,9 +1,12 @@
 # Scrapper backend — FastAPI + yt-dlp + ffmpeg. Deploys to Railway.
 FROM python:3.12-slim
 
-# ffmpeg/ffprobe for compiling; the rest are yt-dlp niceties.
+# ffmpeg/ffprobe for compiling. nodejs is yt-dlp's JavaScript runtime: sites
+# (YouTube today, likely others next) require JS execution to sign media URLs,
+# and without a runtime yt-dlp warns "extraction deprecated" and every download
+# 403s. scraper.js_runtime_args() detects and enables it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+    ffmpeg ca-certificates nodejs && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
 
