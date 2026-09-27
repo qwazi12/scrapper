@@ -87,6 +87,7 @@ def _scrape_one(job_id: int, url: str) -> None:
             proxy=settings.proxy_url or None,
             sleep_preset=settings.ytdlp_sleep_preset,
             cookies_from_browser=settings.cookies_from_browser or None,
+            po_token=settings.ytdlp_po_token or None,
         )
         if result.ok:
             break

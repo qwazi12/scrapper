@@ -8,6 +8,7 @@ Retries/backoff live in the worker so they can update job state between tries.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -31,8 +32,9 @@ class ScrapeResult:
 # Each entry maps a yt-dlp error fragment to a short, actionable message.
 _PERMANENT: tuple[tuple[str, str], ...] = (
     ("sign in to confirm you're not a bot",
-     "Blocked as a bot — this server's datacenter IP is refused. Run the local worker "
-     "(scripts/local_worker.py) from home, or add cookies."),
+     "Blocked as a bot — Railway's datacenter IP is refused by YouTube. "
+     "Run the local worker (scripts/local_worker.py) from home, or set "
+     "YTDLP_PO_TOKEN in Railway env vars."),
     ("sign in to confirm your age",
      "Age-restricted — needs cookies from a signed-in account."),
     ("this video is private", "Video is private."),
@@ -42,6 +44,18 @@ _PERMANENT: tuple[tuple[str, str], ...] = (
     ("unsupported url", "Unsupported link for this site."),
     ("account is suspended", "The uploader's account is suspended."),
     ("removed by the uploader", "Removed by the uploader."),
+    # YouTube datacenter IP block — HTTP 403 with no useful error body
+    ("http error 403",
+     "HTTP 403 from YouTube — datacenter IP is blocked. Use the local worker or "
+     "set YTDLP_PO_TOKEN in Railway env vars."),
+    # yt-dlp version too old: YouTube nsig signature extraction fails
+    ("nsig extraction failed",
+     "YouTube nsig failure — yt-dlp is outdated. Redeploy Railway to update."),
+    ("unable to extract nsig",
+     "YouTube nsig failure — yt-dlp is outdated. Redeploy Railway to update."),
+    # Generic geo/auth block
+    ("this content isn't available",
+     "Content unavailable (geo-blocked or account required)."),
 )
 
 
@@ -57,6 +71,25 @@ def js_runtime_args() -> list[str]:
         if path:
             return ["--js-runtimes", f"{name}:{path}"]
     return []
+
+
+def po_token_args(url: str, po_token: str | None = None) -> list[str]:
+    """Pass a YouTube PO (Proof-of-Origin) token when available.
+
+    PO tokens prove to YouTube that the request originates from a real browser
+    session. As of 2026, YouTube requires them from datacenter IPs to avoid
+    bot-check 403 responses.
+
+    How to get a token: https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
+    Set YTDLP_PO_TOKEN in Railway environment variables.
+    Only applied to YouTube URLs to avoid sending tokens elsewhere.
+    """
+    token = po_token or os.environ.get("YTDLP_PO_TOKEN", "").strip()
+    if not token:
+        return []
+    if platform_of(url) != "youtube":
+        return []
+    return ["--extractor-args", f"youtube:po_token=web+{token}"]
 
 
 def pacing_args(url: str, sleep_preset: bool) -> list[str]:
@@ -80,14 +113,22 @@ def classify_error(raw: str) -> tuple[bool, str]:
 
     yt-dlp renders typographic quotes ("you're not a bot" with U+2019), so fold
     curly quotes to ASCII before matching or the patterns silently never fire.
+
+    `raw` may be a single line OR the full stderr dump. We scan every line so
+    errors buried deep in verbose output (e.g. HTTP 403 after a long preamble)
+    are caught instead of silently burning all retry attempts.
     """
-    low = (raw or "").lower()
-    for fancy, plain in (("’", "'"), ("‘", "'"), ("“", '"'), ("”", '"')):
-        low = low.replace(fancy, plain)
-    for needle, friendly in _PERMANENT:
-        if needle in low:
-            return True, friendly
-    return False, (raw or "yt-dlp failed")
+    lines = (raw or "").splitlines() or [""]
+    for line in lines:
+        low = line.lower()
+        for fancy, plain in (("’", "'"), ("‘", "'"), ("“", '"'), ("”", '"')):
+            low = low.replace(fancy, plain)
+        for needle, friendly in _PERMANENT:
+            if needle in low:
+                return True, friendly
+    # No permanent pattern matched — return last non-empty line as the message.
+    last = next((ln.strip() for ln in reversed(lines) if ln.strip()), "yt-dlp failed")
+    return False, last
 
 
 def platform_of(url: str) -> str:
@@ -107,6 +148,7 @@ def scrape(
     proxy: str | None = None,
     sleep_preset: bool = True,
     cookies_from_browser: str | None = None,
+    po_token: str | None = None,
 ) -> ScrapeResult:
     """Download a single URL. Returns a ScrapeResult with per-clip metadata."""
     result = ScrapeResult(url=url)
@@ -129,6 +171,7 @@ def scrape(
         "--print", "after_move:__DONE__ %(filepath)s",
     ]
     cmd += pacing_args(url, sleep_preset)
+    cmd += po_token_args(url, po_token)
     # A cookies.txt file wins; otherwise pull straight from a local browser
     # profile (only possible where a browser actually exists).
     if cookies_path and cookies_path.exists():
@@ -148,9 +191,9 @@ def scrape(
             final_paths.append(line[len("__DONE__ "):].strip())
 
     if proc.returncode != 0:
-        tail = proc.stderr.strip().splitlines()
-        raw = tail[-1] if tail else "yt-dlp failed"
-        result.permanent, result.error = classify_error(raw)
+        # Pass full stderr to classify_error — YouTube 403s often appear
+        # mid-output rather than on the last line.
+        result.permanent, result.error = classify_error(proc.stderr)
         return result
 
     if not final_paths:

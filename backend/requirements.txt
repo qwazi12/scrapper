@@ -6,4 +6,6 @@ pydantic-settings==2.7.1
 python-multipart==0.0.20
 psycopg2-binary==2.9.10
 httpx==0.28.1
-yt-dlp>=2024.12.0
+# yt-dlp: always install latest. YouTube changed its extractor heavily in 2026
+# (SABR protocol, PO tokens). Pinning an old version is the #1 cause of 403s.
+yt-dlp>=2026.9.1

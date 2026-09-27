@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     per_clip_delay_seconds: float = 2.0     # self-rate-limit between clips
     proxy_url: str = ""                     # Layer 4: yt-dlp --proxy (reserve)
 
+    # YouTube PO (Proof-of-Origin) token — required by YouTube when downloading
+    # from datacenter IPs (Railway). Without it, YouTube returns HTTP 403 or
+    # "Sign in to confirm you're not a bot". Set YTDLP_PO_TOKEN in Railway env.
+    # Guide: https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
+    ytdlp_po_token: str = ""
+
     # yt-dlp `-t sleep` preset: 0.75s between HTTP requests and a randomized
     # 10-20s pause between downloads. The single most effective anti-ban knob
     # on a headless server — keeps request patterns from looking automated.

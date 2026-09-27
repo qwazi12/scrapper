@@ -14,6 +14,12 @@ WORKDIR /srv
 COPY backend/requirements.txt /srv/backend/requirements.txt
 RUN pip install --no-cache-dir -r /srv/backend/requirements.txt
 
+# Force-upgrade yt-dlp independently so it is ALWAYS the latest release,
+# even when the requirements.txt version floor hasn't been bumped.
+# YouTube's extractor changes frequently; a stale yt-dlp is the #1 cause of
+# 403s on Railway. This layer is fast (single package, cached by Docker).
+RUN pip install --no-cache-dir -U yt-dlp
+
 # App code. The package root is /srv so `backend.app.main` resolves.
 COPY backend /srv/backend
 COPY scrape.py compile.py /srv/
