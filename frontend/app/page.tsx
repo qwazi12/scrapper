@@ -448,13 +448,15 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                 </td>
               </tr>
             )}
-            {clips.map((c, i) => (
+            {clips.map((c, i) => {
+              const isWaitingForMac = c.status === "failed" && Boolean(c.error?.includes("Mac worker"));
+              return (
               <tr
                 key={c.id}
                 style={{
                   background: i % 2 ? "var(--row-alt)" : "var(--row)",
                   borderTop: "1px solid var(--border)",
-                  opacity: c.status === "failed" ? 0.6 : 1,
+                  opacity: (c.status === "failed" && !isWaitingForMac) ? 0.6 : 1,
                 }}
               >
                 <Td>
@@ -485,7 +487,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                 </Td>
                 <Td>
                   <div style={{ fontWeight: 600 }}>{c.uploader || "—"}</div>
-                  <div style={{ color: "var(--muted)", maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ color: isWaitingForMac ? "var(--yellow)" : "var(--muted)", maxWidth: 480, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {c.title || c.error || <a href={c.source_url} target="_blank" rel="noreferrer">{c.source_url}</a>}
                   </div>
                 </Td>
@@ -493,7 +495,11 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                 <Td>{c.width && c.height ? `${c.width}×${c.height}` : "—"}</Td>
                 <Td>{fmtBytes(c.size_bytes)}</Td>
                 <Td>
-                  <span style={{ color: statusColor(c.status) }}>● {c.status}</span>
+                  {isWaitingForMac ? (
+                    <span style={{ color: "var(--yellow)" }}>● queued for mac</span>
+                  ) : (
+                    <span style={{ color: statusColor(c.status) }}>● {c.status}</span>
+                  )}
                 </Td>
                 <Td>
                   <ExpiryTag createdAt={c.created_at} retentionDays={retentionDays} />
@@ -504,7 +510,8 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                   </button>
                 </Td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

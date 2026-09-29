@@ -18,6 +18,7 @@ Install it as a background job with scripts/install_local_worker.sh.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import pathlib
 import subprocess
@@ -31,6 +32,11 @@ import uuid
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / "data" / "deploy.env"
 VERBOSE = False
+
+
+def log_msg(msg: str) -> None:
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] {msg}", flush=True)
 
 
 def _ssl_ctx():
@@ -172,27 +178,40 @@ def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dic
 def drain(server: str, token: str, browser: str | None) -> int:
     try:
         blocked = api_get(server, token, "/api/clips/blocked")
-    except urllib.error.URLError as exc:
-        print(f"  ! cannot reach server: {exc}")
+    except Exception as exc:
+        log_msg(f"! cannot reach server: {exc}")
         return 0
     if not blocked:
+        log_msg("checked queue: 0 blocked URLs")
         return 0
 
-    print(f"  {len(blocked)} blocked URL(s) to fetch locally")
+    log_msg(f"{len(blocked)} blocked URL(s) to fetch locally")
     done = 0
     for item in blocked:
         url, cid = item["source_url"], item["id"]
-        print(f"  → [{cid}] {url}")
+        log_msg(f"→ [{cid}] {url}")
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 video, info = download(url, pathlib.Path(tmp), browser)
                 mb = video.stat().st_size / 1e6
-                print(f"     downloaded {mb:.0f} MB — uploading…")
-                upload(server, token, cid, video, info)
-                print(f"     ✓ {info.get('title', url)[:60]}")
+                log_msg(f"   downloaded {mb:.0f} MB — uploading…")
+                # Retry upload up to 3 times in case of Railway restart / network blip
+                max_upload_tries = 3
+                for up_try in range(1, max_upload_tries + 1):
+                    try:
+                        upload(server, token, cid, video, info)
+                        break
+                    except Exception as up_exc:
+                        if up_try < max_upload_tries:
+                            wait_s = 5 * up_try
+                            log_msg(f"   upload attempt {up_try} failed ({up_exc}); retrying in {wait_s}s…")
+                            time.sleep(wait_s)
+                        else:
+                            raise
+                log_msg(f"   ✓ {info.get('title', url)[:60]}")
                 done += 1
             except Exception as exc:
-                print(f"     ✗ {exc}")
+                log_msg(f"   ✗ {exc}")
     return done
 
 
@@ -216,17 +235,17 @@ def main() -> int:
     browser = args.browser or None
     if not args.watch:
         n = drain(args.server, args.token, browser)
-        print(f"done — {n} clip(s) recovered")
+        log_msg(f"done — {n} clip(s) recovered")
         return 0
 
-    print(f"watching {args.server} every {args.interval}s (Ctrl-C to stop)")
+    log_msg(f"watching {args.server} every {args.interval}s (Ctrl-C to stop)")
     while True:
         try:
             drain(args.server, args.token, browser)
         except KeyboardInterrupt:
             return 0
         except Exception as exc:
-            print(f"  ! {exc}")
+            log_msg(f"! {exc}")
         time.sleep(args.interval)
 
 

@@ -65,7 +65,22 @@ def _process_ingest(job_id: int) -> None:
         job.status = Status.done
         job.finished_at = _now()
         s.commit()
-        log("info", "ingest_done", f"job {job_id}: {job.done_count} ok, {job.failed_count} failed")
+
+        # Check if any clips in this job are waiting for the residential local worker
+        clips = s.query(Clip).filter(Clip.job_id == job_id).all()
+        queued_count = sum(1 for c in clips if c.status == Status.failed and c.file_path is None and "Mac worker" in (c.error or ""))
+        other_failed = job.failed_count - queued_count
+
+        parts = []
+        if job.done_count > 0:
+            parts.append(f"{job.done_count} ok")
+        if queued_count > 0:
+            parts.append(f"{queued_count} queued for Mac worker")
+        if other_failed > 0:
+            parts.append(f"{other_failed} failed")
+        if not parts:
+            parts.append("0 ok")
+        log("info", "ingest_done", f"job {job_id}: {', '.join(parts)}")
 
 
 def _scrape_one(job_id: int, url: str) -> None:
@@ -78,6 +93,7 @@ def _scrape_one(job_id: int, url: str) -> None:
     log("info", "scrape_start", url, source=src)
 
     result = None
+    is_bot_blocked = False
     for attempt in range(1, settings.max_retries + 1):
         result = scrape(
             url,
@@ -92,9 +108,12 @@ def _scrape_one(job_id: int, url: str) -> None:
         if result.ok:
             break
         if result.permanent:
-            # No amount of retrying fixes auth/removed/blocked — and re-hitting a
-            # bot check is the exact pattern the platform is watching for.
-            log("warning", "scrape_blocked", f"{url}: {result.error}", source=src)
+            # Check if this failure is YouTube/platform blocking datacenter IP
+            err_lower = (result.error or "").lower()
+            if any(k in err_lower for k in ("blocked as a bot", "datacenter ip", "403", "bot check")):
+                is_bot_blocked = True
+            else:
+                log("warning", "scrape_blocked", f"{url}: {result.error}", source=src)
             break
         wait = settings.retry_backoff_seconds * (2 ** (attempt - 1))
         log("warning", "scrape_retry", f"{url} attempt {attempt} failed: {result.error}",
@@ -128,7 +147,13 @@ def _scrape_one(job_id: int, url: str) -> None:
             clip.error = (result.error if result else "unknown")[:500]
             job.failed_count += 1
             record_outcome(src, False)
-            log("error", "scrape_fail", f"{url}: {clip.error}", source=src)
+            if is_bot_blocked:
+                clip.error = "Transferred to Mac worker (residential download)"
+                log("info", "queued_for_local_worker",
+                    "Railway blocked by YouTube — transferred to your Mac worker for residential download.",
+                    source=src)
+            else:
+                log("error", "scrape_fail", f"{url}: {clip.error}", source=src)
         s.commit()
 
 
