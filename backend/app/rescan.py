@@ -70,6 +70,8 @@ def rescan_library(s: Session) -> dict:
     for clip in s.query(Clip).all():
         if clip.status in (Status.queued, Status.running):
             continue
+        if clip.status == Status.failed and not clip.file_path:
+            continue  # blocked — waiting for the local worker
         if not clip.file_path or clip.file_path not in mp4_paths:
             s.delete(clip)
             pruned_clips += 1
