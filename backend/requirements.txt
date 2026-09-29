@@ -8,6 +8,6 @@ psycopg2-binary==2.9.10
 httpx==0.28.1
 # yt-dlp: always install latest. YouTube changed its extractor heavily in 2026
 # (SABR protocol, PO tokens). Pinning an old version is the #1 cause of 403s.
-# NOTE: the Dockerfile runs `pip install -U yt-dlp` after this, so Railway
-# always gets the absolute latest regardless of this floor.
-yt-dlp>=2026.8.1
+# NOTE: the Dockerfile runs `yt-dlp -U` after this, so Railway always gets
+# the absolute latest regardless of this floor.
+yt-dlp>=2026.8.19

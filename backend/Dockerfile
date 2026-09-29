@@ -30,4 +30,5 @@ ENV PORT=8000
 EXPOSE 8000
 
 # Railway provides $PORT. In-process worker runs unless WORKER_MODE=web_only.
-CMD ["sh", "-c", "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Self-update yt-dlp on every start so YouTube extraction never goes stale.
+CMD ["sh", "-c", "yt-dlp -U --no-color 2>&1 | tail -2 && python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
