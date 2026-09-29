@@ -143,9 +143,14 @@ def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dic
     add_file("file", video, "video/mp4")
     if thumb.exists():
         add_file("thumb", thumb, "image/jpeg")
+    # Only the fields the server reads — a full YouTube info.json is >1 MB and
+    # Starlette rejects form fields over 1 MB with a 400.
+    keep = ("id", "title", "uploader", "uploader_id", "duration", "width", "height",
+            "extractor", "webpage_url", "original_url")
+    meta = {k: info[k] for k in keep if k in info}
     parts.append(
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"meta\"\r\n\r\n".encode()
-        + json.dumps(info).encode() + b"\r\n"
+        + json.dumps(meta).encode() + b"\r\n"
     )
     parts.append(f"--{boundary}--\r\n".encode())
     body = b"".join(parts)
