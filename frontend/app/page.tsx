@@ -293,6 +293,7 @@ export default function Page() {
             <SettingsBar onSaved={refresh} />
             <IngestPanel onIngested={refresh} />
             <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+            <LogsPanel logs={logs} />
           </div>
         )}
 
