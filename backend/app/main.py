@@ -547,6 +547,19 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         except Exception:
             pass
 
+    # Idempotency guard: prevent duplicate queue items
+    existing = None
+    if req.drive_link:
+        existing = s.query(QueueItem).filter(QueueItem.drive_link == req.drive_link).first()
+    elif video_name and req.pipeline:
+        existing = s.query(QueueItem).filter(
+            QueueItem.video_name == video_name,
+            QueueItem.pipeline == (req.pipeline or "default")
+        ).first()
+
+    if existing:
+        return existing
+
     item = QueueItem(
         compilation_id=req.compilation_id,
         clip_id=req.clip_id,
@@ -691,19 +704,19 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
 def sync_drive_folder(req: DriveSyncRequest, s: Session = Depends(get_session)):
     """
     Sync video files from a Google Drive folder into the channel's posting queue.
+    Automatically handles channel subfolders (e.g. @VynixAE, @PixelDrift-f3c).
     """
-    import os
-    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    api_key = os.environ.get("GOOGLE_API_KEY")
+    from .drive_sync import sync_drive_to_queue
 
-    if not sa_json and not api_key:
-        logbus.log("warn", "drive_sync_no_auth", f"Attempted sync on folder {req.folder_id} without Google credentials")
-        return {
-            "ok": False,
-            "message": (
-                "Google Drive authentication is required. Share the folder with your service account "
-                f"or run `python3 scripts/sync_drive.py --folder-id {req.folder_id}` from your Mac."
-            ),
-        }
-
-    return {"ok": True, "message": f"Sync queued for folder {req.folder_id} ({req.pipeline})"}
+    try:
+        folder_target = req.folder_url or req.folder_id
+        res = sync_drive_to_queue(
+            folder_url_or_id=folder_target,
+            default_pipeline=req.pipeline,
+            auto_approve=req.auto_approve,
+            db_session=s,
+        )
+        return res
+    except Exception as exc:
+        logbus.log("error", "drive_sync_failed", f"Drive sync failed for {req.folder_id}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))

@@ -232,10 +232,32 @@ export function QueuePanel({
             }}
           >
             <option value="all">All Channels / Sheets</option>
-            <option value="Movie Clips">Movie Clips</option>
-            <option value="Abyss Declassified">Abyss Declassified</option>
-            <option value="The ICK Room">The ICK Room</option>
-            <option value="default">Default</option>
+            {Array.from(
+              new Set([
+                "Movie Clips",
+                "@VynixAE",
+                "@PixelDrift-f3c",
+                "@SolarrEditss",
+                "@AlphaReels-1",
+                "@EditAetheris",
+                "@CoruscateCuts",
+                "@FrameLegion",
+                "@roebutt",
+                "@TheUsJournal17",
+                "@SceneVale",
+                "@QianaLucy",
+                "@clipscav",
+                "@hanganhoang3071",
+                "@comet-cinema",
+                "Abyss Declassified",
+                "The ICK Room",
+                ...items.map((i) => i.pipeline).filter(Boolean),
+              ])
+            ).map((ch) => (
+              <option key={ch} value={ch}>
+                {ch}
+              </option>
+            ))}
           </select>
 
           {/* Bulk Actions */}

@@ -11,3 +11,5 @@ httpx==0.28.1
 # NOTE: the Dockerfile runs `yt-dlp -U` after this, so Railway always gets
 # the absolute latest regardless of this floor.
 yt-dlp>=2026.8.19
+google-api-python-client>=2.150.0
+google-auth>=2.35.0
