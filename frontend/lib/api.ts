@@ -83,6 +83,29 @@ export type SocialPost = {
   created_at: string;
 };
 
+export type QueueItem = {
+  id: number;
+  compilation_id: number | null;
+  clip_id: number | null;
+  pipeline: string;
+  video_name: string;
+  video_path: string | null;
+  thumb_path: string | null;
+  drive_link: string | null;
+  source: string | null;
+  title: string;
+  description: string;
+  tags: string;
+  accounts: string[];
+  status: string; // "review" | "ready" | "posting" | "posted" | "retry" | "error" | "archived"
+  notes: string | null;
+  scheduled_at: string | null;
+  published_at: string | null;
+  outstand_post_id: string | null;
+  media_url: string | null;
+  created_at: string;
+};
+
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export function apiBase(): string {
@@ -212,6 +235,71 @@ export const api = {
     }),
 
   socialPosts: () => req<SocialPost[]>("/api/social/posts", { headers: headers(false) }),
+
+  queue: (pipeline?: string, status?: string) => {
+    const params = new URLSearchParams();
+    if (pipeline && pipeline !== "all") params.set("pipeline", pipeline);
+    if (status && status !== "all") params.set("status", status);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return req<QueueItem[]>(`/api/queue${qs}`, { headers: headers(false) });
+  },
+
+  createQueueItem: (data: {
+    compilation_id?: number;
+    clip_id?: number;
+    pipeline?: string;
+    title?: string;
+    description?: string;
+    tags?: string;
+    source?: string;
+    drive_link?: string;
+    accounts?: string[];
+    status?: string;
+    scheduled_at?: string;
+  }) =>
+    req<QueueItem>("/api/queue", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(data),
+    }),
+
+  updateQueueItem: (id: number, data: Partial<QueueItem>) =>
+    req<QueueItem>(`/api/queue/${id}`, {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify(data),
+    }),
+
+  approveQueueItem: (id: number) =>
+    req<QueueItem>(`/api/queue/${id}/approve`, {
+      method: "POST",
+      headers: headers(),
+    }),
+
+  publishQueueItem: (id: number) =>
+    req<QueueItem>(`/api/queue/${id}/publish`, {
+      method: "POST",
+      headers: headers(),
+    }),
+
+  generateQueueAi: (id: number) =>
+    req<QueueItem>(`/api/queue/${id}/generate-ai`, {
+      method: "POST",
+      headers: headers(),
+    }),
+
+  deleteQueueItem: (id: number) =>
+    req<{ deleted: number }>(`/api/queue/${id}`, {
+      method: "DELETE",
+      headers: headers(false),
+    }),
+
+  bulkQueueAction: (ids: number[], action: string, pipeline?: string) =>
+    req<{ ok: boolean; count: number; action: string }>("/api/queue/bulk-action", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ ids, action, pipeline }),
+    }),
 };
 
 /** Days left before the retention sweep deletes this item ("2d", "today", null). */

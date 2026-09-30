@@ -103,3 +103,62 @@ class SocialPostOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QueueItemCreate(BaseModel):
+    compilation_id: int | None = None
+    clip_id: int | None = None
+    pipeline: str = "default"
+    title: str = ""
+    description: str = ""
+    tags: str = ""
+    source: str | None = None
+    drive_link: str | None = None
+    accounts: list[str] = []
+    status: str = "review"
+    scheduled_at: str | None = None
+
+
+class QueueItemUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    tags: str | None = None
+    source: str | None = None
+    drive_link: str | None = None
+    pipeline: str | None = None
+    status: str | None = None
+    accounts: list[str] | None = None
+    scheduled_at: str | None = None
+    notes: str | None = None
+
+
+class QueueItemOut(BaseModel):
+    id: int
+    compilation_id: int | None
+    clip_id: int | None
+    pipeline: str
+    video_name: str
+    video_path: str | None
+    thumb_path: str | None
+    drive_link: str | None
+    source: str | None
+    title: str
+    description: str
+    tags: str
+    accounts: list
+    status: str
+    notes: str | None
+    scheduled_at: datetime.datetime | None
+    published_at: datetime.datetime | None
+    outstand_post_id: str | None
+    media_url: str | None
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+
+class QueueBulkAction(BaseModel):
+    ids: list[int]
+    action: str  # "approve", "archive", "delete", "generate_ai"
+    pipeline: str | None = None

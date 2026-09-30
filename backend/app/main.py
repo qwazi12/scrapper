@@ -23,7 +23,7 @@ from . import cleanup, logbus, rescan, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
-from .models import Clip, Compilation, IngestJob, LogEntry, SocialPost, Status
+from .models import Clip, Compilation, IngestJob, LogEntry, QueueItem, SocialPost, Status
 from .schemas import (
     ClipOut,
     CompilationOut,
@@ -32,11 +32,15 @@ from .schemas import (
     LogOut,
     MetadataGenerateRequest,
     MetadataGenerateResponse,
+    QueueBulkAction,
+    QueueItemCreate,
+    QueueItemOut,
+    QueueItemUpdate,
     SelectRequest,
     SocialPostOut,
     SocialPublishRequest,
 )
-from .social import metadata as social_metadata, outstand
+from .social import metadata as social_metadata, outstand, queue_manager
 
 app = FastAPI(title="Scrapper API", version="1.0")
 
@@ -63,6 +67,7 @@ def _startup() -> None:
         logbus.log("error", "startup_rescan_failed", str(exc))
     if settings.worker_mode != "web_only":
         worker.start_background()
+        queue_manager.start_scheduler_thread()
     logbus.log("info", "startup", f"API up (worker_mode={settings.worker_mode})")
 
 
@@ -465,3 +470,204 @@ async def publish_social_post(req: SocialPublishRequest, s: Session = Depends(ge
 @app.get("/api/social/posts", response_model=list[SocialPostOut], dependencies=_AUTH)
 def list_social_posts(s: Session = Depends(get_session)) -> list[SocialPost]:
     return s.query(SocialPost).order_by(desc(SocialPost.id)).limit(50).all()
+
+
+# --- posting queue & content calendar (Google Sheets replacement) ----------
+@app.get("/api/queue", response_model=list[QueueItemOut], dependencies=_AUTH)
+def list_queue(
+    pipeline: str | None = None,
+    status: str | None = None,
+    s: Session = Depends(get_session),
+) -> list[QueueItem]:
+    q = s.query(QueueItem)
+    if pipeline and pipeline != "all":
+        q = q.filter(QueueItem.pipeline == pipeline)
+    if status and status != "all":
+        q = q.filter(QueueItem.status == status)
+    return q.order_by(desc(QueueItem.id)).all()
+
+
+@app.post("/api/queue", response_model=QueueItemOut, dependencies=_AUTH)
+async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_session)):
+    video_path = None
+    thumb_path = None
+    video_name = req.title or "Untitled"
+    source = req.source
+
+    if req.compilation_id:
+        comp = s.get(Compilation, req.compilation_id)
+        if not comp:
+            raise HTTPException(404, "compilation not found")
+        video_path = comp.output_path
+        video_name = f"Compilation #{comp.id}"
+        if not source:
+            source = f"Compilation ({comp.orientation}, {len(comp.clip_ids)} clips)"
+        if not req.title:
+            clip_titles = []
+            if comp.clip_ids:
+                clips = s.query(Clip).filter(Clip.id.in_(comp.clip_ids)).all()
+                clip_titles = [c.title for c in clips if c.title]
+            ai_res = await social_metadata.generate_social_metadata(clip_titles)
+            req.title = ai_res.get("title", video_name)
+            if not req.description:
+                req.description = ai_res.get("caption", "")
+            if not req.tags:
+                req.tags = " ".join(ai_res.get("hashtags", []))
+
+    elif req.clip_id:
+        clip = s.get(Clip, req.clip_id)
+        if not clip:
+            raise HTTPException(404, "clip not found")
+        video_path = clip.file_path
+        thumb_path = clip.thumb_path
+        video_name = clip.title or f"Clip #{clip.id}"
+        if not source:
+            source = clip.uploader or clip.platform or "Clip"
+        if not req.title:
+            req.title = clip.title or video_name
+
+    sched_dt = None
+    if req.scheduled_at:
+        try:
+            sched_dt = datetime.datetime.fromisoformat(req.scheduled_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    item = QueueItem(
+        compilation_id=req.compilation_id,
+        clip_id=req.clip_id,
+        pipeline=req.pipeline or "default",
+        video_name=video_name,
+        video_path=video_path,
+        thumb_path=thumb_path,
+        drive_link=req.drive_link,
+        source=source,
+        title=req.title or video_name,
+        description=req.description,
+        tags=req.tags,
+        accounts=req.accounts,
+        status=req.status or "review",
+        scheduled_at=sched_dt,
+    )
+    s.add(item)
+    s.commit()
+    s.refresh(item)
+    logbus.log("info", "queue_created", f"Queue item #{item.id} ('{item.title[:40]}') [{item.status}]")
+    return item
+
+
+@app.patch("/api/queue/{item_id}", response_model=QueueItemOut, dependencies=_AUTH)
+def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(get_session)):
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+
+    if req.title is not None:
+        item.title = req.title
+    if req.description is not None:
+        item.description = req.description
+    if req.tags is not None:
+        item.tags = req.tags
+    if req.source is not None:
+        item.source = req.source
+    if req.drive_link is not None:
+        item.drive_link = req.drive_link
+    if req.pipeline is not None:
+        item.pipeline = req.pipeline
+    if req.status is not None:
+        item.status = req.status
+    if req.accounts is not None:
+        item.accounts = req.accounts
+    if req.notes is not None:
+        item.notes = req.notes
+    if req.scheduled_at is not None:
+        if req.scheduled_at == "":
+            item.scheduled_at = None
+        else:
+            try:
+                item.scheduled_at = datetime.datetime.fromisoformat(req.scheduled_at.replace("Z", "+00:00"))
+            except Exception:
+                pass
+
+    s.commit()
+    s.refresh(item)
+    return item
+
+
+@app.post("/api/queue/{item_id}/approve", response_model=QueueItemOut, dependencies=_AUTH)
+def approve_queue_item(item_id: int, s: Session = Depends(get_session)):
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    item.status = "ready"
+    s.commit()
+    s.refresh(item)
+    logbus.log("info", "queue_approved", f"Item #{item.id} approved -> ready to post")
+    return item
+
+
+@app.post("/api/queue/{item_id}/publish", response_model=QueueItemOut, dependencies=_AUTH)
+async def publish_queue_item_now(item_id: int, s: Session = Depends(get_session)):
+    try:
+        item = await queue_manager.publish_queue_item(item_id, s)
+        return item
+    except Exception as exc:
+        raise HTTPException(502, f"Publishing failed: {exc}")
+
+
+@app.post("/api/queue/{item_id}/generate-ai", response_model=QueueItemOut, dependencies=_AUTH)
+async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)):
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+
+    clip_titles = [item.title or item.video_name]
+    if item.compilation_id:
+        comp = s.get(Compilation, item.compilation_id)
+        if comp and comp.clip_ids:
+            clips = s.query(Clip).filter(Clip.id.in_(comp.clip_ids)).all()
+            clip_titles = [c.title for c in clips if c.title]
+
+    res = await social_metadata.generate_social_metadata(clip_titles)
+    item.title = res.get("title", item.title)
+    item.description = res.get("caption", item.description)
+    item.tags = " ".join(res.get("hashtags", []))
+    s.commit()
+    s.refresh(item)
+    return item
+
+
+@app.delete("/api/queue/{item_id}", dependencies=_AUTH)
+def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    s.delete(item)
+    s.commit()
+    return {"deleted": item_id}
+
+
+@app.post("/api/queue/bulk-action", dependencies=_AUTH)
+def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -> dict:
+    items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
+    count = len(items)
+
+    if req.action == "approve":
+        for it in items:
+            it.status = "ready"
+        s.commit()
+        logbus.log("info", "queue_bulk_approved", f"Approved {count} items -> ready to post")
+    elif req.action == "archive":
+        for it in items:
+            it.status = "archived"
+        s.commit()
+        logbus.log("info", "queue_bulk_archived", f"Archived {count} items")
+    elif req.action == "delete":
+        for it in items:
+            s.delete(it)
+        s.commit()
+        logbus.log("info", "queue_bulk_deleted", f"Deleted {count} items")
+    else:
+        raise HTTPException(400, f"Unknown action: {req.action}")
+
+    return {"ok": True, "count": count, "action": req.action}

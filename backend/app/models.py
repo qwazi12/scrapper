@@ -104,3 +104,37 @@ class SocialPost(Base):
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class QueueItem(Base):
+    """Posting Queue replacing Google Sheets with a rich relational table.
+
+    Matches the 9-column Google Sheet structure:
+    ID | Video Name | Drive Link | Title | Description | Tags | Status | Notes | Source
+    Plus integration with Outstand, compilations, and the automated scheduler.
+    """
+    __tablename__ = "queue_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    compilation_id: Mapped[int | None] = mapped_column(ForeignKey("compilations.id"), nullable=True)
+    clip_id: Mapped[int | None] = mapped_column(ForeignKey("clips.id"), nullable=True)
+    pipeline: Mapped[str] = mapped_column(String(64), default="default", index=True)
+    video_name: Mapped[str] = mapped_column(String(255), default="")
+    video_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    thumb_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    drive_link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    title: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[str] = mapped_column(Text, default="")
+
+    accounts: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="review", index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    scheduled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outstand_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    media_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

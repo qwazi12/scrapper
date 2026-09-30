@@ -12,6 +12,7 @@ import {
   Stats,
 } from "@/lib/api";
 import { PublishModal } from "./PublishModal";
+import { QueuePanel } from "./QueuePanel";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -60,6 +61,7 @@ export default function Page() {
       <IngestPanel onIngested={refresh} />
       <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
       <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+      <QueuePanel onChange={refresh} />
       <LogsPanel logs={logs} />
     </main>
   );
@@ -509,9 +511,24 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                   <ExpiryTag createdAt={c.created_at} retentionDays={retentionDays} />
                 </Td>
                 <Td>
-                  <button className="danger" onClick={() => del(c)} style={{ padding: "3px 7px" }}>
-                    ✕
-                  </button>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {c.status === "done" && (
+                      <button
+                        style={{ padding: "3px 6px", fontSize: 11, background: "var(--chip)", color: "var(--text)" }}
+                        onClick={async () => {
+                          await api.createQueueItem({ clip_id: c.id, pipeline: "Movie Clips", status: "review" });
+                          onChange();
+                          alert(`Added Clip #${c.id} to Posting Queue!`);
+                        }}
+                        title="Add this clip to the Posting Queue"
+                      >
+                        + Queue
+                      </button>
+                    )}
+                    <button className="danger" onClick={() => del(c)} style={{ padding: "3px 7px" }}>
+                      ✕
+                    </button>
+                  </div>
                 </Td>
               </tr>
               );
@@ -666,6 +683,19 @@ function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[];
                   onClick={() => setPublishComp(c)}
                 >
                   🚀 Post / Schedule
+                </button>
+              )}
+              {c.status === "done" && (
+                <button
+                  style={{ background: "#1e293b", borderColor: "#334155", color: "#38bdf8" }}
+                  onClick={async () => {
+                    await api.createQueueItem({ compilation_id: c.id, pipeline: "Movie Clips", status: "review" });
+                    onChange();
+                    alert(`Added Compilation #${c.id} to Posting Queue!`);
+                  }}
+                  title="Add to Posting Queue"
+                >
+                  + Queue
                 </button>
               )}
               {c.status === "done" && (
