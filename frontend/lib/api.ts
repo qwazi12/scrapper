@@ -300,6 +300,13 @@ export const api = {
       headers: headers(),
       body: JSON.stringify({ ids, action, pipeline }),
     }),
+
+  syncDrive: (data: { folder_url?: string; folder_id: string; pipeline?: string; auto_approve?: boolean }) =>
+    req<{ ok: boolean; message: string }>("/api/drive/sync", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(data),
+    }),
 };
 
 /** Days left before the retention sweep deletes this item ("2d", "today", null). */

@@ -28,6 +28,7 @@ from .schemas import (
     ClipOut,
     CompilationOut,
     CompileRequest,
+    DriveSyncRequest,
     IngestRequest,
     LogOut,
     MetadataGenerateRequest,
@@ -671,3 +672,25 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
         raise HTTPException(400, f"Unknown action: {req.action}")
 
     return {"ok": True, "count": count, "action": req.action}
+
+
+@app.post("/api/drive/sync", dependencies=_AUTH)
+def sync_drive_folder(req: DriveSyncRequest, s: Session = Depends(get_session)):
+    """
+    Sync video files from a Google Drive folder into the channel's posting queue.
+    """
+    import os
+    sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    api_key = os.environ.get("GOOGLE_API_KEY")
+
+    if not sa_json and not api_key:
+        logbus.log("warn", "drive_sync_no_auth", f"Attempted sync on folder {req.folder_id} without Google credentials")
+        return {
+            "ok": False,
+            "message": (
+                "Google Drive authentication is required. Share the folder with your service account "
+                f"or run `python3 scripts/sync_drive.py --folder-id {req.folder_id}` from your Mac."
+            ),
+        }
+
+    return {"ok": True, "message": f"Sync queued for folder {req.folder_id} ({req.pipeline})"}

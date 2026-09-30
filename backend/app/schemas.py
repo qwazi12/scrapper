@@ -162,3 +162,11 @@ class QueueBulkAction(BaseModel):
     ids: list[int]
     action: str  # "approve", "archive", "delete", "generate_ai"
     pipeline: str | None = None
+
+
+class DriveSyncRequest(BaseModel):
+    folder_url: str | None = None
+    folder_id: str
+    pipeline: str = "Movie Clips"
+    auto_approve: bool = False
+

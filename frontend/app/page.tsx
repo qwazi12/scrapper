@@ -13,6 +13,9 @@ import {
 } from "@/lib/api";
 import { PublishModal } from "./PublishModal";
 import { QueuePanel } from "./QueuePanel";
+import { DrivePanel } from "./DrivePanel";
+
+type NavTab = "queue" | "clips" | "ingest" | "comps" | "drive" | "logs" | "settings" | "all";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -20,13 +23,22 @@ export default function Page() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [queueCount, setQueueCount] = useState<number>(0);
+  const [activeTab, setActiveTab] = useState<NavTab>("queue");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [c, cm, st] = await Promise.all([api.clips(), api.compilations(), api.stats()]);
+      const [c, cm, st, q] = await Promise.all([
+        api.clips(),
+        api.compilations(),
+        api.stats(),
+        api.queue().catch(() => []),
+      ]);
       setClips(c);
       setComps(cm);
       setStats(st);
+      setQueueCount(q.length);
       setConnected(true);
     } catch {
       setConnected(false);
@@ -41,7 +53,24 @@ export default function Page() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Live log stream via SSE (token rides as a query param — EventSource can't set headers).
+  // Sync hash with active tab if set in URL
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "") as NavTab;
+      if (["queue", "clips", "ingest", "comps", "drive", "logs", "settings", "all"].includes(hash)) {
+        setActiveTab(hash);
+      }
+    }
+  }, []);
+
+  function handleTabSelect(tab: NavTab) {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      window.location.hash = tab;
+    }
+  }
+
+  // Live log stream via SSE
   useEffect(() => {
     const es = new EventSource(api.eventsUrl());
     es.onmessage = (e) => {
@@ -54,16 +83,394 @@ export default function Page() {
     return () => es.close();
   }, []);
 
+  const readyQueueCount = queueCount;
+  const doneClipsCount = clips.filter((c) => c.status === "done").length;
+
   return (
-    <main style={{ maxWidth: 1500, margin: "0 auto", padding: "0 16px 60px" }}>
-      <StatusBar stats={stats} connected={connected} clips={clips} comps={comps} />
-      <SettingsBar onSaved={refresh} />
-      <IngestPanel onIngested={refresh} />
-      <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-      <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-      <QueuePanel onChange={refresh} />
-      <LogsPanel logs={logs} />
-    </main>
+    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
+      {/* ─── REACTIVE SIDEBAR ────────────────────────────────────── */}
+      <aside
+        style={{
+          width: sidebarCollapsed ? 76 : 280,
+          transition: "width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          background: "#0c0e14",
+          borderRight: "1px solid var(--border)",
+          display: "flex",
+          flexDirection: "column",
+          position: "sticky",
+          top: 0,
+          height: "100vh",
+          zIndex: 100,
+          flexShrink: 0,
+        }}
+      >
+        {/* Brand Header */}
+        <div
+          style={{
+            padding: sidebarCollapsed ? "18px 12px" : "18px 20px",
+            borderBottom: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: sidebarCollapsed ? "center" : "space-between",
+          }}
+        >
+          {!sidebarCollapsed ? (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 18 }}>🎬</span>
+                <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: "-0.02em", color: "#f8fafc" }}>
+                  Scrapper
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "var(--accent)",
+                    background: "#064e3b",
+                    padding: "2px 6px",
+                    borderRadius: 8,
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  STUDIO
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                Social Media Pipeline & Queue
+              </div>
+            </div>
+          ) : (
+            <span style={{ fontSize: 22 }}>🎬</span>
+          )}
+
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            style={{
+              padding: 6,
+              background: "transparent",
+              border: "1px solid var(--border)",
+              color: "var(--muted)",
+              borderRadius: 6,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {sidebarCollapsed ? "→" : "←"}
+          </button>
+        </div>
+
+        {/* Navigation Items */}
+        <nav style={{ padding: "16px 10px", display: "flex", flexDirection: "column", gap: 6, flex: 1, overflowY: "auto" }}>
+          {/* 1. Posting Queue (Google Sheets Experience) */}
+          <NavButton
+            active={activeTab === "queue"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("queue")}
+            icon="📋"
+            title="Posting Queue & Schedule"
+            subtitle="Google Sheets Pipeline"
+            badge={`${readyQueueCount} items`}
+            badgeColor={readyQueueCount > 0 ? "var(--accent)" : "var(--muted)"}
+            badgeBg={readyQueueCount > 0 ? "#064e3b" : "#1e293b"}
+          />
+
+          {/* 2. Storyboard & Clips */}
+          <NavButton
+            active={activeTab === "clips"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("clips")}
+            icon="🎬"
+            title="Storyboard & Clips"
+            subtitle="Trim, reframe & edit"
+            badge={`${doneClipsCount} clips`}
+            badgeColor="#38bdf8"
+            badgeBg="#0c4a6e"
+          />
+
+          {/* 3. Ingest & Scraper */}
+          <NavButton
+            active={activeTab === "ingest"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("ingest")}
+            icon="📥"
+            title="Ingest & Scraper"
+            subtitle="Mac Worker residential"
+            badge={connected ? "Active" : "Offline"}
+            badgeColor={connected ? "#34d399" : "#f87171"}
+            badgeBg={connected ? "#064e3b" : "#450a0a"}
+          />
+
+          {/* 4. Compilations & Stitching */}
+          <NavButton
+            active={activeTab === "comps"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("comps")}
+            icon="🎞️"
+            title="Compilations & Exports"
+            subtitle="Multi-clip renders"
+            badge={`${comps.length} comps`}
+            badgeColor="#fbbf24"
+            badgeBg="#78350f"
+          />
+
+          {/* 5. Google Drive Ingestion */}
+          <NavButton
+            active={activeTab === "drive"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("drive")}
+            icon="☁️"
+            title="Google Drive Sync"
+            subtitle="Pull videos by channel"
+            badge="Sync"
+            badgeColor="#a78bfa"
+            badgeBg="#4c1d95"
+          />
+
+          {/* 6. Live System Logs */}
+          <NavButton
+            active={activeTab === "logs"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("logs")}
+            icon="📜"
+            title="Live Activity Logs"
+            subtitle="Real-time SSE worker feed"
+          />
+
+          {/* 7. Settings & Social Accounts */}
+          <NavButton
+            active={activeTab === "settings"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("settings")}
+            icon="⚙️"
+            title="Settings & Channels"
+            subtitle="Outstand & API credentials"
+          />
+
+          <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+
+          {/* All Views Option */}
+          <NavButton
+            active={activeTab === "all"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("all")}
+            icon="🌟"
+            title="All-in-One Studio"
+            subtitle="Stacked overview"
+          />
+        </nav>
+
+        {/* Sidebar Footer: Health & Storage Meter */}
+        <div
+          style={{
+            padding: sidebarCollapsed ? 12 : 16,
+            borderTop: "1px solid var(--border)",
+            background: "#080a0e",
+            fontSize: 11,
+          }}
+        >
+          {!sidebarCollapsed ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "var(--muted)" }}>Volume Storage</span>
+                <span className="mono" style={{ color: "#e6e9ef", fontWeight: 600 }}>
+                  {fmtBytes(stats?.storage_bytes ?? 0)} / 5 GB
+                </span>
+              </div>
+              <div
+                style={{
+                  height: 4,
+                  width: "100%",
+                  background: "#1e222b",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${Math.min(100, Math.round(((stats?.storage_bytes ?? 0) / (5 * 1024 * 1024 * 1024)) * 100))}%`,
+                    background: "var(--accent)",
+                  }}
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
+                <span style={{ color: connected ? "var(--accent)" : "var(--red)", display: "flex", alignItems: "center", gap: 5 }}>
+                  <span>{connected ? "●" : "○"}</span> {connected ? "Railway Live" : "Disconnected"}
+                </span>
+                <span style={{ color: "var(--muted)" }}>v2.4 Outstand</span>
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", color: connected ? "var(--accent)" : "var(--red)" }}>
+              ●
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* ─── MAIN CONTENT VIEWPORT ───────────────────────────────── */}
+      <main style={{ flex: 1, minWidth: 0, padding: "0 24px 60px", overflowY: "auto" }}>
+        <StatusBar stats={stats} connected={connected} clips={clips} comps={comps} />
+
+        {/* Dedicated Tab 1: POSTING QUEUE (Google Sheets Experience) */}
+        {activeTab === "queue" && (
+          <div>
+            <QueuePanel onChange={refresh} />
+          </div>
+        )}
+
+        {/* Dedicated Tab 2: STORYBOARD & CLIPS */}
+        {activeTab === "clips" && (
+          <div>
+            <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+          </div>
+        )}
+
+        {/* Dedicated Tab 3: INGEST & SCRAPER */}
+        {activeTab === "ingest" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <IngestPanel onIngested={refresh} />
+            <DrivePanel onIngested={refresh} />
+          </div>
+        )}
+
+        {/* Dedicated Tab 4: COMPILATIONS & EXPORTS */}
+        {activeTab === "comps" && (
+          <div>
+            <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+          </div>
+        )}
+
+        {/* Dedicated Tab 5: GOOGLE DRIVE SYNC */}
+        {activeTab === "drive" && (
+          <div>
+            <DrivePanel onIngested={refresh} />
+          </div>
+        )}
+
+        {/* Dedicated Tab 6: LIVE LOGS */}
+        {activeTab === "logs" && (
+          <div>
+            <LogsPanel logs={logs} />
+          </div>
+        )}
+
+        {/* Dedicated Tab 7: SETTINGS & SOCIAL CHANNELS */}
+        {activeTab === "settings" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <SettingsBar onSaved={refresh} />
+          </div>
+        )}
+
+        {/* All-in-One Studio View */}
+        {activeTab === "all" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <SettingsBar onSaved={refresh} />
+            <IngestPanel onIngested={refresh} />
+            <DrivePanel onIngested={refresh} />
+            <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+            <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+            <QueuePanel onChange={refresh} />
+            <LogsPanel logs={logs} />
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+function NavButton({
+  active,
+  collapsed,
+  onClick,
+  icon,
+  title,
+  subtitle,
+  badge,
+  badgeColor,
+  badgeBg,
+}: {
+  active: boolean;
+  collapsed: boolean;
+  onClick: () => void;
+  icon: string;
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  badgeColor?: string;
+  badgeBg?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: collapsed ? "12px 0" : "10px 14px",
+        justifyContent: collapsed ? "center" : "flex-start",
+        width: "100%",
+        textAlign: "left",
+        borderRadius: 8,
+        border: active ? "1px solid #334155" : "1px solid transparent",
+        background: active ? "#1e293b" : "transparent",
+        color: active ? "#f8fafc" : "#94a3b8",
+        cursor: "pointer",
+        transition: "all 0.15s ease",
+        position: "relative",
+      }}
+      title={collapsed ? title : undefined}
+    >
+      <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{icon}</span>
+
+      {!collapsed && (
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+            <span style={{ fontWeight: active ? 700 : 500, fontSize: 13, color: active ? "#fff" : "inherit" }}>
+              {title}
+            </span>
+            {badge && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: badgeColor || "#fff",
+                  background: badgeBg || "#334155",
+                  padding: "1px 6px",
+                  borderRadius: 10,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {badge}
+              </span>
+            )}
+          </div>
+          {subtitle && (
+            <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {subtitle}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Active accent pill on left */}
+      {active && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 6,
+            bottom: 6,
+            width: 3,
+            background: "var(--accent)",
+            borderRadius: "0 3px 3px 0",
+          }}
+        />
+      )}
+    </button>
   );
 }
 
