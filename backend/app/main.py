@@ -6,6 +6,7 @@ Sections:  ingest (paste links) · clips (storyboard table) · compile (Extract)
 
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import queue
@@ -22,15 +23,20 @@ from . import cleanup, logbus, rescan, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
-from .models import Clip, Compilation, IngestJob, LogEntry, Status
+from .models import Clip, Compilation, IngestJob, LogEntry, SocialPost, Status
 from .schemas import (
     ClipOut,
     CompilationOut,
     CompileRequest,
     IngestRequest,
     LogOut,
+    MetadataGenerateRequest,
+    MetadataGenerateResponse,
     SelectRequest,
+    SocialPostOut,
+    SocialPublishRequest,
 )
+from .social import metadata as social_metadata, outstand
 
 app = FastAPI(title="Scrapper API", version="1.0")
 
@@ -355,3 +361,107 @@ def events():
             logbus.unsubscribe(q)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# --- social publishing & AI metadata (Outstand + Gemini) -------------------
+@app.get("/api/social/accounts", dependencies=_AUTH)
+async def list_social_accounts() -> dict:
+    if not settings.outstand_api_key:
+        return {"configured": False, "accounts": [], "message": "OUTSTAND_API_KEY is not set"}
+    try:
+        accounts = await outstand.list_social_accounts()
+        return {"configured": True, "accounts": accounts}
+    except Exception as exc:
+        raise HTTPException(502, f"Outstand API error: {exc}")
+
+
+@app.post("/api/social/generate-metadata", response_model=MetadataGenerateResponse, dependencies=_AUTH)
+async def generate_metadata(req: MetadataGenerateRequest, s: Session = Depends(get_session)):
+    comp = s.get(Compilation, req.compilation_id)
+    if not comp:
+        raise HTTPException(404, "compilation not found")
+
+    clip_titles = []
+    if comp.clip_ids:
+        clips = s.query(Clip).filter(Clip.id.in_(comp.clip_ids)).all()
+        clip_titles = [c.title for c in clips if c.title]
+
+    res = await social_metadata.generate_social_metadata(
+        clip_titles=clip_titles,
+        user_prompt=req.prompt,
+    )
+    return MetadataGenerateResponse(
+        title=res.get("title", "Compilation"),
+        caption=res.get("caption", ""),
+        hashtags=res.get("hashtags", []),
+        full_text=res.get("full_text", ""),
+        model=res.get("model", "template"),
+    )
+
+
+@app.post("/api/social/publish", response_model=SocialPostOut, dependencies=_AUTH)
+async def publish_social_post(req: SocialPublishRequest, s: Session = Depends(get_session)):
+    comp = s.get(Compilation, req.compilation_id)
+    if not comp or not comp.output_path or not pathlib.Path(comp.output_path).exists():
+        raise HTTPException(404, "compilation video not found or not finished")
+
+    if not req.account_ids:
+        raise HTTPException(400, "at least one account must be selected")
+
+    video_path = pathlib.Path(comp.output_path)
+
+    # 1. Upload video to Outstand
+    logbus.log("info", "social_upload_start", f"Uploading compilation {comp.id} to Outstand...")
+    try:
+        upload_res = await outstand.upload_media(video_path)
+        media_url = upload_res.get("url")
+    except Exception as exc:
+        logbus.log("error", "social_upload_failed", str(exc))
+        raise HTTPException(502, f"Failed to upload video to Outstand: {exc}")
+
+    # 2. Create post in Outstand
+    logbus.log("info", "social_post_start", f"Publishing to {len(req.account_ids)} accounts...")
+    try:
+        post_res = await outstand.create_social_post(
+            account_ids=req.account_ids,
+            content=req.content,
+            media_url=media_url,
+            filename=video_path.name,
+            scheduled_at=req.scheduled_at,
+        )
+    except Exception as exc:
+        logbus.log("error", "social_post_failed", str(exc))
+        raise HTTPException(502, f"Failed to create post on Outstand: {exc}")
+
+    outstand_id = post_res.get("post", {}).get("id") or post_res.get("id")
+    sched_dt = None
+    if req.scheduled_at:
+        try:
+            sched_dt = datetime.datetime.fromisoformat(req.scheduled_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    post_record = SocialPost(
+        compilation_id=comp.id,
+        outstand_post_id=str(outstand_id) if outstand_id else None,
+        accounts=req.account_ids,
+        content=req.content,
+        media_url=media_url,
+        scheduled_at=sched_dt,
+        status="scheduled" if req.scheduled_at else "published",
+    )
+    s.add(post_record)
+    s.commit()
+    s.refresh(post_record)
+
+    logbus.log(
+        "info",
+        "social_published",
+        f"Post created ({post_record.status}) for compilation {comp.id} -> Outstand ID: {outstand_id}",
+    )
+    return post_record
+
+
+@app.get("/api/social/posts", response_model=list[SocialPostOut], dependencies=_AUTH)
+def list_social_posts(s: Session = Depends(get_session)) -> list[SocialPost]:
+    return s.query(SocialPost).order_by(desc(SocialPost.id)).limit(50).all()

@@ -53,6 +53,36 @@ export type LogLine = {
   created_at: string;
 };
 
+export type SocialAccount = {
+  id: string;
+  nickname?: string;
+  network: string;
+  username: string;
+  isActive?: number | boolean;
+  profile_picture_url?: string;
+};
+
+export type MetadataResult = {
+  title: string;
+  caption: string;
+  hashtags: string[];
+  full_text: string;
+  model: string;
+};
+
+export type SocialPost = {
+  id: number;
+  compilation_id: number | null;
+  outstand_post_id: string | null;
+  accounts: string[];
+  content: string;
+  media_url: string | null;
+  scheduled_at: string | null;
+  status: string;
+  error: string | null;
+  created_at: string;
+};
+
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export function apiBase(): string {
@@ -150,6 +180,38 @@ export const api = {
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
+
+  socialAccounts: () =>
+    req<{ configured: boolean; accounts: SocialAccount[]; message?: string }>(
+      "/api/social/accounts",
+      { headers: headers(false) }
+    ),
+
+  generateMetadata: (compilationId: number, prompt?: string) =>
+    req<MetadataResult>("/api/social/generate-metadata", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ compilation_id: compilationId, prompt }),
+    }),
+
+  publishSocial: (
+    compilationId: number,
+    accountIds: string[],
+    content: string,
+    scheduledAt?: string
+  ) =>
+    req<SocialPost>("/api/social/publish", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        compilation_id: compilationId,
+        account_ids: accountIds,
+        content,
+        scheduled_at: scheduledAt || null,
+      }),
+    }),
+
+  socialPosts: () => req<SocialPost[]>("/api/social/posts", { headers: headers(false) }),
 };
 
 /** Days left before the retention sweep deletes this item ("2d", "today", null). */

@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""             # POSTed a JSON payload on failure spikes
     alert_failure_threshold: float = 0.5    # fraction of a source's recent jobs failing
 
+    # --- Social Publishing (Outstand) -----------------------------------
+    outstand_api_key: str = ""
+    outstand_base_url: str = "https://api.outstand.so/v1"
+
+    # --- AI Metadata (Google Gemini) ------------------------------------
+    gemini_api_key: str = ""
+
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod
 

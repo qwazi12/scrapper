@@ -11,6 +11,7 @@ import {
   LogLine,
   Stats,
 } from "@/lib/api";
+import { PublishModal } from "./PublishModal";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -561,6 +562,7 @@ function ExpiryTag({ createdAt, retentionDays }: { createdAt: string; retentionD
 function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[]; onChange: () => void; retentionDays: number }) {
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [publishComp, setPublishComp] = useState<Compilation | null>(null);
 
   const validIds = comps.map((c) => c.id);
   const selectedIds = [...sel].filter((id) => validIds.includes(id));
@@ -658,6 +660,15 @@ function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[];
             {c.error && <span style={{ color: "var(--red)" }}>{c.error}</span>}
             <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
               {c.status === "done" && (
+                <button
+                  className="primary"
+                  style={{ background: "#7c3aed", borderColor: "#6d28d9", color: "#ffffff" }}
+                  onClick={() => setPublishComp(c)}
+                >
+                  🚀 Post / Schedule
+                </button>
+              )}
+              {c.status === "done" && (
                 <a href={api.downloadUrl(c.id)}>
                   <button className="primary">⬇ Download</button>
                 </a>
@@ -669,6 +680,13 @@ function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[];
           </div>
         ))}
       </div>
+      {publishComp && (
+        <PublishModal
+          compilation={publishComp}
+          onClose={() => setPublishComp(null)}
+          onSuccess={onChange}
+        />
+      )}
     </Panel>
   );
 }

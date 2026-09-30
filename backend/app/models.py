@@ -89,3 +89,18 @@ class LogEntry(Base):
     message: Mapped[str] = mapped_column(Text, default="")
     context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class SocialPost(Base):
+    __tablename__ = "social_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    compilation_id: Mapped[int | None] = mapped_column(ForeignKey("compilations.id"), nullable=True)
+    outstand_post_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    accounts: Mapped[list] = mapped_column(JSON, default=list)
+    content: Mapped[str] = mapped_column(Text, default="")
+    media_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scheduled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

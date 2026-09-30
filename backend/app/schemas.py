@@ -67,3 +67,39 @@ class LogOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MetadataGenerateRequest(BaseModel):
+    compilation_id: int
+    prompt: str | None = None
+
+
+class MetadataGenerateResponse(BaseModel):
+    title: str
+    caption: str
+    hashtags: list[str]
+    full_text: str
+    model: str
+
+
+class SocialPublishRequest(BaseModel):
+    compilation_id: int
+    account_ids: list[str]
+    content: str
+    scheduled_at: str | None = None
+
+
+class SocialPostOut(BaseModel):
+    id: int
+    compilation_id: int | None
+    outstand_post_id: str | None
+    accounts: list
+    content: str
+    media_url: str | None
+    scheduled_at: datetime.datetime | None
+    status: str
+    error: str | None
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
