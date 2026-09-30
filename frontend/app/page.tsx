@@ -15,7 +15,7 @@ import { PublishModal } from "./PublishModal";
 import { QueuePanel } from "./QueuePanel";
 import { DrivePanel } from "./DrivePanel";
 
-type NavTab = "scraper" | "queue" | "comps" | "drive" | "logs" | "settings";
+type NavTab = "scraper" | "socialpilot" | "comps" | "logs" | "settings";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -25,6 +25,7 @@ export default function Page() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
+  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   const refresh = useCallback(async () => {
@@ -56,9 +57,15 @@ export default function Page() {
   // Sync hash with active tab if set in URL
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const hash = window.location.hash.replace("#", "") as NavTab;
-      if (["scraper", "queue", "comps", "drive", "logs", "settings"].includes(hash)) {
-        setActiveTab(hash);
+      const hash = window.location.hash.replace("#", "");
+      if (["scraper", "socialpilot", "comps", "logs", "settings"].includes(hash)) {
+        setActiveTab(hash as NavTab);
+      } else if (hash === "queue") {
+        setActiveTab("socialpilot");
+        setSocialPilotTab("queue");
+      } else if (hash === "drive") {
+        setActiveTab("socialpilot");
+        setSocialPilotTab("drive");
       }
     }
   }, []);
@@ -176,14 +183,14 @@ export default function Page() {
             badgeBg={doneClipsCount > 0 ? "#064e3b" : "#1e293b"}
           />
 
-          {/* 2. Posting Queue (Google Sheets Experience) */}
+          {/* 2. SocialPilot AI (Scheduler & Channel Distribution) */}
           <NavButton
-            active={activeTab === "queue"}
+            active={activeTab === "socialpilot"}
             collapsed={sidebarCollapsed}
-            onClick={() => handleTabSelect("queue")}
-            icon="📋"
-            title="Posting Queue & Schedule"
-            subtitle="Google Sheets Pipeline"
+            onClick={() => handleTabSelect("socialpilot")}
+            icon="🚀"
+            title="SocialPilot AI"
+            subtitle="Queue, Drive & Scheduler"
             badge={`${readyQueueCount} items`}
             badgeColor={readyQueueCount > 0 ? "var(--accent)" : "var(--muted)"}
             badgeBg={readyQueueCount > 0 ? "#064e3b" : "#1e293b"}
@@ -202,17 +209,7 @@ export default function Page() {
             badgeBg="#78350f"
           />
 
-          {/* 4. Google Drive Ingestion */}
-          <NavButton
-            active={activeTab === "drive"}
-            collapsed={sidebarCollapsed}
-            onClick={() => handleTabSelect("drive")}
-            icon="☁️"
-            title="Google Drive Sync"
-            subtitle="Pull videos by channel"
-          />
-
-          {/* 5. Live System Logs */}
+          {/* 4. Live System Logs */}
           <NavButton
             active={activeTab === "logs"}
             collapsed={sidebarCollapsed}
@@ -222,7 +219,7 @@ export default function Page() {
             subtitle="Real-time SSE worker feed"
           />
 
-          {/* 6. Settings & API Credentials */}
+          {/* 5. Settings & API Credentials */}
           <NavButton
             active={activeTab === "settings"}
             collapsed={sidebarCollapsed}
@@ -297,24 +294,84 @@ export default function Page() {
           </div>
         )}
 
-        {/* Separate View 1: Posting Queue & Schedule */}
-        {activeTab === "queue" && (
-          <div>
-            <QueuePanel onChange={refresh} />
-          </div>
-        )}
+        {/* Dedicated System: SocialPilot AI (Scheduler & Channel Distribution) */}
+        {activeTab === "socialpilot" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* SocialPilot Header & Sub-Navigation */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background: "var(--panel)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "16px 20px",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>🚀</span>
+                  <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#f8fafc" }}>
+                    SocialPilot AI Studio
+                  </h1>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#34d399",
+                      background: "#064e3b",
+                      padding: "2px 8px",
+                      borderRadius: 10,
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    EXEMPT FROM 5-DAY RETENTION
+                  </span>
+                </div>
+                <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                  Multi-channel distribution & scheduler • Permanent Google Drive storage • Outstand posting
+                </p>
+              </div>
 
-        {/* Separate View 2: Compilations & Stitching */}
-        {activeTab === "comps" && (
-          <div>
-            <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-          </div>
-        )}
+              {/* Sub-view switcher */}
+              <div style={{ display: "flex", gap: 8, background: "var(--bg)", padding: 4, borderRadius: 8, border: "1px solid var(--border)" }}>
+                <button
+                  onClick={() => setSocialPilotTab("queue")}
+                  style={{
+                    background: socialPilotTab === "queue" ? "#064e3b" : "transparent",
+                    color: socialPilotTab === "queue" ? "#34d399" : "var(--text)",
+                    border: socialPilotTab === "queue" ? "1px solid var(--accent)" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  📋 Posting Queue ({readyQueueCount})
+                </button>
+                <button
+                  onClick={() => setSocialPilotTab("drive")}
+                  style={{
+                    background: socialPilotTab === "drive" ? "#4c1d95" : "transparent",
+                    color: socialPilotTab === "drive" ? "#a78bfa" : "var(--text)",
+                    border: socialPilotTab === "drive" ? "1px solid #7c3aed" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  ☁️ Google Drive Ingestion
+                </button>
+              </div>
+            </div>
 
-        {/* Separate View 3: Google Drive Ingestion */}
-        {activeTab === "drive" && (
-          <div>
-            <DrivePanel onIngested={refresh} />
+            {socialPilotTab === "queue" ? (
+              <QueuePanel onChange={refresh} />
+            ) : (
+              <DrivePanel onIngested={refresh} />
+            )}
           </div>
         )}
 

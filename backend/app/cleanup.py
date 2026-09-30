@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .logbus import log
-from .models import Clip, Compilation, Status
+from .models import Clip, Compilation, QueueItem, Status
 
 
 def _aware(dt: datetime.datetime) -> datetime.datetime:
@@ -62,7 +62,9 @@ def expires_at(created_at: datetime.datetime) -> datetime.datetime | None:
 
 
 def purge_expired(s: Session) -> dict:
-    """Delete clips/compilations past their own retention window."""
+    """Delete clips/compilations past their own retention window.
+    Items in SocialPilot (QueueItem) are strictly EXEMPT from retention deletion.
+    """
     days = settings.retention_days
     if days <= 0:
         return {"clips": 0, "compilations": 0}
@@ -71,9 +73,25 @@ def purge_expired(s: Session) -> dict:
     cutoff = now - datetime.timedelta(days=days)
     n_clips = n_comps = 0
 
+    # SocialPilot protected sets: clips/compilations scheduled or in queue are exempt
+    queued_clips = {
+        row[0]
+        for row in s.query(QueueItem.clip_id)
+        .filter(QueueItem.clip_id.isnot(None), QueueItem.status.in_(("review", "ready", "posting", "posted", "retry")))
+        .all()
+    }
+    queued_comps = {
+        row[0]
+        for row in s.query(QueueItem.compilation_id)
+        .filter(QueueItem.compilation_id.isnot(None), QueueItem.status.in_(("review", "ready", "posting", "posted", "retry")))
+        .all()
+    }
+
     for clip in s.query(Clip).all():
         if clip.status in (Status.queued, Status.running):
             continue  # never yank something mid-flight
+        if clip.id in queued_clips:
+            continue  # SocialPilot scheduler/queue is exempt from retention
         if _aware(clip.created_at) < cutoff:
             remove_clip_files(clip)
             s.delete(clip)
@@ -84,6 +102,8 @@ def purge_expired(s: Session) -> dict:
     for comp in s.query(Compilation).all():
         if comp.status in (Status.queued, Status.running):
             continue
+        if comp.id in queued_comps:
+            continue  # SocialPilot scheduler/queue is exempt from retention
         if _aware(comp.created_at) < cutoff:
             remove_compilation_files(comp)
             s.delete(comp)
