@@ -151,6 +151,7 @@ export const api = {
   base: apiBase,
   thumbUrl: (id: number) => withToken(`${apiBase()}/api/clips/${id}/thumb`),
   downloadUrl: (id: number) => withToken(`${apiBase()}/api/compilations/${id}/download`),
+  clipDownloadUrl: (id: number) => withToken(`${apiBase()}/api/clips/${id}/download`),
   eventsUrl: () => withToken(`${apiBase()}/api/events`),
 
   health: () => req<{ ok: boolean }>("/api/health"),

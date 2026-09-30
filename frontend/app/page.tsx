@@ -15,7 +15,7 @@ import { PublishModal } from "./PublishModal";
 import { QueuePanel } from "./QueuePanel";
 import { DrivePanel } from "./DrivePanel";
 
-type NavTab = "queue" | "clips" | "ingest" | "comps" | "drive" | "logs" | "settings" | "all";
+type NavTab = "scraper" | "queue" | "comps" | "drive" | "logs" | "settings";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -24,7 +24,7 @@ export default function Page() {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [queueCount, setQueueCount] = useState<number>(0);
-  const [activeTab, setActiveTab] = useState<NavTab>("queue");
+  const [activeTab, setActiveTab] = useState<NavTab>("scraper");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   const refresh = useCallback(async () => {
@@ -57,7 +57,7 @@ export default function Page() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const hash = window.location.hash.replace("#", "") as NavTab;
-      if (["queue", "clips", "ingest", "comps", "drive", "logs", "settings", "all"].includes(hash)) {
+      if (["scraper", "queue", "comps", "drive", "logs", "settings"].includes(hash)) {
         setActiveTab(hash);
       }
     }
@@ -163,7 +163,20 @@ export default function Page() {
 
         {/* Navigation Items */}
         <nav style={{ padding: "16px 10px", display: "flex", flexDirection: "column", gap: 6, flex: 1, overflowY: "auto" }}>
-          {/* 1. Posting Queue (Google Sheets Experience) */}
+          {/* 1. Scraper (Original Landing Page) */}
+          <NavButton
+            active={activeTab === "scraper"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("scraper")}
+            icon="📥"
+            title="Scraper (Home)"
+            subtitle="Paste link, scrape & download"
+            badge={`${doneClipsCount} ready`}
+            badgeColor={doneClipsCount > 0 ? "var(--accent)" : "var(--muted)"}
+            badgeBg={doneClipsCount > 0 ? "#064e3b" : "#1e293b"}
+          />
+
+          {/* 2. Posting Queue (Google Sheets Experience) */}
           <NavButton
             active={activeTab === "queue"}
             collapsed={sidebarCollapsed}
@@ -176,33 +189,7 @@ export default function Page() {
             badgeBg={readyQueueCount > 0 ? "#064e3b" : "#1e293b"}
           />
 
-          {/* 2. Storyboard & Clips */}
-          <NavButton
-            active={activeTab === "clips"}
-            collapsed={sidebarCollapsed}
-            onClick={() => handleTabSelect("clips")}
-            icon="🎬"
-            title="Storyboard & Clips"
-            subtitle="Trim, reframe & edit"
-            badge={`${doneClipsCount} clips`}
-            badgeColor="#38bdf8"
-            badgeBg="#0c4a6e"
-          />
-
-          {/* 3. Ingest & Scraper */}
-          <NavButton
-            active={activeTab === "ingest"}
-            collapsed={sidebarCollapsed}
-            onClick={() => handleTabSelect("ingest")}
-            icon="📥"
-            title="Ingest & Scraper"
-            subtitle="Mac Worker residential"
-            badge={connected ? "Active" : "Offline"}
-            badgeColor={connected ? "#34d399" : "#f87171"}
-            badgeBg={connected ? "#064e3b" : "#450a0a"}
-          />
-
-          {/* 4. Compilations & Stitching */}
+          {/* 3. Compilations & Stitching */}
           <NavButton
             active={activeTab === "comps"}
             collapsed={sidebarCollapsed}
@@ -215,7 +202,7 @@ export default function Page() {
             badgeBg="#78350f"
           />
 
-          {/* 5. Google Drive Ingestion */}
+          {/* 4. Google Drive Ingestion */}
           <NavButton
             active={activeTab === "drive"}
             collapsed={sidebarCollapsed}
@@ -223,12 +210,9 @@ export default function Page() {
             icon="☁️"
             title="Google Drive Sync"
             subtitle="Pull videos by channel"
-            badge="Sync"
-            badgeColor="#a78bfa"
-            badgeBg="#4c1d95"
           />
 
-          {/* 6. Live System Logs */}
+          {/* 5. Live System Logs */}
           <NavButton
             active={activeTab === "logs"}
             collapsed={sidebarCollapsed}
@@ -238,7 +222,7 @@ export default function Page() {
             subtitle="Real-time SSE worker feed"
           />
 
-          {/* 7. Settings & Social Accounts */}
+          {/* 6. Settings & API Credentials */}
           <NavButton
             active={activeTab === "settings"}
             collapsed={sidebarCollapsed}
@@ -246,18 +230,6 @@ export default function Page() {
             icon="⚙️"
             title="Settings & Channels"
             subtitle="Outstand & API credentials"
-          />
-
-          <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
-
-          {/* All Views Option */}
-          <NavButton
-            active={activeTab === "all"}
-            collapsed={sidebarCollapsed}
-            onClick={() => handleTabSelect("all")}
-            icon="🌟"
-            title="All-in-One Studio"
-            subtitle="Stacked overview"
           />
         </nav>
 
@@ -315,65 +287,47 @@ export default function Page() {
         <StatusBar stats={stats} connected={connected} clips={clips} comps={comps} />
 
         {/* Dedicated Tab 1: POSTING QUEUE (Google Sheets Experience) */}
+        {/* Landing Page: Original Scrapper (Paste Link -> Scrape -> Download to Device) */}
+        {activeTab === "scraper" && (
+          <div>
+            <SettingsBar onSaved={refresh} />
+            <IngestPanel onIngested={refresh} />
+            <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+          </div>
+        )}
+
+        {/* Separate View 1: Posting Queue & Schedule */}
         {activeTab === "queue" && (
           <div>
             <QueuePanel onChange={refresh} />
           </div>
         )}
 
-        {/* Dedicated Tab 2: STORYBOARD & CLIPS */}
-        {activeTab === "clips" && (
-          <div>
-            <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-          </div>
-        )}
-
-        {/* Dedicated Tab 3: INGEST & SCRAPER */}
-        {activeTab === "ingest" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <IngestPanel onIngested={refresh} />
-            <DrivePanel onIngested={refresh} />
-          </div>
-        )}
-
-        {/* Dedicated Tab 4: COMPILATIONS & EXPORTS */}
+        {/* Separate View 2: Compilations & Stitching */}
         {activeTab === "comps" && (
           <div>
             <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
           </div>
         )}
 
-        {/* Dedicated Tab 5: GOOGLE DRIVE SYNC */}
+        {/* Separate View 3: Google Drive Ingestion */}
         {activeTab === "drive" && (
           <div>
             <DrivePanel onIngested={refresh} />
           </div>
         )}
 
-        {/* Dedicated Tab 6: LIVE LOGS */}
+        {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (
           <div>
             <LogsPanel logs={logs} />
           </div>
         )}
 
-        {/* Dedicated Tab 7: SETTINGS & SOCIAL CHANNELS */}
+        {/* Separate View 5: Settings & Credentials */}
         {activeTab === "settings" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <SettingsBar onSaved={refresh} />
-          </div>
-        )}
-
-        {/* All-in-One Studio View */}
-        {activeTab === "all" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <SettingsBar onSaved={refresh} />
-            <IngestPanel onIngested={refresh} />
-            <DrivePanel onIngested={refresh} />
-            <Storyboard clips={clips} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-            <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-            <QueuePanel onChange={refresh} />
-            <LogsPanel logs={logs} />
           </div>
         )}
       </main>
@@ -850,7 +804,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
               <Th w={70}>size</Th>
               <Th w={80}>status</Th>
               <Th w={70}>expires</Th>
-              <Th w={50}></Th>
+              <Th w={180}>Actions</Th>
             </tr>
           </thead>
           <tbody>
@@ -918,10 +872,28 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                   <ExpiryTag createdAt={c.created_at} retentionDays={retentionDays} />
                 </Td>
                 <Td>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {c.status === "done" && (
+                      <a href={api.clipDownloadUrl(c.id)} download>
+                        <button
+                          className="primary"
+                          style={{
+                            padding: "4px 9px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                          title="Download video directly to your device"
+                        >
+                          ⬇ Download
+                        </button>
+                      </a>
+                    )}
                     {c.status === "done" && (
                       <button
-                        style={{ padding: "3px 6px", fontSize: 11, background: "var(--chip)", color: "var(--text)" }}
+                        style={{ padding: "4px 7px", fontSize: 11, background: "var(--chip)", color: "var(--text)" }}
                         onClick={async () => {
                           await api.createQueueItem({ clip_id: c.id, pipeline: "Movie Clips", status: "review" });
                           onChange();
@@ -932,7 +904,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                         + Queue
                       </button>
                     )}
-                    <button className="danger" onClick={() => del(c)} style={{ padding: "3px 7px" }}>
+                    <button className="danger" onClick={() => del(c)} style={{ padding: "4px 7px", fontSize: 11 }} title="Delete clip">
                       ✕
                     </button>
                   </div>

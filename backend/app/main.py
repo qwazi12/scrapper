@@ -280,6 +280,19 @@ def clip_thumb(clip_id: int, s: Session = Depends(get_session)):
     return FileResponse(clip.thumb_path, media_type="image/jpeg")
 
 
+@app.get("/api/clips/{clip_id}/download", dependencies=_AUTH)
+def download_clip(clip_id: int, s: Session = Depends(get_session)):
+    clip = s.get(Clip, clip_id)
+    if not clip or not clip.file_path or not pathlib.Path(clip.file_path).exists():
+        raise HTTPException(404, "clip file not found on disk")
+    filename = pathlib.Path(clip.file_path).name
+    if clip.title:
+        safe_title = "".join(c for c in clip.title if c.isalnum() or c in (" ", "-", "_")).strip()
+        if safe_title:
+            filename = f"{safe_title}.mp4"
+    return FileResponse(clip.file_path, media_type="video/mp4", filename=filename)
+
+
 # --- compile (Extract) -------------------------------------------------------
 @app.post("/api/compile", dependencies=_AUTH)
 def compile_selected(req: CompileRequest, s: Session = Depends(get_session)) -> dict:
