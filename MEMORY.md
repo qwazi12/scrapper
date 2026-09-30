@@ -63,3 +63,28 @@ python3 scrape.py https://x.com/user/status/123...
 - ✅ **susylicious2023** — Susan Abel - My wife left me for an "alpha male". !..now she wants me back! (`susylicious2023_2079254965273477121_Susan Abel - My wife left me for an ＂alpha male＂. !..now she.mp4`)
 - ✅ **susylicious2023** — Susan Abel - I caught my serious girlfriend trying to baby trap me (`susylicious2023_2078463070091784193_Susan Abel - I caught my serious girlfriend trying to baby t.mp4`)
 - ✅ **Cat5SMASHICANE** — Johnny B. Good - How about a good laugh for the morning? Family Fued never disappoints... (`Cat5SMASHICANE_2078831224911486976_Johnny B. Good - How about a good laugh for the morning？ Fam.mp4`)
+
+---
+
+## Architecture Update — 2026-09-30
+
+### 1. Reactive Studio Sidebar & Dedicated Views
+- Replaced the stacked single-page feed with a responsive left navigation sidebar featuring live item badges:
+  - 📋 **Posting Queue & Schedule** (`X items`) — Dedicated full-width Google Sheets spreadsheet view.
+  - 🎬 **Storyboard & Clips** (`X clips`) — Trimming, aspect ratio selection, video player.
+  - 📥 **Ingest & Scraper** — Ingestion queue, Mac worker residential status.
+  - 🎞️ **Compilations & Exports** (`X comps`) — Multi-clip stitcher, transitions, audio tracks.
+  - ☁️ **Google Drive Sync** — Direct Google Drive folder ingestion and channel mapping.
+  - 📜 **Live Activity Logs** — Real-time SSE worker feed.
+  - ⚙️ **Settings & Channels** — Outstand connected accounts (Flamingo Remix, etc.) and volume storage health.
+  - 🌟 **All-in-One Studio** — Stacked overview.
+
+### 2. Google Sheets Replacement in Scrapper
+- 9-column data model (`id`, `video_name`, `drive_link`, `title`, `description`, `tags`, `status`, `notes`, `source`).
+- Lifecycle status tracking: `review` ➔ `ready` ➔ `posting` ➔ `posted` / `retry` / `error` ➔ `archived`.
+- Automated background publishing daemon running in FastAPI backend every 30s.
+- Multi-channel filtering: `Movie Clips`, `Abyss Declassified`, `The ICK Room`, `Default`.
+
+### 3. Google Drive Ingestion
+- UI Panel: `frontend/app/DrivePanel.tsx` allows entering Google Drive folder URL/ID and destination channel.
+- CLI Tool: `scripts/sync_drive.py` allows Mac worker or automation to scan and queue videos from Google Drive folders directly into Scrapper.
