@@ -160,8 +160,26 @@ class QueueItemOut(BaseModel):
 
 class QueueBulkAction(BaseModel):
     ids: list[int]
-    action: str  # "approve", "archive", "delete", "generate_ai"
+    action: str  # "approve", "review", "archive", "posted", "delete", "generate_ai", "set_accounts"
     pipeline: str | None = None
+    target_status: str | None = None
+    accounts: list[str] | None = None
+
+
+class QueueShuffleRequest(BaseModel):
+    mode: str = "round_robin"  # "round_robin", "random", "by_channel"
+    pipeline: str | None = None
+    status: str | None = None
+
+
+class ChannelIngestRequest(BaseModel):
+    url: str
+    parent_folder_id: str = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo"  # Movie Clips
+    parent_folder_name: str = "Movie Clips"
+    channel_name: str | None = None
+    max_videos: int = 25
+    auto_approve: bool = False
+    upload_to_drive: bool = True
 
 
 class DriveSyncRequest(BaseModel):

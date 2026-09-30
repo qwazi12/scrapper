@@ -14,6 +14,7 @@ import {
 import { PublishModal } from "./PublishModal";
 import { QueuePanel } from "./QueuePanel";
 import { DrivePanel } from "./DrivePanel";
+import { ChannelIngestPanel } from "./ChannelIngestPanel";
 
 type NavTab = "scraper" | "socialpilot" | "comps" | "logs" | "settings";
 
@@ -25,7 +26,7 @@ export default function Page() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
-  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "drive">("queue");
+  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
   const refresh = useCallback(async () => {
@@ -352,6 +353,19 @@ export default function Page() {
                   📋 Posting Queue ({readyQueueCount})
                 </button>
                 <button
+                  onClick={() => setSocialPilotTab("ingest")}
+                  style={{
+                    background: socialPilotTab === "ingest" ? "#1e3a8a" : "transparent",
+                    color: socialPilotTab === "ingest" ? "#60a5fa" : "var(--text)",
+                    border: socialPilotTab === "ingest" ? "1px solid #3b82f6" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  📥 Channel Scraper &amp; Ingest
+                </button>
+                <button
                   onClick={() => setSocialPilotTab("drive")}
                   style={{
                     background: socialPilotTab === "drive" ? "#4c1d95" : "transparent",
@@ -362,16 +376,14 @@ export default function Page() {
                     borderRadius: 6,
                   }}
                 >
-                  ☁️ Google Drive Ingestion
+                  ☁️ Google Drive Sync
                 </button>
               </div>
             </div>
 
-            {socialPilotTab === "queue" ? (
-              <QueuePanel onChange={refresh} />
-            ) : (
-              <DrivePanel onIngested={refresh} />
-            )}
+            {socialPilotTab === "queue" && <QueuePanel onChange={refresh} />}
+            {socialPilotTab === "ingest" && <ChannelIngestPanel onIngested={refresh} />}
+            {socialPilotTab === "drive" && <DrivePanel onIngested={refresh} />}
           </div>
         )}
 

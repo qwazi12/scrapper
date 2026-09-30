@@ -15,7 +15,7 @@ import time
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
 
 from ..core import engine
@@ -25,6 +25,7 @@ from .config import settings
 from .db import SessionLocal, get_session, init_db
 from .models import Clip, Compilation, IngestJob, LogEntry, QueueItem, SocialPost, Status
 from .schemas import (
+    ChannelIngestRequest,
     ClipOut,
     CompilationOut,
     CompileRequest,
@@ -37,6 +38,7 @@ from .schemas import (
     QueueItemCreate,
     QueueItemOut,
     QueueItemUpdate,
+    QueueShuffleRequest,
     SelectRequest,
     SocialPostOut,
     SocialPublishRequest,
@@ -486,7 +488,13 @@ def list_social_posts(s: Session = Depends(get_session)) -> list[SocialPost]:
     return s.query(SocialPost).order_by(desc(SocialPost.id)).limit(50).all()
 
 
-# --- posting queue & content calendar (Google Sheets replacement) ----------
+MOVIE_CLIPS_CHANNELS = [
+    "Movie Clips", "@AlphaReels-1", "@CoruscateCuts", "@EditAetheris",
+    "@FrameLegion", "@PixelDrift-f3c", "@QianaLucy", "@SceneVale",
+    "@SolarrEditss", "@TheUsJournal17", "@VynixAE", "@clipscav",
+    "@comet-cinema", "@hanganhoang3071", "@roebutt"
+]
+
 @app.get("/api/queue", response_model=list[QueueItemOut], dependencies=_AUTH)
 def list_queue(
     pipeline: str | None = None,
@@ -495,9 +503,23 @@ def list_queue(
 ) -> list[QueueItem]:
     q = s.query(QueueItem)
     if pipeline and pipeline != "all":
-        q = q.filter(QueueItem.pipeline == pipeline)
+        if pipeline.lower() in ("movie clips", "movie_clips"):
+            q = q.filter(
+                or_(
+                    QueueItem.pipeline.in_(MOVIE_CLIPS_CHANNELS),
+                    QueueItem.source.ilike("%Movie Clips%"),
+                    QueueItem.pipeline == "Movie Clips",
+                )
+            )
+        else:
+            q = q.filter(QueueItem.pipeline == pipeline)
+
     if status and status != "all":
-        q = q.filter(QueueItem.status == status)
+        if status in ("error", "retry"):
+            q = q.filter(QueueItem.status.in_(["error", "retry"]))
+        else:
+            q = q.filter(QueueItem.status == status)
+
     return q.order_by(desc(QueueItem.id)).all()
 
 
@@ -684,11 +706,31 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
             it.status = "ready"
         s.commit()
         logbus.log("info", "queue_bulk_approved", f"Approved {count} items -> ready to post")
+    elif req.action == "review":
+        for it in items:
+            it.status = "review"
+        s.commit()
+        logbus.log("info", "queue_bulk_review", f"Set {count} items -> review")
     elif req.action == "archive":
         for it in items:
             it.status = "archived"
         s.commit()
         logbus.log("info", "queue_bulk_archived", f"Archived {count} items")
+    elif req.action == "posted":
+        for it in items:
+            it.status = "posted"
+        s.commit()
+        logbus.log("info", "queue_bulk_posted", f"Set {count} items -> posted")
+    elif req.action == "change_status" and req.target_status:
+        for it in items:
+            it.status = req.target_status
+        s.commit()
+        logbus.log("info", "queue_bulk_status", f"Changed {count} items to {req.target_status}")
+    elif req.action == "set_accounts" and req.accounts is not None:
+        for it in items:
+            it.accounts = req.accounts
+        s.commit()
+        logbus.log("info", "queue_bulk_accounts", f"Assigned {len(req.accounts)} account(s) to {count} items")
     elif req.action == "delete":
         for it in items:
             s.delete(it)
@@ -698,6 +740,104 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
         raise HTTPException(400, f"Unknown action: {req.action}")
 
     return {"ok": True, "count": count, "action": req.action}
+
+
+@app.post("/api/queue/shuffle", dependencies=_AUTH)
+def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -> dict:
+    """
+    Mix & shuffle queue items:
+    - 'round_robin': Interleave items across all channels (prevents back-to-back channel posts).
+    - 'random': Random Fisher-Yates shuffle.
+    - 'by_channel': Shuffles within each channel.
+    """
+    import random
+    from collections import defaultdict
+
+    q = s.query(QueueItem)
+    if req.pipeline and req.pipeline != "all":
+        if req.pipeline.lower() in ("movie clips", "movie_clips"):
+            q = q.filter(
+                or_(
+                    QueueItem.pipeline.in_(MOVIE_CLIPS_CHANNELS),
+                    QueueItem.source.ilike("%Movie Clips%"),
+                    QueueItem.pipeline == "Movie Clips",
+                )
+            )
+        else:
+            q = q.filter(QueueItem.pipeline == req.pipeline)
+    if req.status and req.status != "all":
+        q = q.filter(QueueItem.status == req.status)
+
+    items = q.all()
+    if not items:
+        return {"ok": True, "count": 0, "message": "No items to shuffle"}
+
+    if req.mode == "round_robin":
+        # Group by channel/pipeline
+        grouped = defaultdict(list)
+        for it in items:
+            grouped[it.pipeline].append(it)
+        for ch in grouped:
+            random.shuffle(grouped[ch])
+
+        interleaved = []
+        max_len = max(len(v) for v in grouped.values())
+        channels = list(grouped.keys())
+        random.shuffle(channels)
+        for idx in range(max_len):
+            for ch in channels:
+                if idx < len(grouped[ch]):
+                    interleaved.append(grouped[ch][idx])
+        items = interleaved
+
+    elif req.mode == "random":
+        random.shuffle(items)
+
+    elif req.mode == "by_channel":
+        grouped = defaultdict(list)
+        for it in items:
+            grouped[it.pipeline].append(it)
+        items = []
+        for ch in sorted(grouped.keys()):
+            bucket = grouped[ch]
+            random.shuffle(bucket)
+            items.extend(bucket)
+
+    # Stagger scheduled_at spacing every 2 hours if items are ready
+    base_time = datetime.datetime.now(datetime.timezone.utc)
+    for i, it in enumerate(items):
+        if it.status == "ready":
+            it.scheduled_at = base_time + datetime.timedelta(hours=2 * (i + 1))
+        it.notes = f"Shuffle sequence #{i+1}"
+
+    s.commit()
+    logbus.log("info", "queue_shuffled", f"Shuffled {len(items)} items using mode '{req.mode}'")
+    return {"ok": True, "count": len(items), "mode": req.mode}
+
+
+@app.post("/api/social/ingest-channel", dependencies=_AUTH)
+def ingest_channel(req: ChannelIngestRequest, s: Session = Depends(get_session)):
+    """
+    Bulk scrape videos from a YouTube channel/playlist or single video,
+    automatically label them, upload directly to the channel subfolder in Google Drive,
+    and add them to the SocialPilot posting queue. Zero local storage footprint.
+    """
+    from .drive_sync import ingest_channel_to_drive
+
+    try:
+        res = ingest_channel_to_drive(
+            url=req.url,
+            parent_folder_id=req.parent_folder_id,
+            parent_folder_name=req.parent_folder_name,
+            channel_name=req.channel_name,
+            max_videos=req.max_videos,
+            auto_approve=req.auto_approve,
+            db_session=s,
+        )
+        return res
+    except Exception as exc:
+        logbus.log("error", "channel_ingest_failed", f"Channel ingest failed for {req.url}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/drive/sync", dependencies=_AUTH)

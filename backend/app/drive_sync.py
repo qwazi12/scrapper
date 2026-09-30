@@ -1,19 +1,22 @@
 """
-Google Drive synchronization service for SocialPilot AI.
-Extracts video files from Google Drive folders (including channel subfolders)
-and syncs them into the PostgreSQL / SQLite QueueItem table.
+Google Drive synchronization & ingestion service for SocialPilot AI.
+Extracts video files from Google Drive folders, uploads new channel scrapes,
+and synchronizes with the PostgreSQL / SQLite QueueItem table.
 """
+import io
 import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("scrapper.drive_sync")
 
 SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 LOCAL_KEY_CANDIDATES = [
@@ -22,6 +25,8 @@ LOCAL_KEY_CANDIDATES = [
     "service_account.json",
 ]
 
+DEFAULT_PARENT_FOLDER = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo"  # Movie Clips
+
 
 def extract_folder_id(url_or_id: str) -> str:
     """Extract folder ID whether user passed full URL or bare ID."""
@@ -29,11 +34,24 @@ def extract_folder_id(url_or_id: str) -> str:
     match = re.search(r"folders/([a-zA-Z0-9_-]+)", raw)
     if match:
         return match.group(1)
-    # Check if id= query param
     match_param = re.search(r"id=([a-zA-Z0-9_-]+)", raw)
     if match_param:
         return match_param.group(1)
     return raw.split("?")[0].strip("/")
+
+
+def extract_drive_file_id(url_or_id: str) -> Optional[str]:
+    """Extract file ID from a Google Drive file link."""
+    raw = (url_or_id or "").strip()
+    match = re.search(r"/file/d/([a-zA-Z0-9_-]+)", raw)
+    if match:
+        return match.group(1)
+    match_id = re.search(r"id=([a-zA-Z0-9_-]+)", raw)
+    if match_id:
+        return match_id.group(1)
+    if len(raw) >= 20 and "/" not in raw:
+        return raw
+    return None
 
 
 def get_drive_service():
@@ -73,23 +91,13 @@ def get_drive_service():
 def clean_video_title(raw_name: str) -> Tuple[str, str]:
     """
     Cleans raw video filename into human-readable title and extracted hashtags.
-    Example:
-    'Juice Betrays SAMCRO ｜ Sons Of Anarchy #shorts #sonsofanarchy_-tz-p4vEDgA.mp4'
-    -> ('Juice Betrays SAMCRO ｜ Sons Of Anarchy', '#shorts #sonsofanarchy')
     """
     stem = Path(raw_name).stem
-
-    # Extract any hashtags
     hashtags = re.findall(r"#\w+", stem)
     tags_str = " ".join(hashtags) if hashtags else "#shorts #movieclips"
 
-    # Remove hashtags from title
     title = re.sub(r"#\w+", "", stem)
-
-    # Strip trailing YouTube-style 11-char video IDs like _jV6NxeUhLXg or _-tz-p4vEDgA
     title = re.sub(r"_[a-zA-Z0-9_-]{10,12}$", "", title)
-
-    # Clean punctuation and extra spaces
     title = title.replace("_", " ").strip()
     title = re.sub(r"\s+", " ", title)
 
@@ -97,6 +105,70 @@ def clean_video_title(raw_name: str) -> Tuple[str, str]:
         title = Path(raw_name).stem
 
     return title, tags_str
+
+
+def find_or_create_subfolder(service, folder_name: str, parent_id: str) -> str:
+    """Find existing subfolder in parent or create it."""
+    clean_name = folder_name.strip()
+    query = (
+        f"name = '{clean_name}' and '{parent_id}' in parents and "
+        f"mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    )
+    res = service.files().list(q=query, fields="files(id, name)").execute()
+    files = res.get("files", [])
+    if files:
+        return files[0]["id"]
+
+    meta = {
+        "name": clean_name,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent_id],
+    }
+    created = service.files().create(body=meta, fields="id, name").execute()
+    return created["id"]
+
+
+def upload_file_to_drive(service, file_path: str, parent_folder_id: str, filename: Optional[str] = None) -> Dict[str, Any]:
+    """Uploads a local video file to a Google Drive folder."""
+    from googleapiclient.http import MediaFileUpload
+
+    file_name = filename or os.path.basename(file_path)
+    file_metadata = {
+        "name": file_name,
+        "parents": [parent_folder_id],
+    }
+    media = MediaFileUpload(file_path, resumable=True)
+    res = service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields="id, name, webViewLink, thumbnailLink",
+    ).execute()
+    return res
+
+
+def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -> Path:
+    """Downloads a video file from Google Drive to a local temporary file."""
+    from googleapiclient.http import MediaIoBaseDownload
+
+    file_id = extract_drive_file_id(drive_link_or_id)
+    if not file_id:
+        raise ValueError(f"Could not extract Google Drive file ID from {drive_link_or_id}")
+
+    service = get_drive_service()
+    meta = service.files().get(fileId=file_id, fields="id, name, mimeType").execute()
+    filename = meta.get("name", f"drive_video_{file_id}.mp4")
+
+    target_dir = dest_dir or tempfile.gettempdir()
+    target_path = Path(target_dir) / filename
+
+    request = service.files().get_media(fileId=file_id)
+    with io.FileIO(str(target_path), "wb") as fh:
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+    return target_path
 
 
 def sync_drive_to_queue(
@@ -117,6 +189,15 @@ def sync_drive_to_queue(
 
     service = get_drive_service()
 
+    # Determine parent folder name
+    parent_name = "Movie Clips"
+    try:
+        parent_meta = service.files().get(fileId=folder_id, fields="name").execute()
+        if parent_meta.get("name"):
+            parent_name = parent_meta["name"]
+    except Exception:
+        pass
+
     # 1. Discover subfolders (channels)
     subfolders_query = f"'{folder_id}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'"
     folders_result = service.files().list(
@@ -126,14 +207,12 @@ def sync_drive_to_queue(
     ).execute()
     subfolders = folders_result.get("files", [])
 
-    # Target scan list: [(folder_id, channel_pipeline_name)]
     targets: List[Tuple[str, str]] = []
     if subfolders:
         for sf in subfolders:
             targets.append((sf["id"], sf["name"]))
     else:
-        # Single folder without subfolders
-        targets.append((folder_id, default_pipeline or "Movie Clips"))
+        targets.append((folder_id, default_pipeline or parent_name))
 
     total_scanned = 0
     added_count = 0
@@ -170,7 +249,6 @@ def sync_drive_to_queue(
             web_link = f.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
             thumb = f.get("thumbnailLink")
 
-            # Check if this item already exists in the queue (by drive_link or video_name + pipeline)
             existing = (
                 db_session.query(QueueItem)
                 .filter(
@@ -181,6 +259,9 @@ def sync_drive_to_queue(
             )
 
             if existing:
+                # Update source if it was missing full folder path
+                if existing.source != f"{parent_name} / {channel_name}":
+                    existing.source = f"{parent_name} / {channel_name}"
                 ch_skipped += 1
                 skipped_count += 1
                 continue
@@ -193,7 +274,7 @@ def sync_drive_to_queue(
                 video_name=name,
                 drive_link=web_link,
                 thumb_path=thumb,
-                source=f"Google Drive ({channel_name})",
+                source=f"{parent_name} / {channel_name}",
                 title=title,
                 description=title,
                 tags=tags,
@@ -206,22 +287,126 @@ def sync_drive_to_queue(
         db_session.commit()
         channels_summary.append({
             "channel": channel_name,
+            "folder": f"{parent_name} / {channel_name}",
             "found": len(channel_videos),
             "added": ch_added,
             "skipped": ch_skipped
         })
 
-    msg = (
-        f"Synced {added_count} new video items across {len(targets)} channel(s). "
-        f"({skipped_count} skipped as already present)"
-    )
+    msg = f"Synced {added_count} new video items across {len(targets)} channel(s). ({skipped_count} existing)"
     logbus.log("info", "drive_sync_success", msg)
 
     return {
         "ok": True,
         "message": msg,
+        "parent_folder": parent_name,
         "total_scanned": total_scanned,
         "added": added_count,
         "skipped": skipped_count,
         "channels": channels_summary,
+    }
+
+
+def ingest_channel_to_drive(
+    url: str,
+    parent_folder_id: str,
+    parent_folder_name: str,
+    channel_name: Optional[str],
+    max_videos: int,
+    auto_approve: bool,
+    db_session,
+) -> Dict[str, Any]:
+    """
+    Scrapes videos from a channel or single video URL with yt-dlp, uploads each directly to Google Drive,
+    adds them to the QueueItem table, and purges the local temp files. Zero persistent disk footprint.
+    """
+    import yt_dlp
+    from .models import QueueItem
+    from .logbus import logbus
+
+    service = get_drive_service()
+    parent_fid = extract_folder_id(parent_folder_id or DEFAULT_PARENT_FOLDER)
+
+    logbus.log("info", "channel_ingest_start", f"Starting ingestion for {url} into Drive ({parent_folder_name})")
+
+    # 1. Inspect URL to detect channel info
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "extract_flat": True}) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    uploader = channel_name or info.get("uploader") or info.get("channel") or info.get("uploader_id") or "Clips"
+    if info.get("uploader_id", "").startswith("@"):
+        uploader = info.get("uploader_id")
+    elif "/@" in url:
+        uploader = "@" + url.split("/@")[-1].split("/")[0]
+
+    # Ensure channel subfolder exists in Drive
+    channel_folder_id = find_or_create_subfolder(service, uploader, parent_fid)
+    logbus.log("info", "channel_folder_ready", f"Drive target folder: {parent_folder_name} / {uploader} ({channel_folder_id})")
+
+    # 2. Download to temporary folder
+    temp_dir = tempfile.mkdtemp(prefix="socialpilot_scrape_")
+    out_tmpl = os.path.join(temp_dir, "%(title)s_%(id)s.%(ext)s")
+
+    ydl_opts = {
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "merge_output_format": "mp4",
+        "outtmpl": out_tmpl,
+        "no_warnings": True,
+        "ignoreerrors": True,
+        "playlistend": max_videos if max_videos > 0 else 25,
+    }
+
+    results_added = []
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        # 3. Upload each downloaded file to Drive & create QueueItem
+        VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv")
+        downloaded_files = [f for f in os.listdir(temp_dir) if f.endswith(VIDEO_EXTS)]
+        logbus.log("info", "scrape_downloaded", f"Downloaded {len(downloaded_files)} video(s) to temp. Uploading to Drive...")
+
+        for fname in downloaded_files:
+            local_path = os.path.join(temp_dir, fname)
+            upload_res = upload_file_to_drive(service, local_path, channel_folder_id, filename=fname)
+
+            drive_id = upload_res["id"]
+            web_link = upload_res.get("webViewLink") or f"https://drive.google.com/file/d/{drive_id}/view"
+            thumb = upload_res.get("thumbnailLink")
+
+            title, tags = clean_video_title(fname)
+            item_status = "ready" if auto_approve else "review"
+
+            item = QueueItem(
+                pipeline=uploader,
+                video_name=fname,
+                drive_link=web_link,
+                thumb_path=thumb,
+                source=f"{parent_folder_name} / {uploader}",
+                title=title,
+                description=title,
+                tags=tags,
+                status=item_status,
+            )
+            db_session.add(item)
+            results_added.append({
+                "name": fname,
+                "title": title,
+                "drive_link": web_link,
+                "status": item_status,
+            })
+
+        db_session.commit()
+        logbus.log("info", "channel_ingest_done", f"Uploaded & queued {len(results_added)} video(s) for {uploader}")
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    return {
+        "ok": True,
+        "channel": uploader,
+        "parent_folder": parent_folder_name,
+        "uploaded_count": len(results_added),
+        "items": results_added,
+        "message": f"Successfully scraped {len(results_added)} video(s), uploaded to Drive ({parent_folder_name}/{uploader}), and queued in SocialPilot.",
     }

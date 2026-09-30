@@ -295,15 +295,50 @@ export const api = {
       headers: headers(false),
     }),
 
-  bulkQueueAction: (ids: number[], action: string, pipeline?: string) =>
+  bulkQueueAction: (
+    ids: number[],
+    action: string,
+    opts?: { pipeline?: string; target_status?: string; accounts?: string[] }
+  ) =>
     req<{ ok: boolean; count: number; action: string }>("/api/queue/bulk-action", {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({ ids, action, pipeline }),
+      body: JSON.stringify({
+        ids,
+        action,
+        pipeline: opts?.pipeline,
+        target_status: opts?.target_status,
+        accounts: opts?.accounts,
+      }),
     }),
 
+  shuffleQueue: (data: { mode: "round_robin" | "random" | "by_channel"; pipeline?: string; status?: string }) =>
+    req<{ ok: boolean; count: number; mode: string; message?: string }>("/api/queue/shuffle", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(data),
+    }),
+
+  ingestChannel: (data: {
+    url: string;
+    parent_folder_id?: string;
+    parent_folder_name?: string;
+    channel_name?: string;
+    max_videos?: number;
+    auto_approve?: boolean;
+    upload_to_drive?: boolean;
+  }) =>
+    req<{ ok: boolean; message: string; channel: string; uploaded_count: number; items: any[] }>(
+      "/api/social/ingest-channel",
+      {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(data),
+      }
+    ),
+
   syncDrive: (data: { folder_url?: string; folder_id: string; pipeline?: string; auto_approve?: boolean }) =>
-    req<{ ok: boolean; message: string }>("/api/drive/sync", {
+    req<{ ok: boolean; message: string; channels?: any[] }>("/api/drive/sync", {
       method: "POST",
       headers: headers(),
       body: JSON.stringify(data),

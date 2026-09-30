@@ -35,6 +35,7 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
     # Locate video file
     video_path: pathlib.Path | None = None
     thumb_path: pathlib.Path | None = None
+    is_temp_download = False
 
     if item.video_path and pathlib.Path(item.video_path).exists():
         video_path = pathlib.Path(item.video_path)
@@ -47,9 +48,19 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         if clip and clip.file_path and pathlib.Path(clip.file_path).exists():
             video_path = pathlib.Path(clip.file_path)
 
+    # If file not found locally on disk, stream/download from Google Drive
+    if (not video_path or not video_path.exists()) and item.drive_link:
+        try:
+            logbus.log("info", "queue_drive_fetch", f"Fetching video #{item.id} from Google Drive...")
+            from ..drive_sync import download_drive_file
+            video_path = download_drive_file(item.drive_link)
+            is_temp_download = True
+        except Exception as exc:
+            logger.error("Failed to fetch video from Drive: %s", exc)
+
     if not video_path or not video_path.exists():
         item.status = "error"
-        item.notes = "Video file not found on volume or disk."
+        item.notes = "Video file not found on volume, disk, or Google Drive."
         s.commit()
         raise FileNotFoundError(f"Video file not found for queue item {item_id}")
 
@@ -111,6 +122,14 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         s.commit()
         logbus.log("error", "queue_post_error", f"Item #{item.id} failed: {exc}")
         raise
+
+    finally:
+        if is_temp_download and video_path and video_path.exists():
+            try:
+                video_path.unlink(missing_ok=True)
+                logger.info("Cleaned up temporary Drive download file: %s", video_path)
+            except Exception:
+                pass
 
 
 def run_scheduler_tick():

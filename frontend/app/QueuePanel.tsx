@@ -13,11 +13,24 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
   archived: { bg: "#1f2937", text: "#9ca3af", label: "📦 Archived" },
 };
 
-export function QueuePanel({
-  onChange,
-}: {
-  onChange: () => void;
-}) {
+const MOVIE_CLIPS_SUBCHANNELS = [
+  "@AlphaReels-1",
+  "@CoruscateCuts",
+  "@EditAetheris",
+  "@FrameLegion",
+  "@PixelDrift-f3c",
+  "@QianaLucy",
+  "@SceneVale",
+  "@SolarrEditss",
+  "@TheUsJournal17",
+  "@VynixAE",
+  "@clipscav",
+  "@comet-cinema",
+  "@hanganhoang3071",
+  "@roebutt",
+];
+
+export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -27,6 +40,10 @@ export function QueuePanel({
   // Edit modal state
   const [editItem, setEditItem] = useState<QueueItem | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Shuffle modal / menu
+  const [showShuffleMenu, setShowShuffleMenu] = useState(false);
+  const [shuffling, setShuffling] = useState(false);
 
   // New item modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -39,10 +56,14 @@ export function QueuePanel({
 
   // Accounts for assignment
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [showAccountAssignModal, setShowAccountAssignModal] = useState(false);
+  const [selectedTargetAccountIds, setSelectedTargetAccountIds] = useState<string[]>([]);
 
   useEffect(() => {
     loadQueue();
-    api.socialAccounts().then((r) => setAccounts(r.accounts || [])).catch(() => {});
+    api.socialAccounts()
+      .then((r) => setAccounts(r.accounts || []))
+      .catch(() => {});
   }, [statusFilter, pipelineFilter]);
 
   async function loadQueue() {
@@ -108,17 +129,80 @@ export function QueuePanel({
     onChange();
   }
 
-  async function handleBulkAction(action: string) {
+  async function handleBulkStatusChange(targetStatus: string) {
     const ids = Array.from(sel);
     if (ids.length === 0) return;
-    if (!confirm(`Run '${action}' on ${ids.length} selected item(s)?`)) return;
     try {
-      await api.bulkQueueAction(ids, action);
+      await api.bulkQueueAction(ids, "change_status", { target_status: targetStatus });
       setSel(new Set());
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Bulk action failed: ${err.message}`);
+      alert(`Bulk status change failed: ${err.message}`);
+    }
+  }
+
+  async function handleBulkAccountsAssign(accountIds: string[]) {
+    const ids = Array.from(sel);
+    if (ids.length === 0) return;
+    try {
+      await api.bulkQueueAction(ids, "set_accounts", { accounts: accountIds });
+      setShowAccountAssignModal(false);
+      setSel(new Set());
+      loadQueue();
+      onChange();
+    } catch (err: any) {
+      alert(`Account assignment failed: ${err.message}`);
+    }
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(sel);
+    if (ids.length === 0) return;
+    if (!confirm(`Permanently delete ${ids.length} selected item(s) from the queue?`)) return;
+    try {
+      await api.bulkQueueAction(ids, "delete");
+      setSel(new Set());
+      loadQueue();
+      onChange();
+    } catch (err: any) {
+      alert(`Bulk delete failed: ${err.message}`);
+    }
+  }
+
+  async function handleShuffle(mode: "round_robin" | "random" | "by_channel") {
+    setShuffling(true);
+    setShowShuffleMenu(false);
+    try {
+      const res = await api.shuffleQueue({
+        mode,
+        pipeline: pipelineFilter === "all" ? undefined : pipelineFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
+      });
+      alert(`✓ ${res.message || `Successfully mixed ${res.count} items using '${mode}' mode!`}`);
+      loadQueue();
+      onChange();
+    } catch (err: any) {
+      alert(`Shuffle failed: ${err.message}`);
+    } finally {
+      setShuffling(false);
+    }
+  }
+
+  async function handleRetryAllFailed() {
+    const errorIds = items.filter((i) => i.status === "error" || i.status === "retry").map((i) => i.id);
+    if (errorIds.length === 0) {
+      alert("No failed items to retry.");
+      return;
+    }
+    if (!confirm(`Reset and retry ${errorIds.length} failed item(s)?`)) return;
+    try {
+      await api.bulkQueueAction(errorIds, "change_status", { target_status: "ready" });
+      loadQueue();
+      onChange();
+      alert(`✓ Reset ${errorIds.length} failed item(s) to 'ready'. Automated scheduler will re-attempt publishing.`);
+    } catch (err: any) {
+      alert(`Retry failed: ${err.message}`);
     }
   }
 
@@ -203,7 +287,7 @@ export function QueuePanel({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>📋 Posting Queue & Schedule</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>📋 Posting Queue &amp; Content Calendar</span>
           <span
             style={{
               padding: "2px 8px",
@@ -218,7 +302,7 @@ export function QueuePanel({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {/* Pipeline Dropdown */}
+          {/* Hierarchical Pipeline / Channel Dropdown */}
           <select
             value={pipelineFilter}
             onChange={(e) => setPipelineFilter(e.target.value)}
@@ -227,58 +311,130 @@ export function QueuePanel({
               color: "var(--text)",
               border: "1px solid var(--border)",
               borderRadius: 6,
-              padding: "4px 8px",
+              padding: "5px 10px",
               fontSize: 12,
+              fontWeight: 500,
             }}
           >
-            <option value="all">All Channels / Sheets</option>
-            {Array.from(
-              new Set([
-                "Movie Clips",
-                "@VynixAE",
-                "@PixelDrift-f3c",
-                "@SolarrEditss",
-                "@AlphaReels-1",
-                "@EditAetheris",
-                "@CoruscateCuts",
-                "@FrameLegion",
-                "@roebutt",
-                "@TheUsJournal17",
-                "@SceneVale",
-                "@QianaLucy",
-                "@clipscav",
-                "@hanganhoang3071",
-                "@comet-cinema",
-                "Abyss Declassified",
-                "The ICK Room",
-                ...items.map((i) => i.pipeline).filter(Boolean),
-              ])
-            ).map((ch) => (
+            <option value="all">📁 All Channels &amp; Folders (700 Total)</option>
+            <option value="Movie Clips" style={{ fontWeight: 700, color: "#38bdf8" }}>
+              🎬 Movie Clips (Parent - All 14 Channels)
+            </option>
+            {MOVIE_CLIPS_SUBCHANNELS.map((ch) => (
               <option key={ch} value={ch}>
-                {ch}
+                &nbsp;&nbsp;&nbsp;&nbsp;↳ {ch}
               </option>
             ))}
+            <option value="Abyss Declassified">📁 Abyss Declassified</option>
+            <option value="The ICK Room">📁 The ICK Room</option>
+            <option value="default">📁 Default</option>
           </select>
 
-          {/* Bulk Actions */}
-          {sel.size > 0 && (
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                className="primary"
-                style={{ fontSize: 11, padding: "4px 8px" }}
-                onClick={() => handleBulkAction("approve")}
+          {/* Mix & Shuffle Button */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowShuffleMenu(!showShuffleMenu)}
+              disabled={shuffling || items.length === 0}
+              style={{
+                background: "#4c1d95",
+                borderColor: "#6d28d9",
+                color: "#c4b5fd",
+                fontWeight: 600,
+                fontSize: 11,
+                padding: "6px 12px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span>🔀</span> {shuffling ? "Mixing…" : "Mix & Shuffle ▾"}
+            </button>
+
+            {showShuffleMenu && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: 6,
+                  background: "#1e1b4b",
+                  border: "1px solid #4338ca",
+                  borderRadius: 8,
+                  padding: 8,
+                  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
+                  zIndex: 50,
+                  width: 270,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
               >
-                ✓ Approve ({sel.size})
-              </button>
-              <button
-                className="danger"
-                style={{ fontSize: 11, padding: "4px 8px" }}
-                onClick={() => handleBulkAction("delete")}
-              >
-                🗑 Delete ({sel.size})
-              </button>
-            </div>
-          )}
+                <div style={{ padding: "4px 8px", fontSize: 10, color: "#a5b4fc", fontWeight: 700, textTransform: "uppercase" }}>
+                  Shuffle &amp; Schedule Distribution
+                </div>
+                <button
+                  onClick={() => handleShuffle("round_robin")}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "none",
+                    color: "#e0e7ff",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: "#38bdf8" }}>🔄 Round-Robin Mix (Recommended)</span>
+                  <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                    Interleaves videos across all 14 channels so posts alternate creators cleanly.
+                  </span>
+                </button>
+                <button
+                  onClick={() => handleShuffle("random")}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "none",
+                    color: "#e0e7ff",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: "#a78bfa" }}>🎲 Full Random Shuffle</span>
+                  <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                    Randomizes all selected items regardless of channel.
+                  </span>
+                </button>
+                <button
+                  onClick={() => handleShuffle("by_channel")}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "none",
+                    color: "#e0e7ff",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: "#34d399" }}>🎯 Shuffle by Channel</span>
+                  <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                    Randomizes internal order inside each channel bucket.
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={() => setShowAddModal(true)}
@@ -288,6 +444,78 @@ export function QueuePanel({
           </button>
         </div>
       </div>
+
+      {/* Mass Action Toolbar (Active when items selected) */}
+      {sel.size > 0 && (
+        <div
+          style={{
+            background: "#1e293b",
+            borderBottom: "1px solid #3b82f6",
+            padding: "8px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontWeight: 700, color: "#38bdf8" }}>
+              ✓ Selected {sel.size} of {items.length} item{items.length === 1 ? "" : "s"}
+            </span>
+            <button
+              onClick={() => toggleAll(sel.size < items.length)}
+              style={{ fontSize: 11, padding: "2px 8px", background: "rgba(255,255,255,0.1)", border: "none" }}
+            >
+              {sel.size === items.length ? "Deselect All" : `Select All (${items.length})`}
+            </button>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>Mass Status:</span>
+            <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#064e3b", color: "#34d399", borderColor: "#059669" }}
+              onClick={() => handleBulkStatusChange("ready")}
+            >
+              ● Set Ready to Post
+            </button>
+            <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#1e293b", color: "#38bdf8", borderColor: "#334155" }}
+              onClick={() => handleBulkStatusChange("review")}
+            >
+              👁 Set Needs Review
+            </button>
+            <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#065f46", color: "#10b981", borderColor: "#047857" }}
+              onClick={() => handleBulkStatusChange("posted")}
+            >
+              ✓ Set Posted
+            </button>
+            <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#1f2937", color: "#9ca3af", borderColor: "#374151" }}
+              onClick={() => handleBulkStatusChange("archived")}
+            >
+              📦 Set Archived
+            </button>
+
+            <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#1e1b4b", color: "#c4b5fd", borderColor: "#4338ca" }}
+              onClick={() => setShowAccountAssignModal(true)}
+            >
+              🔗 Assign Accounts ({accounts.length})
+            </button>
+
+            <button
+              className="danger"
+              style={{ fontSize: 11, padding: "4px 10px" }}
+              onClick={handleBulkDelete}
+            >
+              🗑 Delete ({sel.size})
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div
@@ -320,25 +548,48 @@ export function QueuePanel({
                 fontSize: 11,
                 borderRadius: 6,
                 fontWeight: isActive ? 600 : 400,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
               }}
             >
-              {tab.label} {tab.count > 0 ? `(${tab.count})` : ""}
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  background: isActive ? "var(--panel)" : "rgba(255,255,255,0.06)",
+                  padding: "1px 5px",
+                  borderRadius: 10,
+                  fontSize: 10,
+                }}
+              >
+                {tab.count}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Table Content */}
-      <div style={{ padding: 12, overflowX: "auto" }}>
-        {items.length === 0 ? (
-          <div style={{ padding: "30px 10px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-            {loading ? "Loading posting queue…" : "No queue items found. Add items from Compilations or Clips above."}
+      {/* Table */}
+      <div style={{ overflowX: "auto" }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            ⏳ Loading posting queue…
+          </div>
+        ) : items.length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            {statusFilter === "error" ? (
+              <div style={{ color: "#34d399" }}>
+                <span>✓</span> No failed items or errors! All videos are healthy and ready.
+              </div>
+            ) : (
+              "No queue items found for this selection."
+            )}
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
             <thead>
-              <tr style={{ color: "var(--muted)", borderBottom: "1px solid var(--border)", textAlign: "left" }}>
-                <th style={{ padding: "8px 6px", width: 30 }}>
+              <tr style={{ background: "var(--panel2)", borderBottom: "1px solid var(--border)", color: "var(--muted)" }}>
+                <th style={{ width: 36, padding: "8px 10px" }}>
                   <input
                     type="checkbox"
                     checked={sel.size === items.length && items.length > 0}
@@ -346,9 +597,9 @@ export function QueuePanel({
                     style={{ cursor: "pointer" }}
                   />
                 </th>
-                <th style={{ padding: "8px 10px" }}>ID & Channel</th>
-                <th style={{ padding: "8px 10px" }}>Title & Description</th>
-                <th style={{ padding: "8px 10px" }}>Source / Origin</th>
+                <th style={{ padding: "8px 10px" }}>ID &amp; Folder / Channel</th>
+                <th style={{ padding: "8px 10px" }}>Title &amp; Description</th>
+                <th style={{ padding: "8px 10px" }}>Target Social Accounts</th>
                 <th style={{ padding: "8px 10px" }}>Status</th>
                 <th style={{ padding: "8px 10px" }}>Drive Link</th>
                 <th style={{ padding: "8px 10px", textAlign: "right" }}>Actions</th>
@@ -380,21 +631,23 @@ export function QueuePanel({
                       />
                     </td>
 
-                    {/* ID & Channel */}
+                    {/* ID & Folder / Channel */}
                     <td style={{ padding: "10px", verticalAlign: "top", whiteSpace: "nowrap" }}>
                       <div style={{ fontWeight: 700, color: "var(--accent)" }}>#{item.id}</div>
                       <div
                         style={{
                           fontSize: 10,
                           padding: "2px 6px",
-                          background: "var(--chip)",
+                          background: "#1e293b",
+                          color: "#38bdf8",
+                          border: "1px solid #334155",
                           borderRadius: 4,
                           display: "inline-block",
                           marginTop: 4,
-                          color: "var(--muted)",
+                          fontWeight: 500,
                         }}
                       >
-                        {item.pipeline}
+                        📁 {item.source || item.pipeline}
                       </div>
                       {item.compilation_id && (
                         <div style={{ fontSize: 10, color: "var(--blue)", marginTop: 2 }}>
@@ -404,7 +657,7 @@ export function QueuePanel({
                     </td>
 
                     {/* Title & Description */}
-                    <td style={{ padding: "10px", verticalAlign: "top", maxWidth: 380 }}>
+                    <td style={{ padding: "10px", verticalAlign: "top", maxWidth: 360 }}>
                       <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
                         {item.title || "Untitled Video"}
                       </div>
@@ -429,15 +682,68 @@ export function QueuePanel({
                         </div>
                       )}
                       {item.notes && (
-                        <div style={{ fontSize: 10, color: "var(--yellow)", marginTop: 4 }}>
-                          ℹ️ {item.notes}
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: item.status === "error" || item.status === "retry" ? "#f87171" : "var(--yellow)",
+                            marginTop: 4,
+                          }}
+                        >
+                          {item.status === "error" ? "❌ Error:" : "ℹ️"} {item.notes}
                         </div>
                       )}
                     </td>
 
-                    {/* Source */}
-                    <td style={{ padding: "10px", verticalAlign: "top", color: "var(--muted)" }}>
-                      <div>{item.source || "—"}</div>
+                    {/* Target Social Accounts Column */}
+                    <td style={{ padding: "10px", verticalAlign: "top", minWidth: 160 }}>
+                      {item.accounts && item.accounts.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {item.accounts.map((accId) => {
+                            const acc = accounts.find((a) => a.id === accId);
+                            const name = acc?.nickname || acc?.username || accId;
+                            const network = acc?.network?.toLowerCase() || "outstand";
+                            const icon =
+                              network.includes("youtube") ? "▶️" :
+                              network.includes("tiktok") ? "🎵" :
+                              network.includes("insta") ? "📸" :
+                              network.includes("face") ? "📘" : "🌐";
+                            return (
+                              <span
+                                key={accId}
+                                style={{
+                                  fontSize: 10,
+                                  background: "#1e1b4b",
+                                  color: "#c7d2fe",
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 4,
+                                  width: "fit-content",
+                                }}
+                              >
+                                <span>{icon}</span> {name}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSel(new Set([item.id]));
+                            setShowAccountAssignModal(true);
+                          }}
+                          style={{
+                            fontSize: 10,
+                            padding: "2px 6px",
+                            background: "transparent",
+                            border: "1px dashed var(--border)",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          + Assign Accounts
+                        </button>
+                      )}
                     </td>
 
                     {/* Status Badge */}
@@ -461,65 +767,71 @@ export function QueuePanel({
                       )}
                     </td>
 
-                    {/* Google Drive Link */}
-                    <td style={{ padding: "10px", verticalAlign: "top" }}>
+                    {/* Drive Link */}
+                    <td style={{ padding: "10px", verticalAlign: "top", whiteSpace: "nowrap" }}>
                       {item.drive_link ? (
                         <a
                           href={item.drive_link}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ color: "var(--blue)", fontSize: 11 }}
+                          style={{
+                            fontSize: 11,
+                            color: "#38bdf8",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            textDecoration: "none",
+                            padding: "3px 6px",
+                            background: "#0c4a6e",
+                            borderRadius: 4,
+                          }}
                         >
-                          📁 Drive Link ↗
+                          <span>📁</span> Drive Link ↗
                         </a>
                       ) : (
-                        <span style={{ color: "var(--muted)" }}>—</span>
+                        <span style={{ color: "var(--muted)", fontSize: 11 }}>—</span>
                       )}
                     </td>
 
                     {/* Actions */}
-                    <td style={{ padding: "10px", verticalAlign: "top", textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                    <td style={{ padding: "10px", verticalAlign: "top", textAlign: "right", whiteSpace: "nowrap" }}>
+                      <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
                         {item.status === "review" && (
                           <button
                             className="primary"
-                            style={{ fontSize: 11, padding: "3px 7px" }}
+                            style={{ fontSize: 10, padding: "3px 7px" }}
                             onClick={() => handleApprove(item.id)}
-                            title="Approve row -> ready for automated posting"
+                            title="Approve for posting"
                           >
                             ✓ Approve
                           </button>
                         )}
-
                         <button
-                          style={{ fontSize: 11, padding: "3px 7px", background: "#7c3aed", color: "#fff", borderColor: "#6d28d9" }}
+                          style={{ fontSize: 10, padding: "3px 7px", background: "#7c3aed", borderColor: "#6d28d9", color: "#fff" }}
                           onClick={() => handlePublishNow(item.id)}
-                          title="Publish immediately to Outstand"
+                          title="Post to social media now"
                         >
                           🚀 Post Now
                         </button>
-
                         <button
-                          style={{ fontSize: 11, padding: "3px 7px" }}
+                          style={{ fontSize: 10, padding: "3px 7px" }}
                           onClick={() => handleGenerateAi(item.id)}
-                          title="Generate viral title & hashtags via AI"
+                          title="Auto-generate AI caption & tags"
                         >
                           ✨ AI
                         </button>
-
                         <button
-                          style={{ fontSize: 11, padding: "3px 7px" }}
+                          style={{ fontSize: 10, padding: "3px 7px" }}
                           onClick={() => setEditItem(item)}
-                          title="Edit row details"
+                          title="Edit video metadata"
                         >
                           ✏️ Edit
                         </button>
-
                         <button
                           className="danger"
-                          style={{ fontSize: 11, padding: "3px 7px" }}
+                          style={{ fontSize: 10, padding: "3px 6px" }}
                           onClick={() => handleDelete(item.id)}
-                          title="Delete queue item"
+                          title="Delete"
                         >
                           ✕
                         </button>
@@ -533,115 +845,213 @@ export function QueuePanel({
         )}
       </div>
 
-      {/* Edit Row Modal */}
+      {/* Errors & Retry Console (Shows when errors exist or filter is on errors) */}
+      {(statusFilter === "error" || errorCount > 0) && (
+        <div
+          style={{
+            padding: "14px 18px",
+            background: "#450a0a",
+            borderTop: "1px solid #7f1d1d",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+            fontSize: 12,
+          }}
+        >
+          <div>
+            <span style={{ fontWeight: 700, color: "#f87171", display: "flex", alignItems: "center", gap: 6 }}>
+              <span>⚠️</span> {errorCount} failed item{errorCount === 1 ? "" : "s"} detected in posting queue
+            </span>
+            <span style={{ color: "#fca5a5", fontSize: 11 }}>
+              Review the error notes above. You can mass retry them once network or Outstand credentials are verified.
+            </span>
+          </div>
+          <button
+            onClick={handleRetryAllFailed}
+            style={{
+              background: "#b91c1c",
+              borderColor: "#ef4444",
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: 11,
+              padding: "6px 14px",
+            }}
+          >
+            ↻ Retry All {errorCount} Failed Item(s)
+          </button>
+        </div>
+      )}
+
+      {/* Account Assign Modal */}
+      {showAccountAssignModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.75)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: 24,
+              width: "100%",
+              maxWidth: 480,
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 16 }}>Assign Social Media Accounts</h3>
+            <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+              Choose which connected accounts will post these {sel.size} selected video(s):
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
+              {accounts.map((acc) => {
+                const checked = selectedTargetAccountIds.includes(acc.id);
+                return (
+                  <label
+                    key={acc.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 12px",
+                      background: "var(--bg)",
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedTargetAccountIds([...selectedTargetAccountIds, acc.id]);
+                        } else {
+                          setSelectedTargetAccountIds(selectedTargetAccountIds.filter((id) => id !== acc.id));
+                        }
+                      }}
+                    />
+                    <span style={{ fontWeight: 600 }}>{acc.nickname || acc.username}</span>
+                    <span style={{ color: "var(--muted)", fontSize: 11 }}>({acc.network})</span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setShowAccountAssignModal(false)}>Cancel</button>
+              <button
+                className="primary"
+                onClick={() => handleBulkAccountsAssign(selectedTargetAccountIds)}
+              >
+                Apply to {sel.size} Items
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Item Modal */}
       {editItem && (
         <div
           style={{
             position: "fixed",
             inset: 0,
             background: "rgba(0,0,0,0.75)",
-            backdropFilter: "blur(4px)",
+            zIndex: 100,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 99999,
-            padding: 16,
+            padding: 20,
           }}
-          onClick={() => setEditItem(null)}
         >
           <div
             style={{
               background: "var(--panel)",
               border: "1px solid var(--border)",
-              borderRadius: 12,
+              borderRadius: 10,
+              padding: 24,
               width: "100%",
-              maxWidth: 580,
-              padding: 20,
-              boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+              maxWidth: 540,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <span style={{ fontWeight: 700, fontSize: 15 }}>✏️ Edit Queue Row #{editItem.id}</span>
-              <button onClick={() => setEditItem(null)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button>
+            <h3 style={{ margin: 0, fontSize: 16 }}>Edit Queue Item #{editItem.id}</h3>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Title</label>
+              <input
+                type="text"
+                value={editItem.title}
+                onChange={(e) => setEditItem({ ...editItem, title: e.target.value })}
+                style={{ width: "100%" }}
+              />
             </div>
 
-            <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Description</label>
+              <textarea
+                rows={3}
+                value={editItem.description}
+                onChange={(e) => setEditItem({ ...editItem, description: e.target.value })}
+                style={{ width: "100%", fontSize: 12 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Hashtags</label>
+              <input
+                type="text"
+                value={editItem.tags}
+                onChange={(e) => setEditItem({ ...editItem, tags: e.target.value })}
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>TITLE</label>
+                <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Status</label>
+                <select
+                  value={editItem.status}
+                  onChange={(e) => setEditItem({ ...editItem, status: e.target.value })}
+                  style={{ width: "100%", padding: 6, fontSize: 12 }}
+                >
+                  <option value="review">👁 Needs Review</option>
+                  <option value="ready">● Ready to Post</option>
+                  <option value="posted">✓ Posted</option>
+                  <option value="archived">📦 Archived</option>
+                  <option value="retry">⚠️ Retry</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Folder / Pipeline</label>
                 <input
                   type="text"
-                  value={editItem.title}
-                  onChange={(e) => setEditItem({ ...editItem, title: e.target.value })}
+                  value={editItem.pipeline}
+                  onChange={(e) => setEditItem({ ...editItem, pipeline: e.target.value })}
+                  style={{ width: "100%" }}
                 />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>DESCRIPTION / CAPTION</label>
-                <textarea
-                  rows={4}
-                  value={editItem.description}
-                  onChange={(e) => setEditItem({ ...editItem, description: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>TAGS & HASHTAGS</label>
-                <input
-                  type="text"
-                  value={editItem.tags}
-                  onChange={(e) => setEditItem({ ...editItem, tags: e.target.value })}
-                />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>CHANNEL / PIPELINE</label>
-                  <input
-                    type="text"
-                    value={editItem.pipeline}
-                    onChange={(e) => setEditItem({ ...editItem, pipeline: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>STATUS</label>
-                  <select
-                    value={editItem.status}
-                    onChange={(e) => setEditItem({ ...editItem, status: e.target.value })}
-                    style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 10px", width: "100%" }}
-                  >
-                    <option value="review">Review</option>
-                    <option value="ready">Ready to post</option>
-                    <option value="posted">Posted</option>
-                    <option value="retry">Retry</option>
-                    <option value="error">Error</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>SOURCE (Origin Folder/Creator)</label>
-                  <input
-                    type="text"
-                    value={editItem.source || ""}
-                    onChange={(e) => setEditItem({ ...editItem, source: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>GOOGLE DRIVE LINK</label>
-                  <input
-                    type="text"
-                    value={editItem.drive_link || ""}
-                    onChange={(e) => setEditItem({ ...editItem, drive_link: e.target.value })}
-                    placeholder="https://drive.google.com/..."
-                  />
-                </div>
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
               <button onClick={() => setEditItem(null)}>Cancel</button>
               <button className="primary" onClick={handleSaveEdit} disabled={savingEdit}>
                 {savingEdit ? "Saving…" : "Save Changes"}
@@ -651,110 +1061,90 @@ export function QueuePanel({
         </div>
       )}
 
-      {/* Add New Item Modal */}
+      {/* Add Item Modal */}
       {showAddModal && (
         <div
           style={{
             position: "fixed",
             inset: 0,
             background: "rgba(0,0,0,0.75)",
-            backdropFilter: "blur(4px)",
+            zIndex: 100,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            zIndex: 99999,
-            padding: 16,
+            padding: 20,
           }}
-          onClick={() => setShowAddModal(false)}
         >
           <div
             style={{
               background: "var(--panel)",
               border: "1px solid var(--border)",
-              borderRadius: 12,
+              borderRadius: 10,
+              padding: 24,
               width: "100%",
-              maxWidth: 540,
-              padding: 20,
-              boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+              maxWidth: 500,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <span style={{ fontWeight: 700, fontSize: 15 }}>+ Add New Video to Queue</span>
-              <button onClick={() => setShowAddModal(false)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button>
+            <h3 style={{ margin: 0, fontSize: 16 }}>+ Add Video to Posting Queue</h3>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Title *</label>
+              <input
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Video title"
+                style={{ width: "100%" }}
+              />
             </div>
 
-            <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Google Drive Link</label>
+              <input
+                type="text"
+                value={newDriveLink}
+                onChange={(e) => setNewDriveLink(e.target.value)}
+                placeholder="https://drive.google.com/file/d/..."
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>TITLE *</label>
-                <input
-                  type="text"
-                  placeholder="Catchy video title"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                />
+                <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Pipeline Channel</label>
+                <select
+                  value={newPipeline}
+                  onChange={(e) => setNewPipeline(e.target.value)}
+                  style={{ width: "100%", padding: 6, fontSize: 12 }}
+                >
+                  <option value="Movie Clips">Movie Clips</option>
+                  {MOVIE_CLIPS_SUBCHANNELS.map((ch) => (
+                    <option key={ch} value={ch}>{ch}</option>
+                  ))}
+                  <option value="Abyss Declassified">Abyss Declassified</option>
+                  <option value="The ICK Room">The ICK Room</option>
+                </select>
               </div>
 
               <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>CAPTION / DESCRIPTION</label>
-                <textarea
-                  rows={3}
-                  placeholder="Engaging caption with call to action"
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>HASHTAGS</label>
+                <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Hashtags</label>
                 <input
                   type="text"
-                  placeholder="#viral #trending #reels #shorts"
                   value={newTags}
                   onChange={(e) => setNewTags(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>CHANNEL / PIPELINE</label>
-                  <select
-                    value={newPipeline}
-                    onChange={(e) => setNewPipeline(e.target.value)}
-                    style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 10px", width: "100%" }}
-                  >
-                    <option value="Movie Clips">Movie Clips</option>
-                    <option value="Abyss Declassified">Abyss Declassified</option>
-                    <option value="The ICK Room">The ICK Room</option>
-                    <option value="default">Default</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>SOURCE (Origin Folder/Channel)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Source: @EditAetheris"
-                    value={newSource}
-                    onChange={(e) => setNewSource(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>GOOGLE DRIVE LINK (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="https://drive.google.com/file/d/..."
-                  value={newDriveLink}
-                  onChange={(e) => setNewDriveLink(e.target.value)}
+                  placeholder="#shorts #movies"
+                  style={{ width: "100%" }}
                 />
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
               <button onClick={() => setShowAddModal(false)}>Cancel</button>
               <button className="primary" onClick={handleCreateNew}>
-                Add to Queue (Review)
+                Add to Queue
               </button>
             </div>
           </div>
