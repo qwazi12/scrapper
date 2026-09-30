@@ -78,6 +78,8 @@ function StatusBar({
 }) {
   const selected = clips.filter((c) => c.selected && c.status === "done").length;
   const running = comps.find((c) => c.status === "running");
+  const pending = clips.filter((c) => c.status === "failed" && c.error?.includes("Mac worker")).length;
+  const actualFailed = Math.max(0, (stats?.clips_failed ?? 0) - pending);
   return (
     <header
       style={{
@@ -100,7 +102,8 @@ function StatusBar({
       <Metric label="clips" value={clips.length} />
       <Metric label="selected" value={selected} accent />
       <Metric label="done" value={stats?.clips_done ?? 0} />
-      <Metric label="failed" value={stats?.clips_failed ?? 0} danger={!!stats?.clips_failed} />
+      {pending > 0 && <Metric label="pending" value={pending} />}
+      <Metric label="failed" value={actualFailed} danger={actualFailed > 0} />
       <Metric label="compilations" value={comps.length} />
       <Metric label="storage" value={fmtBytes(stats?.storage_bytes ?? 0)} />
       {running && (
@@ -496,7 +499,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                 <Td>{fmtBytes(c.size_bytes)}</Td>
                 <Td>
                   {isWaitingForMac ? (
-                    <span style={{ color: "var(--yellow)" }}>● queued for mac</span>
+                    <span style={{ color: "var(--yellow)" }}>● pending (mac)</span>
                   ) : (
                     <span style={{ color: statusColor(c.status) }}>● {c.status}</span>
                   )}
