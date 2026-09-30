@@ -103,6 +103,7 @@ def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[path
         *pacing_args(url),                 # same platform-aware pacing as the server
         "--output", out_tpl,
         "--format", "bv*+ba/b",
+        "--format-sort", "res:1080",
         "--merge-output-format", "mp4",
         "--write-info-json",
         "--write-thumbnail",
@@ -175,14 +176,21 @@ def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dic
         return json.loads(r.read().decode())
 
 
+_last_empty_log = 0.0
+
+
 def drain(server: str, token: str, browser: str | None) -> int:
+    global _last_empty_log
     try:
         blocked = api_get(server, token, "/api/clips/blocked")
     except Exception as exc:
         log_msg(f"! cannot reach server: {exc}")
         return 0
     if not blocked:
-        log_msg("checked queue: 0 blocked URLs")
+        now = time.time()
+        if now - _last_empty_log >= 120:
+            log_msg("checked queue: 0 blocked URLs")
+            _last_empty_log = now
         return 0
 
     log_msg(f"{len(blocked)} blocked URL(s) to fetch locally")
@@ -224,7 +232,7 @@ def main() -> int:
     ap.add_argument("--browser", default="", help="chrome | firefox | safari | edge | brave")
     ap.add_argument("--verbose", action="store_true", help="print the yt-dlp command and full output")
     ap.add_argument("--watch", action="store_true", help="keep polling instead of exiting")
-    ap.add_argument("--interval", type=int, default=120, help="seconds between polls in --watch")
+    ap.add_argument("--interval", type=int, default=15, help="seconds between polls in --watch")
     args = ap.parse_args()
 
     if not args.server or not args.token:

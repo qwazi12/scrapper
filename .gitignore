@@ -1,6 +1,7 @@
 # Video files stay local — never pushed to GitHub
 downloads/
 data/
+logs/
 
 # Python
 __pycache__/

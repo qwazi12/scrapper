@@ -160,6 +160,7 @@ def scrape(
         "--download-archive", str(archive_path),
         "--output", out_template,
         "--format", "bv*+ba/b",
+        "--format-sort", "res:1080",
         "--merge-output-format", "mp4",
         "--write-info-json",
         "--write-thumbnail",
