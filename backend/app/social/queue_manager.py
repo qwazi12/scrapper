@@ -191,13 +191,18 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         )
 
         outstand_id = post_res.get("post", {}).get("id") or post_res.get("id")
-        item.outstand_post_id = str(outstand_id) if outstand_id else None
-        item.status = "posted"
-        item.published_at = datetime.datetime.now(datetime.timezone.utc)
-        item.notes = f"Posted to Outstand post ID {outstand_id} across {len(item.accounts)} accounts."
+        if not outstand_id:
+            raise outstand.OutstandError(f"Outstand returned no post id: {post_res}")
+        # Outstand publishes asynchronously: an accepted request is not a live
+        # post. Stay in "posting" until reconcile_posting() sees each account's
+        # real result — only then is it "posted" (and the 4-day clock starts).
+        item.outstand_post_id = str(outstand_id)
+        item.published_at = None
+        item.notes = (f"Submitted to Outstand (post {outstand_id}) for {len(item.accounts)} account(s); "
+                      "waiting for the platforms to confirm.")
         s.commit()
 
-        logbus.log("info", "queue_posted", f"Item #{item.id} successfully posted (Outstand: {outstand_id})")
+        logbus.log("info", "queue_submitted", f"Item #{item.id} submitted to Outstand (post {outstand_id})")
         return item
 
     except Exception as exc:
@@ -215,6 +220,60 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
                 logger.info("Cleaned up temporary Drive download file: %s", video_path)
             except Exception:
                 pass
+
+
+def _describe(acct: dict[str, Any]) -> str:
+    return f"{acct.get('network', '?')} {acct.get('username') or acct.get('nickname') or acct.get('id')}"
+
+
+def apply_post_result(item: QueueItem, post: dict[str, Any], now: datetime.datetime) -> bool:
+    """Fold Outstand's per-account results into the item. Returns False while
+    any account is still pending."""
+    accts = post.get("socialAccounts") or []
+    if not accts or any(a.get("status") not in ("published", "failed") for a in accts):
+        return False
+    ok = [a for a in accts if a.get("status") == "published"]
+    bad = [a for a in accts if a.get("status") == "failed"]
+    parts = [f"✓ {_describe(a)} {a.get('platformPostUrl') or ''}".strip() for a in ok]
+    for a in bad:
+        err = str(a.get("error") or "unknown error")
+        if "quota" in err.lower() or "429" in err:
+            err = "daily upload quota exceeded — " + err[:160]
+        parts.append(f"✕ {_describe(a)}: {err[:220]}")
+    if not bad:
+        item.status = "posted"
+        item.published_at = now
+    else:
+        # Retry only the accounts that failed, so a retry never double-posts.
+        item.status = "retry"
+        item.accounts = [a["id"] for a in bad if a.get("id")]
+        item.published_at = None
+    item.notes = " | ".join(parts)[:1000]
+    return True
+
+
+def reconcile_posting(s: Session, now: datetime.datetime) -> int:
+    """Check submitted posts with Outstand; settle them to posted/retry."""
+    pending = (
+        s.query(QueueItem)
+        .filter(QueueItem.status == "posting")
+        .filter(QueueItem.outstand_post_id.isnot(None))
+        .all()
+    )
+    settled = 0
+    for item in pending:
+        try:
+            post = asyncio.run(outstand.get_post(item.outstand_post_id))
+        except Exception as exc:
+            logger.warning("Outstand status check failed for #%s: %s", item.id, exc)
+            continue
+        if apply_post_result(item, post, now):
+            s.commit()
+            settled += 1
+            logbus.log("info" if item.status == "posted" else "error",
+                       "queue_posted" if item.status == "posted" else "queue_post_failed",
+                       f"Item #{item.id}: {item.notes}")
+    return settled
 
 
 def sweep_archive(s: Session, now: datetime.datetime) -> int:
@@ -264,6 +323,7 @@ def run_scheduler_tick():
     global _last_archive_sweep
     now = datetime.datetime.now(UTC)
     with SessionLocal() as s:
+        reconcile_posting(s, now)
         plan_schedule(s, now)
 
         due = (

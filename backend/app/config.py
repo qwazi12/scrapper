@@ -96,7 +96,8 @@ class Settings(BaseSettings):
 
     # --- AI Metadata (Google Gemini) ------------------------------------
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    # 2.5 is closed to new users; Google recommends 3.5 Flash-Lite / 3.8 Flash.
+    gemini_model: str = "gemini-3.5-flash-lite"
 
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod

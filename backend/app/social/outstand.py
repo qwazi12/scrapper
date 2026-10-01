@@ -209,3 +209,14 @@ async def create_social_post(
                 status_code=res.status_code,
             )
         return res.json()
+
+
+async def get_post(post_id: str) -> dict[str, Any]:
+    """GET /v1/posts/{id}: per-account publish results (pending/published/failed)."""
+    url = f"{settings.outstand_base_url.rstrip('/')}/posts/{post_id}"
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        res = await client.get(url, headers=_get_headers())
+        if not res.is_success:
+            raise OutstandError(f"Outstand get post failed: {res.text}", status_code=res.status_code)
+        data = res.json()
+        return data.get("post") or data.get("data") or data

@@ -6,7 +6,7 @@ import { api, QueueItem, SocialAccount } from "../lib/api";
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   review: { bg: "#1e293b", text: "#38bdf8", label: "👁 Review" },
   ready: { bg: "#064e3b", text: "#34d399", label: "● Ready to Post" },
-  posting: { bg: "#78350f", text: "#fbbf24", label: "⏳ Posting…" },
+  posting: { bg: "#78350f", text: "#fbbf24", label: "⏳ Posting… (awaiting platforms)" },
   posted: { bg: "#065f46", text: "#10b981", label: "✓ Posted" },
   retry: { bg: "#4c0519", text: "#fb7185", label: "⚠️ Retry" },
   error: { bg: "#450a0a", text: "#f87171", label: "✕ Error" },
@@ -145,7 +145,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     if (!confirm("Publish this item to connected social accounts now?")) return;
     try {
       await api.publishQueueItem(id);
-      alert("✓ Successfully published!");
+      alert("✓ Submitted to Outstand. It shows ⏳ Posting until each platform confirms (usually within a few minutes); failures appear in the row's notes.");
     } catch (err: any) {
       alert(`Publish failed: ${err.message}`);
     }

@@ -209,3 +209,43 @@ def test_bulk_edit_pipeline_moves_schedule_group(session, client):
     session.refresh(a)
     assert a.source == "The ICK Room / @VynixAE"
     assert qm.pipeline_group(a) == "The ICK Room"
+
+
+# --- Outstand result reconciliation -----------------------------------------
+def _post(*accts):
+    return {"socialAccounts": [dict(id=i, network="youtube", username=u, status=st, error=e)
+                               for i, u, st, e in accts]}
+
+
+def test_pending_post_stays_posting(session):
+    (it,) = add(session, 1, status="posting")
+    assert not qm.apply_post_result(it, _post(("A", "@a", "pending", None)), datetime.datetime.now(UTC))
+    assert it.status == "posting" and it.published_at is None
+
+
+def test_all_published_marks_posted_and_starts_clock(session):
+    (it,) = add(session, 1, status="posting")
+    now = datetime.datetime.now(UTC)
+    assert qm.apply_post_result(it, _post(("A", "@a", "published", None)), now)
+    assert it.status == "posted" and it.published_at == now
+
+
+def test_partial_failure_retries_only_failed_accounts(session):
+    (it,) = add(session, 1, status="posting", accounts=["A", "B"])
+    qm.apply_post_result(it, _post(("A", "@a", "published", None),
+                                   ("B", "@b", "failed", "429 Quota exceeded")),
+                         datetime.datetime.now(UTC))
+    assert it.status == "retry" and it.accounts == ["B"] and it.published_at is None
+    assert "quota" in it.notes
+
+
+def test_reconcile_uses_outstand_status(session, monkeypatch):
+    (it,) = add(session, 1, status="posting", outstand_post_id="P1")
+
+    async def fake_get(pid):
+        assert pid == "P1"
+        return _post(("A", "@a", "failed", "boom"))
+
+    monkeypatch.setattr(outstand, "get_post", fake_get)
+    assert qm.reconcile_posting(session, datetime.datetime.now(UTC)) == 1
+    assert it.status == "retry"

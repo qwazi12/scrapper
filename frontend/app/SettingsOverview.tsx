@@ -117,6 +117,13 @@ export function SettingsOverview() {
         <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 10 }}>
           Videos with no accounts assigned post to every active account above.
         </div>
+        {accounts.some((a) => a.network === "youtube") && (
+          <div style={{ fontSize: 11, color: "var(--yellow)", marginTop: 8 }}>
+            ⚠️ YouTube: with Outstand&apos;s Managed Keys, uploads share one Google quota (~6 uploads/day across all
+            Outstand users) and fail with “quota exceeded”. Connect YouTube with your own Google Cloud project (BYOK)
+            in Outstand for your own quota — still ~6/day per project unless Google raises it.
+          </div>
+        )}
       </div>
 
       {/* AI + retention */}
