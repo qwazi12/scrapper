@@ -54,6 +54,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [archiveDays, setArchiveDays] = useState<number | null>(null);
+  const [privacy, setPrivacy] = useState("public");
 
   // Mass edit modal
   const [showBulkEdit, setShowBulkEdit] = useState(false);
@@ -92,7 +93,10 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   }, [statusFilter, pipelineFilter]);
 
   useEffect(() => {
-    api.schedule().then((r) => setArchiveDays(r.archive_delete_days)).catch(() => {});
+    api.schedule().then((r) => {
+      setArchiveDays(r.archive_delete_days);
+      setPrivacy(r.publisher.privacy);
+    }).catch(() => {});
   }, []);
 
   const sortedItems = useMemo(() => {
@@ -141,11 +145,21 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     onChange();
   }
 
-  async function handlePublishNow(id: number) {
-    if (!confirm("Publish this item to connected social accounts now?")) return;
+  async function handlePublishNow(item: QueueItem) {
+    if (!item.accounts || item.accounts.length === 0) {
+      alert("Pick accounts first: use 🔗 Assign Accounts to choose where this video goes.");
+      return;
+    }
+    const names = item.accounts
+      .map((id) => {
+        const a = accounts.find((x) => x.id === id);
+        return a ? `${a.nickname || a.username} (${a.network})` : `${id} (not connected)`;
+      })
+      .join(", ");
+    if (!confirm(`Post "${item.title}" now to ${names} as ${privacy} via Upload-Post?`)) return;
     try {
-      await api.publishQueueItem(id);
-      alert("✓ Submitted to Outstand. It shows ⏳ Posting until each platform confirms (usually within a few minutes); failures appear in the row's notes.");
+      await api.publishQueueItem(item.id);
+      alert("✓ Submitted to Upload-Post. It shows ⏳ Posting until each platform confirms (usually a few minutes); results and links appear in the row's notes.");
     } catch (err: any) {
       alert(`Publish failed: ${err.message}`);
     }
@@ -180,6 +194,12 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     } catch (err: any) {
       alert(`Bulk status change failed: ${err.message}`);
     }
+  }
+
+  // Always open with nothing ticked — the owner picks every destination.
+  function openAssignAccounts() {
+    setSelectedTargetAccountIds([]);
+    setShowAccountAssignModal(true);
   }
 
   async function handleBulkAccountsAssign(accountIds: string[]) {
@@ -596,7 +616,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
 
             <button
               style={{ fontSize: 11, padding: "4px 10px", background: "#1e1b4b", color: "#c4b5fd", borderColor: "#4338ca" }}
-              onClick={() => setShowAccountAssignModal(true)}
+              onClick={openAssignAccounts}
             >
               🔗 Assign Accounts ({accounts.length})
             </button>
@@ -795,8 +815,8 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           {item.accounts.map((accId) => {
                             const acc = accounts.find((a) => a.id === accId);
-                            const name = acc?.nickname || acc?.username || accId;
-                            const network = acc?.network?.toLowerCase() || "outstand";
+                            const name = acc ? acc.nickname || acc.username : `⚠ ${accId} (not connected)`;
+                            const network = acc?.network?.toLowerCase() || "";
                             const icon =
                               network.includes("youtube") ? "▶️" :
                               network.includes("tiktok") ? "🎵" :
@@ -826,7 +846,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                         <button
                           onClick={() => {
                             setSel(new Set([item.id]));
-                            setShowAccountAssignModal(true);
+                            openAssignAccounts();
                           }}
                           style={{
                             fontSize: 10,
@@ -855,6 +875,11 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                       >
                         {st.label}
                       </span>
+                      {item.status === "ready" && (!item.accounts || item.accounts.length === 0) && (
+                        <div style={{ fontSize: 10, color: "var(--yellow)", marginTop: 4 }}>
+                          ⚠ no accounts picked — won&apos;t be scheduled
+                        </div>
+                      )}
                       {item.status === "ready" && item.scheduled_at && (
                         <div style={{ fontSize: 10, color: "#34d399", marginTop: 4 }} title="Next posting slot">
                           ⏰ {fmtET(item.scheduled_at)}
@@ -915,7 +940,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                         )}
                         <button
                           style={{ fontSize: 10, padding: "3px 7px", background: "#7c3aed", borderColor: "#6d28d9", color: "#fff" }}
-                          onClick={() => handlePublishNow(item.id)}
+                          onClick={() => handlePublishNow(item)}
                           title="Post to social media now"
                         >
                           🚀 Post Now
@@ -972,7 +997,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               <span>⚠️</span> {errorCount} failed item{errorCount === 1 ? "" : "s"} detected in posting queue
             </span>
             <span style={{ color: "#fca5a5", fontSize: 11 }}>
-              Review the error notes above. You can mass retry them once network or Outstand credentials are verified.
+              Review the error notes above. You can mass retry them once the cause is fixed (retries go only to the accounts that failed).
             </span>
           </div>
           <button
@@ -1063,6 +1088,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               <button onClick={() => setShowAccountAssignModal(false)}>Cancel</button>
               <button
                 className="primary"
+                disabled={selectedTargetAccountIds.length === 0}
                 onClick={() => handleBulkAccountsAssign(selectedTargetAccountIds)}
               >
                 Apply to {sel.size} Items

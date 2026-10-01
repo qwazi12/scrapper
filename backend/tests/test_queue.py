@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.models import QueueItem
-from backend.app.social import metadata, outstand, queue_manager as qm
+from backend.app.social import metadata, queue_manager as qm, upload_post
 
 ET = ZoneInfo("America/New_York")
 UTC = datetime.timezone.utc
@@ -17,6 +17,7 @@ def et(y, mo, d, h, mi=0):
 
 
 def add(s, n, source="Movie Clips / @VynixAE", status="ready", **kw):
+    kw.setdefault("accounts", ["mk:youtube"])
     items = []
     for _ in range(n):
         it = QueueItem(pipeline=source.split(" / ")[-1], source=source, title="t",
@@ -189,15 +190,6 @@ def test_schedule_endpoint(session, client):
 
 
 # --- helpers -------------------------------------------------------------------
-@pytest.mark.parametrize("name,expected", [
-    ("This job interview is insane 😂.mp4", "This_job_interview_is_insane.mp4"),
-    ("#fyp #movie clip?.mov", "fyp_movie_clip.mov"),
-    ("😂😂.mp4", "video.mp4"),
-])
-def test_safe_upload_name(name, expected):
-    assert outstand.safe_upload_name(name) == expected
-
-
 def test_metadata_non_strict_still_falls_back():
     res = asyncio.run(metadata.generate_social_metadata(["a"]))
     assert res["model"] == "template"
@@ -211,41 +203,132 @@ def test_bulk_edit_pipeline_moves_schedule_group(session, client):
     assert qm.pipeline_group(a) == "The ICK Room"
 
 
-# --- Outstand result reconciliation -----------------------------------------
-def _post(*accts):
-    return {"socialAccounts": [dict(id=i, network="youtube", username=u, status=st, error=e)
-                               for i, u, st, e in accts]}
+# --- Upload-Post publishing --------------------------------------------------
+def test_planner_never_schedules_items_without_picked_accounts(session):
+    (it,) = add(session, 1, accounts=[])
+    qm.plan_schedule(session, et(2026, 10, 1, 9))
+    assert it.scheduled_at is None
 
 
-def test_pending_post_stays_posting(session):
-    (it,) = add(session, 1, status="posting")
-    assert not qm.apply_post_result(it, _post(("A", "@a", "pending", None)), datetime.datetime.now(UTC))
-    assert it.status == "posting" and it.published_at is None
+def test_post_now_without_accounts_is_refused(session, client):
+    (it,) = add(session, 1, accounts=[])
+    r = client.post(f"/api/queue/{it.id}/publish")
+    assert r.status_code == 400 and "No accounts picked" in r.json()["detail"]
 
 
-def test_all_published_marks_posted_and_starts_clock(session):
-    (it,) = add(session, 1, status="posting")
+def test_group_by_profile_sends_one_upload_per_profile():
+    g = upload_post.group_by_profile(["mk:youtube", "default:youtube", "mk:tiktok"])
+    assert g == {"mk": ["youtube", "tiktok"], "default": ["youtube"]}
+
+
+def test_submit_one_request_per_profile_and_rejects_unconnected(monkeypatch, tmp_path):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    calls = []
+
+    async def accounts():
+        return [{"id": "mk:youtube"}, {"id": "default:youtube"}]
+
+    async def upload(path, **kw):
+        calls.append((kw["profile"], kw["platforms"], kw["privacy"]))
+        return f"req-{kw['profile']}"
+
+    monkeypatch.setattr(upload_post, "list_accounts", accounts)
+    monkeypatch.setattr(upload_post, "upload_video", upload)
+    entries = asyncio.run(qm.submit_upload(video, ["mk:youtube", "default:youtube"],
+                                           title="t", description="d", tags=[]))
+    assert sorted(c[0] for c in calls) == ["default", "mk"]
+    assert {e["request_id"] for e in entries} == {"req-mk", "req-default"}
+    with pytest.raises(upload_post.UploadPostError, match="Not connected"):
+        asyncio.run(qm.submit_upload(video, ["old:youtube"], title="t", description="", tags=[]))
+
+
+def _entry(profile, rid, nets=("youtube",), minutes_ago=1):
+    t = datetime.datetime.now(UTC) - datetime.timedelta(minutes=minutes_ago)
+    return {"profile": profile, "platforms": list(nets), "request_id": rid, "submitted_at": t.isoformat()}
+
+
+def test_still_processing_waits():
     now = datetime.datetime.now(UTC)
-    assert qm.apply_post_result(it, _post(("A", "@a", "published", None)), now)
+    assert qm.resolve_results([_entry("mk", "r1")], ["mk:youtube"], {"r1": {"status": "processing"}}, now) is None
+
+
+def test_completed_success_and_failure_split_per_account(session):
+    (it,) = add(session, 1, status="posting", accounts=["mk:youtube", "default:youtube"])
+    now = datetime.datetime.now(UTC)
+    res = qm.resolve_results(
+        [_entry("mk", "r1"), _entry("default", "r2")], list(it.accounts),
+        {"r1": {"status": "completed", "results": [
+            {"profile_username": "mk", "platform": "youtube", "success": True, "post_url": "https://y/1"}]},
+         "r2": {"status": "completed", "results": [
+            {"profile_username": "default", "platform": "youtube", "success": False,
+             "error_message": "Daily cap reached"}]}},
+        now)
+    qm.apply_result(it, res, now)
+    assert it.status == "retry" and it.accounts == ["default:youtube"] and it.published_at is None
+    assert "https://y/1" in it.notes and "Daily cap" in it.notes
+
+
+def test_all_success_marks_posted_and_starts_clock(session):
+    (it,) = add(session, 1, status="posting", accounts=["mk:youtube"])
+    now = datetime.datetime.now(UTC)
+    res = qm.resolve_results([_entry("mk", "r1")], ["mk:youtube"], {"r1": {"status": "completed", "results": [
+        {"profile_username": "mk", "platform": "youtube", "success": True, "post_url": "u"}]}}, now)
+    qm.apply_result(it, res, now)
     assert it.status == "posted" and it.published_at == now
 
 
-def test_partial_failure_retries_only_failed_accounts(session):
-    (it,) = add(session, 1, status="posting", accounts=["A", "B"])
-    qm.apply_post_result(it, _post(("A", "@a", "published", None),
-                                   ("B", "@b", "failed", "429 Quota exceeded")),
-                         datetime.datetime.now(UTC))
-    assert it.status == "retry" and it.accounts == ["B"] and it.published_at is None
-    assert "quota" in it.notes
+def test_rejected_profile_upload_is_a_failure_not_silence():
+    now = datetime.datetime.now(UTC)
+    res = qm.resolve_results([{"profile": "mk", "platforms": ["youtube"], "error": "413"}],
+                             ["mk:youtube"], {}, now)
+    assert "mk:youtube" in res["failed"] and not res["ok"]
 
 
-def test_reconcile_uses_outstand_status(session, monkeypatch):
-    (it,) = add(session, 1, status="posting", outstand_post_id="P1")
+def test_stuck_request_times_out():
+    now = datetime.datetime.now(UTC)
+    res = qm.resolve_results([_entry("mk", "r1", minutes_ago=200)], ["mk:youtube"],
+                             {"r1": {"status": "processing"}}, now)
+    assert "mk:youtube" in res["failed"]
 
-    async def fake_get(pid):
-        assert pid == "P1"
-        return _post(("A", "@a", "failed", "boom"))
 
-    monkeypatch.setattr(outstand, "get_post", fake_get)
+def test_reconcile_polls_upload_post(session, monkeypatch):
+    (it,) = add(session, 1, status="posting", accounts=["mk:youtube"])
+    it.publish_requests = [_entry("mk", "r9")]
+    session.commit()
+
+    async def status(rid):
+        assert rid == "r9"
+        return {"status": "completed", "results": [
+            {"profile_username": "mk", "platform": "youtube", "success": True, "post_url": "u"}]}
+
+    monkeypatch.setattr(upload_post, "get_status", status)
     assert qm.reconcile_posting(session, datetime.datetime.now(UTC)) == 1
-    assert it.status == "retry"
+    assert it.status == "posted"
+
+
+def test_accounts_endpoint_blocks_when_key_missing(client):
+    d = client.get("/api/social/accounts").json()
+    assert d["configured"] is False and "UPLOADPOST_API_KEY" in d["message"]
+
+
+# --- guards: Outstand must not come back --------------------------------------
+def test_outstand_module_is_gone():
+    import importlib
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("backend.app.social.outstand")
+
+
+def test_no_outstand_text_in_ui_or_backend():
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    hits = []
+    for base, pats in ((root / "frontend" / "app", ("*.tsx",)), (root / "frontend" / "lib", ("*.ts",)),
+                       (root / "backend" / "app", ("*.py",))):
+        for pat in pats:
+            for f in base.rglob(pat):
+                text = f.read_text(encoding="utf-8")
+                for line in text.splitlines():
+                    if "outstand" in line.lower() and "outstand_post_id" not in line:
+                        hits.append(f"{f.name}: {line.strip()[:80]}")
+    assert hits == []

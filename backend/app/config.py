@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pathlib
 
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -79,9 +79,15 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""             # POSTed a JSON payload on failure spikes
     alert_failure_threshold: float = 0.5    # fraction of a source's recent jobs failing
 
-    # --- Social Publishing (Outstand) -----------------------------------
-    outstand_api_key: str = ""
-    outstand_base_url: str = "https://api.outstand.so/v1"
+    # --- Social Publishing (Upload-Post) --------------------------------
+    # The only publisher. Also read from UPLOAD_POST_API_KEY / UPLOADPOST_KEY
+    # (names used elsewhere); unset -> publishing is blocked with that reason.
+    uploadpost_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("UPLOADPOST_API_KEY", "UPLOAD_POST_API_KEY", "UPLOADPOST_KEY"),
+    )
+    # Visibility for queue posts: public | unlisted | private.
+    publish_privacy: str = "public"
 
     # --- Posting schedule (SocialPilot) ---------------------------------
     # Same cadence as socialpilot_Ai CONFIG.md: a slot every 2h from 8am to
@@ -112,6 +118,8 @@ class Settings(BaseSettings):
             raise ValueError("POST_INTERVAL_HOURS must be >= 1")
         if self.archive_delete_days < 0:
             raise ValueError("ARCHIVE_DELETE_DAYS must be >= 0")
+        if self.publish_privacy not in ("public", "unlisted", "private"):
+            raise ValueError("PUBLISH_PRIVACY must be public, unlisted or private")
         return self
 
     # ---------------------------------------------------------------------

@@ -35,10 +35,18 @@ def _migrate() -> None:
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
-    if "queue_items" not in insp.get_table_names():
+    tables = insp.get_table_names()
+    if "social_posts" in tables:
+        sp_cols = {c["name"] for c in insp.get_columns("social_posts")}
+        if "publish_requests" not in sp_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE social_posts ADD COLUMN publish_requests JSON"))
+    if "queue_items" not in tables:
         return
     cols = {c["name"] for c in insp.get_columns("queue_items")}
     with engine.begin() as conn:  # one transaction: all or nothing
+        if "publish_requests" not in cols:
+            conn.execute(text("ALTER TABLE queue_items ADD COLUMN publish_requests JSON"))
         if "position" not in cols:
             conn.execute(text('ALTER TABLE queue_items ADD COLUMN "position" INTEGER'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_queue_items_position ON queue_items ("position")'))

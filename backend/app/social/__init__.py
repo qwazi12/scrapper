@@ -1,1 +1,1 @@
-"""Social media integration module for Outstand and AI metadata."""
+"""Social publishing (Upload-Post) and AI metadata."""

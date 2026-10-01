@@ -11,7 +11,7 @@ _tmp = tempfile.mkdtemp(prefix="scrapper-test-")
 os.environ["DATA_DIR"] = _tmp
 os.environ["DATABASE_URL"] = ""
 os.environ["ACCESS_TOKEN"] = "test-token"
-os.environ["OUTSTAND_API_KEY"] = ""
+os.environ["UPLOADPOST_API_KEY"] = ""
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = ""
 os.environ["WORKER_MODE"] = "web_only"  # no background threads in tests

@@ -54,7 +54,8 @@ export type LogLine = {
 };
 
 export type SocialAccount = {
-  id: string;
+  id: string; // "<upload-post profile>:<network>"
+  profile?: string;
   nickname?: string;
   network: string;
   username: string;
@@ -73,10 +74,9 @@ export type MetadataResult = {
 export type SocialPost = {
   id: number;
   compilation_id: number | null;
-  outstand_post_id: string | null;
+  publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
   accounts: string[];
   content: string;
-  media_url: string | null;
   scheduled_at: string | null;
   status: string;
   error: string | null;
@@ -102,8 +102,7 @@ export type QueueItem = {
   position: number | null;
   scheduled_at: string | null;
   published_at: string | null;
-  outstand_post_id: string | null;
-  media_url: string | null;
+  publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
   created_at: string;
 };
 
@@ -115,12 +114,13 @@ export type ScheduleInfo = {
   slots_per_day: number;
   next_slots: string[];
   archive_delete_days: number;
+  ready_without_accounts: number;
   pipelines: Record<
     string,
     { ready: number; next: { id: number; title: string; channel: string; scheduled_at: string }[] }
   >;
   ai: { configured: boolean; model: string };
-  outstand_configured: boolean;
+  publisher: { name: string; configured: boolean; privacy: string };
 };
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
@@ -223,7 +223,7 @@ export const api = {
   },
 
   socialAccounts: () =>
-    req<{ configured: boolean; accounts: SocialAccount[]; message?: string }>(
+    req<{ configured: boolean; accounts: SocialAccount[]; message?: string; manage_url?: string; privacy?: string }>(
       "/api/social/accounts",
       { headers: headers(false) }
     ),
@@ -340,6 +340,9 @@ export const api = {
     }),
 
   schedule: () => req<ScheduleInfo>("/api/schedule", { headers: headers(false) }),
+
+  socialConnectUrl: (profile: string) =>
+    req<{ url: string }>(`/api/social/connect-url?profile=${encodeURIComponent(profile)}`, { headers: headers(false) }),
 
   shuffleQueue: (data: { mode: "round_robin" | "random" | "by_channel"; pipeline?: string; status?: string }) =>
     req<{ ok: boolean; count: number; mode: string; message?: string }>("/api/queue/shuffle", {

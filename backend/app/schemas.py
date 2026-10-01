@@ -92,10 +92,9 @@ class SocialPublishRequest(BaseModel):
 class SocialPostOut(BaseModel):
     id: int
     compilation_id: int | None
-    outstand_post_id: str | None
+    publish_requests: list | None = None
     accounts: list
     content: str
-    media_url: str | None
     scheduled_at: datetime.datetime | None
     status: str
     error: str | None
@@ -151,8 +150,7 @@ class QueueItemOut(BaseModel):
     position: int | None = None
     scheduled_at: datetime.datetime | None
     published_at: datetime.datetime | None
-    outstand_post_id: str | None
-    media_url: str | None
+    publish_requests: list | None = None
     created_at: datetime.datetime
 
     class Config:

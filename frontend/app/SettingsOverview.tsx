@@ -29,6 +29,7 @@ export function SettingsOverview() {
   const [sched, setSched] = useState<ScheduleInfo | null>(null);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [accountsMsg, setAccountsMsg] = useState<string>("");
+  const [manageUrl, setManageUrl] = useState("https://app.upload-post.com/manage-users");
   const [err, setErr] = useState<string>("");
 
   useEffect(() => {
@@ -36,7 +37,8 @@ export function SettingsOverview() {
     api.socialAccounts()
       .then((r) => {
         setAccounts(r.accounts || []);
-        if (!r.configured) setAccountsMsg(r.message || "Outstand is not configured");
+        if (r.manage_url) setManageUrl(r.manage_url);
+        if (!r.configured) setAccountsMsg(r.message || "Upload-Post is not configured");
       })
       .catch((e) => setAccountsMsg(`Could not load accounts: ${e.message || e}`));
   }, []);
@@ -94,34 +96,57 @@ export function SettingsOverview() {
         </div>
       </div>
 
-      {/* Outstand accounts */}
+      {/* Upload-Post accounts */}
       <div style={card}>
-        <h2 style={h2}>🔗 Outstand Connected Accounts</h2>
+        <h2 style={h2}>🔗 Upload-Post Connected Accounts</h2>
         {accountsMsg ? (
           <div style={{ fontSize: 12, color: "var(--red)" }}>{accountsMsg}</div>
         ) : accounts.length === 0 ? (
           <div style={{ fontSize: 12, color: "var(--yellow)" }}>
-            Outstand is connected but has no social accounts. Connect them in the Outstand dashboard.
+            Upload-Post is connected but no social accounts are linked.{" "}
+            <a href={manageUrl} target="_blank" rel="noreferrer">Connect them in Upload-Post ↗</a>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {accounts.map((a) => (
-              <div key={a.id} style={{ fontSize: 12, display: "flex", gap: 10, alignItems: "center" }}>
-                <span style={{ color: a.isActive ? "var(--accent)" : "var(--red)" }}>●</span>
-                <span style={{ fontWeight: 600 }}>{a.nickname || a.username}</span>
-                <span style={{ color: "var(--muted)" }}>{a.username} · {a.network}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {Object.entries(
+              accounts.reduce<Record<string, SocialAccount[]>>((acc, a) => {
+                (acc[a.profile || "?"] ||= []).push(a);
+                return acc;
+              }, {})
+            ).map(([profile, list]) => (
+              <div key={profile}>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>
+                  Profile <span className="mono">{profile}</span>{" "}
+                  <button
+                    style={{ fontSize: 10, padding: "1px 6px", marginLeft: 6 }}
+                    onClick={() =>
+                      api.socialConnectUrl(profile)
+                        .then((r) => window.open(r.url, "_blank", "noopener"))
+                        .catch(() => window.open(manageUrl, "_blank", "noopener"))
+                    }
+                  >
+                    + connect channels
+                  </button>
+                </div>
+                {list.map((a) => (
+                  <div key={a.id} style={{ fontSize: 12, display: "flex", gap: 10, alignItems: "center", marginLeft: 8 }}>
+                    <span style={{ color: "var(--accent)" }}>●</span>
+                    <span style={{ fontWeight: 600 }}>{a.nickname || a.username}</span>
+                    <span style={{ color: "var(--muted)" }}>{a.network}</span>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
         )}
         <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 10 }}>
-          Videos with no accounts assigned post to every active account above.
+          Nothing posts unless you pick its accounts (🔗 Assign Accounts in the Posting Queue). Each Upload-Post
+          profile gets its own upload. Posts go out as <b>{sched.publisher.privacy}</b> (PUBLISH_PRIVACY).
+          Upload-Post caps YouTube at 10 uploads per channel per 24h.
         </div>
-        {accounts.some((a) => a.network === "youtube") && (
+        {sched.ready_without_accounts > 0 && (
           <div style={{ fontSize: 11, color: "var(--yellow)", marginTop: 8 }}>
-            ⚠️ YouTube: with Outstand&apos;s Managed Keys, uploads share one Google quota (~6 uploads/day across all
-            Outstand users) and fail with “quota exceeded”. Connect YouTube with your own Google Cloud project (BYOK)
-            in Outstand for your own quota — still ~6/day per project unless Google raises it.
+            ⚠ {sched.ready_without_accounts} Ready video(s) have no accounts picked and won&apos;t be scheduled.
           </div>
         )}
       </div>

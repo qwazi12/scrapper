@@ -28,6 +28,7 @@ export function PublishModal({
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [configured, setConfigured] = useState(true);
   const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
+  const [privacy, setPrivacy] = useState("public");
 
   const [aiPrompt, setAiPrompt] = useState("");
   const [generatingAi, setGeneratingAi] = useState(false);
@@ -50,16 +51,10 @@ export function PublishModal({
       .socialAccounts()
       .then((res) => {
         setConfigured(res.configured !== false);
-        const accs = res.accounts || [];
-        setAccounts(accs);
-        // By default, select all active accounts
-        const initial = new Set<string>();
-        accs.forEach((a) => {
-          if (a.isActive !== 0 && a.isActive !== false) {
-            initial.add(a.id);
-          }
-        });
-        setSelectedAccounts(initial);
+        setAccounts(res.accounts || []);
+        if (res.privacy) setPrivacy(res.privacy);
+        // Nothing pre-ticked: the owner picks every destination.
+        setSelectedAccounts(new Set());
       })
       .catch((err) => {
         setError(err.message || "Failed to load connected social accounts");
@@ -119,6 +114,14 @@ export function PublishModal({
       }
     }
 
+    // Name exactly the picked channels — what the server will actually use.
+    const names = accounts
+      .filter((a) => selectedAccounts.has(a.id))
+      .map((a) => `${a.nickname || a.username} (${a.network})`)
+      .join(", ");
+    const when = isoScheduled ? `on ${new Date(isoScheduled).toLocaleString()}` : "now";
+    if (!confirm(`Publish this compilation ${when} to ${names} as ${privacy} via Upload-Post?`)) return;
+
     setPublishing(true);
     setError(null);
     setSuccessMsg(null);
@@ -131,9 +134,8 @@ export function PublishModal({
         isoScheduled
       );
 
-      const statusText = isScheduled ? "scheduled" : "published";
       setSuccessMsg(
-        `Successfully ${statusText}! (Post ID: ${res.outstand_post_id || res.id})`
+        `Submitted to Upload-Post (post #${res.id}). The real result per channel appears in Live Activity Logs once the platforms confirm.`
       );
       onSuccess();
       setTimeout(() => {
@@ -232,17 +234,17 @@ export function PublishModal({
                 Target Social Accounts
               </span>
               <a
-                href="https://www.outstand.so/app"
+                href="https://app.upload-post.com/manage-users"
                 target="_blank"
                 rel="noreferrer"
                 style={{ fontSize: 11, color: "var(--blue)" }}
               >
-                Manage in Outstand ↗
+                Manage in Upload-Post ↗
               </a>
             </div>
 
             {loadingAccounts ? (
-              <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>Loading accounts from Outstand…</div>
+              <div style={{ color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>Loading accounts from Upload-Post…</div>
             ) : !configured ? (
               <div
                 style={{
@@ -254,7 +256,7 @@ export function PublishModal({
                   fontSize: 12,
                 }}
               >
-                ⚠️ <strong>OUTSTAND_API_KEY</strong> is not set in Railway environment variables. Add your key in Railway to load accounts and post directly.
+                ⚠️ <strong>UPLOADPOST_API_KEY</strong> is not set in Railway environment variables. Publishing is blocked until it is.
               </div>
             ) : accounts.length === 0 ? (
               <div
@@ -267,9 +269,9 @@ export function PublishModal({
                   fontSize: 12,
                 }}
               >
-                No accounts connected in Outstand yet.{" "}
-                <a href="https://www.outstand.so/app" target="_blank" rel="noreferrer">
-                  Connect TikTok, YouTube, or Instagram in Outstand
+                No accounts connected in Upload-Post yet.{" "}
+                <a href="https://app.upload-post.com/manage-users" target="_blank" rel="noreferrer">
+                  Connect TikTok, YouTube, or Instagram in Upload-Post
                 </a>
               </div>
             ) : (
@@ -304,7 +306,10 @@ export function PublishModal({
                         style={{ width: 14, height: 14, cursor: "pointer" }}
                       />
                       <span style={{ fontSize: 12, fontWeight: 600 }}>{net.icon}</span>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>@{acc.username}</span>
+                      <span style={{ fontSize: 12 }}>{acc.nickname || acc.username}</span>
+                      {acc.profile && (
+                        <span style={{ fontSize: 10, color: "var(--muted)" }}>profile {acc.profile}</span>
+                      )}
                     </div>
                   );
                 })}
@@ -410,7 +415,7 @@ export function PublishModal({
                   style={{ width: "auto", fontSize: 12 }}
                 />
                 <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-                  Outstand supports scheduling up to 30 days in advance.
+                  Upload-Post schedules up to 365 days ahead.
                 </div>
               </div>
             )}
@@ -479,7 +484,7 @@ export function PublishModal({
             disabled={publishing || selectedAccounts.size === 0 || !content.trim()}
           >
             {publishing
-              ? "Publishing to Outstand…"
+              ? "Uploading to Upload-Post…"
               : isScheduled
               ? `Schedule (${selectedAccounts.size} account${selectedAccounts.size === 1 ? "" : "s"})`
               : `Publish Now (${selectedAccounts.size} account${selectedAccounts.size === 1 ? "" : "s"})`}

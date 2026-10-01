@@ -270,7 +270,7 @@ export default function Page() {
                 <span style={{ color: connected ? "var(--accent)" : "var(--red)", display: "flex", alignItems: "center", gap: 5 }}>
                   <span>{connected ? "●" : "○"}</span> {connected ? "Railway Live" : "Disconnected"}
                 </span>
-                <span style={{ color: "var(--muted)" }}>v2.4 Outstand</span>
+                <span style={{ color: "var(--muted)" }}>v2.5 Upload-Post</span>
               </div>
             </div>
           ) : (
@@ -334,7 +334,7 @@ export default function Page() {
                   </span>
                 </div>
                 <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
-                  Multi-channel distribution & scheduler • Permanent Google Drive storage • Outstand posting
+                  Multi-channel distribution & scheduler • Permanent Google Drive storage • Upload-Post posting
                 </p>
               </div>
 

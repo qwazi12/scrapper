@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 from .. import logbus
 from ..config import settings
 from ..db import SessionLocal
-from ..models import Clip, Compilation, QueueItem
-from . import outstand
+from ..models import Clip, Compilation, QueueItem, SocialPost
+from . import upload_post
 
 logger = logging.getLogger("scrapper.social.queue")
 
@@ -88,7 +88,9 @@ def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
 
 def plan_schedule(s: Session, now: datetime.datetime) -> int:
     """Give every Ready item a slot: per pipeline, in posting order, one item
-    per slot. Items already due keep their slot. Returns rows changed."""
+    per slot. Items already due keep their slot; items with no accounts picked
+    get no slot (nothing is ever posted to accounts the owner didn't choose).
+    Returns rows changed."""
     ready = (
         s.query(QueueItem)
         .filter(QueueItem.status == "ready")
@@ -96,11 +98,16 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         .all()
     )
     groups: dict[str, list[QueueItem]] = {}
+    changed = 0
     for it in ready:
+        if not it.accounts:
+            if it.scheduled_at is not None:
+                it.scheduled_at = None
+                changed += 1
+            continue
         if not _is_due(it, now):
             groups.setdefault(pipeline_group(it), []).append(it)
 
-    changed = 0
     for items in groups.values():
         for it, slot in zip(items, slots_after(now, len(items))):
             if _aware(it.scheduled_at) != slot:
@@ -111,15 +118,59 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     return changed
 
 
+def _hashtags(tags: str | None) -> list[str]:
+    return [t.lstrip("#") for t in (tags or "").split() if t.lstrip("#")]
+
+
+async def submit_upload(
+    video_path: pathlib.Path,
+    accounts: list[str],
+    *,
+    title: str,
+    description: str,
+    tags: list[str],
+    scheduled_date: str | None = None,
+) -> list[dict[str, Any]]:
+    """Send the video to Upload-Post: one async upload per profile.
+
+    Returns one entry per profile — {"profile", "request_id", "submitted_at"} or
+    {"profile", "error"} — so a failed profile is retried later on its own.
+    Raises if the picked accounts aren't valid/connected (nothing is sent)."""
+    if not accounts:
+        raise upload_post.UploadPostError("No accounts picked for this video", status_code=400)
+    connected = {a["id"] for a in await upload_post.list_accounts()}
+    missing = [a for a in accounts if a not in connected]
+    if missing:
+        raise upload_post.UploadPostError(
+            f"Not connected in Upload-Post: {', '.join(missing)}. Re-pick accounts.", status_code=400)
+
+    now = datetime.datetime.now(UTC).isoformat()
+    entries: list[dict[str, Any]] = []
+    for profile, platforms in upload_post.group_by_profile(accounts).items():
+        try:
+            rid = await upload_post.upload_video(
+                video_path, profile=profile, platforms=platforms, title=title,
+                description=description, tags=tags, privacy=settings.publish_privacy,
+                scheduled_date=scheduled_date,
+            )
+            entries.append({"profile": profile, "platforms": platforms, "request_id": rid,
+                            "submitted_at": scheduled_date or now})  # timeout counts from go-live
+        except Exception as exc:
+            entries.append({"profile": profile, "platforms": platforms, "error": str(exc)[:300]})
+    return entries
+
+
 async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
-    """Publish a specific queue item to Outstand."""
+    """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
     if not item:
         raise ValueError(f"Queue item {item_id} not found")
+    if not item.accounts:
+        raise upload_post.UploadPostError(
+            "No accounts picked. Use 🔗 Assign Accounts to choose where this video goes.", status_code=400)
 
     # Locate video file
     video_path: pathlib.Path | None = None
-    thumb_path: pathlib.Path | None = None
     is_temp_download = False
 
     if item.video_path and pathlib.Path(item.video_path).exists():
@@ -149,66 +200,33 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         s.commit()
         raise FileNotFoundError(f"Video file not found for queue item {item_id}")
 
-    if not item.accounts:
-        # If no accounts are assigned, fetch available accounts
-        try:
-            available = await outstand.list_social_accounts()
-            active_ids = [a["id"] for a in available if a.get("isActive") not in (0, False)]
-            if not active_ids:
-                raise ValueError("No active social accounts found in Outstand.")
-            item.accounts = active_ids
-        except Exception as exc:
-            item.status = "error"
-            item.notes = f"Failed to retrieve target social accounts: {exc}"
-            s.commit()
-            raise
-
     item.status = "posting"
     s.commit()
     logbus.log("info", "queue_posting", f"Posting item #{item.id} ('{item.title[:40]}')")
 
     try:
-        # Step 1: Upload to Outstand presigned storage
-        upload_res = await outstand.upload_media(video_path, upload_name=f"queue{item.id}_{video_path.name}")
-        item.media_url = upload_res.get("url")
-
-        # Step 2: Combine title, description, and tags into clean caption
-        parts = []
-        if item.title:
-            parts.append(item.title.strip())
-        if item.description:
-            parts.append(item.description.strip())
-        if item.tags:
-            parts.append(item.tags.strip())
-        full_content = "\n\n".join(parts) or item.title or "New video"
-
-        # Step 3: Create post on Outstand
-        post_res = await outstand.create_social_post(
-            account_ids=item.accounts,
-            content=full_content,
-            media_url=item.media_url,
-            filename=upload_res.get("filename") or video_path.name,
+        description = "\n\n".join(p.strip() for p in (item.description, item.tags) if p and p.strip())
+        entries = await submit_upload(
+            video_path, list(item.accounts), title=item.title or item.video_name,
+            description=description, tags=_hashtags(item.tags),
         )
-
-        outstand_id = post_res.get("post", {}).get("id") or post_res.get("id")
-        if not outstand_id:
-            raise outstand.OutstandError(f"Outstand returned no post id: {post_res}")
-        # Outstand publishes asynchronously: an accepted request is not a live
-        # post. Stay in "posting" until reconcile_posting() sees each account's
-        # real result — only then is it "posted" (and the 4-day clock starts).
-        item.outstand_post_id = str(outstand_id)
+        if not any(e.get("request_id") for e in entries):
+            raise upload_post.UploadPostError("; ".join(e.get("error", "") for e in entries))
+        # Accepted is not published: stay "posting" until reconcile_posting()
+        # reads every platform's real result. Only then "posted" (4-day clock).
+        item.publish_requests = entries
         item.published_at = None
-        item.notes = (f"Submitted to Outstand (post {outstand_id}) for {len(item.accounts)} account(s); "
+        item.notes = (f"Submitted to Upload-Post for {', '.join(item.accounts)}; "
                       "waiting for the platforms to confirm.")
         s.commit()
-
-        logbus.log("info", "queue_submitted", f"Item #{item.id} submitted to Outstand (post {outstand_id})")
+        logbus.log("info", "queue_submitted", f"Item #{item.id} submitted to Upload-Post",
+                   requests=[e.get("request_id") for e in entries])
         return item
 
     except Exception as exc:
         logger.exception("Failed to post queue item #%s: %s", item.id, exc)
         item.status = "retry"
-        item.notes = f"Publish failed: {str(exc)[:200]}"
+        item.notes = f"Publish failed: {str(exc)[:300]}"
         s.commit()
         logbus.log("error", "queue_post_error", f"Item #{item.id} failed: {exc}")
         raise
@@ -222,57 +240,104 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
                 pass
 
 
-def _describe(acct: dict[str, Any]) -> str:
-    return f"{acct.get('network', '?')} {acct.get('username') or acct.get('nickname') or acct.get('id')}"
+PENDING_TIMEOUT = datetime.timedelta(hours=3)
 
 
-def apply_post_result(item: QueueItem, post: dict[str, Any], now: datetime.datetime) -> bool:
-    """Fold Outstand's per-account results into the item. Returns False while
-    any account is still pending."""
-    accts = post.get("socialAccounts") or []
-    if not accts or any(a.get("status") not in ("published", "failed") for a in accts):
-        return False
-    ok = [a for a in accts if a.get("status") == "published"]
-    bad = [a for a in accts if a.get("status") == "failed"]
-    parts = [f"✓ {_describe(a)} {a.get('platformPostUrl') or ''}".strip() for a in ok]
-    for a in bad:
-        err = str(a.get("error") or "unknown error")
-        if "quota" in err.lower() or "429" in err:
-            err = "daily upload quota exceeded — " + err[:160]
-        parts.append(f"✕ {_describe(a)}: {err[:220]}")
-    if not bad:
+def resolve_results(
+    entries: list[dict[str, Any]], accounts: list[str], statuses: dict[str, dict[str, Any]],
+    now: datetime.datetime,
+) -> dict[str, Any] | None:
+    """Combine Upload-Post status responses into per-account outcomes.
+
+    Returns None while any request is still processing (and not timed out),
+    else {"ok": [(acc, url)], "failed": {acc: reason}}."""
+    outcome: dict[str, tuple[bool, str]] = {}
+    for e in entries:
+        if "error" in e:
+            for net in e.get("platforms", []):
+                outcome[f"{e['profile']}:{net}"] = (False, f"upload not accepted: {e['error']}")
+            continue
+        st = statuses.get(e["request_id"]) or {}
+        if st.get("status") != "completed":
+            submitted = _aware(datetime.datetime.fromisoformat(e["submitted_at"].replace("Z", "+00:00")))
+            if now - submitted < PENDING_TIMEOUT:
+                return None
+            for net in e.get("platforms", []):
+                outcome[f"{e['profile']}:{net}"] = (False, "Upload-Post still processing after 3h")
+            continue
+        for r in st.get("results") or []:
+            acc = f"{r.get('profile_username') or e['profile']}:{r.get('platform')}"
+            if r.get("success"):
+                outcome[acc] = (True, r.get("post_url") or "")
+            else:
+                outcome[acc] = (False, str(r.get("error_message") or "failed"))
+    ok = [(a, outcome[a][1]) for a in accounts if a in outcome and outcome[a][0]]
+    failed = {a: (outcome[a][1] if a in outcome else "no result returned") for a in accounts
+              if not (a in outcome and outcome[a][0])}
+    return {"ok": ok, "failed": failed}
+
+
+def _fetch_statuses(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out = {}
+    for e in entries:
+        rid = e.get("request_id")
+        if rid:
+            out[rid] = asyncio.run(upload_post.get_status(rid))
+    return out
+
+
+def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -> None:
+    parts = [f"✓ {a} {url}".strip() for a, url in res["ok"]]
+    parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
+    if not res["failed"]:
         item.status = "posted"
         item.published_at = now
     else:
-        # Retry only the accounts that failed, so a retry never double-posts.
+        # Retry only what failed, so a retry never double-posts.
         item.status = "retry"
-        item.accounts = [a["id"] for a in bad if a.get("id")]
+        item.accounts = list(res["failed"])
         item.published_at = None
     item.notes = " | ".join(parts)[:1000]
-    return True
 
 
 def reconcile_posting(s: Session, now: datetime.datetime) -> int:
-    """Check submitted posts with Outstand; settle them to posted/retry."""
-    pending = (
-        s.query(QueueItem)
-        .filter(QueueItem.status == "posting")
-        .filter(QueueItem.outstand_post_id.isnot(None))
-        .all()
-    )
+    """Settle submitted queue items and compilation posts from Upload-Post status."""
     settled = 0
-    for item in pending:
+    for item in s.query(QueueItem).filter(QueueItem.status == "posting").all():
+        if not item.publish_requests:
+            continue  # pre-migration or mid-submit; nothing to poll
         try:
-            post = asyncio.run(outstand.get_post(item.outstand_post_id))
+            res = resolve_results(item.publish_requests, list(item.accounts),
+                                  _fetch_statuses(item.publish_requests), now)
         except Exception as exc:
-            logger.warning("Outstand status check failed for #%s: %s", item.id, exc)
+            logger.warning("Upload-Post status check failed for #%s: %s", item.id, exc)
             continue
-        if apply_post_result(item, post, now):
-            s.commit()
-            settled += 1
-            logbus.log("info" if item.status == "posted" else "error",
-                       "queue_posted" if item.status == "posted" else "queue_post_failed",
-                       f"Item #{item.id}: {item.notes}")
+        if res is None:
+            continue
+        apply_result(item, res, now)
+        s.commit()
+        settled += 1
+        logbus.log("info" if item.status == "posted" else "error",
+                   "queue_posted" if item.status == "posted" else "queue_post_failed",
+                   f"Item #{item.id}: {item.notes}")
+
+    for post in s.query(SocialPost).filter(SocialPost.status == "submitted").all():
+        if not post.publish_requests:
+            continue
+        try:
+            res = resolve_results(post.publish_requests, list(post.accounts),
+                                  _fetch_statuses(post.publish_requests), now)
+        except Exception as exc:
+            logger.warning("Upload-Post status check failed for post %s: %s", post.id, exc)
+            continue
+        if res is None:
+            continue
+        post.status = "published" if not res["failed"] else ("partial" if res["ok"] else "failed")
+        post.error = "; ".join(f"{a}: {w}" for a, w in res["failed"].items())[:1000] or None
+        s.commit()
+        settled += 1
+        logbus.log("info" if post.status == "published" else "error", "social_post_result",
+                   f"Compilation post {post.id}: {post.status}")
     return settled
 
 

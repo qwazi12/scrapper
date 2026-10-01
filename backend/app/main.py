@@ -43,7 +43,7 @@ from .schemas import (
     SocialPostOut,
     SocialPublishRequest,
 )
-from .social import metadata as social_metadata, outstand, queue_manager
+from .social import metadata as social_metadata, queue_manager, upload_post
 
 app = FastAPI(title="Scrapper API", version="1.0")
 
@@ -384,16 +384,28 @@ def events():
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
-# --- social publishing & AI metadata (Outstand + Gemini) -------------------
+# --- social publishing (Upload-Post) & AI metadata (Gemini) ----------------
 @app.get("/api/social/accounts", dependencies=_AUTH)
 async def list_social_accounts() -> dict:
-    if not settings.outstand_api_key:
-        return {"configured": False, "accounts": [], "message": "OUTSTAND_API_KEY is not set"}
+    if not upload_post.configured():
+        return {"configured": False, "accounts": [], "provider": "Upload-Post",
+                "manage_url": upload_post.MANAGE_URL,
+                "message": "UPLOADPOST_API_KEY is not set — publishing is blocked"}
     try:
-        accounts = await outstand.list_social_accounts()
-        return {"configured": True, "accounts": accounts}
+        accounts = await upload_post.list_accounts()
+        return {"configured": True, "accounts": accounts, "provider": "Upload-Post",
+                "manage_url": upload_post.MANAGE_URL, "privacy": settings.publish_privacy}
     except Exception as exc:
-        raise HTTPException(502, f"Outstand API error: {exc}")
+        raise HTTPException(502, f"Upload-Post API error: {exc}")
+
+
+@app.get("/api/social/connect-url", dependencies=_AUTH)
+async def social_connect_url(profile: str) -> dict:
+    """Hosted Upload-Post page to connect channels to a profile."""
+    try:
+        return {"url": await upload_post.connect_url(profile)}
+    except Exception as exc:
+        raise HTTPException(502, f"Upload-Post API error: {exc}")
 
 
 @app.post("/api/social/generate-metadata", response_model=MetadataGenerateResponse, dependencies=_AUTH)
@@ -425,36 +437,23 @@ async def publish_social_post(req: SocialPublishRequest, s: Session = Depends(ge
     comp = s.get(Compilation, req.compilation_id)
     if not comp or not comp.output_path or not pathlib.Path(comp.output_path).exists():
         raise HTTPException(404, "compilation video not found or not finished")
-
     if not req.account_ids:
-        raise HTTPException(400, "at least one account must be selected")
+        raise HTTPException(400, "pick at least one account")
 
     video_path = pathlib.Path(comp.output_path)
-
-    # 1. Upload video to Outstand
-    logbus.log("info", "social_upload_start", f"Uploading compilation {comp.id} to Outstand...")
+    title, _, rest = req.content.strip().partition("\n")
+    logbus.log("info", "social_upload_start",
+               f"Uploading compilation {comp.id} to Upload-Post for {', '.join(req.account_ids)}")
     try:
-        upload_res = await outstand.upload_media(video_path)
-        media_url = upload_res.get("url")
-    except Exception as exc:
-        logbus.log("error", "social_upload_failed", str(exc))
-        raise HTTPException(502, f"Failed to upload video to Outstand: {exc}")
-
-    # 2. Create post in Outstand
-    logbus.log("info", "social_post_start", f"Publishing to {len(req.account_ids)} accounts...")
-    try:
-        post_res = await outstand.create_social_post(
-            account_ids=req.account_ids,
-            content=req.content,
-            media_url=media_url,
-            filename=video_path.name,
-            scheduled_at=req.scheduled_at,
+        entries = await queue_manager.submit_upload(
+            video_path, req.account_ids, title=title or f"Compilation #{comp.id}",
+            description=req.content.strip(), tags=[], scheduled_date=req.scheduled_at,
         )
-    except Exception as exc:
-        logbus.log("error", "social_post_failed", str(exc))
-        raise HTTPException(502, f"Failed to create post on Outstand: {exc}")
+    except upload_post.UploadPostError as exc:
+        raise HTTPException(exc.status_code if exc.status_code < 500 else 502, exc.message)
+    if not any(e.get("request_id") for e in entries):
+        raise HTTPException(502, "Upload-Post rejected the upload: " + "; ".join(e.get("error", "") for e in entries))
 
-    outstand_id = post_res.get("post", {}).get("id") or post_res.get("id")
     sched_dt = None
     if req.scheduled_at:
         try:
@@ -462,24 +461,19 @@ async def publish_social_post(req: SocialPublishRequest, s: Session = Depends(ge
         except Exception:
             pass
 
+    # "submitted" until the scheduler reads the real platform result.
     post_record = SocialPost(
         compilation_id=comp.id,
-        outstand_post_id=str(outstand_id) if outstand_id else None,
+        publish_requests=entries,
         accounts=req.account_ids,
         content=req.content,
-        media_url=media_url,
         scheduled_at=sched_dt,
-        status="scheduled" if req.scheduled_at else "published",
+        status="submitted",
     )
     s.add(post_record)
     s.commit()
     s.refresh(post_record)
-
-    logbus.log(
-        "info",
-        "social_published",
-        f"Post created ({post_record.status}) for compilation {comp.id} -> Outstand ID: {outstand_id}",
-    )
+    logbus.log("info", "social_submitted", f"Compilation {comp.id} submitted to Upload-Post (post {post_record.id})")
     return post_record
 
 
@@ -664,6 +658,8 @@ async def publish_queue_item_now(item_id: int, s: Session = Depends(get_session)
     try:
         item = await queue_manager.publish_queue_item(item_id, s)
         return item
+    except upload_post.UploadPostError as exc:
+        raise HTTPException(exc.status_code if exc.status_code < 500 else 502, f"Publishing failed: {exc.message}")
     except Exception as exc:
         raise HTTPException(502, f"Publishing failed: {exc}")
 
@@ -853,8 +849,11 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         .order_by(QueueItem.scheduled_at, QueueItem.id)
         .all()
     )
+    no_accounts = sum(1 for it in ready if not it.accounts)
     pipelines: dict[str, dict] = {}
     for it in ready:
+        if not it.accounts:
+            continue  # never scheduled until the owner picks accounts
         p = pipelines.setdefault(queue_manager.pipeline_group(it), {"ready": 0, "next": []})
         p["ready"] += 1
         if len(p["next"]) < 5:
@@ -869,9 +868,11 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "slots_per_day": per_day,
         "next_slots": queue_manager.slots_after(now, per_day),
         "archive_delete_days": settings.archive_delete_days,
+        "ready_without_accounts": no_accounts,
         "pipelines": pipelines,
         "ai": {"configured": bool(settings.gemini_api_key), "model": settings.gemini_model},
-        "outstand_configured": bool(settings.outstand_api_key),
+        "publisher": {"name": "Upload-Post", "configured": upload_post.configured(),
+                      "privacy": settings.publish_privacy},
     }
 
 

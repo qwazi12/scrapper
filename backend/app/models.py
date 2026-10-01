@@ -96,7 +96,8 @@ class SocialPost(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     compilation_id: Mapped[int | None] = mapped_column(ForeignKey("compilations.id"), nullable=True)
-    outstand_post_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    outstand_post_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)  # history
+    publish_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)  # Upload-Post request_ids
     accounts: Mapped[list] = mapped_column(JSON, default=list)
     content: Mapped[str] = mapped_column(Text, default="")
     media_url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -111,7 +112,7 @@ class QueueItem(Base):
 
     Matches the 9-column Google Sheet structure:
     ID | Video Name | Drive Link | Title | Description | Tags | Status | Notes | Source
-    Plus integration with Outstand, compilations, and the automated scheduler.
+    Plus Upload-Post publishing, compilations, and the automated scheduler.
     """
     __tablename__ = "queue_items"
 
@@ -138,6 +139,7 @@ class QueueItem(Base):
 
     scheduled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    outstand_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    outstand_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # history (pre-Upload-Post)
+    publish_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)  # Upload-Post request_ids
     media_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
