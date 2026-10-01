@@ -31,6 +31,31 @@ export function SettingsOverview() {
   const [accountsMsg, setAccountsMsg] = useState<string>("");
   const [manageUrl, setManageUrl] = useState("https://app.upload-post.com/manage-users");
   const [err, setErr] = useState<string>("");
+  const [aiResult, setAiResult] = useState<string>("");
+  const [aiTesting, setAiTesting] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  // Refresh the schedule/heartbeat every 30s so the status stays live.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNow(Date.now());
+      api.schedule().then(setSched).catch(() => {});
+    }, 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function testAi() {
+    setAiTesting(true);
+    setAiResult("");
+    try {
+      const r = await api.aiCheck();
+      setAiResult(`✓ ${r.model} replied: “${r.title}” ${(r.hashtags || []).join(" ")}`);
+    } catch (e: any) {
+      setAiResult(`✕ ${e.message || e}`);
+    } finally {
+      setAiTesting(false);
+    }
+  }
 
   useEffect(() => {
     api.schedule().then(setSched).catch((e) => setErr(String(e.message || e)));
@@ -51,6 +76,9 @@ export function SettingsOverview() {
   }
 
   const tzShort = sched.timezone === "America/New_York" ? "Eastern" : sched.timezone;
+  const sc = sched.scheduler;
+  const tickAgo = sc.last_tick_at ? Math.round((now - Date.parse(sc.last_tick_at)) / 1000) : null;
+  const alive = sc.enabled && tickAgo !== null && tickAgo < sc.tick_seconds * 3 + 30;
   const pipelines = Object.entries(sched.pipelines);
 
   return (
@@ -58,6 +86,30 @@ export function SettingsOverview() {
       {/* Posting schedule */}
       <div style={card}>
         <h2 style={h2}>⏰ Posting Schedule</h2>
+        <div style={{ fontSize: 12, marginBottom: 10, color: alive ? "var(--accent)" : "var(--red)" }}>
+          {alive ? "●" : "○"} Auto-poster{" "}
+          {!sc.enabled
+            ? "is OFF on this server (WORKER_MODE=web_only)"
+            : alive
+            ? `running — last check ${tickAgo}s ago (every ${sc.tick_seconds}s)`
+            : sc.last_tick_at
+            ? `NOT running — last check ${tickAgo}s ago`
+            : "has not run since the server started"}
+          {sc.last_submitted && (
+            <span style={{ color: "var(--muted)" }}>
+              {" "}· last submitted #{sc.last_submitted.id} at {fmtSlot(sc.last_submitted.at, sched.timezone)}
+            </span>
+          )}
+          {sc.last_error && (
+            <div style={{ color: "var(--red)", fontSize: 11 }}>
+              Last error ({sc.last_error_at ? fmtSlot(sc.last_error_at, sched.timezone) : "?"}): {sc.last_error}
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
+          How it works: set a video to <b>Ready to Post</b> (and pick where it posts) — within 30s it gets the next
+          free slot for its pipeline and posts at that time. Set it back to Review to take it out.
+        </div>
         <div style={{ fontSize: 13, marginBottom: 10 }}>
           Every <b>{sched.interval_hours}h</b> from <b>{fmtHour(sched.start_hour)}</b> to{" "}
           <b>{fmtHour(sched.end_hour)}</b> {tzShort} — <b>{sched.slots_per_day} slots/day</b>. Each slot posts the
@@ -157,7 +209,17 @@ export function SettingsOverview() {
           <h2 style={h2}>✨ AI Captions</h2>
           <div style={{ fontSize: 12 }}>
             {sched.ai.configured ? (
-              <>Gemini key set · model <span className="mono">{sched.ai.model}</span></>
+              <>
+                Gemini key set · model <span className="mono">{sched.ai.model}</span>{" "}
+                <button style={{ fontSize: 10, padding: "1px 8px", marginLeft: 6 }} onClick={testAi} disabled={aiTesting}>
+                  {aiTesting ? "Testing…" : "Test AI"}
+                </button>
+                {aiResult && (
+                  <div style={{ fontSize: 11, marginTop: 6, color: aiResult.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>
+                    {aiResult}
+                  </div>
+                )}
+              </>
             ) : (
               <span style={{ color: "var(--red)" }}>GEMINI_API_KEY is not set — the ✨ AI button will report an error.</span>
             )}

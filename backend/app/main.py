@@ -839,6 +839,17 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
     return {"ok": True, "count": len(items), "mode": req.mode}
 
 
+@app.post("/api/social/ai-check", dependencies=_AUTH)
+async def ai_check() -> dict:
+    """Live Gemini call on a sample title. Changes nothing; reports the real error."""
+    try:
+        res = await social_metadata.generate_social_metadata(
+            ["Superman's son gets too excited with his new powers"], strict=True)
+    except social_metadata.MetadataError as exc:
+        raise HTTPException(502, f"AI check failed: {exc}")
+    return {"ok": True, "model": res.get("model"), "title": res.get("title"), "hashtags": res.get("hashtags")}
+
+
 @app.get("/api/schedule", dependencies=_AUTH)
 def get_schedule(s: Session = Depends(get_session)) -> dict:
     """Posting schedule config + what is lined up next, per pipeline."""
@@ -872,6 +883,8 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "ready_without_accounts": no_accounts,
         "pipelines": pipelines,
         "ai": {"configured": bool(settings.gemini_api_key), "model": settings.gemini_model},
+        "scheduler": {**queue_manager.scheduler_status, "tick_seconds": queue_manager.TICK_SECONDS,
+                      "enabled": settings.worker_mode != "web_only"},
         "publisher": {"name": "Upload-Post", "configured": upload_post.configured(),
                       "privacy": settings.publish_privacy},
     }

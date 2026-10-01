@@ -120,6 +120,16 @@ export type ScheduleInfo = {
     { ready: number; next: { id: number; title: string; channel: string; scheduled_at: string }[] }
   >;
   ai: { configured: boolean; model: string };
+  scheduler: {
+    enabled: boolean;
+    tick_seconds: number;
+    started_at: string | null;
+    last_tick_at: string | null;
+    last_error: string | null;
+    last_error_at: string | null;
+    ticks: number;
+    last_submitted: { id: number; at: string } | null;
+  };
   publisher: { name: string; configured: boolean; privacy: string };
 };
 
@@ -340,6 +350,12 @@ export const api = {
     }),
 
   schedule: () => req<ScheduleInfo>("/api/schedule", { headers: headers(false) }),
+
+  aiCheck: () =>
+    req<{ ok: boolean; model: string; title: string; hashtags: string[] }>("/api/social/ai-check", {
+      method: "POST",
+      headers: headers(),
+    }),
 
   socialConnectUrl: (profile: string) =>
     req<{ url: string }>(`/api/social/connect-url?profile=${encodeURIComponent(profile)}`, { headers: headers(false) }),

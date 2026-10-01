@@ -369,3 +369,13 @@ def test_no_outstand_text_in_ui_or_backend():
                     if "outstand" in line.lower() and "outstand_post_id" not in line:
                         hits.append(f"{f.name}: {line.strip()[:80]}")
     assert hits == []
+
+
+def test_ai_check_reports_missing_key(client):
+    r = client.post("/api/social/ai-check")
+    assert r.status_code == 502 and "GEMINI_API_KEY" in r.json()["detail"]
+
+
+def test_schedule_reports_scheduler_heartbeat(client):
+    sc = client.get("/api/schedule").json()["scheduler"]
+    assert sc["tick_seconds"] == 30 and "last_tick_at" in sc and sc["enabled"] is False  # web_only in tests

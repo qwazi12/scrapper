@@ -43,6 +43,7 @@ ARCHIVE_SWEEP_EVERY = datetime.timedelta(minutes=10)
 ARCHIVE_SWEEP_BATCH = 50  # scope limit per sweep
 
 UTC = datetime.timezone.utc
+TICK_SECONDS = 30
 
 
 def pipeline_group(item: QueueItem) -> str:
@@ -379,6 +380,13 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
 
 _last_archive_sweep: datetime.datetime | None = None
 
+# Heartbeat for the Settings page ("No silent work"): proves the auto-poster
+# loop is alive and shows what it last did.
+scheduler_status: dict[str, Any] = {
+    "started_at": None, "last_tick_at": None, "last_error": None, "last_error_at": None,
+    "ticks": 0, "last_submitted": None,
+}
+
 
 def run_scheduler_tick():
     """Plan slots, publish what's due (one per pipeline), sweep the archive."""
@@ -404,6 +412,7 @@ def run_scheduler_tick():
             seen.add(group)
             try:
                 asyncio.run(publish_queue_item(item.id, s))
+                scheduler_status["last_submitted"] = {"id": item.id, "at": now.isoformat()}
             except Exception as exc:
                 logger.error("Error executing scheduled queue item #%s: %s", item.id, exc)
 
@@ -423,12 +432,17 @@ def start_scheduler_thread():
     _scheduler_running = True
 
     def loop():
+        scheduler_status["started_at"] = datetime.datetime.now(UTC).isoformat()
         while True:
             try:
                 run_scheduler_tick()
             except Exception as exc:
                 logger.error("Error in scheduler loop: %s", exc)
-            time.sleep(30)
+                scheduler_status["last_error"] = str(exc)[:300]
+                scheduler_status["last_error_at"] = datetime.datetime.now(UTC).isoformat()
+            scheduler_status["last_tick_at"] = datetime.datetime.now(UTC).isoformat()
+            scheduler_status["ticks"] += 1
+            time.sleep(TICK_SECONDS)
 
     t = threading.Thread(target=loop, daemon=True, name="posting_queue_scheduler")
     t.start()
