@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, parseApiDate, ScheduleInfo, SocialAccount } from "../lib/api";
+import { api, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 
 function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
@@ -13,6 +13,118 @@ function fmtSlot(iso: string, tz: string): string {
   return new Date(parseApiDate(iso)).toLocaleString("en-US", {
     timeZone: tz, weekday: "short", hour: "numeric", minute: "2-digit",
   });
+}
+
+const TIMEZONES = [
+  "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+  "America/Toronto", "Europe/London", "Europe/Paris", "Africa/Lagos", "Asia/Dubai", "UTC",
+];
+const INTERVALS = [1, 2, 3, 4, 6, 8, 12];
+
+function slotHours(c: ScheduleConfig): number[] {
+  const out: number[] = [];
+  for (let h = c.start_hour; h <= c.end_hour; h += c.interval_hours) out.push(h);
+  return out;
+}
+
+const fieldStyle: React.CSSProperties = { width: "auto", padding: "4px 8px", fontSize: 12 };
+
+/** Edit form for posting times; saved server-side, Ready videos re-plan at once. */
+function ScheduleEditor({ sched, onSaved }: { sched: ScheduleInfo; onSaved: (s: ScheduleInfo) => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<ScheduleConfig>({
+    timezone: sched.timezone, start_hour: sched.start_hour, end_hour: sched.end_hour, interval_hours: sched.interval_hours,
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const hours = slotHours(form);
+  const invalid = form.start_hour > form.end_hour ? "First slot must be at or before the last slot" : "";
+  const zones = TIMEZONES.includes(form.timezone) ? TIMEZONES : [form.timezone, ...TIMEZONES];
+
+  async function save(reset = false) {
+    const what = reset
+      ? `Reset posting times to the defaults (${slotHours(sched.defaults).map(fmtHour).join(", ")} ${sched.defaults.timezone})?`
+      : `Post at ${hours.map(fmtHour).join(", ")} (${form.timezone}) — ${hours.length} slots/day?`;
+    if (!confirm(`${what}\n\nReady videos move onto the new slots right away.`)) return;
+    setSaving(true);
+    setMsg("");
+    try {
+      const res = await api.updateSchedule(reset ? { reset: true } : form);
+      onSaved(res);
+      setForm({ timezone: res.timezone, start_hour: res.start_hour, end_hour: res.end_hour, interval_hours: res.interval_hours });
+      setMsg("✓ Saved — schedule updated");
+      setOpen(false);
+    } catch (e: any) {
+      setMsg(`✕ ${e.message || e}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <button style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setOpen(true)}>✏️ Edit posting times</button>
+        {sched.customized ? (
+          <span style={{ fontSize: 10, color: "var(--muted)" }}>Custom schedule (set on this page)</span>
+        ) : (
+          <span style={{ fontSize: 10, color: "var(--muted)" }}>Using the default schedule</span>
+        )}
+        {msg && <span style={{ fontSize: 11, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 12, padding: 12, background: "var(--row)", border: "1px solid var(--border)", borderRadius: 8 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", fontSize: 11 }}>
+        <label>
+          <div style={{ marginBottom: 3, color: "var(--muted)" }}>First post</div>
+          <select style={fieldStyle} value={form.start_hour}
+            onChange={(e) => setForm({ ...form, start_hour: Number(e.target.value) })}>
+            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
+          </select>
+        </label>
+        <label>
+          <div style={{ marginBottom: 3, color: "var(--muted)" }}>Last post (no later than)</div>
+          <select style={fieldStyle} value={form.end_hour}
+            onChange={(e) => setForm({ ...form, end_hour: Number(e.target.value) })}>
+            {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{fmtHour(h)}</option>)}
+          </select>
+        </label>
+        <label>
+          <div style={{ marginBottom: 3, color: "var(--muted)" }}>Every</div>
+          <select style={fieldStyle} value={form.interval_hours}
+            onChange={(e) => setForm({ ...form, interval_hours: Number(e.target.value) })}>
+            {INTERVALS.map((n) => <option key={n} value={n}>{n} hour{n === 1 ? "" : "s"}</option>)}
+          </select>
+        </label>
+        <label>
+          <div style={{ marginBottom: 3, color: "var(--muted)" }}>Timezone</div>
+          <select style={fieldStyle} value={form.timezone}
+            onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
+            {zones.map((z) => <option key={z} value={z}>{z}</option>)}
+          </select>
+        </label>
+      </div>
+      <div style={{ fontSize: 11, marginTop: 10, color: invalid ? "var(--red)" : "var(--text)" }}>
+        {invalid || <>Posts at <b>{hours.map(fmtHour).join(", ")}</b> — {hours.length} slot{hours.length === 1 ? "" : "s"}/day per pipeline</>}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <button className="primary" style={{ fontSize: 11 }} disabled={saving || !!invalid} onClick={() => save(false)}>
+          {saving ? "Saving…" : "Save schedule"}
+        </button>
+        <button style={{ fontSize: 11 }} onClick={() => setOpen(false)} disabled={saving}>Cancel</button>
+        {sched.customized && (
+          <button style={{ fontSize: 11, marginLeft: "auto" }} onClick={() => save(true)} disabled={saving}>
+            Reset to defaults
+          </button>
+        )}
+      </div>
+      {msg && <div style={{ fontSize: 11, marginTop: 6, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</div>}
+    </div>
+  );
 }
 
 const card: React.CSSProperties = {
@@ -143,9 +255,7 @@ export function SettingsOverview() {
             ))}
           </div>
         )}
-        <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 12 }}>
-          Change via Railway env vars: POST_START_HOUR, POST_END_HOUR, POST_INTERVAL_HOURS, POST_TIMEZONE.
-        </div>
+        <ScheduleEditor sched={sched} onSaved={setSched} />
       </div>
 
       {/* Upload-Post accounts */}

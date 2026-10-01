@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { api, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
+import { api, BulkAiStatus, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -57,6 +57,45 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [archiveDays, setArchiveDays] = useState<number | null>(null);
   const [privacy, setPrivacy] = useState("public");
+
+  // Bulk AI rewrite job (runs on the server; we poll its progress)
+  const [aiJob, setAiJob] = useState<BulkAiStatus | null>(null);
+
+  useEffect(() => {
+    api.bulkAiStatus().then((st) => { if (st.running) setAiJob(st); }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!aiJob?.running) return;
+    const t = setInterval(async () => {
+      try {
+        const st = await api.bulkAiStatus();
+        setAiJob(st);
+        if (!st.running) {
+          loadQueue();
+          onChange();
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [aiJob?.running]);
+
+  async function handleBulkAi() {
+    const ids = Array.from(sel);
+    if (ids.length === 0) return;
+    if (!confirm(
+      `Rewrite the title, description and hashtags of ${ids.length} video(s) with AI?\n\n` +
+      "This replaces their current text. It runs in the background; you can keep working."
+    )) return;
+    try {
+      setAiJob(await api.bulkAi(ids));
+      setSel(new Set());
+    } catch (err: any) {
+      alert(`AI rewrite failed to start: ${err.message}`);
+    }
+  }
 
   // Mass edit modal
   const [showBulkEdit, setShowBulkEdit] = useState(false);
@@ -595,6 +634,43 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
         </div>
       </div>
 
+      {/* Bulk AI progress */}
+      {aiJob && (
+        <div
+          style={{
+            padding: "8px 18px",
+            fontSize: 12,
+            borderBottom: "1px solid var(--border)",
+            background: aiJob.running ? "#2e1065" : aiJob.failed ? "#450a0a" : "#064e3b",
+            color: "#f5f3ff",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            {aiJob.running ? "✨ AI rewriting…" : aiJob.aborted ? "✕ AI rewrite stopped" : "✓ AI rewrite finished"}{" "}
+            <b>{aiJob.done + aiJob.failed}/{aiJob.total}</b>
+            {aiJob.failed > 0 && ` · ${aiJob.failed} failed`}
+          </span>
+          <div style={{ flex: 1, minWidth: 120, height: 4, background: "rgba(255,255,255,0.15)", borderRadius: 2 }}>
+            <div style={{
+              height: "100%", borderRadius: 2, background: "#c084fc",
+              width: `${aiJob.total ? Math.round(((aiJob.done + aiJob.failed) / aiJob.total) * 100) : 0}%`,
+            }} />
+          </div>
+          {(aiJob.aborted || aiJob.errors.length > 0) && (
+            <span style={{ fontSize: 11, color: "#fecaca", width: "100%" }}>
+              {aiJob.aborted || aiJob.errors[0]}
+            </span>
+          )}
+          {!aiJob.running && (
+            <button style={{ fontSize: 10, padding: "1px 8px" }} onClick={() => setAiJob(null)}>dismiss</button>
+          )}
+        </div>
+      )}
+
       {/* Mass Action Toolbar (Active when items selected) */}
       {sel.size > 0 && (
         <div
@@ -654,6 +730,15 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               onClick={() => setShowBulkEdit(true)}
             >
               ✏️ Mass Edit ({sel.size})
+            </button>
+
+            <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#4a1d96", color: "#f5d0fe", borderColor: "#a855f7" }}
+              onClick={handleBulkAi}
+              disabled={!!aiJob?.running}
+              title={aiJob?.running ? "An AI rewrite is already running" : "Gemini rewrites title, description and hashtags"}
+            >
+              ✨ AI Rewrite ({sel.size})
             </button>
 
             <button

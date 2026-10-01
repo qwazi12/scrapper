@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from .. import logbus
 from ..config import settings
 from ..db import SessionLocal
-from ..models import Clip, Compilation, QueueItem, SocialPost
+from ..models import AppSetting, Clip, Compilation, QueueItem, SocialPost
 from . import upload_post
 
 logger = logging.getLogger("scrapper.social.queue")
@@ -65,14 +65,92 @@ def _aware(dt: datetime.datetime | None) -> datetime.datetime | None:
     return dt
 
 
+# --- posting schedule config ---------------------------------------------
+# Env vars are the defaults; the Settings page saves overrides in app_settings.
+def default_schedule() -> dict[str, Any]:
+    return {
+        "timezone": settings.post_timezone,
+        "start_hour": settings.post_start_hour,
+        "end_hour": settings.post_end_hour,
+        "interval_hours": settings.post_interval_hours,
+    }
+
+
+def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Return a clean config or raise ValueError with a readable reason."""
+    try:
+        tz = str(cfg["timezone"])
+        start, end, step = int(cfg["start_hour"]), int(cfg["end_hour"]), int(cfg["interval_hours"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("timezone, start_hour, end_hour and interval_hours are required")
+    try:
+        ZoneInfo(tz)
+    except Exception:
+        raise ValueError(f"Unknown timezone: {tz}")
+    if not (0 <= start <= 23 and 0 <= end <= 23):
+        raise ValueError("Hours must be between 0 and 23")
+    if start > end:
+        raise ValueError("First slot must be at or before the last slot")
+    if not (1 <= step <= 24):
+        raise ValueError("Interval must be 1-24 hours")
+    return {"timezone": tz, "start_hour": start, "end_hour": end, "interval_hours": step}
+
+
+_schedule_cfg: dict[str, Any] = default_schedule()
+
+
+def schedule_config() -> dict[str, Any]:
+    return dict(_schedule_cfg)
+
+
+def load_schedule(s: Session) -> dict[str, Any]:
+    """Refresh the active schedule from the DB (falls back to env defaults)."""
+    global _schedule_cfg
+    row = s.get(AppSetting, "schedule")
+    try:
+        _schedule_cfg = validate_schedule(row.value) if row and row.value else default_schedule()
+    except ValueError as exc:  # bad stored value: keep running on defaults, say so
+        logger.error("Stored schedule invalid (%s); using env defaults", exc)
+        _schedule_cfg = default_schedule()
+    return schedule_config()
+
+
+def save_schedule(s: Session, cfg: dict[str, Any] | None) -> dict[str, Any]:
+    """Persist a new schedule (None = back to env defaults); audit-logged."""
+    before = schedule_config()
+    row = s.get(AppSetting, "schedule")
+    if cfg is None:
+        if row:
+            s.delete(row)
+    else:
+        cfg = validate_schedule(cfg)
+        if row:
+            row.value = cfg
+        else:
+            s.add(AppSetting(key="schedule", value=cfg))
+    s.commit()
+    after = load_schedule(s)
+    logbus.log("info", "schedule_changed",
+               f"Posting schedule {before['start_hour']}-{before['end_hour']}h every {before['interval_hours']}h "
+               f"{before['timezone']} -> {after['start_hour']}-{after['end_hour']}h every "
+               f"{after['interval_hours']}h {after['timezone']}", before=before, after=after)
+    return after
+
+
+def slots_per_day() -> int:
+    c = _schedule_cfg
+    return len(range(c["start_hour"], c["end_hour"] + 1, c["interval_hours"]))
+
+
 def slots_after(t: datetime.datetime, n: int) -> list[datetime.datetime]:
     """The next n posting slots strictly after t, as UTC datetimes."""
-    tz = ZoneInfo(settings.post_timezone)
+    cfg = _schedule_cfg
+    tz = ZoneInfo(cfg["timezone"])
     local = t.astimezone(tz)
     day = local.date()
     out: list[datetime.datetime] = []
     while len(out) < n:
-        for h in range(settings.post_start_hour, settings.post_end_hour + 1, settings.post_interval_hours):
+        for h in range(cfg["start_hour"], cfg["end_hour"] + 1, cfg["interval_hours"]):
             slot = datetime.datetime.combine(day, datetime.time(h), tzinfo=tz)
             if slot > local:
                 out.append(slot.astimezone(UTC))
@@ -417,6 +495,7 @@ def run_scheduler_tick():
     global _last_archive_sweep
     now = datetime.datetime.now(UTC)
     with SessionLocal() as s:
+        load_schedule(s)  # pick up changes made on the Settings page
         reconcile_posting(s, now)
         plan_schedule(s, now)
 

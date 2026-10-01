@@ -39,11 +39,12 @@ from .schemas import (
     QueueItemOut,
     QueueItemUpdate,
     QueueShuffleRequest,
+    ScheduleConfigIn,
     SelectRequest,
     SocialPostOut,
     SocialPublishRequest,
 )
-from .social import metadata as social_metadata, queue_manager, upload_post
+from .social import ai_bulk, metadata as social_metadata, queue_manager, upload_post
 
 app = FastAPI(title="Scrapper API", version="1.0")
 
@@ -711,20 +712,13 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     if not item:
         raise HTTPException(404, "queue item not found")
 
-    clip_titles = [item.title or item.video_name]
-    if item.compilation_id:
-        comp = s.get(Compilation, item.compilation_id)
-        if comp and comp.clip_ids:
-            clips = s.query(Clip).filter(Clip.id.in_(comp.clip_ids)).all()
-            clip_titles = [c.title for c in clips if c.title]
+    clip_titles = ai_bulk.ai_inputs(item, s)
 
     try:
         res = await social_metadata.generate_social_metadata(clip_titles, strict=True)
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI generation failed: {exc}")
-    item.title = res.get("title", item.title)
-    item.description = res.get("caption", item.description)
-    item.tags = " ".join(res.get("hashtags", []))
+    ai_bulk.apply_ai(item, res)
     s.commit()
     s.refresh(item)
     return item
@@ -879,6 +873,34 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
     return {"ok": True, "count": len(items), "mode": req.mode}
 
 
+@app.put("/api/schedule/config", dependencies=_AUTH)
+def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_session)) -> dict:
+    """Change posting times from the Settings page; Ready items re-plan now."""
+    try:
+        queue_manager.save_schedule(s, None if req.reset else req.model_dump(exclude={"reset"}))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return get_schedule(s)
+
+
+@app.post("/api/queue/bulk-ai", dependencies=_AUTH)
+def start_bulk_ai(req: QueueBulkAction, s: Session = Depends(get_session)) -> dict:
+    if not settings.gemini_api_key:
+        raise HTTPException(400, "GEMINI_API_KEY is not set on the server")
+    ids = [i for (i,) in s.query(QueueItem.id).filter(QueueItem.id.in_(req.ids)).all()]
+    if not ids:
+        raise HTTPException(400, "No matching queue items")
+    try:
+        return ai_bulk.start(ids)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@app.get("/api/queue/bulk-ai", dependencies=_AUTH)
+def bulk_ai_status() -> dict:
+    return dict(ai_bulk.status)
+
+
 @app.post("/api/social/ai-check", dependencies=_AUTH)
 async def ai_check() -> dict:
     """Live Gemini call on a sample title. Changes nothing; reports the real error."""
@@ -911,12 +933,15 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         if len(p["next"]) < 5:
             p["next"].append({"id": it.id, "title": it.title, "channel": it.pipeline,
                               "scheduled_at": queue_manager._aware(it.scheduled_at)})
-    per_day = len(range(settings.post_start_hour, settings.post_end_hour + 1, settings.post_interval_hours))
+    cfg = queue_manager.load_schedule(s)
+    per_day = queue_manager.slots_per_day()
     return {
-        "timezone": settings.post_timezone,
-        "start_hour": settings.post_start_hour,
-        "end_hour": settings.post_end_hour,
-        "interval_hours": settings.post_interval_hours,
+        "timezone": cfg["timezone"],
+        "start_hour": cfg["start_hour"],
+        "end_hour": cfg["end_hour"],
+        "interval_hours": cfg["interval_hours"],
+        "defaults": queue_manager.default_schedule(),
+        "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,
         "next_slots": queue_manager.slots_after(now, per_day),
         "archive_delete_days": settings.archive_delete_days,

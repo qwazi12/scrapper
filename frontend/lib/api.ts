@@ -106,11 +106,27 @@ export type QueueItem = {
   created_at: string;
 };
 
-export type ScheduleInfo = {
+export type ScheduleConfig = {
   timezone: string;
   start_hour: number;
   end_hour: number;
   interval_hours: number;
+};
+
+export type BulkAiStatus = {
+  running: boolean;
+  total: number;
+  done: number;
+  failed: number;
+  errors: string[];
+  started_at: string | null;
+  finished_at: string | null;
+  aborted: string | null;
+};
+
+export type ScheduleInfo = ScheduleConfig & {
+  defaults: ScheduleConfig;
+  customized: boolean;
   slots_per_day: number;
   next_slots: string[];
   archive_delete_days: number;
@@ -372,6 +388,22 @@ export const api = {
     }),
 
   schedule: () => req<ScheduleInfo>("/api/schedule", { headers: headers(false) }),
+
+  updateSchedule: (cfg: ScheduleConfig | { reset: true }) =>
+    req<ScheduleInfo>("/api/schedule/config", {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify(cfg),
+    }),
+
+  bulkAi: (ids: number[]) =>
+    req<BulkAiStatus>("/api/queue/bulk-ai", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ ids, action: "ai" }),
+    }),
+
+  bulkAiStatus: () => req<BulkAiStatus>("/api/queue/bulk-ai", { headers: headers(false) }),
 
   aiCheck: () =>
     req<{ ok: boolean; model: string; title: string; hashtags: string[] }>("/api/social/ai-check", {

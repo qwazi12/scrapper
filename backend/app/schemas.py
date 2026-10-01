@@ -183,6 +183,14 @@ class QueueBulkAction(BaseModel):
     tags: str | None = None
 
 
+class ScheduleConfigIn(BaseModel):
+    timezone: str = "America/New_York"
+    start_hour: int = 8
+    end_hour: int = 22
+    interval_hours: int = 2
+    reset: bool = False  # true = drop the override, back to env defaults
+
+
 class QueueShuffleRequest(BaseModel):
     mode: str = "round_robin"  # "round_robin", "random", "by_channel"
     pipeline: str | None = None

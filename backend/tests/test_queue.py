@@ -415,3 +415,71 @@ def test_api_times_are_explicitly_utc(session, client):
     session.commit()
     row = next(i for i in client.get("/api/queue").json() if i["id"] == it.id)
     assert row["scheduled_at"].endswith(("Z", "+00:00"))
+
+
+# --- editable schedule ---------------------------------------------------------
+@pytest.fixture()
+def reset_schedule(session):
+    yield
+    qm.save_schedule(session, None)
+
+
+def test_schedule_edit_changes_slots_and_replans(session, client, reset_schedule):
+    (it,) = add(session, 1)
+    r = client.put("/api/schedule/config",
+                   json={"timezone": "America/New_York", "start_hour": 9, "end_hour": 21, "interval_hours": 3})
+    assert r.status_code == 200 and r.json()["slots_per_day"] == 5 and r.json()["customized"] is True
+    hours = [s.astimezone(ET).hour for s in qm.slots_after(et(2026, 10, 1, 8), 6)]
+    assert hours == [9, 12, 15, 18, 21, 9]
+    session.refresh(it)
+    assert it.scheduled_at.replace(tzinfo=UTC).astimezone(ET).hour in (9, 12, 15, 18, 21)
+
+
+@pytest.mark.parametrize("bad,why", [
+    ({"start_hour": 22, "end_hour": 8}, "before the last"),
+    ({"interval_hours": 0}, "Interval"),
+    ({"timezone": "Mars/Base"}, "Unknown timezone"),
+    ({"end_hour": 24}, "between 0 and 23"),
+])
+def test_schedule_edit_rejects_bad_values(client, reset_schedule, bad, why):
+    body = {"timezone": "America/New_York", "start_hour": 8, "end_hour": 22, "interval_hours": 2, **bad}
+    r = client.put("/api/schedule/config", json=body)
+    assert r.status_code == 400 and why in r.json()["detail"]
+
+
+def test_schedule_reset_returns_to_defaults(client, reset_schedule):
+    client.put("/api/schedule/config", json={"timezone": "UTC", "start_hour": 0, "end_hour": 0, "interval_hours": 1})
+    d = client.put("/api/schedule/config", json={"reset": True}).json()
+    assert d["customized"] is False and d["start_hour"] == 8 and d["interval_hours"] == 2
+
+
+# --- bulk AI ---------------------------------------------------------------------
+def test_bulk_ai_needs_key(session, client):
+    (it,) = add(session, 1)
+    r = client.post("/api/queue/bulk-ai", json={"ids": [it.id], "action": "ai"})
+    assert r.status_code == 400 and "GEMINI_API_KEY" in r.json()["detail"]
+
+
+def test_bulk_ai_rewrites_every_item_and_reports_failures(session, monkeypatch):
+    from backend.app.social import ai_bulk
+    a, b, c = add(session, 3)
+    calls = []
+
+    async def fake(titles, strict=False, **kw):
+        calls.append(titles)
+        if len(calls) == 2:
+            raise metadata.MetadataError("Gemini returned HTTP 500")
+        return {"title": "AI title", "caption": "AI caption", "hashtags": ["#x", "#y"]}
+
+    monkeypatch.setattr(metadata, "generate_social_metadata", fake)
+    ai_bulk.status.update(running=False)
+    ai_bulk.start([a.id, b.id, c.id])
+    import time
+    for _ in range(100):
+        if not ai_bulk.status["running"]:
+            break
+        time.sleep(0.05)
+    assert ai_bulk.status["done"] == 2 and ai_bulk.status["failed"] == 1
+    assert "HTTP 500" in ai_bulk.status["errors"][0]
+    session.expire_all()
+    assert sum(1 for it in (a, b, c) if session.get(QueueItem, it.id).title == "AI title") == 2
