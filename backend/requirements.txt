@@ -15,3 +15,5 @@ google-api-python-client>=2.150.0
 google-auth>=2.35.0
 # IANA timezone data for zoneinfo (python:slim ships none) — posting schedule.
 tzdata==2025.2
+# Image work for LongForm Studio (frames, cast sheet, overlays).
+Pillow==11.3.0

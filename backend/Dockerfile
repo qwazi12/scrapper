@@ -5,8 +5,9 @@ FROM python:3.12-slim
 # (YouTube today, likely others next) require JS execution to sign media URLs,
 # and without a runtime yt-dlp warns "extraction deprecated" and every download
 # 403s. scraper.js_runtime_args() detects and enables it.
+# fonts-dejavu-core: text on LongForm Studio overlays (title cards, subscribe bar).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates nodejs && rm -rf /var/lib/apt/lists/*
+    ffmpeg ca-certificates nodejs fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
 

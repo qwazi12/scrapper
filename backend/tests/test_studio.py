@@ -121,3 +121,78 @@ def test_file_route_blocks_path_escape(client):
 def test_status_reports_missing_keys(client):
     d = client.get("/api/studio/status").json()
     assert d["tmdb"] is False and d["tts"] is False and d["stages"][0] == "gather"
+
+
+# --- trailer + shots ------------------------------------------------------------
+import subprocess
+
+from backend.app.models import Clip
+from backend.app.studio import imdb, media, stage_shots, stage_trailer
+
+
+@pytest.fixture(scope="session")
+def three_scene_video(tmp_path_factory) -> pathlib.Path:
+    """3 hard cuts: red 2s, blue 2s, green 2s (real ffmpeg)."""
+    out = tmp_path_factory.mktemp("vid") / "t.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y",
+                    "-f", "lavfi", "-i", "color=c=red:s=320x180:d=2:r=24",
+                    "-f", "lavfi", "-i", "color=c=blue:s=320x180:d=2:r=24",
+                    "-f", "lavfi", "-i", "color=c=green:s=320x180:d=2:r=24",
+                    "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0", "-pix_fmt", "yuv420p", str(out)],
+                   check=True)
+    return out
+
+
+def test_pick_videos_main_trailer_then_capped_extras():
+    vids = [{"id": "vi1", "type": "Trailer", "seconds": 140}, {"id": "vi2", "type": "Clip", "seconds": 200},
+            {"id": "vi3", "type": "Clip", "seconds": 90}, {"id": "vi4", "type": "Promo", "seconds": 60},
+            {"id": "vi5", "type": "Interview", "seconds": 30}]
+    got = [v["id"] for v in stage_trailer.pick_videos(vids)]
+    assert got == ["vi1", "vi2", "vi3"]  # extras capped at 300 s; interviews skipped
+
+
+def test_imdb_ids_are_validated():
+    with pytest.raises(imdb.IMDbError):
+        imdb.list_videos('tt1") { evil }')
+
+
+def test_trailer_stage_downloads_from_imdb(monkeypatch, three_scene_video):
+    pid = _new_project(facts={"imdb_id": "tt8036976", "videos": []})
+    monkeypatch.setattr(imdb, "list_videos", lambda i: [{"id": "vi1", "type": "Trailer", "seconds": 6, "name": "T"}])
+    monkeypatch.setattr(imdb, "download", lambda vid, dest: dest.write_bytes(three_scene_video.read_bytes()) or 1)
+    assert "IMDb trailer" in runner.run_one(pid, "trailer")
+    with SessionLocal() as s:
+        t = s.get(StudioProject, pid).trailer
+        assert t["origin"] == "imdb" and pathlib.Path(t["file"]).exists()
+
+
+def test_trailer_stage_falls_back_to_home_worker(monkeypatch):
+    pid = _new_project(facts={"imdb_id": None, "videos": [
+        {"site": "YouTube", "type": "Trailer", "url": "https://www.youtube.com/watch?v=k1"}]})
+    msg = runner.run_one(pid, "trailer")
+    assert "home Mac worker" in msg
+    with SessionLocal() as s:
+        t = s.get(StudioProject, pid).trailer
+        clip = s.get(Clip, t["pending_clip_id"])
+        assert clip.file_path is None and clip.source_url.endswith("k1")  # what the worker polls for
+
+
+def test_shots_stage_cuts_and_tags(monkeypatch, three_scene_video):
+    pid = _new_project(facts={"cast": [{"actor": "Rachel McAdams", "character": "Linda"}], "local": {"cast": {}}},
+                       trailer={"file": str(three_scene_video), "sources": [
+                           {"id": "vi1", "type": "Trailer", "file": str(three_scene_video)}]})
+
+    def fake_tag(prompt, images=None, **kw):
+        n = len(images)
+        return [{"i": k + 1, "description": f"shot {k + 1}", "people": ["Rachel McAdams", "Nobody"],
+                 "setting": "beach", "mood": "tense", "size": "wide", "card": k == 0, "text": False,
+                 "quality": "good"} for k in range(n)]
+
+    monkeypatch.setattr(gemini, "ask_json", fake_tag)
+    summary = runner.run_one(pid, "shots")
+    with SessionLocal() as s:
+        shots = s.get(StudioProject, pid).shots
+    assert len(shots) == 3, summary
+    assert shots[0]["card"] and not shots[0]["usable"]           # title/logo cards stay out
+    assert shots[1]["usable"] and shots[1]["people"] == ["Rachel McAdams"]  # unknown names dropped
+    assert (runner.project_dir(pid) / shots[1]["still"]).exists()
