@@ -99,11 +99,28 @@ export type QueueItem = {
   accounts: string[];
   status: string; // "review" | "ready" | "posting" | "posted" | "retry" | "error" | "archived"
   notes: string | null;
+  position: number | null;
   scheduled_at: string | null;
   published_at: string | null;
   outstand_post_id: string | null;
   media_url: string | null;
   created_at: string;
+};
+
+export type ScheduleInfo = {
+  timezone: string;
+  start_hour: number;
+  end_hour: number;
+  interval_hours: number;
+  slots_per_day: number;
+  next_slots: string[];
+  archive_delete_days: number;
+  pipelines: Record<
+    string,
+    { ready: number; next: { id: number; title: string; channel: string; scheduled_at: string }[] }
+  >;
+  ai: { configured: boolean; model: string };
+  outstand_configured: boolean;
 };
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
@@ -298,7 +315,14 @@ export const api = {
   bulkQueueAction: (
     ids: number[],
     action: string,
-    opts?: { pipeline?: string; target_status?: string; accounts?: string[] }
+    opts?: {
+      pipeline?: string;
+      target_status?: string;
+      accounts?: string[];
+      title?: string;
+      description?: string;
+      tags?: string;
+    }
   ) =>
     req<{ ok: boolean; count: number; action: string }>("/api/queue/bulk-action", {
       method: "POST",
@@ -309,8 +333,13 @@ export const api = {
         pipeline: opts?.pipeline,
         target_status: opts?.target_status,
         accounts: opts?.accounts,
+        title: opts?.title,
+        description: opts?.description,
+        tags: opts?.tags,
       }),
     }),
+
+  schedule: () => req<ScheduleInfo>("/api/schedule", { headers: headers(false) }),
 
   shuffleQueue: (data: { mode: "round_robin" | "random" | "by_channel"; pipeline?: string; status?: string }) =>
     req<{ ok: boolean; count: number; mode: string; message?: string }>("/api/queue/shuffle", {

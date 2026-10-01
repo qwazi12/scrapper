@@ -24,6 +24,35 @@ def init_db() -> None:
     from . import models  # noqa: F401  (register tables)
 
     Base.metadata.create_all(engine)
+    _migrate()
+
+
+def _migrate() -> None:
+    """Idempotent, additive schema changes create_all() can't make on an
+    existing table. Each step checks first, so re-running is a no-op."""
+    import logging
+
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "queue_items" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("queue_items")}
+    with engine.begin() as conn:  # one transaction: all or nothing
+        if "position" not in cols:
+            conn.execute(text('ALTER TABLE queue_items ADD COLUMN "position" INTEGER'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_queue_items_position ON queue_items ("position")'))
+        # Backfill: unordered items keep their import order.
+        conn.execute(text('UPDATE queue_items SET "position" = id WHERE "position" IS NULL'))
+    # One queue row per Drive file — stops concurrent syncs double-importing.
+    # NULLs stay allowed (compilations/clips have no Drive link).
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_queue_items_drive_link ON queue_items (drive_link)"
+            ))
+    except Exception as exc:  # existing duplicates — leave the app up, say so
+        logging.getLogger("scrapper.db").error("unique drive_link index not created: %s", exc)
 
 
 def get_session() -> Iterator[Session]:

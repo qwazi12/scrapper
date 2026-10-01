@@ -47,13 +47,26 @@ def _fallback_metadata(clip_titles: list[str]) -> dict[str, Any]:
     }
 
 
+class MetadataError(Exception):
+    """Gemini could not produce metadata (only raised when strict=True)."""
+
+
 async def generate_social_metadata(
     clip_titles: list[str],
     user_prompt: str | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
-    """Generate viral social media metadata using Gemini or fallback."""
-    if not settings.gemini_api_key:
+    """Generate viral social media metadata using Gemini or fallback.
+
+    strict=True raises MetadataError instead of returning the canned template,
+    so an explicit "AI" click never silently gets placeholder text."""
+    def fail(reason: str) -> dict[str, Any]:
+        if strict:
+            raise MetadataError(reason)
         return _fallback_metadata(clip_titles)
+
+    if not settings.gemini_api_key:
+        return fail("GEMINI_API_KEY is not set on the server")
 
     prompt = (
         "You are an elite short-form social media editor and growth strategist. "
@@ -76,7 +89,7 @@ async def generate_social_metadata(
         "}"
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={settings.gemini_api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent"
 
     payload = {
         "contents": [
@@ -86,25 +99,28 @@ async def generate_social_metadata(
         ],
         "generationConfig": {
             "temperature": 0.7,
-            "maxOutputTokens": 800,
+            # 2.5-series models spend part of this on thinking; 800 truncated the JSON.
+            "maxOutputTokens": 4096,
+            "responseMimeType": "application/json",
         },
     }
 
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
-            res = await client.post(url, json=payload)
+            # Key in a header, not the URL, so it can't leak into logged URLs.
+            res = await client.post(url, json=payload, headers={"x-goog-api-key": settings.gemini_api_key})
             if not res.is_success:
                 logger.warning("Gemini API call failed (%s): %s", res.status_code, res.text)
-                return _fallback_metadata(clip_titles)
+                return fail(f"Gemini {settings.gemini_model} returned HTTP {res.status_code}: {res.text[:300]}")
 
             data = res.json()
             candidates = data.get("candidates", [])
             if not candidates:
-                return _fallback_metadata(clip_titles)
+                return fail("Gemini returned no candidates")
 
             parts = candidates[0].get("content", {}).get("parts", [])
             if not parts:
-                return _fallback_metadata(clip_titles)
+                return fail("Gemini returned an empty response")
 
             raw_text = parts[0].get("text", "").strip()
 
@@ -113,8 +129,10 @@ async def generate_social_metadata(
             raw_text = re.sub(r"\s*```$", "", raw_text).strip()
 
             parsed = json.loads(raw_text)
-            parsed["model"] = "gemini-2.0-flash"
+            parsed["model"] = settings.gemini_model
             return parsed
+    except MetadataError:
+        raise
     except Exception as exc:
         logger.exception("Failed to parse Gemini response: %s", exc)
-        return _fallback_metadata(clip_titles)
+        return fail(f"Gemini response could not be used: {exc}")

@@ -15,7 +15,7 @@ import time
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..core import engine
@@ -488,12 +488,13 @@ def list_social_posts(s: Session = Depends(get_session)) -> list[SocialPost]:
     return s.query(SocialPost).order_by(desc(SocialPost.id)).limit(50).all()
 
 
-MOVIE_CLIPS_CHANNELS = [
-    "Movie Clips", "@AlphaReels-1", "@CoruscateCuts", "@EditAetheris",
-    "@FrameLegion", "@PixelDrift-f3c", "@QianaLucy", "@SceneVale",
-    "@SolarrEditss", "@TheUsJournal17", "@VynixAE", "@clipscav",
-    "@comet-cinema", "@hanganhoang3071", "@roebutt"
-]
+MOVIE_CLIPS_CHANNELS = queue_manager.MOVIE_CLIPS_CHANNELS
+
+
+def _mark_published(it: QueueItem, status: str) -> None:
+    # Posted/archived items start their ARCHIVE_DELETE_DAYS countdown now.
+    if status in ("posted", "archived") and it.published_at is None:
+        it.published_at = datetime.datetime.now(datetime.timezone.utc)
 
 @app.get("/api/queue", response_model=list[QueueItemOut], dependencies=_AUTH)
 def list_queue(
@@ -520,7 +521,8 @@ def list_queue(
         else:
             q = q.filter(QueueItem.status == status)
 
-    return q.order_by(desc(QueueItem.id)).all()
+    # Posting order (next to post first); the UI can re-sort either direction.
+    return q.order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
 
 
 @app.post("/api/queue", response_model=QueueItemOut, dependencies=_AUTH)
@@ -597,6 +599,7 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         accounts=req.accounts,
         status=req.status or "review",
         scheduled_at=sched_dt,
+        position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1,
     )
     s.add(item)
     s.commit()
@@ -625,6 +628,7 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         item.pipeline = req.pipeline
     if req.status is not None:
         item.status = req.status
+        _mark_published(item, req.status)
     if req.accounts is not None:
         item.accounts = req.accounts
     if req.notes is not None:
@@ -677,7 +681,10 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
             clips = s.query(Clip).filter(Clip.id.in_(comp.clip_ids)).all()
             clip_titles = [c.title for c in clips if c.title]
 
-    res = await social_metadata.generate_social_metadata(clip_titles)
+    try:
+        res = await social_metadata.generate_social_metadata(clip_titles, strict=True)
+    except social_metadata.MetadataError as exc:
+        raise HTTPException(502, f"AI generation failed: {exc}")
     item.title = res.get("title", item.title)
     item.description = res.get("caption", item.description)
     item.tags = " ".join(res.get("hashtags", []))
@@ -714,16 +721,19 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
     elif req.action == "archive":
         for it in items:
             it.status = "archived"
+            _mark_published(it, "archived")
         s.commit()
         logbus.log("info", "queue_bulk_archived", f"Archived {count} items")
     elif req.action == "posted":
         for it in items:
             it.status = "posted"
+            _mark_published(it, "posted")
         s.commit()
         logbus.log("info", "queue_bulk_posted", f"Set {count} items -> posted")
     elif req.action == "change_status" and req.target_status:
         for it in items:
             it.status = req.target_status
+            _mark_published(it, req.target_status)
         s.commit()
         logbus.log("info", "queue_bulk_status", f"Changed {count} items to {req.target_status}")
     elif req.action == "set_accounts" and req.accounts is not None:
@@ -731,6 +741,23 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
             it.accounts = req.accounts
         s.commit()
         logbus.log("info", "queue_bulk_accounts", f"Assigned {len(req.accounts)} account(s) to {count} items")
+    elif req.action == "edit":
+        # Mass edit: only fields that were sent are changed.
+        fields = {k: v for k, v in (
+            ("title", req.title), ("description", req.description),
+            ("tags", req.tags), ("pipeline", req.pipeline),
+        ) if v is not None}
+        if not fields:
+            raise HTTPException(400, "edit needs at least one of title, description, tags, pipeline")
+        for it in items:
+            for k, v in fields.items():
+                setattr(it, k, v)
+            # Keep the "<pipeline> / @channel" label in step with a pipeline move.
+            if "pipeline" in fields and it.source and " / " in it.source:
+                it.source = f"{fields['pipeline']} / {it.source.split(' / ', 1)[1]}"
+        s.commit()
+        logbus.log("info", "queue_bulk_edit", f"Edited {', '.join(fields)} on {count} items",
+                   ids=[it.id for it in items])
     elif req.action == "delete":
         for it in items:
             s.delete(it)
@@ -803,16 +830,49 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
             random.shuffle(bucket)
             items.extend(bucket)
 
-    # Stagger scheduled_at spacing every 2 hours if items are ready
-    base_time = datetime.datetime.now(datetime.timezone.utc)
-    for i, it in enumerate(items):
-        if it.status == "ready":
-            it.scheduled_at = base_time + datetime.timedelta(hours=2 * (i + 1))
-        it.notes = f"Shuffle sequence #{i+1}"
+    # Persist the new order: the shuffled items take over the same set of
+    # positions they held, so items outside the filter keep their places.
+    # The scheduler re-plans Ready items' slots from this order on its next tick.
+    slots = sorted(it.position if it.position is not None else it.id for it in items)
+    for pos, it in zip(slots, items):
+        it.position = pos
 
     s.commit()
     logbus.log("info", "queue_shuffled", f"Shuffled {len(items)} items using mode '{req.mode}'")
     return {"ok": True, "count": len(items), "mode": req.mode}
+
+
+@app.get("/api/schedule", dependencies=_AUTH)
+def get_schedule(s: Session = Depends(get_session)) -> dict:
+    """Posting schedule config + what is lined up next, per pipeline."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    queue_manager.plan_schedule(s, now)  # so the answer matches what will post
+    ready = (
+        s.query(QueueItem)
+        .filter(QueueItem.status == "ready")
+        .order_by(QueueItem.scheduled_at, QueueItem.id)
+        .all()
+    )
+    pipelines: dict[str, dict] = {}
+    for it in ready:
+        p = pipelines.setdefault(queue_manager.pipeline_group(it), {"ready": 0, "next": []})
+        p["ready"] += 1
+        if len(p["next"]) < 5:
+            p["next"].append({"id": it.id, "title": it.title, "channel": it.pipeline,
+                              "scheduled_at": it.scheduled_at})
+    per_day = len(range(settings.post_start_hour, settings.post_end_hour + 1, settings.post_interval_hours))
+    return {
+        "timezone": settings.post_timezone,
+        "start_hour": settings.post_start_hour,
+        "end_hour": settings.post_end_hour,
+        "interval_hours": settings.post_interval_hours,
+        "slots_per_day": per_day,
+        "next_slots": queue_manager.slots_after(now, per_day),
+        "archive_delete_days": settings.archive_delete_days,
+        "pipelines": pipelines,
+        "ai": {"configured": bool(settings.gemini_api_key), "model": settings.gemini_model},
+        "outstand_configured": bool(settings.outstand_api_key),
+    }
 
 
 @app.post("/api/social/ingest-channel", dependencies=_AUTH)

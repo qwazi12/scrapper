@@ -171,6 +171,25 @@ def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -
     return target_path
 
 
+def trash_drive_file(drive_link_or_id: str) -> bool:
+    """Move a Drive file to trash (recoverable for 30 days). Returns False if
+    the file is already gone, so callers can still drop their record."""
+    from googleapiclient.errors import HttpError
+
+    file_id = extract_drive_file_id(drive_link_or_id)
+    if not file_id:
+        raise ValueError(f"Could not extract Google Drive file ID from {drive_link_or_id}")
+    try:
+        get_drive_service().files().update(
+            fileId=file_id, body={"trashed": True}, supportsAllDrives=True
+        ).execute()
+        return True
+    except HttpError as exc:
+        if exc.resp.status == 404:
+            return False
+        raise
+
+
 def sync_drive_to_queue(
     folder_url_or_id: str,
     default_pipeline: str,
@@ -213,6 +232,10 @@ def sync_drive_to_queue(
             targets.append((sf["id"], sf["name"]))
     else:
         targets.append((folder_id, default_pipeline or parent_name))
+
+    from sqlalchemy import func
+    # New imports go to the back of the posting order.
+    next_position = db_session.query(func.max(QueueItem.position)).scalar() or 0
 
     total_scanned = 0
     added_count = 0
@@ -268,6 +291,7 @@ def sync_drive_to_queue(
 
             title, tags = clean_video_title(name)
             item_status = "ready" if auto_approve else "review"
+            next_position += 1
 
             new_item = QueueItem(
                 pipeline=channel_name,
@@ -279,6 +303,7 @@ def sync_drive_to_queue(
                 description=title,
                 tags=tags,
                 status=item_status,
+                position=next_position,
             )
             db_session.add(new_item)
             ch_added += 1

@@ -148,6 +148,7 @@ class QueueItemOut(BaseModel):
     accounts: list
     status: str
     notes: str | None
+    position: int | None = None
     scheduled_at: datetime.datetime | None
     published_at: datetime.datetime | None
     outstand_post_id: str | None
@@ -160,10 +161,14 @@ class QueueItemOut(BaseModel):
 
 class QueueBulkAction(BaseModel):
     ids: list[int]
-    action: str  # "approve", "review", "archive", "posted", "delete", "generate_ai", "set_accounts"
+    action: str  # "approve", "review", "archive", "posted", "delete", "set_accounts", "change_status", "edit"
     pipeline: str | None = None
     target_status: str | None = None
     accounts: list[str] | None = None
+    # "edit": any of these that are set are applied to every selected item.
+    title: str | None = None
+    description: str | None = None
+    tags: str | None = None
 
 
 class QueueShuffleRequest(BaseModel):

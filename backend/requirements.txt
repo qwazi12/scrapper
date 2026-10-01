@@ -13,3 +13,5 @@ httpx==0.28.1
 yt-dlp>=2026.8.19
 google-api-python-client>=2.150.0
 google-auth>=2.35.0
+# IANA timezone data for zoneinfo (python:slim ships none) — posting schedule.
+tzdata==2025.2

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 import pathlib
+import re
 from typing import Any
 
 import httpx
@@ -62,7 +63,22 @@ async def list_social_accounts() -> list[dict[str, Any]]:
         return data.get("data", [])
 
 
-async def upload_media(file_path: pathlib.Path) -> dict[str, Any]:
+def safe_upload_name(name: str, fallback: str = "video.mp4") -> str:
+    """ASCII-only storage filename. Drive names carry emoji, '#', '?' etc.;
+    Outstand builds the storage key from the filename, and characters like
+    those don't survive the presigned-URL round trip, so the bytes land under
+    a different key than the one /confirm checks ("File not found in storage")."""
+    stem, dot, ext = name.rpartition(".")
+    if not dot:
+        stem, ext = name, ""
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "_", stem).strip("_")[:80]
+    ext = re.sub(r"[^A-Za-z0-9]+", "", ext)[:8]
+    if not stem:
+        return fallback
+    return f"{stem}.{ext}" if ext else stem
+
+
+async def upload_media(file_path: pathlib.Path, upload_name: str | None = None) -> dict[str, Any]:
     """Upload media file to Outstand via 3-step presigned flow.
 
     1. POST /v1/media/upload -> get upload_url + id
@@ -73,7 +89,9 @@ async def upload_media(file_path: pathlib.Path) -> dict[str, Any]:
         raise OutstandError(f"Video file not found: {file_path}", status_code=404)
 
     file_size = file_path.stat().st_size
-    filename = file_path.name
+    if file_size == 0:
+        raise OutstandError(f"Video file is empty: {file_path.name}", status_code=422)
+    filename = safe_upload_name(upload_name or file_path.name)
     content_type, _ = mimetypes.guess_type(str(file_path))
     if not content_type:
         content_type = "video/mp4"
@@ -114,6 +132,8 @@ async def upload_media(file_path: pathlib.Path) -> dict[str, Any]:
             headers={"Content-Type": content_type},
             content=file_bytes,
         )
+        # Metadata only — the presigned query string is a credential.
+        logger.info("Outstand PUT media %s (%s bytes) -> %s", media_id, file_size, put_res.status_code)
         if not put_res.is_success:
             logger.error("Outstand S3/R2 binary upload failed: %s %s", put_res.status_code, put_res.text)
             raise OutstandError(
@@ -130,7 +150,8 @@ async def upload_media(file_path: pathlib.Path) -> dict[str, Any]:
         if not step3_res.is_success:
             logger.error("Outstand media confirm failed: %s %s", step3_res.status_code, step3_res.text)
             raise OutstandError(
-                f"Outstand media confirmation failed: {step3_res.text}",
+                f"Outstand media confirmation failed (media {media_id}, '{filename}', "
+                f"{file_size} bytes, PUT {put_res.status_code}): {step3_res.text}",
                 status_code=step3_res.status_code,
             )
 

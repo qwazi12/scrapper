@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pathlib
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -82,11 +83,35 @@ class Settings(BaseSettings):
     outstand_api_key: str = ""
     outstand_base_url: str = "https://api.outstand.so/v1"
 
+    # --- Posting schedule (SocialPilot) ---------------------------------
+    # Same cadence as socialpilot_Ai CONFIG.md: a slot every 2h from 8am to
+    # 10pm Eastern; each slot posts the next Ready video of every pipeline.
+    post_timezone: str = "America/New_York"
+    post_start_hour: int = 8                # first slot (local hour, 0-23)
+    post_end_hour: int = 22                 # last slot (inclusive)
+    post_interval_hours: int = 2
+    # Posted/archived queue items (and their Drive file, moved to trash) are
+    # removed this many days after they were posted. 0 disables.
+    archive_delete_days: int = 4
+
     # --- AI Metadata (Google Gemini) ------------------------------------
     gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
 
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod
+
+    @model_validator(mode="after")
+    def _check_schedule(self) -> "Settings":
+        from zoneinfo import ZoneInfo
+        ZoneInfo(self.post_timezone)  # raises on an unknown zone
+        if not (0 <= self.post_start_hour <= self.post_end_hour <= 23):
+            raise ValueError("POST_START_HOUR/POST_END_HOUR must satisfy 0 <= start <= end <= 23")
+        if self.post_interval_hours < 1:
+            raise ValueError("POST_INTERVAL_HOURS must be >= 1")
+        if self.archive_delete_days < 0:
+            raise ValueError("ARCHIVE_DELETE_DAYS must be >= 0")
+        return self
 
     # ---------------------------------------------------------------------
     @property

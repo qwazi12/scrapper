@@ -15,15 +15,100 @@ import threading
 import time
 from typing import Any
 
-from sqlalchemy import desc
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import logbus
+from ..config import settings
 from ..db import SessionLocal
 from ..models import Clip, Compilation, QueueItem
-from . import metadata, outstand
+from . import outstand
 
 logger = logging.getLogger("scrapper.social.queue")
+
+# Drive subfolders of the "Movie Clips" pipeline (one per source channel).
+MOVIE_CLIPS_CHANNELS = [
+    "Movie Clips", "@AlphaReels-1", "@CoruscateCuts", "@EditAetheris",
+    "@FrameLegion", "@PixelDrift-f3c", "@QianaLucy", "@SceneVale",
+    "@SolarrEditss", "@TheUsJournal17", "@VynixAE", "@clipscav",
+    "@comet-cinema", "@hanganhoang3071", "@roebutt"
+]
+
+# A slot is still "due" this long after its time — covers a restart or a slow
+# tick without ever back-filling a whole day of missed slots at once.
+DUE_GRACE = datetime.timedelta(minutes=30)
+ARCHIVE_SWEEP_EVERY = datetime.timedelta(minutes=10)
+ARCHIVE_SWEEP_BATCH = 50  # scope limit per sweep
+
+UTC = datetime.timezone.utc
+
+
+def pipeline_group(item: QueueItem) -> str:
+    """Top-level pipeline an item posts under ("Movie Clips / @X" -> "Movie Clips")."""
+    if item.pipeline in MOVIE_CLIPS_CHANNELS:
+        return "Movie Clips"
+    if item.pipeline and not item.pipeline.startswith("@"):
+        return item.pipeline
+    src = item.source or ""
+    if " / " in src:  # Drive subfolder item: "<pipeline> / @channel"
+        return src.split(" / ", 1)[0].strip()
+    return item.pipeline or "default"
+
+
+def _aware(dt: datetime.datetime | None) -> datetime.datetime | None:
+    # SQLite hands back naive datetimes; everything stored is UTC.
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
+def slots_after(t: datetime.datetime, n: int) -> list[datetime.datetime]:
+    """The next n posting slots strictly after t, as UTC datetimes."""
+    tz = ZoneInfo(settings.post_timezone)
+    local = t.astimezone(tz)
+    day = local.date()
+    out: list[datetime.datetime] = []
+    while len(out) < n:
+        for h in range(settings.post_start_hour, settings.post_end_hour + 1, settings.post_interval_hours):
+            slot = datetime.datetime.combine(day, datetime.time(h), tzinfo=tz)
+            if slot > local:
+                out.append(slot.astimezone(UTC))
+                if len(out) == n:
+                    break
+        day += datetime.timedelta(days=1)
+    return out
+
+
+def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
+    at = _aware(item.scheduled_at)
+    return at is not None and now - DUE_GRACE < at <= now
+
+
+def plan_schedule(s: Session, now: datetime.datetime) -> int:
+    """Give every Ready item a slot: per pipeline, in posting order, one item
+    per slot. Items already due keep their slot. Returns rows changed."""
+    ready = (
+        s.query(QueueItem)
+        .filter(QueueItem.status == "ready")
+        .order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id)
+        .all()
+    )
+    groups: dict[str, list[QueueItem]] = {}
+    for it in ready:
+        if not _is_due(it, now):
+            groups.setdefault(pipeline_group(it), []).append(it)
+
+    changed = 0
+    for items in groups.values():
+        for it, slot in zip(items, slots_after(now, len(items))):
+            if _aware(it.scheduled_at) != slot:
+                it.scheduled_at = slot
+                changed += 1
+    if changed:
+        s.commit()
+    return changed
 
 
 async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
@@ -84,7 +169,7 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
 
     try:
         # Step 1: Upload to Outstand presigned storage
-        upload_res = await outstand.upload_media(video_path)
+        upload_res = await outstand.upload_media(video_path, upload_name=f"queue{item.id}_{video_path.name}")
         item.media_url = upload_res.get("url")
 
         # Step 2: Combine title, description, and tags into clean caption
@@ -102,7 +187,7 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
             account_ids=item.accounts,
             content=full_content,
             media_url=item.media_url,
-            filename=video_path.name,
+            filename=upload_res.get("filename") or video_path.name,
         )
 
         outstand_id = post_res.get("post", {}).get("id") or post_res.get("id")
@@ -132,25 +217,77 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
                 pass
 
 
+def sweep_archive(s: Session, now: datetime.datetime) -> int:
+    """Delete posted/archived items ARCHIVE_DELETE_DAYS after posting, moving
+    their Drive file to trash first (recoverable there for 30 days)."""
+    if settings.archive_delete_days <= 0:
+        return 0
+    from ..drive_sync import trash_drive_file
+
+    cutoff = now - datetime.timedelta(days=settings.archive_delete_days)
+    expired = (
+        s.query(QueueItem)
+        .filter(QueueItem.status.in_(["posted", "archived"]))
+        .filter(QueueItem.published_at.isnot(None))
+        .filter(QueueItem.published_at < cutoff)
+        .order_by(QueueItem.published_at)
+        .limit(ARCHIVE_SWEEP_BATCH)
+        .all()
+    )
+    removed = 0
+    for item in expired:
+        trashed = False
+        if item.drive_link:
+            try:
+                trashed = trash_drive_file(item.drive_link)
+            except Exception as exc:
+                # Keep the row; the next sweep retries. Never orphan a Drive file.
+                logbus.log("error", "archive_trash_failed", f"Item #{item.id}: {exc}")
+                continue
+        logbus.log(
+            "info", "archive_deleted",
+            f"Item #{item.id} ('{(item.title or '')[:40]}') removed {settings.archive_delete_days}d after posting"
+            + (" — Drive file moved to trash" if trashed else ""),
+            drive_link=item.drive_link, published_at=str(item.published_at),
+        )
+        s.delete(item)
+        s.commit()
+        removed += 1
+    return removed
+
+
+_last_archive_sweep: datetime.datetime | None = None
+
+
 def run_scheduler_tick():
-    """Poll for due queue items and publish them."""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    """Plan slots, publish what's due (one per pipeline), sweep the archive."""
+    global _last_archive_sweep
+    now = datetime.datetime.now(UTC)
     with SessionLocal() as s:
-        # Find items marked 'ready' whose scheduled_at is past or due
-        due_items = (
+        plan_schedule(s, now)
+
+        due = (
             s.query(QueueItem)
             .filter(QueueItem.status == "ready")
             .filter(QueueItem.scheduled_at <= now)
-            .order_by(QueueItem.scheduled_at)
-            .limit(3)
+            .filter(QueueItem.scheduled_at > now - DUE_GRACE)
+            .order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id)
             .all()
         )
-
-        for item in due_items:
+        seen: set[str] = set()
+        for item in due:
+            group = pipeline_group(item)
+            if group in seen:
+                continue
+            seen.add(group)
             try:
                 asyncio.run(publish_queue_item(item.id, s))
             except Exception as exc:
                 logger.error("Error executing scheduled queue item #%s: %s", item.id, exc)
+
+        if _last_archive_sweep is None or now - _last_archive_sweep >= ARCHIVE_SWEEP_EVERY:
+            _last_archive_sweep = now
+            sweep_archive(s, now)
 
 
 _scheduler_running = False

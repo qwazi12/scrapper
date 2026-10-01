@@ -15,6 +15,7 @@ import { PublishModal } from "./PublishModal";
 import { QueuePanel } from "./QueuePanel";
 import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
+import { SettingsOverview } from "./SettingsOverview";
 
 type NavTab = "scraper" | "socialpilot" | "comps" | "logs" | "settings";
 
@@ -227,7 +228,7 @@ export default function Page() {
             onClick={() => handleTabSelect("settings")}
             icon="⚙️"
             title="Settings & Channels"
-            subtitle="Outstand & API credentials"
+            subtitle="Schedule, accounts & connection"
           />
         </nav>
 
@@ -398,6 +399,7 @@ export default function Page() {
         {activeTab === "settings" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <SettingsBar onSaved={refresh} />
+            <SettingsOverview />
           </div>
         )}
       </main>

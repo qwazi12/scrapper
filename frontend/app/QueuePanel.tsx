@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api, QueueItem, SocialAccount } from "../lib/api";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -13,22 +13,37 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
   archived: { bg: "#1f2937", text: "#9ca3af", label: "📦 Archived" },
 };
 
-const MOVIE_CLIPS_SUBCHANNELS = [
-  "@AlphaReels-1",
-  "@CoruscateCuts",
-  "@EditAetheris",
-  "@FrameLegion",
-  "@PixelDrift-f3c",
-  "@QianaLucy",
-  "@SceneVale",
-  "@SolarrEditss",
-  "@TheUsJournal17",
-  "@VynixAE",
-  "@clipscav",
-  "@comet-cinema",
-  "@hanganhoang3071",
-  "@roebutt",
-];
+// Top-level pipelines only; Drive subfolders (@channels) show on each row.
+const PIPELINES = ["Movie Clips", "Abyss Declassified", "The ICK Room", "default"];
+
+type SortKey = "position" | "id" | "title" | "channel" | "status" | "scheduled";
+const SORT_LABELS: Record<SortKey, string> = {
+  position: "Posting order",
+  id: "ID",
+  title: "Title",
+  channel: "Channel",
+  status: "Status",
+  scheduled: "Scheduled time",
+};
+
+function sortValue(it: QueueItem, key: SortKey): string | number {
+  switch (key) {
+    case "position": return it.position ?? it.id;
+    case "id": return it.id;
+    case "title": return (it.title || "").toLowerCase();
+    case "channel": return (it.source || it.pipeline || "").toLowerCase();
+    case "status": return it.status;
+    // Unscheduled items sort after scheduled ones in ascending order.
+    case "scheduled": return it.scheduled_at ? Date.parse(it.scheduled_at) : Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function fmtET(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  }) + " ET";
+}
 
 export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [items, setItems] = useState<QueueItem[]>([]);
@@ -36,6 +51,16 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [pipelineFilter, setPipelineFilter] = useState<string>("all");
   const [sel, setSel] = useState<Set<number>>(new Set());
+  const [sortKey, setSortKey] = useState<SortKey>("position");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [archiveDays, setArchiveDays] = useState<number | null>(null);
+
+  // Mass edit modal
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkTitle, setBulkTitle] = useState("");
+  const [bulkDesc, setBulkDesc] = useState("");
+  const [bulkTags, setBulkTags] = useState("");
+  const [bulkPipeline, setBulkPipeline] = useState("");
 
   // Edit modal state
   const [editItem, setEditItem] = useState<QueueItem | null>(null);
@@ -65,6 +90,21 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
       .then((r) => setAccounts(r.accounts || []))
       .catch(() => {});
   }, [statusFilter, pipelineFilter]);
+
+  useEffect(() => {
+    api.schedule().then((r) => setArchiveDays(r.archive_delete_days)).catch(() => {});
+  }, []);
+
+  const sortedItems = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const va = sortValue(a, sortKey);
+      const vb = sortValue(b, sortKey);
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      return (a.id - b.id) * dir;
+    });
+  }, [items, sortKey, sortDir]);
 
   async function loadQueue() {
     setLoading(true);
@@ -156,6 +196,34 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     }
   }
 
+  async function handleBulkEdit() {
+    const ids = Array.from(sel);
+    if (ids.length === 0) return;
+    const opts: { title?: string; description?: string; tags?: string; pipeline?: string } = {};
+    if (bulkTitle.trim()) opts.title = bulkTitle.trim();
+    if (bulkDesc.trim()) opts.description = bulkDesc.trim();
+    if (bulkTags.trim()) opts.tags = bulkTags.trim();
+    if (bulkPipeline) opts.pipeline = bulkPipeline;
+    if (Object.keys(opts).length === 0) {
+      alert("Fill in at least one field to change.");
+      return;
+    }
+    if (!confirm(`Apply ${Object.keys(opts).join(", ")} to ${ids.length} selected item(s)?`)) return;
+    try {
+      await api.bulkQueueAction(ids, "edit", opts);
+      setShowBulkEdit(false);
+      setBulkTitle("");
+      setBulkDesc("");
+      setBulkTags("");
+      setBulkPipeline("");
+      setSel(new Set());
+      loadQueue();
+      onChange();
+    } catch (err: any) {
+      alert(`Mass edit failed: ${err.message}`);
+    }
+  }
+
   async function handleBulkDelete() {
     const ids = Array.from(sel);
     if (ids.length === 0) return;
@@ -179,7 +247,9 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
         pipeline: pipelineFilter === "all" ? undefined : pipelineFilter,
         status: statusFilter === "all" ? undefined : statusFilter,
       });
-      alert(`✓ ${res.message || `Successfully mixed ${res.count} items using '${mode}' mode!`}`);
+      alert(`✓ ${res.message || `Re-ordered ${res.count} items ('${mode}'). Table now shows the new posting order.`}`);
+      setSortKey("position");
+      setSortDir("asc");
       loadQueue();
       onChange();
     } catch (err: any) {
@@ -316,19 +386,37 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               fontWeight: 500,
             }}
           >
-            <option value="all">📁 All Channels &amp; Folders (700 Total)</option>
-            <option value="Movie Clips" style={{ fontWeight: 700, color: "#38bdf8" }}>
-              🎬 Movie Clips (Parent - All 14 Channels)
-            </option>
-            {MOVIE_CLIPS_SUBCHANNELS.map((ch) => (
-              <option key={ch} value={ch}>
-                &nbsp;&nbsp;&nbsp;&nbsp;↳ {ch}
-              </option>
+            <option value="all">📁 All Pipelines</option>
+            {PIPELINES.map((p) => (
+              <option key={p} value={p}>📁 {p === "default" ? "Default" : p}</option>
             ))}
-            <option value="Abyss Declassified">📁 Abyss Declassified</option>
-            <option value="The ICK Room">📁 The ICK Room</option>
-            <option value="default">📁 Default</option>
           </select>
+
+          {/* Sort: field + direction */}
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            title="Sort by"
+            style={{
+              background: "var(--row)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              padding: "5px 10px",
+              fontSize: 12,
+            }}
+          >
+            {(Object.keys(SORT_LABELS) as SortKey[]).map((k) => (
+              <option key={k} value={k}>Sort: {SORT_LABELS[k]}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setSortDir(sortDir === "asc" ? "desc" : "asc")}
+            title="Toggle ascending / descending"
+            style={{ fontSize: 11, padding: "5px 10px", fontWeight: 600 }}
+          >
+            {sortDir === "asc" ? "↑ Ascending" : "↓ Descending"}
+          </button>
 
           {/* Mix & Shuffle Button */}
           <div style={{ position: "relative" }}>
@@ -500,6 +588,13 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
             </button>
 
             <button
+              style={{ fontSize: 11, padding: "4px 10px", background: "#312e81", color: "#e0e7ff", borderColor: "#4338ca" }}
+              onClick={() => setShowBulkEdit(true)}
+            >
+              ✏️ Mass Edit ({sel.size})
+            </button>
+
+            <button
               style={{ fontSize: 11, padding: "4px 10px", background: "#1e1b4b", color: "#c4b5fd", borderColor: "#4338ca" }}
               onClick={() => setShowAccountAssignModal(true)}
             >
@@ -606,7 +701,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => {
+              {sortedItems.map((item) => {
                 const st = STATUS_COLORS[item.status.toLowerCase()] || {
                   bg: "var(--chip)",
                   text: "var(--text)",
@@ -760,9 +855,21 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                       >
                         {st.label}
                       </span>
+                      {item.status === "ready" && item.scheduled_at && (
+                        <div style={{ fontSize: 10, color: "#34d399", marginTop: 4 }} title="Next posting slot">
+                          ⏰ {fmtET(item.scheduled_at)}
+                        </div>
+                      )}
                       {item.published_at && (
                         <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4 }}>
-                          {new Date(item.published_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          posted {fmtET(item.published_at)}
+                        </div>
+                      )}
+                      {item.published_at && archiveDays !== null && archiveDays > 0 &&
+                        (item.status === "posted" || item.status === "archived") && (
+                        <div style={{ fontSize: 10, color: "var(--yellow)", marginTop: 2 }}
+                          title="Row is removed and the Drive file moved to trash">
+                          🗑 deletes {fmtET(new Date(Date.parse(item.published_at) + archiveDays * 86400000).toISOString())}
                         </div>
                       )}
                     </td>
@@ -1061,6 +1168,74 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
         </div>
       )}
 
+      {/* Mass Edit Modal */}
+      {showBulkEdit && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.75)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              background: "var(--panel)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: 24,
+              width: "100%",
+              maxWidth: 500,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 16 }}>✏️ Mass Edit {sel.size} Item{sel.size === 1 ? "" : "s"}</h3>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              Only filled-in fields are changed. Empty fields keep each item&apos;s current value.
+            </div>
+
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Title</label>
+              <input type="text" value={bulkTitle} onChange={(e) => setBulkTitle(e.target.value)}
+                placeholder="(unchanged)" style={{ width: "100%" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Description</label>
+              <textarea value={bulkDesc} onChange={(e) => setBulkDesc(e.target.value)}
+                placeholder="(unchanged)" rows={3} style={{ width: "100%" }} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Hashtags</label>
+                <input type="text" value={bulkTags} onChange={(e) => setBulkTags(e.target.value)}
+                  placeholder="(unchanged)" style={{ width: "100%" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Pipeline</label>
+                <select value={bulkPipeline} onChange={(e) => setBulkPipeline(e.target.value)}
+                  style={{ width: "100%", padding: 6, fontSize: 12 }}>
+                  <option value="">(unchanged)</option>
+                  {PIPELINES.map((p) => (
+                    <option key={p} value={p}>{p === "default" ? "Default" : p}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+              <button onClick={() => setShowBulkEdit(false)}>Cancel</button>
+              <button className="primary" onClick={handleBulkEdit}>Apply to {sel.size} Items</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Item Modal */}
       {showAddModal && (
         <div
@@ -1121,9 +1296,6 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                   style={{ width: "100%", padding: 6, fontSize: 12 }}
                 >
                   <option value="Movie Clips">Movie Clips</option>
-                  {MOVIE_CLIPS_SUBCHANNELS.map((ch) => (
-                    <option key={ch} value={ch}>{ch}</option>
-                  ))}
                   <option value="Abyss Declassified">Abyss Declassified</option>
                   <option value="The ICK Room">The ICK Room</option>
                 </select>
