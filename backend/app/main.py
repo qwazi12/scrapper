@@ -520,6 +520,46 @@ def list_queue(
     return q.order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
 
 
+@app.get("/api/queue/counts", dependencies=_AUTH)
+def get_queue_counts(
+    pipeline: str | None = None,
+    s: Session = Depends(get_session),
+) -> dict:
+    q = s.query(QueueItem.status, func.count(QueueItem.id))
+    if pipeline and pipeline != "all":
+        if pipeline.lower() in ("movie clips", "movie_clips"):
+            q = q.filter(
+                or_(
+                    QueueItem.pipeline.in_(MOVIE_CLIPS_CHANNELS),
+                    QueueItem.source.ilike("%Movie Clips%"),
+                    QueueItem.pipeline == "Movie Clips",
+                )
+            )
+        else:
+            q = q.filter(QueueItem.pipeline == pipeline)
+
+    rows = q.group_by(QueueItem.status).all()
+    counts = {
+        "all": 0,
+        "review": 0,
+        "ready": 0,
+        "posting": 0,
+        "posted": 0,
+        "retry": 0,
+        "error": 0,
+        "archived": 0,
+        "errors_total": 0,
+    }
+    for status_val, count_val in rows:
+        st = (status_val or "").lower()
+        counts[st] = count_val
+        counts["all"] += count_val
+
+    counts["errors_total"] = counts.get("error", 0) + counts.get("retry", 0)
+    return counts
+
+
+
 @app.post("/api/queue", response_model=QueueItemOut, dependencies=_AUTH)
 async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_session)):
     video_path = None

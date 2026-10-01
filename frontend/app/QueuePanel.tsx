@@ -47,9 +47,10 @@ function fmtET(iso: string): string {
 }
 
 export function QueuePanel({ onChange }: { onChange: () => void }) {
-  const [items, setItems] = useState<QueueItem[]>([]);
+  const [allItems, setAllItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("review");
   const [pipelineFilter, setPipelineFilter] = useState<string>("all");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("position");
@@ -87,6 +88,30 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [showAccountAssignModal, setShowAccountAssignModal] = useState(false);
   const [selectedTargetAccountIds, setSelectedTargetAccountIds] = useState<string[]>([]);
 
+  // Filter items in memory based on statusFilter so switching tabs is instant
+  const items = React.useMemo(() => {
+    if (statusFilter === "all") return allItems;
+    if (statusFilter === "error") {
+      return allItems.filter((i) => i.status === "error" || i.status === "retry");
+    }
+    return allItems.filter((i) => i.status === statusFilter);
+  }, [allItems, statusFilter]);
+
+  async function loadQueue(isBackground = false) {
+    if (!isBackground) setLoading(true);
+    else setRefreshing(true);
+    try {
+      // Always load all items for the selected pipeline/channel so badge counts are 100% accurate across all tabs
+      const data = await api.queue(pipelineFilter, "all");
+      setAllItems(data);
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
+
   useEffect(() => {
     loadQueue();
     api.socialAccounts()
@@ -95,7 +120,14 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
         setProfiles(r.profiles || []);
       })
       .catch(() => {});
-  }, [statusFilter, pipelineFilter]);
+
+    // Live background polling every 4s to reflect real-time database updates and live numbers
+    const timer = setInterval(() => {
+      loadQueue(true);
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [pipelineFilter]);
 
   useEffect(() => {
     api.schedule().then((r) => {
@@ -114,18 +146,6 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
       return (a.id - b.id) * dir;
     });
   }, [items, sortKey, sortDir]);
-
-  async function loadQueue() {
-    setLoading(true);
-    try {
-      const data = await api.queue(pipelineFilter, statusFilter);
-      setItems(data);
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-    }
-  }
 
   function toggleSel(id: number) {
     setSel((prev) => {
@@ -280,7 +300,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   }
 
   async function handleRetryAllFailed() {
-    const errorIds = items.filter((i) => i.status === "error" || i.status === "retry").map((i) => i.id);
+    const errorIds = allItems.filter((i) => i.status === "error" || i.status === "retry").map((i) => i.id);
     if (errorIds.length === 0) {
       alert("No failed items to retry.");
       return;
@@ -348,10 +368,11 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     }
   }
 
-  const reviewCount = items.filter((i) => i.status === "review").length;
-  const readyCount = items.filter((i) => i.status === "ready").length;
-  const postedCount = items.filter((i) => i.status === "posted").length;
-  const errorCount = items.filter((i) => i.status === "error" || i.status === "retry").length;
+  const allCount = allItems.length;
+  const reviewCount = allItems.filter((i) => i.status === "review").length;
+  const readyCount = allItems.filter((i) => i.status === "ready").length;
+  const postedCount = allItems.filter((i) => i.status === "posted").length;
+  const errorCount = allItems.filter((i) => i.status === "error" || i.status === "retry").length;
 
   return (
     <section
@@ -387,8 +408,29 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               color: "var(--muted)",
             }}
           >
-            {items.length} item{items.length === 1 ? "" : "s"}
+            {items.length} shown {statusFilter !== "all" ? `(${statusFilter})` : ""} • {allCount} total
           </span>
+          <button
+            onClick={() => loadQueue(false)}
+            title="Click to refresh queue data from database"
+            style={{
+              background: "rgba(255, 255, 255, 0.05)",
+              border: "1px solid var(--border)",
+              color: refreshing ? "var(--accent)" : "var(--muted)",
+              borderRadius: 6,
+              padding: "3px 8px",
+              fontSize: 11,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <span style={{ display: "inline-block", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform 0.4s" }}>
+              ↻
+            </span>
+            <span style={{ fontSize: 10 }}>{refreshing ? "Updating…" : "Live"}</span>
+          </button>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -644,11 +686,11 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
         }}
       >
         {[
-          { key: "all", label: "All Items", count: items.length },
-          { key: "review", label: "👁 Needs Review", count: reviewCount },
-          { key: "ready", label: "● Ready to Post", count: readyCount },
-          { key: "posted", label: "✓ Posted Archive", count: postedCount },
-          { key: "error", label: "⚠️ Errors / Retry", count: errorCount },
+          { key: "review", label: "👁 Needs Review", count: reviewCount, accent: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" },
+          { key: "ready", label: "● Ready to Post", count: readyCount, accent: "#34d399", bg: "rgba(52, 211, 153, 0.15)" },
+          { key: "posted", label: "✓ Posted Archive", count: postedCount, accent: "#10b981", bg: "rgba(16, 185, 129, 0.15)" },
+          { key: "error", label: "⚠️ Errors / Retry", count: errorCount, accent: "#f87171", bg: "rgba(248, 113, 113, 0.15)" },
+          { key: "all", label: "All Items", count: allCount, accent: "#e2e8f0", bg: "rgba(255, 255, 255, 0.12)" },
         ].map((tab) => {
           const isActive = statusFilter === tab.key;
           return (
@@ -656,25 +698,29 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               key={tab.key}
               onClick={() => setStatusFilter(tab.key)}
               style={{
-                background: isActive ? "var(--chip)" : "transparent",
-                border: isActive ? "1px solid var(--border)" : "1px solid transparent",
-                color: isActive ? "var(--text)" : "var(--muted)",
-                padding: "4px 10px",
-                fontSize: 11,
+                background: isActive ? tab.bg : "transparent",
+                border: isActive ? `1px solid ${tab.accent}` : "1px solid transparent",
+                color: isActive ? tab.accent : "var(--muted)",
+                padding: "5px 12px",
+                fontSize: 12,
                 borderRadius: 6,
-                fontWeight: isActive ? 600 : 400,
+                fontWeight: isActive ? 700 : 500,
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 7,
+                transition: "all 0.15s ease",
+                cursor: "pointer",
               }}
             >
               <span>{tab.label}</span>
               <span
                 style={{
-                  background: isActive ? "var(--panel)" : "rgba(255,255,255,0.06)",
-                  padding: "1px 5px",
+                  background: isActive ? tab.accent : "rgba(255,255,255,0.08)",
+                  color: isActive ? "#0f172a" : "var(--muted)",
+                  padding: "1px 6px",
                   borderRadius: 10,
-                  fontSize: 10,
+                  fontSize: 11,
+                  fontWeight: 700,
                 }}
               >
                 {tab.count}

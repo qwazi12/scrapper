@@ -36,12 +36,15 @@ export default function Page() {
         api.clips(),
         api.compilations(),
         api.stats(),
-        api.queue().catch(() => []),
+        api.queueCounts().then((r) => r.all).catch(async () => {
+          const fallback = await api.queue().catch(() => []);
+          return fallback.length;
+        }),
       ]);
       setClips(c);
       setComps(cm);
       setStats(st);
-      setQueueCount(q.length);
+      setQueueCount(typeof q === "number" ? q : 0);
       setConnected(true);
     } catch {
       setConnected(false);

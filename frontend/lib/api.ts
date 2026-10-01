@@ -272,6 +272,23 @@ export const api = {
     return req<QueueItem[]>(`/api/queue${qs}`, { headers: headers(false) });
   },
 
+  queueCounts: (pipeline?: string) => {
+    const params = new URLSearchParams();
+    if (pipeline && pipeline !== "all") params.set("pipeline", pipeline);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return req<{
+      all: number;
+      review: number;
+      ready: number;
+      posting: number;
+      posted: number;
+      retry: number;
+      error: number;
+      archived: number;
+      errors_total: number;
+    }>(`/api/queue/counts${qs}`, { headers: headers(false) });
+  },
+
   createQueueItem: (data: {
     compilation_id?: number;
     clip_id?: number;
