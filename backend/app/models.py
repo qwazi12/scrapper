@@ -153,3 +153,35 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class StudioProject(Base):
+    """One LongForm Studio video (a trailer breakdown) and every stage's output.
+
+    Each stage writes its result into its own JSON column (and files under
+    data/studio/<id>/), so any stage can be re-run without redoing the others.
+    """
+    __tablename__ = "studio_projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tmdb_id: Mapped[int] = mapped_column(Integer, index=True)
+    media_type: Mapped[str] = mapped_column(String(8), default="movie")   # movie | tv
+    title: Mapped[str] = mapped_column(String(255), default="")
+    target_minutes: Mapped[float] = mapped_column(Float, default=3.0)     # 2–4 min breakdowns
+
+    # Runner state: which stage is running / last ran, and how it went.
+    stage: Mapped[str] = mapped_column(String(32), default="new")
+    stage_status: Mapped[str] = mapped_column(String(16), default="idle")  # idle|running|done|error
+    stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    facts: Mapped[dict | None] = mapped_column(JSON, nullable=True)      # TMDB fact sheet
+    research: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # web findings + source URLs
+    trailer: Mapped[dict | None] = mapped_column(JSON, nullable=True)    # chosen video, file, origin
+    shots: Mapped[list | None] = mapped_column(JSON, nullable=True)      # scene cuts + vision tags
+    script: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # sentences, claim checks, metadata
+    plan: Mapped[list | None] = mapped_column(JSON, nullable=True)       # sentence -> shot + timing
+    render: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # output file + stats
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

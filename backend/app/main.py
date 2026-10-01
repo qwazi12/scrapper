@@ -58,6 +58,11 @@ app.add_middleware(
 
 _AUTH = [Depends(require_token)]
 
+# LongForm Studio: importing the stage modules registers them with the runner.
+from .studio import routes as studio_routes, stage_gather  # noqa: E402,F401
+
+app.include_router(studio_routes.router)
+
 
 @app.on_event("startup")
 def _startup() -> None:

@@ -105,6 +105,14 @@ class Settings(BaseSettings):
     # Newest stable Flash (Sep 2026, ai.google.dev/gemini-api/docs/models).
     gemini_model: str = "gemini-3.8-flash"
 
+    # --- LongForm Studio (trailer breakdowns) ----------------------------
+    # TMDB: v3 API key or v4 read-access token (hobby / non-commercial use).
+    tmdb_api_key: str = ""
+    # Google Cloud Text-to-Speech API key (same one manhwa uses).
+    tts_api_key: str = ""
+    tts_voice: str = "en-US-Chirp3-HD-Charon"
+    studio_region: str = "US"            # release dates / calendar region
+
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod
 
