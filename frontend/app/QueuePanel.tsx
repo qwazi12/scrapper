@@ -1055,7 +1055,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                 disabled={selectedTargetAccountIds.length === 0}
                 onClick={() => handleBulkAccountsAssign(selectedTargetAccountIds)}
               >
-                Apply to {sel.size} Items
+                Apply to {sel.size} item{sel.size === 1 ? "" : "s"}
               </button>
             </div>
           </div>

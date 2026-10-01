@@ -7,6 +7,9 @@ import { SocialAccount } from "../lib/api";
 // "<profile>:<network>" = one specific channel.
 export const WHOLE = "*";
 
+// globals.css gives every input width:100%; checkboxes must stay box-sized.
+const CHECKBOX: React.CSSProperties = { width: "auto", flex: "0 0 auto", padding: 0, margin: "2px 0 0" };
+
 const NETWORK_ICON: Record<string, string> = {
   youtube: "▶️",
   tiktok: "🎵",
@@ -158,7 +161,7 @@ export function TargetPicker({
                 checked={whole}
                 disabled={chans.length === 0}
                 onChange={() => toggleWhole(profile)}
-                style={{ marginTop: 2 }}
+                style={CHECKBOX}
               />
               <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 <span style={{ fontSize: 12, fontWeight: 700 }}>
@@ -201,6 +204,7 @@ export function TargetPicker({
                           checked={whole || value.includes(a.id)}
                           disabled={whole}
                           onChange={() => toggle(a.id)}
+                          style={CHECKBOX}
                         />
                         <span>{NETWORK_ICON[a.network] || "🌐"}</span>
                         <span style={{ fontWeight: 600 }}>{a.nickname || a.username}</span>

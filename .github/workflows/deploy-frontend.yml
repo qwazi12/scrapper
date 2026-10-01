@@ -11,7 +11,24 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Job-level env: a step's own `env` is not visible to that step's `if`,
+    # which silently skipped every deploy while the run still showed success.
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
+      - name: Require Vercel secrets
+        run: |
+          missing=""
+          for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub secrets:$missing — frontend NOT deployed"
+            exit 1
+          fi
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -25,11 +42,6 @@ jobs:
 
       - name: Deploy to Vercel Production
         working-directory: frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        if: env.VERCEL_TOKEN != ''
         run: |
           vercel pull --yes --environment=production --token=$VERCEL_TOKEN
           vercel build --prod --token=$VERCEL_TOKEN
