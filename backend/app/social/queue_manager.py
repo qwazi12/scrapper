@@ -138,11 +138,8 @@ async def submit_upload(
     Raises if the picked accounts aren't valid/connected (nothing is sent)."""
     if not accounts:
         raise upload_post.UploadPostError("No accounts picked for this video", status_code=400)
-    connected = {a["id"] for a in await upload_post.list_accounts()}
-    missing = [a for a in accounts if a not in connected]
-    if missing:
-        raise upload_post.UploadPostError(
-            f"Not connected in Upload-Post: {', '.join(missing)}. Re-pick accounts.", status_code=400)
+    # Whole-profile picks ("default:*") expand to that profile's channels now.
+    accounts = upload_post.expand_targets(accounts, await upload_post.list_accounts())
 
     now = datetime.datetime.now(UTC).isoformat()
     entries: list[dict[str, Any]] = []
@@ -167,7 +164,7 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         raise ValueError(f"Queue item {item_id} not found")
     if not item.accounts:
         raise upload_post.UploadPostError(
-            "No accounts picked. Use 🔗 Assign Accounts to choose where this video goes.", status_code=400)
+            "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
 
     # Locate video file
     video_path: pathlib.Path | None = None
@@ -244,13 +241,15 @@ PENDING_TIMEOUT = datetime.timedelta(hours=3)
 
 
 def resolve_results(
-    entries: list[dict[str, Any]], accounts: list[str], statuses: dict[str, dict[str, Any]],
-    now: datetime.datetime,
+    entries: list[dict[str, Any]], statuses: dict[str, dict[str, Any]], now: datetime.datetime,
 ) -> dict[str, Any] | None:
-    """Combine Upload-Post status responses into per-account outcomes.
+    """Combine Upload-Post status responses into per-account outcomes. The
+    accounts judged are exactly the ones submitted (whole-profile picks were
+    expanded at submit time and recorded in each entry's platforms).
 
     Returns None while any request is still processing (and not timed out),
     else {"ok": [(acc, url)], "failed": {acc: reason}}."""
+    accounts = [f"{e['profile']}:{net}" for e in entries for net in e.get("platforms", [])]
     outcome: dict[str, tuple[bool, str]] = {}
     for e in entries:
         if "error" in e:
@@ -307,8 +306,7 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
         if not item.publish_requests:
             continue  # pre-migration or mid-submit; nothing to poll
         try:
-            res = resolve_results(item.publish_requests, list(item.accounts),
-                                  _fetch_statuses(item.publish_requests), now)
+            res = resolve_results(item.publish_requests, _fetch_statuses(item.publish_requests), now)
         except Exception as exc:
             logger.warning("Upload-Post status check failed for #%s: %s", item.id, exc)
             continue
@@ -325,8 +323,7 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
         if not post.publish_requests:
             continue
         try:
-            res = resolve_results(post.publish_requests, list(post.accounts),
-                                  _fetch_statuses(post.publish_requests), now)
+            res = resolve_results(post.publish_requests, _fetch_statuses(post.publish_requests), now)
         except Exception as exc:
             logger.warning("Upload-Post status check failed for post %s: %s", post.id, exc)
             continue

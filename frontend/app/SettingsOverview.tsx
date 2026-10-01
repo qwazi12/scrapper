@@ -140,7 +140,7 @@ export function SettingsOverview() {
           </div>
         )}
         <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 10 }}>
-          Nothing posts unless you pick its accounts (🔗 Assign Accounts in the Posting Queue). Each Upload-Post
+          Nothing posts unless you pick where it goes (Posts To column in the Posting Queue): a whole profile or specific channels. Each Upload-Post
           profile gets its own upload. Posts go out as <b>{sched.publisher.privacy}</b> (PUBLISH_PRIVACY).
           Upload-Post caps YouTube at 10 uploads per channel per 24h.
         </div>

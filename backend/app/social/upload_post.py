@@ -64,6 +64,33 @@ def split_account(account_id: str) -> tuple[str, str]:
     return profile, network
 
 
+def expand_targets(targets: list[str], connected: list[dict[str, Any]]) -> list[str]:
+    """Turn picked targets into concrete "<profile>:<network>" accounts.
+
+    "<profile>:*" means every channel connected to that profile right now.
+    Raises if a target isn't connected (nothing is sent)."""
+    by_profile: dict[str, list[str]] = defaultdict(list)
+    for a in connected:
+        by_profile[a["profile"]].append(a["id"])
+    ids = {a["id"] for a in connected}
+    out: list[str] = []
+    missing: list[str] = []
+    for t in targets:
+        profile, network = split_account(t)
+        if network == WHOLE_PROFILE:
+            if not by_profile.get(profile):
+                missing.append(f"profile '{profile}' (no channels connected)")
+            out.extend(a for a in by_profile.get(profile, []) if a not in out)
+        elif t in ids:
+            if t not in out:
+                out.append(t)
+        else:
+            missing.append(t)
+    if missing:
+        raise UploadPostError(f"Not connected in Upload-Post: {', '.join(missing)}. Re-pick accounts.", 400)
+    return out
+
+
 def group_by_profile(account_ids: list[str]) -> dict[str, list[str]]:
     groups: dict[str, list[str]] = defaultdict(list)
     for acc in account_ids:
@@ -73,13 +100,25 @@ def group_by_profile(account_ids: list[str]) -> dict[str, list[str]]:
     return dict(groups)
 
 
-async def list_accounts() -> list[dict[str, Any]]:
-    """Connected social accounts, one row per profile+network."""
+WHOLE_PROFILE = "*"  # "<profile>:*" targets every channel connected to the profile
+
+
+async def _profiles_raw() -> list[dict[str, Any]]:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         res = await client.get(f"{API_BASE}/uploadposts/users", headers=_headers())
     _raise_for(res, "Upload-Post list profiles")
+    return res.json().get("profiles") or []
+
+
+async def list_profiles() -> list[str]:
+    """Every Upload-Post profile name, including ones with nothing connected."""
+    return [p.get("username") or "" for p in await _profiles_raw() if p.get("username")]
+
+
+async def list_accounts() -> list[dict[str, Any]]:
+    """Connected social accounts, one row per profile+network."""
     accounts = []
-    for p in res.json().get("profiles") or []:
+    for p in await _profiles_raw():
         profile = p.get("username") or ""
         for network, details in (p.get("social_accounts") or {}).items():
             if not details:

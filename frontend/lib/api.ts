@@ -223,7 +223,7 @@ export const api = {
   },
 
   socialAccounts: () =>
-    req<{ configured: boolean; accounts: SocialAccount[]; message?: string; manage_url?: string; privacy?: string }>(
+    req<{ configured: boolean; accounts: SocialAccount[]; profiles?: string[]; message?: string; manage_url?: string; privacy?: string }>(
       "/api/social/accounts",
       { headers: headers(false) }
     ),

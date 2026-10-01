@@ -2,18 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api, Compilation, fmtBytes, fmtDuration, SocialAccount } from "../lib/api";
-
-const NETWORK_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  tiktok: { bg: "#000000", text: "#00f2fe", icon: "🎵 TikTok" },
-  youtube: { bg: "#ff0000", text: "#ffffff", icon: "▶️ YouTube" },
-  instagram: { bg: "#e1306c", text: "#ffffff", icon: "📸 Instagram" },
-  x: { bg: "#14171a", text: "#1da1f2", icon: "𝕏 Twitter" },
-  facebook: { bg: "#1877f2", text: "#ffffff", icon: "👤 Facebook" },
-  threads: { bg: "#000000", text: "#ffffff", icon: "🧵 Threads" },
-  linkedin: { bg: "#0077b5", text: "#ffffff", icon: "💼 LinkedIn" },
-  bluesky: { bg: "#0085ff", text: "#ffffff", icon: "🦋 Bluesky" },
-  pinterest: { bg: "#e60023", text: "#ffffff", icon: "📌 Pinterest" },
-};
+import { TargetPicker, targetNames } from "./TargetPicker";
 
 export function PublishModal({
   compilation,
@@ -27,7 +16,8 @@ export function PublishModal({
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [configured, setConfigured] = useState(true);
-  const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
+  const [targets, setTargets] = useState<string[]>([]);
+  const [profiles, setProfiles] = useState<string[]>([]);
   const [privacy, setPrivacy] = useState("public");
 
   const [aiPrompt, setAiPrompt] = useState("");
@@ -52,9 +42,10 @@ export function PublishModal({
       .then((res) => {
         setConfigured(res.configured !== false);
         setAccounts(res.accounts || []);
+        setProfiles(res.profiles || []);
         if (res.privacy) setPrivacy(res.privacy);
         // Nothing pre-ticked: the owner picks every destination.
-        setSelectedAccounts(new Set());
+        setTargets([]);
       })
       .catch((err) => {
         setError(err.message || "Failed to load connected social accounts");
@@ -65,15 +56,6 @@ export function PublishModal({
   }, [compilation]);
 
   if (!compilation) return null;
-
-  function toggleAccount(id: string) {
-    setSelectedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
 
   async function handleGenerateAi() {
     if (!compilation) return;
@@ -91,7 +73,7 @@ export function PublishModal({
 
   async function handlePublish() {
     if (!compilation) return;
-    if (selectedAccounts.size === 0) {
+    if (targets.length === 0) {
       setError("Please select at least one social account.");
       return;
     }
@@ -115,10 +97,7 @@ export function PublishModal({
     }
 
     // Name exactly the picked channels — what the server will actually use.
-    const names = accounts
-      .filter((a) => selectedAccounts.has(a.id))
-      .map((a) => `${a.nickname || a.username} (${a.network})`)
-      .join(", ");
+    const names = targetNames(targets, accounts);
     const when = isoScheduled ? `on ${new Date(isoScheduled).toLocaleString()}` : "now";
     if (!confirm(`Publish this compilation ${when} to ${names} as ${privacy} via Upload-Post?`)) return;
 
@@ -129,7 +108,7 @@ export function PublishModal({
     try {
       const res = await api.publishSocial(
         compilation.id,
-        Array.from(selectedAccounts),
+        targets,
         content.trim(),
         isoScheduled
       );
@@ -231,7 +210,7 @@ export function PublishModal({
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <span style={{ fontWeight: 600, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--muted)" }}>
-                Target Social Accounts
+                Post To (Upload-Post profile or channels)
               </span>
               <a
                 href="https://app.upload-post.com/manage-users"
@@ -275,45 +254,7 @@ export function PublishModal({
                 </a>
               </div>
             ) : (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {accounts.map((acc) => {
-                  const isSelected = selectedAccounts.has(acc.id);
-                  const net = NETWORK_COLORS[acc.network.toLowerCase()] || {
-                    bg: "#232833",
-                    text: "#ffffff",
-                    icon: acc.network,
-                  };
-                  return (
-                    <div
-                      key={acc.id}
-                      onClick={() => toggleAccount(acc.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "6px 12px",
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        border: isSelected ? "1px solid var(--accent)" : "1px solid var(--border)",
-                        background: isSelected ? "var(--row-alt)" : "var(--panel2)",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => {}}
-                        style={{ width: 14, height: 14, cursor: "pointer" }}
-                      />
-                      <span style={{ fontSize: 12, fontWeight: 600 }}>{net.icon}</span>
-                      <span style={{ fontSize: 12 }}>{acc.nickname || acc.username}</span>
-                      {acc.profile && (
-                        <span style={{ fontSize: 10, color: "var(--muted)" }}>profile {acc.profile}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <TargetPicker accounts={accounts} profiles={profiles} value={targets} onChange={setTargets} />
             )}
           </div>
 
@@ -481,13 +422,13 @@ export function PublishModal({
               gap: 6,
             }}
             onClick={handlePublish}
-            disabled={publishing || selectedAccounts.size === 0 || !content.trim()}
+            disabled={publishing || targets.length === 0 || !content.trim()}
           >
             {publishing
               ? "Uploading to Upload-Post…"
               : isScheduled
-              ? `Schedule (${selectedAccounts.size} account${selectedAccounts.size === 1 ? "" : "s"})`
-              : `Publish Now (${selectedAccounts.size} account${selectedAccounts.size === 1 ? "" : "s"})`}
+              ? `Schedule (${targets.length} target${targets.length === 1 ? "" : "s"})`
+              : `Publish Now (${targets.length} target${targets.length === 1 ? "" : "s"})`}
           </button>
         </div>
       </div>

@@ -227,7 +227,7 @@ def test_submit_one_request_per_profile_and_rejects_unconnected(monkeypatch, tmp
     calls = []
 
     async def accounts():
-        return [{"id": "mk:youtube"}, {"id": "default:youtube"}]
+        return [{"id": "mk:youtube", "profile": "mk"}, {"id": "default:youtube", "profile": "default"}]
 
     async def upload(path, **kw):
         calls.append((kw["profile"], kw["platforms"], kw["privacy"]))
@@ -243,6 +243,45 @@ def test_submit_one_request_per_profile_and_rejects_unconnected(monkeypatch, tmp
         asyncio.run(qm.submit_upload(video, ["old:youtube"], title="t", description="", tags=[]))
 
 
+CONNECTED = [
+    {"id": "default:youtube", "profile": "default"},
+    {"id": "default:tiktok", "profile": "default"},
+    {"id": "mk:youtube", "profile": "mk"},
+]
+
+
+def test_whole_profile_expands_to_its_channels():
+    assert upload_post.expand_targets(["default:*"], CONNECTED) == ["default:youtube", "default:tiktok"]
+
+
+def test_profile_plus_specific_channel_dedupes():
+    got = upload_post.expand_targets(["default:*", "default:youtube", "mk:youtube"], CONNECTED)
+    assert got == ["default:youtube", "default:tiktok", "mk:youtube"]
+
+
+def test_empty_or_unknown_profile_is_rejected():
+    with pytest.raises(upload_post.UploadPostError, match="no channels connected"):
+        upload_post.expand_targets(["ghost:*"], CONNECTED)
+
+
+def test_whole_profile_submits_one_request_with_all_its_platforms(monkeypatch, tmp_path):
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    calls = []
+
+    async def accounts():
+        return CONNECTED
+
+    async def upload(path, **kw):
+        calls.append((kw["profile"], kw["platforms"]))
+        return "r1"
+
+    monkeypatch.setattr(upload_post, "list_accounts", accounts)
+    monkeypatch.setattr(upload_post, "upload_video", upload)
+    asyncio.run(qm.submit_upload(video, ["default:*"], title="t", description="", tags=[]))
+    assert calls == [("default", ["youtube", "tiktok"])]
+
+
 def _entry(profile, rid, nets=("youtube",), minutes_ago=1):
     t = datetime.datetime.now(UTC) - datetime.timedelta(minutes=minutes_ago)
     return {"profile": profile, "platforms": list(nets), "request_id": rid, "submitted_at": t.isoformat()}
@@ -250,14 +289,14 @@ def _entry(profile, rid, nets=("youtube",), minutes_ago=1):
 
 def test_still_processing_waits():
     now = datetime.datetime.now(UTC)
-    assert qm.resolve_results([_entry("mk", "r1")], ["mk:youtube"], {"r1": {"status": "processing"}}, now) is None
+    assert qm.resolve_results([_entry("mk", "r1")], {"r1": {"status": "processing"}}, now) is None
 
 
 def test_completed_success_and_failure_split_per_account(session):
     (it,) = add(session, 1, status="posting", accounts=["mk:youtube", "default:youtube"])
     now = datetime.datetime.now(UTC)
     res = qm.resolve_results(
-        [_entry("mk", "r1"), _entry("default", "r2")], list(it.accounts),
+        [_entry("mk", "r1"), _entry("default", "r2")],
         {"r1": {"status": "completed", "results": [
             {"profile_username": "mk", "platform": "youtube", "success": True, "post_url": "https://y/1"}]},
          "r2": {"status": "completed", "results": [
@@ -272,7 +311,7 @@ def test_completed_success_and_failure_split_per_account(session):
 def test_all_success_marks_posted_and_starts_clock(session):
     (it,) = add(session, 1, status="posting", accounts=["mk:youtube"])
     now = datetime.datetime.now(UTC)
-    res = qm.resolve_results([_entry("mk", "r1")], ["mk:youtube"], {"r1": {"status": "completed", "results": [
+    res = qm.resolve_results([_entry("mk", "r1")], {"r1": {"status": "completed", "results": [
         {"profile_username": "mk", "platform": "youtube", "success": True, "post_url": "u"}]}}, now)
     qm.apply_result(it, res, now)
     assert it.status == "posted" and it.published_at == now
@@ -280,15 +319,13 @@ def test_all_success_marks_posted_and_starts_clock(session):
 
 def test_rejected_profile_upload_is_a_failure_not_silence():
     now = datetime.datetime.now(UTC)
-    res = qm.resolve_results([{"profile": "mk", "platforms": ["youtube"], "error": "413"}],
-                             ["mk:youtube"], {}, now)
+    res = qm.resolve_results([{"profile": "mk", "platforms": ["youtube"], "error": "413"}], {}, now)
     assert "mk:youtube" in res["failed"] and not res["ok"]
 
 
 def test_stuck_request_times_out():
     now = datetime.datetime.now(UTC)
-    res = qm.resolve_results([_entry("mk", "r1", minutes_ago=200)], ["mk:youtube"],
-                             {"r1": {"status": "processing"}}, now)
+    res = qm.resolve_results([_entry("mk", "r1", minutes_ago=200)], {"r1": {"status": "processing"}}, now)
     assert "mk:youtube" in res["failed"]
 
 

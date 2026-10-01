@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { api, QueueItem, SocialAccount } from "../lib/api";
+import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   review: { bg: "#1e293b", text: "#38bdf8", label: "👁 Review" },
@@ -82,13 +83,17 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
 
   // Accounts for assignment
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [profiles, setProfiles] = useState<string[]>([]);
   const [showAccountAssignModal, setShowAccountAssignModal] = useState(false);
   const [selectedTargetAccountIds, setSelectedTargetAccountIds] = useState<string[]>([]);
 
   useEffect(() => {
     loadQueue();
     api.socialAccounts()
-      .then((r) => setAccounts(r.accounts || []))
+      .then((r) => {
+        setAccounts(r.accounts || []);
+        setProfiles(r.profiles || []);
+      })
       .catch(() => {});
   }, [statusFilter, pipelineFilter]);
 
@@ -147,15 +152,10 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
 
   async function handlePublishNow(item: QueueItem) {
     if (!item.accounts || item.accounts.length === 0) {
-      alert("Pick accounts first: use 🔗 Assign Accounts to choose where this video goes.");
+      alert("Pick where this video posts first: click ⚠ None picked in its row (or 🔗 Set Target Accounts).");
       return;
     }
-    const names = item.accounts
-      .map((id) => {
-        const a = accounts.find((x) => x.id === id);
-        return a ? `${a.nickname || a.username} (${a.network})` : `${id} (not connected)`;
-      })
-      .join(", ");
+    const names = targetNames(item.accounts, accounts);
     if (!confirm(`Post "${item.title}" now to ${names} as ${privacy} via Upload-Post?`)) return;
     try {
       await api.publishQueueItem(item.id);
@@ -618,7 +618,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               style={{ fontSize: 11, padding: "4px 10px", background: "#1e1b4b", color: "#c4b5fd", borderColor: "#4338ca" }}
               onClick={openAssignAccounts}
             >
-              🔗 Assign Accounts ({accounts.length})
+              🔗 Set Target Accounts
             </button>
 
             <button
@@ -714,7 +714,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                 </th>
                 <th style={{ padding: "8px 10px" }}>ID &amp; Folder / Channel</th>
                 <th style={{ padding: "8px 10px" }}>Title &amp; Description</th>
-                <th style={{ padding: "8px 10px" }}>Target Social Accounts</th>
+                <th style={{ padding: "8px 10px" }}>Posts To (Upload-Post)</th>
                 <th style={{ padding: "8px 10px" }}>Status</th>
                 <th style={{ padding: "8px 10px" }}>Drive Link</th>
                 <th style={{ padding: "8px 10px", textAlign: "right" }}>Actions</th>
@@ -813,34 +813,19 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                     <td style={{ padding: "10px", verticalAlign: "top", minWidth: 160 }}>
                       {item.accounts && item.accounts.length > 0 ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {item.accounts.map((accId) => {
-                            const acc = accounts.find((a) => a.id === accId);
-                            const name = acc ? acc.nickname || acc.username : `⚠ ${accId} (not connected)`;
-                            const network = acc?.network?.toLowerCase() || "";
-                            const icon =
-                              network.includes("youtube") ? "▶️" :
-                              network.includes("tiktok") ? "🎵" :
-                              network.includes("insta") ? "📸" :
-                              network.includes("face") ? "📘" : "🌐";
-                            return (
-                              <span
-                                key={accId}
-                                style={{
-                                  fontSize: 10,
-                                  background: "#1e1b4b",
-                                  color: "#c7d2fe",
-                                  padding: "2px 6px",
-                                  borderRadius: 4,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 4,
-                                  width: "fit-content",
-                                }}
-                              >
-                                <span>{icon}</span> {name}
-                              </span>
-                            );
-                          })}
+                          {item.accounts.map((accId) => (
+                            <TargetChip key={accId} id={accId} accounts={accounts} />
+                          ))}
+                          <button
+                            onClick={() => {
+                              setSel(new Set([item.id]));
+                              openAssignAccounts();
+                            }}
+                            style={{ fontSize: 10, padding: 0, background: "transparent", border: "none",
+                                     color: "var(--blue)", width: "fit-content" }}
+                          >
+                            ✎ change
+                          </button>
                         </div>
                       ) : (
                         <button
@@ -852,11 +837,11 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                             fontSize: 10,
                             padding: "2px 6px",
                             background: "transparent",
-                            border: "1px dashed var(--border)",
-                            color: "var(--muted)",
+                            border: "1px dashed var(--yellow)",
+                            color: "var(--yellow)",
                           }}
                         >
-                          + Assign Accounts
+                          ⚠ None picked — choose
                         </button>
                       )}
                     </td>
@@ -1043,46 +1028,25 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
               gap: 16,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: 16 }}>Assign Social Media Accounts</h3>
+            <h3 style={{ margin: 0, fontSize: 16 }}>Where should {sel.size === 1 ? "this video" : `these ${sel.size} videos`} post?</h3>
             <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-              Choose which connected accounts will post these {sel.size} selected video(s):
+              Tick a <b>profile</b> to post to every channel connected to it in Upload-Post, or open it to pick
+              specific channels. This replaces the current targets of the selected video(s).
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
-              {accounts.map((acc) => {
-                const checked = selectedTargetAccountIds.includes(acc.id);
-                return (
-                  <label
-                    key={acc.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "8px 12px",
-                      background: "var(--bg)",
-                      borderRadius: 6,
-                      border: "1px solid var(--border)",
-                      cursor: "pointer",
-                      fontSize: 12,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedTargetAccountIds([...selectedTargetAccountIds, acc.id]);
-                        } else {
-                          setSelectedTargetAccountIds(selectedTargetAccountIds.filter((id) => id !== acc.id));
-                        }
-                      }}
-                    />
-                    <span style={{ fontWeight: 600 }}>{acc.nickname || acc.username}</span>
-                    <span style={{ color: "var(--muted)", fontSize: 11 }}>({acc.network})</span>
-                  </label>
-                );
-              })}
+            <div style={{ maxHeight: 340, overflowY: "auto" }}>
+              <TargetPicker
+                accounts={accounts}
+                profiles={profiles}
+                value={selectedTargetAccountIds}
+                onChange={setSelectedTargetAccountIds}
+              />
             </div>
+            {selectedTargetAccountIds.length > 0 && (
+              <div style={{ fontSize: 11, color: "var(--accent)" }}>
+                Will post to: {targetNames(selectedTargetAccountIds, accounts)}
+              </div>
+            )}
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button onClick={() => setShowAccountAssignModal(false)}>Cancel</button>

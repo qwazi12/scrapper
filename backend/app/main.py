@@ -393,7 +393,8 @@ async def list_social_accounts() -> dict:
                 "message": "UPLOADPOST_API_KEY is not set — publishing is blocked"}
     try:
         accounts = await upload_post.list_accounts()
-        return {"configured": True, "accounts": accounts, "provider": "Upload-Post",
+        profiles = await upload_post.list_profiles()
+        return {"configured": True, "accounts": accounts, "profiles": profiles, "provider": "Upload-Post",
                 "manage_url": upload_post.MANAGE_URL, "privacy": settings.publish_privacy}
     except Exception as exc:
         raise HTTPException(502, f"Upload-Post API error: {exc}")
