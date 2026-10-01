@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { api, QueueItem, SocialAccount } from "../lib/api";
+import { api, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -35,12 +35,12 @@ function sortValue(it: QueueItem, key: SortKey): string | number {
     case "channel": return (it.source || it.pipeline || "").toLowerCase();
     case "status": return it.status;
     // Unscheduled items sort after scheduled ones in ascending order.
-    case "scheduled": return it.scheduled_at ? Date.parse(it.scheduled_at) : Number.MAX_SAFE_INTEGER;
+    case "scheduled": return it.scheduled_at ? parseApiDate(it.scheduled_at) : Number.MAX_SAFE_INTEGER;
   }
 }
 
 function fmtET(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(parseApiDate(iso)).toLocaleString("en-US", {
     timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit",
   }) + " ET";
@@ -925,7 +925,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                         (item.status === "posted" || item.status === "archived") && (
                         <div style={{ fontSize: 10, color: "var(--yellow)", marginTop: 2 }}
                           title="Row is removed and the Drive file moved to trash">
-                          🗑 deletes {fmtET(new Date(Date.parse(item.published_at) + archiveDays * 86400000).toISOString())}
+                          🗑 deletes {fmtET(new Date(parseApiDate(item.published_at) + archiveDays * 86400000).toISOString())}
                         </div>
                       )}
                     </td>

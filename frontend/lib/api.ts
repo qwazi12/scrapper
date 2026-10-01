@@ -133,6 +133,11 @@ export type ScheduleInfo = {
   publisher: { name: string; configured: boolean; privacy: string };
 };
 
+/** API times are UTC. A value without a zone must not be read as local time. */
+export function parseApiDate(iso: string): number {
+  return Date.parse(/([zZ]|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`);
+}
+
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export function apiBase(): string {

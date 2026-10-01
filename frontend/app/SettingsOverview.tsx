@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, ScheduleInfo, SocialAccount } from "../lib/api";
+import { api, parseApiDate, ScheduleInfo, SocialAccount } from "../lib/api";
 
 function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
@@ -10,7 +10,7 @@ function fmtHour(h: number): string {
 }
 
 function fmtSlot(iso: string, tz: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(parseApiDate(iso)).toLocaleString("en-US", {
     timeZone: tz, weekday: "short", hour: "numeric", minute: "2-digit",
   });
 }
@@ -77,7 +77,7 @@ export function SettingsOverview() {
 
   const tzShort = sched.timezone === "America/New_York" ? "Eastern" : sched.timezone;
   const sc = sched.scheduler;
-  const tickAgo = sc.last_tick_at ? Math.round((now - Date.parse(sc.last_tick_at)) / 1000) : null;
+  const tickAgo = sc.last_tick_at ? Math.round((now - parseApiDate(sc.last_tick_at)) / 1000) : null;
   const alive = sc.enabled && tickAgo !== null && tickAgo < sc.tick_seconds * 3 + 30;
   const pipelines = Object.entries(sched.pipelines);
 

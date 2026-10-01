@@ -379,3 +379,39 @@ def test_ai_check_reports_missing_key(client):
 def test_schedule_reports_scheduler_heartbeat(client):
     sc = client.get("/api/schedule").json()["scheduler"]
     assert sc["tick_seconds"] == 30 and "last_tick_at" in sc and sc["enabled"] is False  # web_only in tests
+
+
+# --- catch-up slot & UTC serialization ----------------------------------------
+def test_made_ready_just_after_slot_catches_that_slot(session):
+    (it,) = add(session, 1)
+    qm.plan_schedule(session, et(2026, 10, 1, 18, 2))  # 6:02pm ET
+    assert qm._aware(it.scheduled_at) == et(2026, 10, 1, 18)
+
+
+def test_catch_up_skipped_when_pipeline_already_posted_in_slot(session):
+    (done,) = add(session, 1, status="posted")
+    done.scheduled_at = et(2026, 10, 1, 18)
+    (it,) = add(session, 1)
+    session.commit()
+    qm.plan_schedule(session, et(2026, 10, 1, 18, 2))
+    assert qm._aware(it.scheduled_at) == et(2026, 10, 1, 20)
+
+
+def test_no_catch_up_after_grace(session):
+    (it,) = add(session, 1)
+    qm.plan_schedule(session, et(2026, 10, 1, 18, 45))
+    assert qm._aware(it.scheduled_at) == et(2026, 10, 1, 20)
+
+
+def test_catch_up_takes_only_one_item_per_pipeline(session):
+    a, b = add(session, 2)
+    qm.plan_schedule(session, et(2026, 10, 1, 18, 2))
+    assert [qm._aware(a.scheduled_at), qm._aware(b.scheduled_at)] == [et(2026, 10, 1, 18), et(2026, 10, 1, 20)]
+
+
+def test_api_times_are_explicitly_utc(session, client):
+    (it,) = add(session, 1)
+    it.scheduled_at = datetime.datetime(2026, 10, 2, 0, 0)  # naive, as Postgres returns it
+    session.commit()
+    row = next(i for i in client.get("/api/queue").json() if i["id"] == it.id)
+    assert row["scheduled_at"].endswith(("Z", "+00:00"))

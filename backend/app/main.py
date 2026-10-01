@@ -910,7 +910,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         p["ready"] += 1
         if len(p["next"]) < 5:
             p["next"].append({"id": it.id, "title": it.title, "channel": it.pipeline,
-                              "scheduled_at": it.scheduled_at})
+                              "scheduled_at": queue_manager._aware(it.scheduled_at)})
     per_day = len(range(settings.post_start_hour, settings.post_end_hour + 1, settings.post_interval_hours))
     return {
         "timezone": settings.post_timezone,

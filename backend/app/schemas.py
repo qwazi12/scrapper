@@ -4,7 +4,21 @@ from __future__ import annotations
 
 import datetime
 
-from pydantic import BaseModel
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel
+
+
+def _as_utc(v: datetime.datetime | None) -> datetime.datetime | None:
+    # The DB columns hold UTC without a zone, so values come back naive. Tag
+    # them as UTC so the JSON says "...Z"/"+00:00"; a bare time is read by
+    # browsers as *local* time (that showed 8pm ET slots as "Fri 12:00 AM").
+    if v is not None and v.tzinfo is None:
+        return v.replace(tzinfo=datetime.timezone.utc)
+    return v
+
+
+UTCDateTime = Annotated[datetime.datetime, AfterValidator(_as_utc)]
 
 
 class IngestRequest(BaseModel):
@@ -35,7 +49,7 @@ class ClipOut(BaseModel):
     error: str | None
     selected: bool
     has_thumb: bool
-    created_at: datetime.datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -50,8 +64,8 @@ class CompilationOut(BaseModel):
     duration: float | None
     size_bytes: int | None
     error: str | None
-    created_at: datetime.datetime
-    finished_at: datetime.datetime | None
+    created_at: UTCDateTime
+    finished_at: UTCDateTime | None
 
     class Config:
         from_attributes = True
@@ -63,7 +77,7 @@ class LogOut(BaseModel):
     event: str
     message: str
     context: dict | None
-    created_at: datetime.datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -95,10 +109,10 @@ class SocialPostOut(BaseModel):
     publish_requests: list | None = None
     accounts: list
     content: str
-    scheduled_at: datetime.datetime | None
+    scheduled_at: UTCDateTime | None
     status: str
     error: str | None
-    created_at: datetime.datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -148,10 +162,10 @@ class QueueItemOut(BaseModel):
     status: str
     notes: str | None
     position: int | None = None
-    scheduled_at: datetime.datetime | None
-    published_at: datetime.datetime | None
+    scheduled_at: UTCDateTime | None
+    published_at: UTCDateTime | None
     publish_requests: list | None = None
-    created_at: datetime.datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True

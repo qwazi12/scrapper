@@ -82,6 +82,12 @@ def slots_after(t: datetime.datetime, n: int) -> list[datetime.datetime]:
     return out
 
 
+def current_slot(now: datetime.datetime) -> datetime.datetime | None:
+    """The slot that started within DUE_GRACE before now, if any."""
+    slot = slots_after(now - DUE_GRACE, 1)[0]
+    return slot if slot <= now else None
+
+
 def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
     at = _aware(item.scheduled_at)
     return at is not None and now - DUE_GRACE < at <= now
@@ -99,6 +105,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         .all()
     )
     groups: dict[str, list[QueueItem]] = {}
+    due_groups: set[str] = set()
     changed = 0
     for it in ready:
         if not it.accounts:
@@ -106,11 +113,28 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
                 it.scheduled_at = None
                 changed += 1
             continue
-        if not _is_due(it, now):
+        if _is_due(it, now):
+            due_groups.add(pipeline_group(it))
+        else:
             groups.setdefault(pipeline_group(it), []).append(it)
 
-    for items in groups.values():
-        for it, slot in zip(items, slots_after(now, len(items))):
+    # Catch-up: a slot that opened < DUE_GRACE ago is still usable by a
+    # pipeline that has nothing in it yet (e.g. made Ready at 6:02 -> posts
+    # in the 6:00 slot instead of waiting for 8:00).
+    cur = current_slot(now)
+    used: set[str] = set()
+    if cur is not None:
+        for it in (s.query(QueueItem)
+                   .filter(QueueItem.scheduled_at == cur)
+                   .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived"]))
+                   .all()):
+            used.add(pipeline_group(it))
+
+    for group, items in groups.items():
+        slots = slots_after(now, len(items))
+        if cur is not None and group not in used and group not in due_groups:
+            slots = [cur] + slots[:-1] if slots else [cur]
+        for it, slot in zip(items, slots):
             if _aware(it.scheduled_at) != slot:
                 it.scheduled_at = slot
                 changed += 1
