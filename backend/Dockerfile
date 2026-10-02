@@ -9,8 +9,10 @@ FROM python:3.12-slim
 # Node 22 (nodesource) also runs HyperFrames, the LongForm Studio motion layer;
 # Debian's nodejs is too old for it. The lib list is Chrome-for-testing's
 # shared-lib set (HyperFrames downloads its own Chrome) — same as manhwa's image.
+# unzip: HyperFrames unpacks its Chrome download with it; without it `browser
+# ensure` sits at "100%" forever (seen 2026-10-02: a 30+ min hung build).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg ca-certificates curl gnupg fonts-dejavu-core \
+      ffmpeg ca-certificates curl gnupg fonts-dejavu-core unzip \
       libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 \
       libcups2 libdbus-1-3 libdrm2 libexpat1 libgbm1 libglib2.0-0 \
       libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
@@ -43,7 +45,7 @@ RUN cd /srv/backend/hyperframes \
     && npm ci --omit=dev --no-audit --no-fund \
     && ./node_modules/.bin/hyperframes --version
 ENV HYPERFRAMES_BIN=/srv/backend/hyperframes/node_modules/.bin/hyperframes
-RUN "$HYPERFRAMES_BIN" browser ensure \
+RUN timeout 900 "$HYPERFRAMES_BIN" browser ensure \
     && CHROME="$("$HYPERFRAMES_BIN" browser path | tr -d '\r' | grep -E '^/' | tail -1)" \
     && echo "wrapping: $CHROME" \
     && mv "$CHROME" "$CHROME.real" \
