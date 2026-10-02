@@ -724,8 +724,10 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
 
     if not settings.gemini_api_key:
         raise HTTPException(502, "AI generation failed: GEMINI_API_KEY is not set on the server")
+    from . import costs
     try:
-        res, research = await ai_bulk.ai_for(item, s)
+        with costs.operation("queue:ai", ref=f"queue:{item.id}"):
+            res, research = await ai_bulk.ai_for(item, s)
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI generation failed: {exc}")
     undo.record(s, "queue", f"AI rewrite of #{item.id}", rows=[item])
@@ -888,6 +890,47 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
     s.commit()
     logbus.log("info", "queue_shuffled", f"Shuffled {len(items)} items using mode '{req.mode}'")
     return {"ok": True, "count": len(items), "mode": req.mode}
+
+
+# --- Spending ---------------------------------------------------------------------
+class CostSettingsIn(BaseModel):
+    budget_usd: float | None = None
+    hard_stop: bool | None = None
+    upload_post_plan: str | None = None
+    fixed_costs: list[dict] | None = None
+    gemini: dict | None = None
+    tts_usd_per_million_chars: float | None = None
+    grounding_usd_per_1000: float | None = None
+
+
+@app.get("/api/costs", dependencies=_AUTH)
+def get_costs(month: str | None = None) -> dict:
+    from . import costs
+    return costs.summary(month)
+
+
+@app.put("/api/costs/settings", dependencies=_AUTH)
+def put_cost_settings(req: CostSettingsIn, s: Session = Depends(get_session)) -> dict:
+    from . import costs
+    from .models import AppSetting
+    patch = {k: v for k, v in req.model_dump().items() if v is not None}
+    if "budget_usd" in patch and patch["budget_usd"] < 0:
+        raise HTTPException(400, "budget must be 0 or more")
+    if "upload_post_plan" in patch and patch["upload_post_plan"] not in costs.UPLOAD_POST_PLANS:
+        raise HTTPException(400, f"plan must be one of {', '.join(costs.UPLOAD_POST_PLANS)}")
+    for fc in patch.get("fixed_costs", []):
+        if not str(fc.get("name", "")).strip() or float(fc.get("usd", -1)) < 0:
+            raise HTTPException(400, "each fixed cost needs a name and an amount of 0 or more")
+    _snapshot_setting(s, "costs", "Change spending settings")
+    row = s.get(AppSetting, "costs")
+    value = {**((row.value or {}) if row else {}), **patch}
+    if row:
+        row.value = value
+    else:
+        s.add(AppSetting(key="costs", value=value))
+    s.commit()
+    logbus.log("info", "costs_settings", "Spending settings changed", changed=list(patch))
+    return costs.summary()
 
 
 # --- Undo -----------------------------------------------------------------------

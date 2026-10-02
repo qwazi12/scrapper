@@ -199,3 +199,21 @@ class UndoEntry(Base):
     label: Mapped[str] = mapped_column(String(255), default="")
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class UsageEvent(Base):
+    """One paid (or counted) call: which service, what for, how much, est. cost."""
+    __tablename__ = "usage_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    month: Mapped[str] = mapped_column(String(7), index=True)          # YYYY-MM (UTC)
+    service: Mapped[str] = mapped_column(String(32), index=True)       # gemini | gemini-search | tts | upload-post | tmdb | imdb | drive
+    operation: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)   # e.g. studio:1, queue:385
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    chars: Mapped[int] = mapped_column(Integer, default=0)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)

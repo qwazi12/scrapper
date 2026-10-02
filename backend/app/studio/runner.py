@@ -74,7 +74,9 @@ def run_one(project_id: int, name: str) -> str:
     _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
     logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)
     try:
-        with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id):
+        from .. import costs
+        with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id), \
+                costs.operation(f"studio:{name}", ref=f"studio:{project_id}"):
             summary = STAGES[name](project_id) or "done"
     except control.Cancelled:
         _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")

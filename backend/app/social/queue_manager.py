@@ -320,6 +320,9 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
     item.status = "posting"
     s.commit()
     logbus.log("info", "queue_posting", f"Posting item #{item.id} ('{item.title[:40]}')")
+    from .. import costs
+    _op = costs.operation("post", ref=f"queue:{item.id}")
+    _op.__enter__()
 
     try:
         description = "\n\n".join(p.strip() for p in (item.description, item.tags) if p and p.strip())
@@ -350,6 +353,7 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         raise
 
     finally:
+        _op.__exit__(None, None, None)
         if is_temp_download and video_path and video_path.exists():
             try:
                 video_path.unlink(missing_ok=True)

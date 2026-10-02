@@ -22,6 +22,8 @@ class IMDbError(Exception):
 
 
 def _query(q: str) -> dict[str, Any]:
+    from .. import costs
+    costs.record_free("imdb")
     r = httpx.post(GRAPHQL, json={"query": q}, headers=HEADERS, timeout=TIMEOUT)
     if not r.is_success:
         raise IMDbError(f"IMDb returned HTTP {r.status_code}")

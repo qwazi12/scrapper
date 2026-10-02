@@ -67,6 +67,11 @@ async def generate_social_metadata(
 
     if not settings.gemini_api_key:
         return fail("GEMINI_API_KEY is not set on the server")
+    from .. import costs
+    try:
+        costs.check_budget()
+    except costs.BudgetExceeded as exc:
+        return fail(str(exc))
 
     prompt = (
         "You are an elite short-form social media editor and growth strategist. "
@@ -114,6 +119,7 @@ async def generate_social_metadata(
                 return fail(f"Gemini {settings.gemini_model} returned HTTP {res.status_code}: {res.text[:300]}")
 
             data = res.json()
+            costs.record_gemini(settings.gemini_model, data.get("usageMetadata") or {})
             candidates = data.get("candidates", [])
             if not candidates:
                 return fail("Gemini returned no candidates")

@@ -67,6 +67,8 @@ def get(path: str, **params: Any) -> dict[str, Any]:
     for i, (label, headers, auth_params) in enumerate(_auths()):
         res = httpx.get(f"{API}{path}", headers=headers, params={**auth_params, **params}, timeout=TIMEOUT)
         if res.is_success:
+            from .. import costs
+            costs.record_free("tmdb")
             if i > 0:
                 logger.warning("TMDB: first credential rejected; %s worked — check the other one", label)
             return res.json()

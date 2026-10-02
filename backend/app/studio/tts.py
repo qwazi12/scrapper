@@ -54,6 +54,11 @@ def synth(text: str, dest: pathlib.Path) -> pathlib.Path:
     if not (cached.exists() and cached.stat().st_size > 0):
         if not settings.tts_api_key:
             raise TTSError("TTS_API_KEY is not set on the server (Google Text-to-Speech key)")
+        from .. import costs
+        try:
+            costs.check_budget()
+        except costs.BudgetExceeded as exc:
+            raise TTSError(str(exc)) from exc
         lang = "-".join(settings.tts_voice.split("-")[:2])
         res = httpx.post(URL, params={"key": settings.tts_api_key}, timeout=60, json={
             "input": {"text": spoken},
@@ -63,6 +68,7 @@ def synth(text: str, dest: pathlib.Path) -> pathlib.Path:
         if not res.is_success:
             # Never echo the URL (it carries the key) — body only.
             raise TTSError(f"Text-to-Speech failed ({res.status_code}): {res.text[:300]}")
+        costs.record_tts(len(spoken), settings.tts_voice)  # only real synthesis is billed, never a cache hit
         tmp = cached.with_suffix(".tmp")
         tmp.write_bytes(base64.b64decode(res.json()["audioContent"]))
         tmp.replace(cached)  # atomic: no half-written cache entries

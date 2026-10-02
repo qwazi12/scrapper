@@ -75,7 +75,9 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 status["failed"] += 1
                 return
             try:
-                res, research = await ai_for(item, s, _cache)
+                from .. import costs
+                with costs.operation("queue:bulk_ai", ref=f"queue:{item_id}"):
+                    res, research = await ai_for(item, s, _cache)
                 apply_ai(item, res, research)
                 s.commit()
                 status["done"] += 1
@@ -83,7 +85,7 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 status["failed"] += 1
                 if len(status["errors"]) < 5:
                     status["errors"].append(f"#{item_id}: {str(exc)[:200]}")
-                if "GEMINI_API_KEY" in str(exc):
+                if "GEMINI_API_KEY" in str(exc) or "Monthly budget reached" in str(exc):
                     status["aborted"] = str(exc)  # every call would fail the same way
 
 

@@ -16,7 +16,7 @@ from ..auth import require_token
 from ..config import settings
 from ..db import get_session
 from ..models import StudioProject
-from .. import undo
+from .. import costs, undo
 from . import runner, tmdb
 
 # What a Studio undo restores (text/plan level; footage and shots are files).
@@ -50,6 +50,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
         "stage_message": p.stage_message, "queue_item_id": p.queue_item_id,
         "created_at": p.created_at, "updated_at": p.updated_at,
         "poster": (p.facts or {}).get("poster"),
+        "cost_usd": round(costs.ref_cost(f"studio:{p.id}"), 4),
         "has": {k: bool(getattr(p, k)) for k in ("facts", "research", "trailer", "shots", "script", "plan", "render")},
     }
     if full:

@@ -26,14 +26,21 @@ class GeminiError(Exception):
 def _post(body: dict[str, Any], model: str | None = None, retries: int = 3) -> dict[str, Any]:
     if not settings.gemini_api_key:
         raise GeminiError("GEMINI_API_KEY is not set on the server")
-    from .. import control
+    from .. import control, costs
     url = f"{BASE}/{model or settings.gemini_model}:generateContent"
     last = ""
     for attempt in range(retries):
         control.check()  # Stop lands before the next (slow) model call
+        try:
+            costs.check_budget()
+        except costs.BudgetExceeded as exc:
+            raise GeminiError(str(exc)) from exc
         res = httpx.post(url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}, timeout=TIMEOUT)
         if res.is_success:
-            return res.json()
+            data = res.json()
+            costs.record_gemini(model or settings.gemini_model, data.get("usageMetadata") or {},
+                                grounded="tools" in body)
+            return data
         last = f"HTTP {res.status_code}: {res.text[:300]}"
         if res.status_code not in (429, 500, 502, 503, 504):
             break

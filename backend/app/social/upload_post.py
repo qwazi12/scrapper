@@ -200,6 +200,8 @@ async def upload_video(
             if thumb_fh:
                 thumb_fh.close()
     _raise_for(res, f"Upload-Post upload to profile '{profile}'")
+    from .. import costs
+    costs.record_free("upload-post", requests=len(platforms))  # flat plan fee; uploads counted vs plan limit
     body = res.json()
     request_id = body.get("request_id")
     if not request_id:
