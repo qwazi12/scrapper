@@ -100,6 +100,10 @@ export type QueueItem = {
   status: string; // "review" | "ready" | "posting" | "posted" | "retry" | "error" | "archived"
   notes: string | null;
   position: number | null;
+  research?: {
+    matched: boolean; title?: string; year?: string | null; confidence?: number; reason?: string;
+    guess?: string; source?: string; cast?: { actor: string; character: string }[]; keywords?: string[];
+  } | null;
   scheduled_at: string | null;
   published_at: string | null;
   publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
@@ -138,6 +142,7 @@ export type ScheduleInfo = ScheduleConfig & {
   ai: { configured: boolean; model: string };
   scheduler: {
     enabled: boolean;
+    paused: boolean;
     tick_seconds: number;
     started_at: string | null;
     last_tick_at: string | null;
@@ -217,7 +222,7 @@ export type StudioProject = {
   title: string;
   target_minutes: number;
   stage: string;
-  stage_status: "idle" | "running" | "done" | "error";
+  stage_status: "idle" | "running" | "done" | "error" | "stopped";
   stage_message: string | null;
   queue_item_id: number | null;
   created_at: string;
@@ -252,6 +257,23 @@ export type StudioStatus = {
   busy: { project_id: number | null; stage: string | null };
   attribution: string;
 };
+
+// --- Stop + Undo ---------------------------------------------------------------
+export type Job = {
+  id: string;
+  kind: string;
+  label: string;
+  scope: string;
+  ref?: any;
+  status: "queued" | "running" | "stopping" | "cancelled" | "done" | "error";
+  message: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  elapsed?: number;
+  result?: any;
+};
+
+export type UndoStep = { id: number; label: string; created_at: string };
 
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
@@ -559,6 +581,29 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  jobs: () => req<Job[]>("/api/jobs", { headers: headers(false) }),
+  job: (id: string) => req<Job>(`/api/jobs/${encodeURIComponent(id)}`, { headers: headers(false) }),
+  stopJob: (id: string) =>
+    req<Job>(`/api/jobs/${encodeURIComponent(id)}/stop`, { method: "POST", headers: headers() }),
+  /** Poll a background job until it ends; resolves with its result, rejects on error/stop. */
+  waitJob: async (id: string, onTick?: (j: Job) => void): Promise<any> => {
+    for (;;) {
+      const j = await api.job(id);
+      onTick?.(j);
+      if (j.status === "done") return j.result;
+      if (j.status === "cancelled") throw new Error("Stopped");
+      if (j.status === "error") throw new Error(j.message || "failed");
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  },
+  undoStack: (scope: string) =>
+    req<{ scope: string; stack: UndoStep[] }>(`/api/undo?scope=${encodeURIComponent(scope)}`, { headers: headers(false) }),
+  undo: (scope: string) =>
+    req<{ undone: string; stack: UndoStep[] }>("/api/undo", {
+      method: "POST", headers: headers(), body: JSON.stringify({ scope }) }),
+  setAutopost: (paused: boolean) =>
+    req<{ paused: boolean }>("/api/autopost", { method: "PUT", headers: headers(), body: JSON.stringify({ paused }) }),
+
   ingestChannel: (data: {
     url: string;
     parent_folder_id?: string;
@@ -568,7 +613,7 @@ export const api = {
     auto_approve?: boolean;
     upload_to_drive?: boolean;
   }) =>
-    req<{ ok: boolean; message: string; channel: string; uploaded_count: number; items: any[] }>(
+    req<{ job_id: string; status: string }>(
       "/api/social/ingest-channel",
       {
         method: "POST",
@@ -578,7 +623,7 @@ export const api = {
     ),
 
   syncDrive: (data: { folder_url?: string; folder_id: string; pipeline?: string; auto_approve?: boolean }) =>
-    req<{ ok: boolean; message: string; channels?: any[] }>("/api/drive/sync", {
+    req<{ job_id: string; status: string }>("/api/drive/sync", {
       method: "POST",
       headers: headers(),
       body: JSON.stringify(data),

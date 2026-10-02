@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api, BulkAiStatus, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
+import { UndoButton } from "./UndoButton";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   review: { bg: "#1e293b", text: "#38bdf8", label: "👁 Review" },
@@ -127,6 +128,31 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [showAccountAssignModal, setShowAccountAssignModal] = useState(false);
   const [selectedTargetAccountIds, setSelectedTargetAccountIds] = useState<string[]>([]);
 
+  const [undoVersion, setUndoVersion] = useState(0);
+  const [autopostPaused, setAutopostPaused] = useState<boolean | null>(null);
+
+  async function toggleAutopost() {
+    const next = !autopostPaused;
+    if (!confirm(next
+      ? "Pause auto-posting?\n\nNothing new will be submitted until you resume. A video already uploading finishes."
+      : "Resume auto-posting? Ready videos will post at their scheduled times.")) return;
+    try {
+      setAutopostPaused((await api.setAutopost(next)).paused);
+      setUndoVersion((v) => v + 1);
+    } catch (e: any) {
+      alert(`Could not change auto-posting: ${e.message || e}`);
+    }
+  }
+
+  async function stopAiRewrite() {
+    try {
+      const j = (await api.jobs()).find((x) => x.kind === "ai" && ["running", "stopping"].includes(x.status));
+      if (j) await api.stopJob(j.id);
+    } catch (e: any) {
+      alert(`Could not stop: ${e.message || e}`);
+    }
+  }
+
   // Filter items in memory based on statusFilter so switching tabs is instant
   const items = React.useMemo(() => {
     if (statusFilter === "all") return allItems;
@@ -137,7 +163,10 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   }, [allItems, statusFilter]);
 
   async function loadQueue(isBackground = false) {
-    if (!isBackground) setLoading(true);
+    if (!isBackground) {
+      setLoading(true);
+      setUndoVersion((v) => v + 1); // a user action just happened: refresh the Undo label
+    }
     else setRefreshing(true);
     try {
       // Always load all items for the selected pipeline/channel so badge counts are 100% accurate across all tabs
@@ -172,6 +201,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     api.schedule().then((r) => {
       setArchiveDays(r.archive_delete_days);
       setPrivacy(r.publisher.privacy);
+      setAutopostPaused(!!r.scheduler.paused);
     }).catch(() => {});
   }, []);
 
@@ -470,6 +500,30 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
             </span>
             <span style={{ fontSize: 10 }}>{refreshing ? "Updating…" : "Live"}</span>
           </button>
+          <UndoButton
+            scope="queue"
+            version={undoVersion}
+            compact
+            onUndone={(label) => {
+              loadQueue();
+              onChange();
+            }}
+          />
+          {autopostPaused !== null && (
+            <button
+              onClick={toggleAutopost}
+              title={autopostPaused ? "Auto-posting is paused" : "Auto-posting is on"}
+              style={{
+                fontSize: 11,
+                padding: "5px 10px",
+                fontWeight: 700,
+                background: autopostPaused ? "#78350f" : "transparent",
+                color: autopostPaused ? "#fde68a" : "var(--text)",
+              }}
+            >
+              {autopostPaused ? "▶ Resume auto-posting" : "⏸ Pause auto-posting"}
+            </button>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -664,6 +718,12 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
             <span style={{ fontSize: 11, color: "#fecaca", width: "100%" }}>
               {aiJob.aborted || aiJob.errors[0]}
             </span>
+          )}
+          {aiJob.running && (
+            <button className="danger" style={{ fontSize: 11, padding: "3px 12px", fontWeight: 700 }}
+              onClick={() => confirm("Stop the AI rewrite? Videos already rewritten keep their new text (use Undo to revert them).") && stopAiRewrite()}>
+              ■ Stop
+            </button>
           )}
           {!aiJob.running && (
             <button style={{ fontSize: 10, padding: "1px 8px" }} onClick={() => setAiJob(null)}>dismiss</button>
@@ -907,6 +967,20 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                       <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
                         {item.title || "Untitled Video"}
                       </div>
+                      {item.research && (
+                        item.research.matched ? (
+                          <a href={item.research.source} target="_blank" rel="noreferrer"
+                             title={`AI matched this clip on TMDB (${Math.round((item.research.confidence || 0) * 100)}% sure): ${item.research.reason || ""}`}
+                             style={{ fontSize: 10, color: "#93c5fd", display: "inline-block", marginBottom: 4 }}>
+                            🎬 {item.research.title}{item.research.year ? ` (${item.research.year})` : ""} · TMDB
+                          </a>
+                        ) : (
+                          <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}
+                               title={item.research.reason || ""}>
+                            🎬 no confident TMDB match{item.research.guess ? ` (guessed “${item.research.guess}”)` : ""}
+                          </div>
+                        )
+                      )}
                       {item.description && (
                         <div
                           style={{

@@ -17,6 +17,7 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
   const [maxVideos, setMaxVideos] = useState(25);
   const [autoApprove, setAutoApprove] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [result, setResult] = useState<any | null>(null);
 
@@ -33,7 +34,7 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
     setResult(null);
 
     try {
-      const res = await api.ingestChannel({
+      const started = await api.ingestChannel({
         url: url.trim(),
         parent_folder_id: parentFolder,
         parent_folder_name: selectedFolderName,
@@ -41,15 +42,22 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
         max_videos: Number(maxVideos) || 25,
         auto_approve: autoApprove,
       });
+      setJobId(started.job_id);
+      // Runs on the server as a stoppable job; show its progress until it ends.
+      const res = await api.waitJob(started.job_id, (j) => j.message && setStatus(`⏳ ${j.message}`));
 
       setStatus(`✓ ${res.message}`);
       setResult(res);
       setUrl("");
       onIngested();
     } catch (err: any) {
-      setStatus(`❌ Ingestion failed: ${err.message}`);
+      setStatus(err.message === "Stopped"
+        ? "■ Stopped. Videos already uploaded stay in Drive and the queue (↶ Undo in the queue removes them)."
+        : `❌ Ingestion failed: ${err.message}`);
+      onIngested();
     } finally {
       setLoading(false);
+      setJobId(null);
     }
   }
 
@@ -208,6 +216,12 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
           >
             {loading ? "⏳ Scraping Channel & Uploading to Drive…" : "🚀 Scrape & File Directly to Google Drive"}
           </button>
+          {loading && jobId && (
+            <button className="danger" style={{ fontWeight: 700 }}
+              onClick={() => confirm("Stop the channel ingest? Videos already uploaded are kept.") && api.stopJob(jobId)}>
+              ■ Stop
+            </button>
+          )}
 
           {status && (
             <div

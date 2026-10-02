@@ -17,6 +17,7 @@ import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
+import { JobsBar } from "./JobsBar";
 
 type NavTab = "scraper" | "socialpilot" | "longform" | "comps" | "logs" | "settings";
 
@@ -298,6 +299,8 @@ export default function Page() {
       {/* ─── MAIN CONTENT VIEWPORT ───────────────────────────────── */}
       <main style={{ flex: 1, minWidth: 0, padding: "0 24px 60px", overflowY: "auto" }}>
         <StatusBar stats={stats} connected={connected} clips={clips} comps={comps} />
+        {/* Everything running on the server, with Stop — on every tab */}
+        <JobsBar />
 
         {/* Dedicated Tab 1: POSTING QUEUE (Google Sheets Experience) */}
         {/* Landing Page: Original Scrapper (Paste Link -> Scrape -> Download to Device) */}

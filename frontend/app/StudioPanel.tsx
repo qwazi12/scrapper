@@ -10,6 +10,7 @@ import {
   StudioStatus,
   StudioTitle,
 } from "../lib/api";
+import { UndoButton } from "./UndoButton";
 
 // LongForm Studio: trailer breakdowns from research to rendered video.
 // Every stage runs on the server and saves its own output, so any step can be
@@ -283,6 +284,19 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
     }
   }, [p?.stage_status]);
 
+  const [undoV, setUndoV] = useState(0);
+
+  async function stopStage() {
+    if (!confirm("Stop this stage? Finished steps are kept; you can re-run it any time.")) return;
+    try {
+      const j = (await api.jobs()).find((x) => x.scope === "studio" && x.ref === id && ["running", "stopping"].includes(x.status));
+      if (j) await api.stopJob(j.id);
+      await load();
+    } catch (e: any) {
+      setErr(e.message || String(e));
+    }
+  }
+
   async function run(stage: string, auto = false) {
     setErr("");
     try {
@@ -316,11 +330,24 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
             </select>
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: p.stage_status === "error" ? "var(--red)" : running ? "var(--yellow)" : "var(--text)" }}>
-            {running ? "⏳ " : p.stage_status === "error" ? "✕ " : p.stage_status === "done" ? "✓ " : ""}
+            {running ? "⏳ " : p.stage_status === "error" ? "✕ " : p.stage_status === "stopped" ? "■ " : p.stage_status === "done" ? "✓ " : ""}
             {p.stage_message || "Not started"}
           </div>
           {err && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{err}</div>}
         </div>
+        {running && (
+          <button className="danger" style={{ fontSize: 12, fontWeight: 700 }} onClick={stopStage}>
+            ■ Stop
+          </button>
+        )}
+        <UndoButton
+          scope={`studio:${id}`}
+          version={`${undoV}-${p.updated_at}`}
+          onUndone={() => {
+            setUndoV((v) => v + 1);
+            load();
+          }}
+        />
         <button
           className="danger"
           style={{ fontSize: 11 }}

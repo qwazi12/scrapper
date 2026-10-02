@@ -28,6 +28,7 @@ export function DrivePanel({ onIngested }: { onIngested: () => void }) {
   const [autoApprove, setAutoApprove] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [syncSummary, setSyncSummary] = useState<any | null>(null);
 
   // Extract folder ID from URL
@@ -49,12 +50,14 @@ export function DrivePanel({ onIngested }: { onIngested: () => void }) {
           ? "Movie Clips"
           : channelPipeline;
 
-      const res = await api.syncDrive({
+      const started = await api.syncDrive({
         folder_url: folderUrl,
         folder_id: folderId,
         pipeline: pipelineParam,
         auto_approve: autoApprove,
       });
+      setJobId(started.job_id);
+      const res = await api.waitJob(started.job_id, (j) => j.message && setStatus(`⏳ ${j.message}`));
 
       setStatus(`✓ ${res.message || "Drive sync completed successfully."}`);
       if ((res as any).channels) {
@@ -62,11 +65,13 @@ export function DrivePanel({ onIngested }: { onIngested: () => void }) {
       }
       onIngested();
     } catch (e: any) {
-      setStatus(
-        `⚠️ Sync notice: ${e.message || "Could not complete cloud sync. Running sync via Mac worker is recommended."}`
-      );
+      setStatus(e.message === "Stopped"
+        ? "■ Sync stopped. Videos already added stay in the queue (↶ Undo there removes them)."
+        : `⚠️ Sync notice: ${e.message || "Could not complete cloud sync."}`);
+      onIngested();
     } finally {
       setLoading(false);
+      setJobId(null);
     }
   }
 
@@ -198,6 +203,12 @@ export function DrivePanel({ onIngested }: { onIngested: () => void }) {
           >
             {loading ? "⏳ Scanning & Syncing Google Drive…" : "🔄 Sync & Pull Videos into Queue"}
           </button>
+          {loading && jobId && (
+            <button className="danger" style={{ fontWeight: 700 }}
+              onClick={() => confirm("Stop the Drive sync? Videos already added are kept.") && api.stopJob(jobId)}>
+              ■ Stop
+            </button>
+          )}
 
           {status && (
             <div

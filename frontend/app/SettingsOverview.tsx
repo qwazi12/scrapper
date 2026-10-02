@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
+import { UndoButton } from "./UndoButton";
 
 function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
@@ -199,6 +200,7 @@ export function SettingsOverview() {
       <div style={card}>
         <h2 style={h2}>⏰ Posting Schedule</h2>
         <div style={{ fontSize: 12, marginBottom: 10, color: alive ? "var(--accent)" : "var(--red)" }}>
+          {sc.paused && <div style={{ color: "#fde68a", fontWeight: 700 }}>⏸ Auto-posting is PAUSED — nothing new will be submitted.</div>}
           {alive ? "●" : "○"} Auto-poster{" "}
           {!sc.enabled
             ? "is OFF on this server (WORKER_MODE=web_only)"
@@ -256,6 +258,22 @@ export function SettingsOverview() {
           </div>
         )}
         <ScheduleEditor sched={sched} onSaved={setSched} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          <button
+            style={{ fontSize: 11, padding: "4px 10px", fontWeight: 700,
+                     background: sc.paused ? "#78350f" : "transparent", color: sc.paused ? "#fde68a" : "var(--text)" }}
+            onClick={async () => {
+              const next = !sc.paused;
+              if (!confirm(next ? "Pause auto-posting? Nothing new is submitted until you resume." : "Resume auto-posting?")) return;
+              await api.setAutopost(next);
+              setSched(await api.schedule());
+            }}
+          >
+            {sc.paused ? "▶ Resume auto-posting" : "⏸ Pause auto-posting"}
+          </button>
+          <UndoButton scope="settings" version={JSON.stringify([sched.start_hour, sched.end_hour, sched.interval_hours, sched.timezone, sc.paused])}
+            onUndone={async () => setSched(await api.schedule())} />
+        </div>
       </div>
 
       {/* Upload-Post accounts */}
