@@ -96,6 +96,22 @@ def run_one(project_id: int, name: str) -> str:
     return summary
 
 
+def recover_interrupted() -> int:
+    """Startup: a step can only be running inside this process, so any project
+    still marked running/queued was cut off by a restart or deploy. Mark it
+    stopped so it can be re-run — otherwise it looked busy forever, Stop found no
+    job to stop, and edits were refused (seen 2026-10-02)."""
+    with SessionLocal() as s:
+        stuck = s.query(StudioProject).filter(StudioProject.stage_status == "running").all()
+        for p in stuck:
+            p.stage_status = "stopped"
+            p.stage_message = f"{p.stage} was interrupted by a server restart — re-run it"
+            logbus.log("warning", "studio_stage_interrupted",
+                       f"Studio #{p.id}: {p.stage} was interrupted by a server restart", project=p.id, stage=p.stage)
+        s.commit()
+        return len(stuck)
+
+
 def start(project_id: int, name: str, auto: bool = False) -> None:
     """Start a stage (and, with auto, the following ones) in the background."""
     if name not in STAGES:

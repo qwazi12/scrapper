@@ -676,3 +676,15 @@ def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_vide
     with SessionLocal() as s:
         assert s.get(StudioProject, pid).render == first
     assert (root / first["file"]).exists()                         # the last good video survived
+
+
+def test_restart_marks_interrupted_steps_stopped():
+    pid = _new_project()
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.stage, p.stage_status = "shots", "running"
+        s.commit()
+    assert runner.recover_interrupted() >= 1
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        assert p.stage_status == "stopped" and "restart" in p.stage_message
