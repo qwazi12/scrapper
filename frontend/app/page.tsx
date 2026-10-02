@@ -31,6 +31,16 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
   const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  // Phones: the sidebar becomes a slide-out drawer so pages get the full width.
+  const [isMobile, setIsMobile] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 760);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  const collapsed = sidebarCollapsed && !isMobile;
 
   const refresh = useCallback(async () => {
     try {
@@ -79,6 +89,7 @@ export default function Page() {
 
   function handleTabSelect(tab: NavTab) {
     setActiveTab(tab);
+    setNavOpen(false);
     if (typeof window !== "undefined") {
       window.location.hash = tab;
     }
@@ -103,32 +114,39 @@ export default function Page() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
       {/* ─── REACTIVE SIDEBAR ────────────────────────────────────── */}
+      {isMobile && navOpen && (
+        <div onClick={() => setNavOpen(false)}
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 150 }} />
+      )}
       <aside
         style={{
-          width: sidebarCollapsed ? 76 : 280,
-          transition: "width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+          width: collapsed ? 76 : 280,
+          transition: "width 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease",
           background: "#0c0e14",
           borderRight: "1px solid var(--border)",
           display: "flex",
           flexDirection: "column",
-          position: "sticky",
+          position: isMobile ? "fixed" : "sticky",
+          left: 0,
           top: 0,
           height: "100vh",
-          zIndex: 100,
+          zIndex: 200,
           flexShrink: 0,
+          transform: isMobile && !navOpen ? "translateX(-100%)" : "none",
+          boxShadow: isMobile && navOpen ? "0 0 40px rgba(0,0,0,0.6)" : "none",
         }}
       >
         {/* Brand Header */}
         <div
           style={{
-            padding: sidebarCollapsed ? "18px 12px" : "18px 20px",
+            padding: collapsed ? "18px 12px" : "18px 20px",
             borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
-            justifyContent: sidebarCollapsed ? "center" : "space-between",
+            justifyContent: collapsed ? "center" : "space-between",
           }}
         >
-          {!sidebarCollapsed ? (
+          {!collapsed ? (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 18 }}>🎬</span>
@@ -158,8 +176,8 @@ export default function Page() {
           )}
 
           <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => (isMobile ? setNavOpen(false) : setSidebarCollapsed(!sidebarCollapsed))}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             style={{
               padding: 6,
               background: "transparent",
@@ -171,7 +189,7 @@ export default function Page() {
               justifyContent: "center",
             }}
           >
-            {sidebarCollapsed ? "→" : "←"}
+            {collapsed ? "→" : "←"}
           </button>
         </div>
 
@@ -180,7 +198,7 @@ export default function Page() {
           {/* 1. Scraper (Original Landing Page) */}
           <NavButton
             active={activeTab === "scraper"}
-            collapsed={sidebarCollapsed}
+            collapsed={collapsed}
             onClick={() => handleTabSelect("scraper")}
             icon="📥"
             title="Scraper (Home)"
@@ -193,7 +211,7 @@ export default function Page() {
           {/* 2. SocialPilot AI (Scheduler & Channel Distribution) */}
           <NavButton
             active={activeTab === "socialpilot"}
-            collapsed={sidebarCollapsed}
+            collapsed={collapsed}
             onClick={() => handleTabSelect("socialpilot")}
             icon="🚀"
             title="SocialPilot AI"
@@ -206,7 +224,7 @@ export default function Page() {
           {/* 3. Compilations & Stitching */}
           <NavButton
             active={activeTab === "comps"}
-            collapsed={sidebarCollapsed}
+            collapsed={collapsed}
             onClick={() => handleTabSelect("comps")}
             icon="🎞️"
             title="Compilations & Exports"
@@ -219,7 +237,7 @@ export default function Page() {
           {/* LongForm Studio (trailer breakdowns) */}
           <NavButton
             active={activeTab === "longform"}
-            collapsed={sidebarCollapsed}
+            collapsed={collapsed}
             onClick={() => handleTabSelect("longform")}
             icon="🎬"
             title="LongForm Studio"
@@ -229,7 +247,7 @@ export default function Page() {
           {/* 4. Live System Logs */}
           <NavButton
             active={activeTab === "logs"}
-            collapsed={sidebarCollapsed}
+            collapsed={collapsed}
             onClick={() => handleTabSelect("logs")}
             icon="📜"
             title="Live Activity Logs"
@@ -239,7 +257,7 @@ export default function Page() {
           {/* 5. Settings & API Credentials */}
           <NavButton
             active={activeTab === "settings"}
-            collapsed={sidebarCollapsed}
+            collapsed={collapsed}
             onClick={() => handleTabSelect("settings")}
             icon="⚙️"
             title="Settings & Channels"
@@ -250,13 +268,13 @@ export default function Page() {
         {/* Sidebar Footer: Health & Storage Meter */}
         <div
           style={{
-            padding: sidebarCollapsed ? 12 : 16,
+            padding: collapsed ? 12 : 16,
             borderTop: "1px solid var(--border)",
             background: "#080a0e",
             fontSize: 11,
           }}
         >
-          {!sidebarCollapsed ? (
+          {!collapsed ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: "var(--muted)" }}>Volume Storage</span>
@@ -297,8 +315,9 @@ export default function Page() {
       </aside>
 
       {/* ─── MAIN CONTENT VIEWPORT ───────────────────────────────── */}
-      <main style={{ flex: 1, minWidth: 0, padding: "0 24px 60px", overflowY: "auto" }}>
-        <StatusBar stats={stats} connected={connected} clips={clips} comps={comps} />
+      <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "0 10px 60px" : "0 24px 60px", overflowY: "auto" }}>
+        <StatusBar stats={stats} connected={connected} clips={clips} comps={comps}
+                   compact={isMobile} onMenu={() => setNavOpen(true)} />
         {/* Everything running on the server, with Stop — on every tab */}
         <JobsBar />
 
@@ -525,16 +544,36 @@ function StatusBar({
   connected,
   clips,
   comps,
+  compact,
+  onMenu,
 }: {
   stats: Stats | null;
   connected: boolean | null;
   clips: Clip[];
   comps: Compilation[];
+  compact?: boolean;
+  onMenu?: () => void;
 }) {
   const selected = clips.filter((c) => c.selected && c.status === "done").length;
   const running = comps.find((c) => c.status === "running");
   const pending = clips.filter((c) => c.status === "failed" && c.error?.includes("Mac worker")).length;
   const actualFailed = Math.max(0, (stats?.clips_failed ?? 0) - pending);
+  if (compact) {
+    // Phone: one slim bar — menu, name, connection. The numbers live in each tab.
+    return (
+      <header style={{ position: "sticky", top: 0, zIndex: 10, background: "#0b0d11",
+                       borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center",
+                       gap: 10, padding: "10px 2px", marginBottom: 10 }}>
+        <button onClick={onMenu} aria-label="Open menu"
+                style={{ fontSize: 20, padding: "4px 12px", lineHeight: 1 }}>☰</button>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>🎬 Scrapper</div>
+        {running && <span style={{ color: "var(--yellow)", fontSize: 11 }}>⚙ {Math.round(running.progress * 100)}%</span>}
+        <span style={{ marginLeft: "auto", fontSize: 11, color: connected ? "var(--accent)" : "var(--red)" }}>
+          {connected == null ? "…" : connected ? "● connected" : "● offline"}
+        </span>
+      </header>
+    );
+  }
   return (
     <header
       style={{

@@ -129,6 +129,14 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
   const [selectedTargetAccountIds, setSelectedTargetAccountIds] = useState<string[]>([]);
 
   const [undoVersion, setUndoVersion] = useState(0);
+  // Phones get stacked cards instead of the 6-column table.
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const check = () => setIsNarrow(window.innerWidth < 760);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
   const [autopostPaused, setAutopostPaused] = useState<boolean | null>(null);
 
   async function toggleAutopost() {
@@ -890,6 +898,67 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
             ) : (
               "No queue items found for this selection."
             )}
+          </div>
+        ) : isNarrow ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 8 }}>
+            <label style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center", padding: "0 4px" }}>
+              <input type="checkbox" style={{ width: "auto" }}
+                     checked={sel.size === items.length && items.length > 0}
+                     onChange={(e) => toggleAll(e.target.checked)} />
+              Select all {items.length}
+            </label>
+            {sortedItems.map((item) => {
+              const st = STATUS_COLORS[item.status.toLowerCase()] || { bg: "var(--chip)", text: "var(--text)", label: item.status };
+              return (
+                <div key={item.id} style={{ border: `1px solid ${sel.has(item.id) ? "var(--accent)" : "var(--border)"}`,
+                                            borderRadius: 10, padding: 10, background: "var(--row)",
+                                            display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <input type="checkbox" style={{ width: 20, height: 20, flex: "0 0 auto", marginTop: 2 }}
+                           checked={sel.has(item.id)} onChange={() => toggleSel(item.id)} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{item.title || "Untitled Video"}</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
+                        #{item.id} · {item.source || item.pipeline}
+                      </div>
+                      {item.research?.matched && (
+                        <div style={{ fontSize: 10, color: "#93c5fd" }}>
+                          🎬 {item.research.title}{item.research.year ? ` (${item.research.year})` : ""}
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: st.bg, color: st.text,
+                                   whiteSpace: "nowrap" }}>{st.label}</span>
+                  </div>
+                  {item.status === "ready" && item.scheduled_at && (
+                    <div style={{ fontSize: 11, color: "#34d399" }}>⏰ {fmtET(item.scheduled_at)}</div>
+                  )}
+                  {item.notes && (item.status === "retry" || item.status === "error" || item.status === "posted") && (
+                    <div style={{ fontSize: 10, color: item.status === "posted" ? "var(--muted)" : "#f87171",
+                                  wordBreak: "break-word" }}>{item.notes}</div>
+                  )}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {(item.accounts || []).length ? (item.accounts || []).map((a) => <TargetChip key={a} id={a} accounts={accounts} />) : (
+                      <span style={{ fontSize: 10, color: "var(--yellow)" }}>⚠ no target picked</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {item.status === "review" && (
+                      <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleApprove(item.id)}>✓ Approve</button>
+                    )}
+                    <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handlePublishNow(item)}>🚀 Post now</button>
+                    <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleGenerateAi(item.id)}>✨ AI</button>
+                    <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => setEditItem(item)}>✎ Edit</button>
+                    {item.drive_link && (
+                      <a href={item.drive_link} target="_blank" rel="noreferrer">
+                        <button style={{ fontSize: 12, padding: "6px 10px" }}>▶ Watch</button>
+                      </a>
+                    )}
+                    <button className="danger" style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleDelete(item.id)}>🗑</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
