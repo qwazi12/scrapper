@@ -690,6 +690,9 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
             except Exception:
                 pass
 
+    if req.media_url is not None:
+        item.media_url = req.media_url
+
     s.commit()
     s.refresh(item)
     return item

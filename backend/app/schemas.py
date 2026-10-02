@@ -143,6 +143,7 @@ class QueueItemUpdate(BaseModel):
     accounts: list[str] | None = None
     scheduled_at: str | None = None
     notes: str | None = None
+    media_url: str | None = None
 
 
 class QueueItemOut(BaseModel):
@@ -166,6 +167,7 @@ class QueueItemOut(BaseModel):
     published_at: UTCDateTime | None
     publish_requests: list | None = None
     research: dict | None = None
+    media_url: str | None = None
     created_at: UTCDateTime
 
     class Config:
