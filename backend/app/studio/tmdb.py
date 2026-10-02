@@ -104,7 +104,7 @@ def search(query: str) -> list[dict[str, Any]]:
 
 
 UPCOMING_DAYS = 92          # today through ~3 months out
-UPCOMING_PAGES = 5          # 20 films a page, most popular first
+UPCOMING_PAGES = 2          # per calendar month: 20 films a page, most popular first
 _cal_cache: dict[str, Any] = {}
 CAL_TTL = 3 * 3600
 
@@ -132,15 +132,22 @@ def upcoming_movies(region: str, today: datetime.date | None = None) -> list[dic
     start, end = today.isoformat(), (today + datetime.timedelta(days=UPCOMING_DAYS)).isoformat()
     newest = (today - datetime.timedelta(days=183)).isoformat()
     seen: dict[int, dict[str, Any]] = {}
-    for page in range(1, UPCOMING_PAGES + 1):
-        data = get("/discover/movie", region=region, page=page, include_adult="false", sort_by="popularity.desc",
-                   with_release_type="2|3|4", **{"release_date.gte": start, "release_date.lte": end,
-                                                 "primary_release_date.gte": newest})
-        for r in data.get("results", []):
-            if r.get("id") not in seen and r.get("poster_path"):
-                seen[r["id"]] = _summary(r, "movie")
-        if page >= (data.get("total_pages") or 1):
-            break
+    # One query per calendar month, so a busy month can't crowd out the later ones.
+    windows, cur = [], today
+    while cur.isoformat() <= end:
+        nxt = (cur.replace(day=1) + datetime.timedelta(days=32)).replace(day=1)
+        windows.append((cur.isoformat(), min(end, (nxt - datetime.timedelta(days=1)).isoformat())))
+        cur = nxt
+    for w_start, w_end in windows:
+        for page in range(1, UPCOMING_PAGES + 1):
+            data = get("/discover/movie", region=region, page=page, include_adult="false", sort_by="popularity.desc",
+                       with_release_type="2|3|4", **{"release_date.gte": w_start, "release_date.lte": w_end,
+                                                     "primary_release_date.gte": newest})
+            for r in data.get("results", []):
+                if r.get("id") not in seen and r.get("poster_path"):
+                    seen[r["id"]] = _summary(r, "movie")
+            if page >= (data.get("total_pages") or 1):
+                break
     out = []
     for m in seen.values():
         if not (start <= m["date"] <= end):          # festival premiere earlier: use the regional opening

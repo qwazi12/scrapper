@@ -489,8 +489,10 @@ def test_upcoming_is_new_films_in_the_next_three_months(monkeypatch):
     out = tmdb.upcoming_movies("US", today=dt.date(2026, 10, 2))
     assert [(m["title"], m["date"]) for m in out] == [
         ("Vampire Carnival", "2026-10-07"), ("Festival Darling", "2026-11-14"), ("Holiday Film", "2026-12-20")]
+    windows = [(c[1]["release_date.gte"], c[1]["release_date.lte"]) for c in calls if c[0] == "/discover/movie"]
+    assert windows == [("2026-10-02", "2026-10-31"), ("2026-11-01", "2026-11-30"),
+                       ("2026-12-01", "2026-12-31"), ("2027-01-01", "2027-01-02")]
     p = calls[0][1]
-    assert p["release_date.gte"] == "2026-10-02" and p["release_date.lte"] == "2027-01-02"
     assert p["primary_release_date.gte"] == "2026-04-02" and p["region"] == "US"
 
 
