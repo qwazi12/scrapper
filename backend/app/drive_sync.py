@@ -224,7 +224,8 @@ def sync_drive_to_queue(
         fields="nextPageToken, files(id, name)",
         pageSize=100
     ).execute()
-    subfolders = folders_result.get("files", [])
+    # Finished LongForm breakdowns are stored, not imported as clips.
+    subfolders = [f for f in folders_result.get("files", []) if f["name"].strip() != "LongForm Studio"]
 
     targets: List[Tuple[str, str]] = []
     if subfolders:

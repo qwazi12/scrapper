@@ -16,7 +16,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 };
 
 // Top-level pipelines only; Drive subfolders (@channels) show on each row.
-const PIPELINES = ["Movie Clips", "Abyss Declassified", "The ICK Room", "LongForm", "default"];
+// LongForm breakdowns live in their own SocialPilot section (mode="longform").
+const PIPELINES = ["Movie Clips", "Abyss Declassified", "The ICK Room", "default"];
+const LONGFORM = "LongForm";
 
 type SortKey = "position" | "id" | "title" | "channel" | "status" | "scheduled";
 const SORT_LABELS: Record<SortKey, string> = {
@@ -47,12 +49,13 @@ function fmtET(iso: string): string {
   }) + " ET";
 }
 
-export function QueuePanel({ onChange }: { onChange: () => void }) {
+export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void; mode?: "clips" | "longform" }) {
+  const longform = mode === "longform";
   const [allItems, setAllItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("review");
-  const [pipelineFilter, setPipelineFilter] = useState<string>("all");
+  const [pipelineFilter, setPipelineFilter] = useState<string>(longform ? LONGFORM : "all");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -179,7 +182,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
     try {
       // Always load all items for the selected pipeline/channel so badge counts are 100% accurate across all tabs
       const data = await api.queue(pipelineFilter, "all");
-      setAllItems(data);
+      setAllItems(longform ? data : data.filter((i) => i.pipeline !== LONGFORM));
     } catch {
       // silent
     } finally {
@@ -475,7 +478,9 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>📋 Posting Queue &amp; Content Calendar</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>
+            {longform ? "🎬 LongForm Breakdowns Queue" : "📋 Posting Queue & Content Calendar"}
+          </span>
           <span
             style={{
               padding: "2px 8px",
@@ -536,7 +541,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {/* Hierarchical Pipeline / Channel Dropdown */}
-          <select
+          {!longform && <select
             value={pipelineFilter}
             onChange={(e) => setPipelineFilter(e.target.value)}
             style={{
@@ -553,7 +558,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
             {PIPELINES.map((p) => (
               <option key={p} value={p}>📁 {p === "default" ? "Default" : p}</option>
             ))}
-          </select>
+          </select>}
 
           {/* Sort: field + direction */}
           <select
@@ -1485,7 +1490,7 @@ export function QueuePanel({ onChange }: { onChange: () => void }) {
                 <select value={bulkPipeline} onChange={(e) => setBulkPipeline(e.target.value)}
                   style={{ width: "100%", padding: 6, fontSize: 12 }}>
                   <option value="">(unchanged)</option>
-                  {PIPELINES.map((p) => (
+                  {(longform ? [LONGFORM] : PIPELINES).map((p) => (
                     <option key={p} value={p}>{p === "default" ? "Default" : p}</option>
                   ))}
                 </select>

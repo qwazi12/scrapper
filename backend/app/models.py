@@ -184,6 +184,7 @@ class StudioProject(Base):
     plan: Mapped[list | None] = mapped_column(JSON, nullable=True)       # sentence -> shot + timing
     render: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # output file + stats
     queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    drive: Mapped[dict | None] = mapped_column(JSON, nullable=True)      # LongForm Studio Drive copy: links, status
 
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

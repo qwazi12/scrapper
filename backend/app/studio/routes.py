@@ -16,7 +16,7 @@ from ..auth import require_token
 from ..config import settings
 from ..db import get_session
 from ..models import StudioProject
-from .. import costs, undo
+from .. import control, costs, undo
 from . import runner, tmdb
 
 # What a Studio undo restores (text/plan level; footage and shots are files).
@@ -56,6 +56,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
     if full:
         d.update(facts=p.facts, research=p.research, trailer=p.trailer, shots=p.shots,
                  script=p.script, plan=p.plan, render=p.render)
+    d["drive"] = p.drive
     return d
 
 
@@ -249,7 +250,31 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
     s.commit()
     logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id}",
                project=p.id, queue_item=item.id)
-    return {"queue_item_id": item.id, "status": item.status}
+    # Every breakdown sent to the queue is also kept in Drive (unless this render is already there).
+    drive_job = None
+    if (p.drive or {}).get("rendered_at") != p.render.get("rendered_at") or (p.drive or {}).get("status") != "saved":
+        drive_job = _start_drive(p)
+    return {"queue_item_id": item.id, "status": item.status, "drive_job_id": drive_job}
+
+
+def _start_drive(p: StudioProject) -> str | None:
+    from . import drive_store
+
+    if any(j.kind == "drive" for j in control.running("studio", p.id)):
+        return None
+    return drive_store.start(p.id, p.title)
+
+
+@router.post("/projects/{project_id}/drive")
+def save_to_drive(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Save (or re-save) the current render to the "LongForm Studio" Drive folder."""
+    p = _get(s, project_id)
+    if not p.render:
+        raise HTTPException(400, "Render the video first")
+    job_id = _start_drive(p)
+    if not job_id:
+        raise HTTPException(409, "Already saving to Drive")
+    return {"job_id": job_id}
 
 
 @router.get("/projects/{project_id}/file")

@@ -339,8 +339,11 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
     assert 3.8 <= r["seconds"] <= 4.3 and (root / r["thumbnail"]).exists()
 
 
-def test_publish_sends_render_to_queue_once(client):
+def test_publish_sends_render_to_queue_once(client, monkeypatch):
     from backend.app.models import QueueItem
+    from backend.app.studio import drive_store
+    started = []
+    monkeypatch.setattr(drive_store, "start", lambda pid, title: started.append(pid) or "job1")  # never real Drive
     pid = _new_project(script={"youtube_title": "Send Help Trailer Breakdown", "description": "d",
                                "tags": ["send help", "sam raimi"]})
     root = runner.project_dir(pid)
@@ -355,6 +358,7 @@ def test_publish_sends_render_to_queue_once(client):
     with SessionLocal() as s:
         it = s.get(QueueItem, a["queue_item_id"])
         assert it.pipeline == "LongForm" and it.tags == "#sendhelp #samraimi" and it.accounts == []
+    assert a["drive_job_id"] == "job1" and started == [pid, pid]  # not saved yet, so each publish retries Drive
 
 
 def test_publish_requires_a_render(client):
@@ -400,3 +404,61 @@ def test_redirect_links_are_resolved(monkeypatch):
                                       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"}]})
     s = out["sources"][0]
     assert s["url"] == "https://variety.com/real" and s["tier"] == "trusted" and s["domain"] == "variety.com"
+
+
+# --- LongForm → Drive -----------------------------------------------------------
+def test_drive_quota_error_is_explained():
+    from backend.app.studio import drive_store
+    msg = drive_store._explain(Exception("<HttpError 403 ... storageQuotaExceeded: Service Accounts do not have storage quota>"))
+    assert "Shared Drive" in msg and "LONGFORM_DRIVE_FOLDER_ID" in msg
+
+
+def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path):
+    from backend.app import drive_sync
+    from backend.app.models import QueueItem, StudioProject
+    from backend.app.studio import drive_store, runner as srunner
+
+    monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
+    (tmp_path / "final.mp4").write_bytes(b"x" * 10)
+    (tmp_path / "thumb.jpg").write_bytes(b"y")
+    item = QueueItem(title="t", status="review", pipeline="LongForm", accounts=[])
+    session.add(item)
+    session.flush()
+    p = StudioProject(tmdb_id=1, title="Send Help", render={"file": "final.mp4", "thumbnail": "thumb.jpg",
+                                                             "rendered_at": "r1"}, queue_item_id=item.id)
+    session.add(p)
+    session.commit()
+    uploaded = []
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: object())
+    monkeypatch.setattr(drive_store, "folder_id", lambda svc: "FOLDER")
+    monkeypatch.setattr(drive_store, "_upload", lambda svc, path, parent, name: (
+        uploaded.append((parent, name)) or {"id": f"id{len(uploaded)}", "webViewLink": f"https://drive/{len(uploaded)}"}))
+    info = drive_store.save(p.id)
+    session.expire_all()
+    assert info["status"] == "saved" and info["rendered_at"] == "r1" and len(uploaded) == 2
+    assert all(parent == "FOLDER" for parent, _ in uploaded) and uploaded[0][1].startswith("Send Help — Trailer Breakdown")
+    assert session.get(QueueItem, item.id).drive_link == "https://drive/1"
+
+
+def test_drive_save_failure_keeps_reason(session, monkeypatch, tmp_path):
+    from backend.app import drive_sync
+    from backend.app.models import StudioProject
+    from backend.app.studio import drive_store, runner as srunner
+
+    monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
+    (tmp_path / "final.mp4").write_bytes(b"x")
+    p = StudioProject(tmdb_id=1, title="X", render={"file": "final.mp4"})
+    session.add(p)
+    session.commit()
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: object())
+    monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
+
+    def boom(*a):
+        raise Exception("storageQuotaExceeded")
+
+    monkeypatch.setattr(drive_store, "_upload", boom)
+    with pytest.raises(drive_store.DriveStoreError):
+        drive_store.save(p.id)
+    session.expire_all()
+    d = session.get(StudioProject, p.id).drive
+    assert d["status"] == "error" and "Shared Drive" in d["error"]

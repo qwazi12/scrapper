@@ -518,7 +518,8 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
     removed = 0
     for item in expired:
         trashed = False
-        if item.drive_link:
+        # LongForm breakdowns stay in Drive permanently ("LongForm Studio" folder).
+        if item.drive_link and item.pipeline != "LongForm":
             try:
                 trashed = trash_drive_file(item.drive_link)
             except Exception as exc:

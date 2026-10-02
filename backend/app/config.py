@@ -119,6 +119,11 @@ class Settings(BaseSettings):
     tts_voice: str = "en-US-Chirp3-HD-Charon"
     studio_region: str = "US"            # release dates / calendar region
     studio_channel_name: str = "Screen Central"  # said in the closing call to action
+    # Finished breakdowns are kept in a "LongForm Studio" Drive folder. A service
+    # account has no storage of its own, so this must be a folder in a Shared
+    # Drive (service account = Content manager). Unset: "LongForm Studio" is
+    # found/created under the YouTube folder.
+    longform_drive_folder_id: str = ""
 
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod

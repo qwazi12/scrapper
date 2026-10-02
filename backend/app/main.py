@@ -841,6 +841,8 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
             )
         else:
             q = q.filter(QueueItem.pipeline == req.pipeline)
+    else:
+        q = q.filter(QueueItem.pipeline != "LongForm")  # LongForm has its own section; "all" means all clips
     if req.status and req.status != "all":
         q = q.filter(QueueItem.status == req.status)
 

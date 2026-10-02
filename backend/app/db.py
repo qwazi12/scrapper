@@ -41,6 +41,11 @@ def _migrate() -> None:
         if "publish_requests" not in sp_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE social_posts ADD COLUMN publish_requests JSON"))
+    if "studio_projects" in tables:
+        st_cols = {c["name"] for c in insp.get_columns("studio_projects")}
+        if "drive" not in st_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE studio_projects ADD COLUMN drive JSON"))
     if "queue_items" not in tables:
         return
     cols = {c["name"] for c in insp.get_columns("queue_items")}

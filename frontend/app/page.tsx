@@ -29,7 +29,7 @@ export default function Page() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
-  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "ingest" | "drive">("queue");
+  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   // Phones: the sidebar becomes a slide-out drawer so pages get the full width.
   const [isMobile, setIsMobile] = useState(false);
@@ -390,6 +390,19 @@ export default function Page() {
                   📋 Posting Queue ({readyQueueCount})
                 </button>
                 <button
+                  onClick={() => setSocialPilotTab("longform")}
+                  style={{
+                    background: socialPilotTab === "longform" ? "#7c2d12" : "transparent",
+                    color: socialPilotTab === "longform" ? "#fdba74" : "var(--text)",
+                    border: socialPilotTab === "longform" ? "1px solid #ea580c" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  🎬 LongForm Breakdowns
+                </button>
+                <button
                   onClick={() => setSocialPilotTab("ingest")}
                   style={{
                     background: socialPilotTab === "ingest" ? "#1e3a8a" : "transparent",
@@ -418,7 +431,8 @@ export default function Page() {
               </div>
             </div>
 
-            {socialPilotTab === "queue" && <QueuePanel onChange={refresh} />}
+            {socialPilotTab === "queue" && <QueuePanel key="clips" onChange={refresh} />}
+            {socialPilotTab === "longform" && <QueuePanel key="longform" mode="longform" onChange={refresh} />}
             {socialPilotTab === "ingest" && <ChannelIngestPanel onIngested={refresh} />}
             {socialPilotTab === "drive" && <DrivePanel onIngested={refresh} />}
           </div>
