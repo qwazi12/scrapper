@@ -217,7 +217,9 @@ def render(project_id: int) -> str:
     if not plan:
         raise RuntimeError("Run 'plan' first")
     root = project_dir(project_id)
-    out_dir = root / "render"
+    # Build in render_new/ and swap it in only when finished: a stopped or failed
+    # re-render must never delete the last good video (it did until 2026-10-02).
+    out_dir = root / "render_new"
     if out_dir.exists():
         shutil.rmtree(out_dir)
     segs_dir = out_dir / "segments"
@@ -340,6 +342,14 @@ def render(project_id: int) -> str:
         static_final.unlink(missing_ok=True)
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
     video.unlink(missing_ok=True)
+    live = root / "render"
+    if live.exists():
+        shutil.rmtree(live)
+    out_dir.rename(live)
+    info["file"] = info["file"].replace("render_new/", "render/", 1)
+    info["thumbnail"] = info["thumbnail"].replace("render_new/", "render/", 1)
+    if motion_info and motion_info.get("file"):
+        motion_info["file"] = motion_info["file"].replace("render_new/", "render/", 1)
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         p.render = info

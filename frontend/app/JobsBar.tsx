@@ -31,9 +31,11 @@ export function JobsBar({ scope }: { scope?: string }) {
     };
     load();
     const t = setInterval(load, 3000);
+    document.addEventListener("visibilitychange", load); // show jobs at once when the tab comes back
     return () => {
       alive = false;
       clearInterval(t);
+      document.removeEventListener("visibilitychange", load);
     };
   }, []);
 

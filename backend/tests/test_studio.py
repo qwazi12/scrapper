@@ -641,3 +641,24 @@ def test_drive_refuses_my_drive_folder_with_a_clear_reason(session, monkeypatch,
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
     with pytest.raises(drive_store.DriveStoreError, match="My Drive, not a Shared Drive"):
         drive_store.save(p.id)
+
+
+def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_video):
+    from backend.app import control
+    pid, root = _render_project(three_scene_video)
+    monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    monkeypatch.setattr(stage_render, "motion_mode", lambda: "off")
+    runner.run_one(pid, "render")
+    with SessionLocal() as s:
+        first = s.get(StudioProject, pid).render
+    assert (root / first["file"]).exists() and first["file"] == "render/final.mp4"
+
+    def stop_midway(*a, **kw):
+        raise control.Cancelled()
+
+    monkeypatch.setattr(stage_render, "seg_clip", stop_midway)   # the re-render is stopped partway
+    with pytest.raises(control.Cancelled):
+        runner.run_one(pid, "render")
+    with SessionLocal() as s:
+        assert s.get(StudioProject, pid).render == first
+    assert (root / first["file"]).exists()                         # the last good video survived
