@@ -128,6 +128,15 @@ class Settings(BaseSettings):
     # found/created under the YouTube folder.
     longform_drive_folder_id: str = ""
 
+    # --- Database Backups -----------------------------------------------
+    backup_enabled: bool = True
+    backup_hour: int = 3                    # 3:00 AM Eastern
+    backup_timezone: str = "America/New_York"
+    backup_keep_local: int = 7              # local copies on /data/backups/
+    backup_keep_drive: int = 30             # off-disk copies in Google Drive
+    # Shared Drive "Scrapper Backups" folder ID (or empty to stay disk-only)
+    backup_drive_folder_id: str = "14z17C-cYIqUK8teqeOOVtnITx0GHHl8E"
+
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod
 

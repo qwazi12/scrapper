@@ -22,8 +22,11 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 def init_db() -> None:
     from . import models  # noqa: F401  (register tables)
+    from . import backup
 
     Base.metadata.create_all(engine)
+    # Automatically take a pre-migration snapshot before running additive migrations
+    backup.create_pre_migration_backup()
     _migrate()
 
 

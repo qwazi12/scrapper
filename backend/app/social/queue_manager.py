@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .. import logbus
+from .. import backup, logbus
 from ..config import settings
 from ..db import SessionLocal
 from ..models import AppSetting, Clip, Compilation, QueueItem, SocialPost
@@ -582,6 +582,12 @@ def run_scheduler_tick():
         if _last_archive_sweep is None or now - _last_archive_sweep >= ARCHIVE_SWEEP_EVERY:
             _last_archive_sweep = now
             sweep_archive(s, now)
+
+        # Trigger 3:00 AM nightly database snapshot (safe lock-free SQLite online backup)
+        try:
+            backup.maybe_run_nightly_backup()
+        except Exception as exc:
+            logger.error("Error checking nightly backup in scheduler: %s", exc)
 
 
 _scheduler_running = False

@@ -146,6 +146,60 @@ export type TTSGenerateResponse = {
   text: string;
 };
 
+export type BackupCopy = {
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  download_url: string;
+};
+
+export type BackupStatus = {
+  ok: boolean;
+  enabled: boolean;
+  database_type: string;
+  last_backup: {
+    filename: string;
+    tag: string;
+    created_at_local: string;
+    uncompressed_bytes: number;
+    compressed_bytes: number;
+    sha256: string;
+    duration_seconds: number;
+    drive?: {
+      uploaded: boolean;
+      status: string;
+      link?: string;
+      error?: string;
+    };
+  } | null;
+  is_stale: boolean;
+  warning: string | null;
+  local_copies_count: number;
+  local_copies: BackupCopy[];
+  drive_folder_id: string;
+  drive_status: string;
+  next_scheduled_run: string;
+  retention: {
+    keep_local: number;
+    keep_drive_days: number;
+  };
+};
+
+export type BackupNowResponse = {
+  ok: boolean;
+  filename: string;
+  tag: string;
+  compressed_bytes: number;
+  uncompressed_bytes: number;
+  duration_seconds: number;
+  drive: {
+    uploaded: boolean;
+    status: string;
+    link?: string;
+    error?: string;
+  };
+};
+
 export type BulkAiStatus = {
   running: boolean;
   total: number;
@@ -736,6 +790,10 @@ export const api = {
         body: JSON.stringify(opts || {}),
       }
     ),
+
+  backupStatus: () => req<BackupStatus>("/api/backup/status", { headers: headers(false) }),
+
+  backupNow: () => req<BackupNowResponse>("/api/backup/now", { method: "POST", headers: headers() }),
 };
 
 /** Days left before the retention sweep deletes this item ("2d", "today", null). */

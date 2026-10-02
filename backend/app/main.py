@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..core import engine
-from . import cleanup, control, logbus, rescan, undo, worker
+from . import backup, cleanup, control, logbus, rescan, undo, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
@@ -1023,6 +1023,42 @@ def undo_last(req: UndoIn, s: Session = Depends(get_session)) -> dict:
         queue_manager.load_schedule(s)
     logbus.log("warning", "undo", f"Undid: {label}", scope=req.scope)
     return {"undone": label, "stack": undo.stack(s, req.scope)}
+
+
+# --- Database Backups & Snapshots ---
+
+@app.get("/api/backup/status", dependencies=_AUTH)
+def get_backup_status() -> dict:
+    """Return status of automated database backups, schedule, and recent files."""
+    return backup.get_backup_status()
+
+
+@app.post("/api/backup/now", dependencies=_AUTH)
+def create_backup_now() -> dict:
+    """Trigger an immediate lock-safe database snapshot and off-disk upload."""
+    try:
+        return backup.create_backup(tag="manual", upload_to_drive=True)
+    except backup.BackupError as exc:
+        raise HTTPException(502, f"Database backup failed: {exc}")
+    except Exception as exc:
+        raise HTTPException(500, f"Unexpected backup error: {exc}")
+
+
+@app.get("/api/backup/download/{filename}", dependencies=_AUTH)
+def download_backup_file(filename: str):
+    """Download a verified, compressed .db.gz backup snapshot."""
+    safe_name = pathlib.Path(filename).name
+    if not (safe_name.startswith("scrapper_") and safe_name.endswith(".db.gz")):
+        raise HTTPException(400, "Invalid backup filename")
+    file_path = backup.get_local_backups_dir() / safe_name
+    if not file_path.is_file():
+        raise HTTPException(404, "Backup file not found")
+    return FileResponse(
+        file_path,
+        media_type="application/gzip",
+        filename=safe_name,
+        headers={"Cache-Control": "no-store", "Accept-Ranges": "bytes"},
+    )
 
 
 # --- Stop: every long-running process ------------------------------------------

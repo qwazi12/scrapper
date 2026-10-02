@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, apiBase, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
+import { api, apiBase, BackupStatus, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, token, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 
@@ -138,6 +138,179 @@ const card: React.CSSProperties = {
 
 const h2: React.CSSProperties = { margin: "0 0 10px", fontSize: 14, fontWeight: 700 };
 
+function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProperties }) {
+  const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [backingUp, setBackingUp] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function load() {
+    api.backupStatus().then(setStatus).catch((e) => setMsg(`Could not load backups: ${e.message || e}`));
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleBackupNow() {
+    setBackingUp(true);
+    setMsg("");
+    try {
+      const res = await api.backupNow();
+      setMsg(`✓ Backup created: ${res.filename} (${(res.compressed_bytes / 1024).toFixed(1)} KB)`);
+      load();
+    } catch (e: any) {
+      setMsg(`✕ Backup failed: ${e.message || e}`);
+    } finally {
+      setBackingUp(false);
+    }
+  }
+
+  const tok = token();
+
+  return (
+    <div style={card}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h2 style={{ ...h2, margin: 0 }}>💾 Database Backups &amp; Safety</h2>
+          {status && (
+            <span
+              style={{
+                fontSize: 10,
+                padding: "2px 8px",
+                borderRadius: 8,
+                fontWeight: 700,
+                background: status.is_stale ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)",
+                color: status.is_stale ? "#f87171" : "#34d399",
+              }}
+            >
+              {status.is_stale ? "⚠️ Backup Overdue" : "● Healthy"}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={handleBackupNow}
+            disabled={backingUp}
+            style={{
+              fontSize: 11,
+              padding: "4px 12px",
+              background: "#2563eb",
+              color: "#fff",
+              fontWeight: 600,
+              border: "1px solid #1d4ed8",
+            }}
+          >
+            {backingUp ? "⏳ Creating Snapshot…" : "💾 Backup Now"}
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div style={{ fontSize: 11, marginBottom: 10, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>
+          {msg}
+        </div>
+      )}
+
+      {status?.warning && (
+        <div style={{ fontSize: 11, background: "rgba(245, 158, 11, 0.15)", border: "1px solid #d97706", color: "#fbbf24", padding: "6px 10px", borderRadius: 6, marginBottom: 12 }}>
+          ⚠️ {status.warning}
+        </div>
+      )}
+
+      <p style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
+        Lock-free SQLite snapshots taken nightly at <b>3:00 am Eastern</b> with automated <code>PRAGMA integrity_check</code>,
+        gzip compression, <b>7-day local disk retention</b> on Railway, and <b>30-day off-disk retention</b> in Google Drive.
+      </p>
+
+      {status && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 14 }}>
+          <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Database File</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+              {status.database_type.toUpperCase()} <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>(/data/scrapper.db)</span>
+            </div>
+          </div>
+
+          <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Local Retention</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+              {status.local_copies_count} / {status.retention.keep_local} daily snapshots <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>(/data/backups/)</span>
+            </div>
+          </div>
+
+          <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Google Drive Off-Disk</div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2, color: status.drive_status === "synced" ? "#34d399" : "#fbbf24" }}>
+              {status.drive_status === "synced"
+                ? "✓ Synced (30-day retention)"
+                : status.drive_status.startsWith("Local disk")
+                ? "⚠️ Local disk only (Shared Drive pending)"
+                : status.drive_status}
+            </div>
+          </div>
+
+          <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+            <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Next Automated Snapshot</div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+              {new Date(status.next_scheduled_run).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })} Eastern
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Backups List */}
+      {status && status.local_copies.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase" }}>
+            Available Snapshots for 1-Click Restore &amp; Download:
+          </div>
+          <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
+            {status.local_copies.map((c, idx) => (
+              <div
+                key={c.filename}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "7px 12px",
+                  fontSize: 11,
+                  borderBottom: idx < status.local_copies.length - 1 ? "1px solid var(--border)" : "none",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono" style={{ color: "#38bdf8", fontWeight: 600 }}>{c.filename}</span>
+                  <span style={{ color: "var(--muted)", fontSize: 10 }}>
+                    ({(c.size_bytes / 1024).toFixed(1)} KB)
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ color: "var(--muted)" }}>
+                    {new Date(c.created_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Eastern
+                  </span>
+                  <a
+                    href={`${apiBase()}${c.download_url}${tok ? `?token=${encodeURIComponent(tok)}` : ""}`}
+                    download={c.filename}
+                    style={{ color: "var(--accent)", textDecoration: "underline", fontSize: 11 }}
+                  >
+                    ⬇ Download .db.gz
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 12, padding: "8px 12px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11, color: "var(--muted)" }}>
+        🛠️ <b>Safe Recovery CLI:</b> To dry-run inspect or restore a backup on Railway, run:
+        <code style={{ display: "block", marginTop: 4, color: "#38bdf8" }}>python scripts/restore_db.py --from /data/backups/&lt;filename&gt; --confirm</code>
+      </div>
+    </div>
+  );
+}
+
 /** Read-only view of what the server is configured to do: schedule, accounts, AI. */
 export function SettingsOverview() {
   const [sched, setSched] = useState<ScheduleInfo | null>(null);
@@ -259,6 +432,7 @@ export function SettingsOverview() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SpendingCard card={card} h2={h2} />
+      <BackupCard card={card} h2={h2} />
 
       {/* Posting schedule */}
       <div style={card}>
