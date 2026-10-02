@@ -330,3 +330,10 @@ def test_publish_sends_render_to_queue_once(client):
 def test_publish_requires_a_render(client):
     pid = _new_project()
     assert client.post(f"/api/studio/projects/{pid}/publish").status_code == 400
+
+
+def test_imdb_check_endpoint(client, monkeypatch):
+    monkeypatch.setattr(imdb, "list_videos", lambda i: [{"id": "vi1", "type": "Trailer"}])
+    monkeypatch.setattr(imdb, "mp4_url", lambda v: "https://cdn/x.mp4")
+    d = client.get("/api/studio/imdb-videos", params={"imdb_id": "tt1"}).json()
+    assert d["first_has_mp4"] is True and d["videos"][0]["id"] == "vi1"

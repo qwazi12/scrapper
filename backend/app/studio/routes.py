@@ -75,6 +75,19 @@ def _tmdb_call(fn, *args):
         raise HTTPException(exc.status_code if exc.status_code < 500 else 502, exc.message)
 
 
+@router.get("/imdb-videos")
+def imdb_videos(imdb_id: str) -> dict[str, Any]:
+    """Read-only check: which official videos IMDb lists for a title, and
+    whether a direct MP4 link can be fetched from this server."""
+    from . import imdb
+    try:
+        vids = imdb.list_videos(imdb_id)
+        playable = bool(vids) and bool(imdb.mp4_url(vids[0]["id"]))
+    except imdb.IMDbError as exc:
+        raise HTTPException(502, str(exc))
+    return {"videos": vids, "first_has_mp4": playable}
+
+
 @router.get("/calendar")
 def calendar() -> dict[str, Any]:
     return _tmdb_call(tmdb.calendar)
