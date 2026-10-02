@@ -109,25 +109,37 @@ _cal_cache: dict[str, Any] = {}
 CAL_TTL = 3 * 3600
 
 
-def _regional_date(tmdb_id: int, region: str, start: str, end: str) -> str | None:
-    """The film's theatrical/digital date in `region` inside the window, if any."""
+RELEASE_KIND = {2: "limited", 3: "theaters", 4: "digital"}
+
+
+def us_opening(tmdb_id: int, region: str, start: str, end: str) -> dict[str, Any] | None:
+    """The film's first `region` release inside [start, end] — theatrical (wide or
+    limited) or digital — from TMDB's per-country release dates, plus whether it
+    was already in theaters before the window (then the window date is just its
+    digital or wide release, and the calendar says so)."""
     data = get(f"/movie/{tmdb_id}/release_dates")
-    for c in data.get("results", []):
-        if c.get("iso_3166_1") == region:
-            dates = sorted(d["release_date"][:10] for d in c.get("release_dates", [])
-                           if d.get("type") in (2, 3, 4) and start <= d["release_date"][:10] <= end)
-            return dates[0] if dates else None
-    return None
+    c = next((c for c in data.get("results", []) if c.get("iso_3166_1") == region), None)
+    rel = sorted((d["release_date"][:10], d["type"]) for d in (c or {}).get("release_dates", [])
+                 if d.get("type") in RELEASE_KIND and d.get("release_date"))
+    inside = [r for r in rel if start <= r[0] <= end]
+    if not inside:
+        return None
+    date, typ = inside[0]
+    earlier = [r for r in rel if r[0] < start and r[1] in (2, 3)]
+    return {"date": date, "release": RELEASE_KIND[typ], "in_theaters_since": earlier[0][0] if earlier else None}
 
 
 def upcoming_movies(region: str, today: datetime.date | None = None) -> list[dict[str, Any]]:
     """New films opening in `region` from today to ~3 months out, by date.
 
     /movie/upcoming is not used: it lists theatrical RE-releases too, so 1959
-    and 1980 films showed up. Here a film must open (theatrical or digital) in
-    the window AND be new (first released worldwide no earlier than 6 months
-    ago, which still allows festival premieres). The shown date is the
-    regional opening, not a festival date."""
+    and 1980 films showed up. Discover finds candidates (a regional theatrical or
+    digital release in the window, first released worldwide ≤ 6 months ago);
+    then every film's own US release record sets the date shown and its kind
+    (theaters / limited / digital) — so the date is the US date, never a
+    festival or foreign one (audit 2026-10-02: 121/121 matched)."""
+    from concurrent.futures import ThreadPoolExecutor
+
     today = today or datetime.date.today()
     start, end = today.isoformat(), (today + datetime.timedelta(days=UPCOMING_DAYS)).isoformat()
     newest = (today - datetime.timedelta(days=183)).isoformat()
@@ -148,15 +160,16 @@ def upcoming_movies(region: str, today: datetime.date | None = None) -> list[dic
                     seen[r["id"]] = _summary(r, "movie")
             if page >= (data.get("total_pages") or 1):
                 break
-    out = []
-    for m in seen.values():
-        if not (start <= m["date"] <= end):          # festival premiere earlier: use the regional opening
-            try:
-                m["date"] = _regional_date(m["tmdb_id"], region, start, end) or ""
-            except TMDBError:
-                m["date"] = ""
-        if m["date"]:
-            out.append(m)
+
+    def opening(m: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            o = us_opening(m["tmdb_id"], region, start, end)
+        except TMDBError:
+            return None
+        return {**m, **o} if o else None
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        out = [m for m in pool.map(opening, list(seen.values())) if m]
     return sorted(out, key=lambda x: (x["date"], -x["popularity"]))
 
 

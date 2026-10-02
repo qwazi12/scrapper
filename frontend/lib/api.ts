@@ -197,6 +197,8 @@ export type StudioTitle = {
   overview: string;
   poster: string | null;
   popularity: number;
+  release?: "theaters" | "limited" | "digital";   // upcoming movies: the US opening shown
+  in_theaters_since?: string | null;               // already in theaters; the date shown is digital/wide
 };
 
 export type StudioShot = {

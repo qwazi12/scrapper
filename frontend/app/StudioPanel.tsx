@@ -176,6 +176,7 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [month, setMonth] = useState("all");
+  const [kind, setKind] = useState<"all" | "cinema" | "digital">("all");
 
   useEffect(() => {
     if (status?.tmdb) api.studioCalendar().then(setCal).catch((e) => setErr(e.message || String(e)));
@@ -210,7 +211,12 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
   const monthLabel = (m: string) =>
     new Date(`${m}-15T12:00:00Z`).toLocaleString("en-US", { month: "long", year: "numeric" });
   const months = byMonth ? [...new Set((cal?.upcoming_movies ?? []).map((t) => monthOf(t.date)).filter(Boolean))] : [];
-  const list = (results ?? cal?.[tab] ?? []).filter((t) => !byMonth || month === "all" || monthOf(t.date) === month);
+  const list = (results ?? cal?.[tab] ?? []).filter(
+    (t) =>
+      !byMonth ||
+      ((month === "all" || monthOf(t.date) === month) &&
+        (kind === "all" || (kind === "digital" ? t.release === "digital" : t.release !== "digital")))
+  );
   return (
     <div style={card}>
       <h2 style={h2}>Start a new breakdown</h2>
@@ -252,6 +258,13 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
               {m === "all" ? "All" : monthLabel(m).split(" ")[0]}
             </button>
           ))}
+          <span style={{ ...muted, marginLeft: 8 }}>Release:</span>
+          {([["all", "All"], ["cinema", "In theaters"], ["digital", "Digital / streaming"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setKind(k)}
+              style={{ fontSize: 11, padding: "2px 9px", background: kind === k ? "var(--chip)" : "transparent" }}>
+              {label}
+            </button>
+          ))}
         </div>
       )}
       {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
@@ -271,6 +284,13 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
             )}
             <b style={{ fontSize: 12 }}>{t.title}</b>
             <span style={muted}>{t.media_type === "tv" ? "TV" : "Movie"} · {fmtDate(t.date)}</span>
+            {t.release && (
+              <span style={{ ...muted, color: t.release === "digital" ? "#93c5fd" : t.release === "limited" ? "#fcd34d" : "#86efac" }}
+                title={t.in_theaters_since ? `Already in US theaters since ${fmtDate(t.in_theaters_since)}` : undefined}>
+                {t.release === "theaters" ? "🎬 In theaters" : t.release === "limited" ? "🎬 Limited release" : "📺 Digital / streaming"}
+                {t.in_theaters_since ? ` · in theaters since ${fmtDate(t.in_theaters_since)}` : ""}
+              </span>
+            )}
             <button className="primary" style={{ fontSize: 11 }} disabled={busy} onClick={() => create(t)}>
               Make breakdown
             </button>

@@ -484,26 +484,40 @@ def test_drive_save_failure_keeps_reason(session, monkeypatch, tmp_path):
 def test_upcoming_is_new_films_in_the_next_three_months(monkeypatch):
     import datetime as dt
     calls = []
+    us = {  # TMDB per-country release dates (type 2 limited, 3 theatrical, 4 digital)
+        1: [(1, "2026-09-01"), (3, "2026-10-07")],
+        2: [(1, "2026-09-05"), (2, "2026-11-14"), (3, "2026-11-21")],          # festival, then limited
+        3: [(3, "2026-11-01")],
+        4: [(3, "2026-12-20")],
+        5: [(3, "2026-09-12"), (4, "2026-10-20")],                              # already out; digital in window
+        6: [(1, "2026-10-10")],                                                  # premiere only: not listed
+    }
 
     def fake_get(path, **params):
         calls.append((path, params))
         if path == "/discover/movie":
+            if params["release_date.gte"] != "2026-10-02":
+                return {"total_pages": 1, "results": []}
             return {"total_pages": 1, "results": [
-                {"id": 1, "title": "Vampire Carnival", "release_date": "2026-10-07", "poster_path": "/a.jpg", "popularity": 50},
+                {"id": 1, "title": "Vampire Carnival", "release_date": "2026-09-01", "poster_path": "/a.jpg", "popularity": 50},
                 {"id": 2, "title": "Festival Darling", "release_date": "2026-09-05", "poster_path": "/b.jpg", "popularity": 80},
                 {"id": 3, "title": "No Poster", "release_date": "2026-11-01", "poster_path": None, "popularity": 10},
                 {"id": 4, "title": "Holiday Film", "release_date": "2026-12-20", "poster_path": "/d.jpg", "popularity": 30},
+                {"id": 5, "title": "Streaming Now", "release_date": "2026-09-12", "poster_path": "/e.jpg", "popularity": 20},
+                {"id": 6, "title": "Premiere Only", "release_date": "2026-10-10", "poster_path": "/f.jpg", "popularity": 5},
             ]}
-        if path == "/movie/2/release_dates":
-            return {"results": [{"iso_3166_1": "US", "release_dates": [
-                {"type": 1, "release_date": "2026-09-05T00:00:00.000Z"},
-                {"type": 3, "release_date": "2026-11-14T00:00:00.000Z"}]}]}
-        raise AssertionError(path)
+        mid = int(path.split("/")[2])
+        return {"results": [{"iso_3166_1": "GB", "release_dates": [{"type": 3, "release_date": "2026-10-03T00:00:00.000Z"}]},
+                            {"iso_3166_1": "US", "release_dates": [
+                                {"type": t, "release_date": f"{d}T00:00:00.000Z"} for t, d in us[mid]]}]}
 
     monkeypatch.setattr(tmdb, "get", fake_get)
     out = tmdb.upcoming_movies("US", today=dt.date(2026, 10, 2))
-    assert [(m["title"], m["date"]) for m in out] == [
-        ("Vampire Carnival", "2026-10-07"), ("Festival Darling", "2026-11-14"), ("Holiday Film", "2026-12-20")]
+    assert [(m["title"], m["date"], m["release"], m["in_theaters_since"]) for m in out] == [
+        ("Vampire Carnival", "2026-10-07", "theaters", None),
+        ("Streaming Now", "2026-10-20", "digital", "2026-09-12"),
+        ("Festival Darling", "2026-11-14", "limited", None),
+        ("Holiday Film", "2026-12-20", "theaters", None)]
     windows = [(c[1]["release_date.gte"], c[1]["release_date.lte"]) for c in calls if c[0] == "/discover/movie"]
     assert windows == [("2026-10-02", "2026-10-31"), ("2026-11-01", "2026-11-30"),
                        ("2026-12-01", "2026-12-31"), ("2027-01-01", "2027-01-02")]
