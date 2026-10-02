@@ -242,84 +242,95 @@ def sync_drive_to_queue(
     skipped_count = 0
     channels_summary = []
 
-    from . import control
-    for fid, channel_name in targets:
-        control.check()
-        control.progress(f"scanning {channel_name}")
-        video_query = (
-            f"'{fid}' in parents and trashed = false and "
-            f"(mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.webm')"
-        )
+    from . import control, undo
+    created_ids: list[int] = []
+    new_rows: list = []
+    try:
+      for fid, channel_name in targets:
+          control.check()
+          control.progress(f"scanning {channel_name}")
+          video_query = (
+              f"'{fid}' in parents and trashed = false and "
+              f"(mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.webm')"
+          )
 
-        page_token = None
-        channel_videos = []
-        while True:
-            resp = service.files().list(
-                q=video_query,
-                fields="nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, size)",
-                pageToken=page_token,
-                pageSize=100
-            ).execute()
-            channel_videos.extend(resp.get("files", []))
-            page_token = resp.get("nextPageToken")
-            if not page_token:
-                break
+          page_token = None
+          channel_videos = []
+          while True:
+              resp = service.files().list(
+                  q=video_query,
+                  fields="nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, size)",
+                  pageToken=page_token,
+                  pageSize=100
+              ).execute()
+              channel_videos.extend(resp.get("files", []))
+              page_token = resp.get("nextPageToken")
+              if not page_token:
+                  break
 
-        total_scanned += len(channel_videos)
-        ch_added = 0
-        ch_skipped = 0
+          total_scanned += len(channel_videos)
+          ch_added = 0
+          ch_skipped = 0
 
-        for f in channel_videos:
-            file_id = f["id"]
-            name = f["name"]
-            web_link = f.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
-            thumb = f.get("thumbnailLink")
+          for f in channel_videos:
+              file_id = f["id"]
+              name = f["name"]
+              web_link = f.get("webViewLink") or f"https://drive.google.com/file/d/{file_id}/view"
+              thumb = f.get("thumbnailLink")
 
-            existing = (
-                db_session.query(QueueItem)
-                .filter(
-                    (QueueItem.drive_link == web_link) |
-                    ((QueueItem.video_name == name) & (QueueItem.pipeline == channel_name))
-                )
-                .first()
-            )
+              existing = (
+                  db_session.query(QueueItem)
+                  .filter(
+                      (QueueItem.drive_link == web_link) |
+                      ((QueueItem.video_name == name) & (QueueItem.pipeline == channel_name))
+                  )
+                  .first()
+              )
 
-            if existing:
-                # Update source if it was missing full folder path
-                if existing.source != f"{parent_name} / {channel_name}":
-                    existing.source = f"{parent_name} / {channel_name}"
-                ch_skipped += 1
-                skipped_count += 1
-                continue
+              if existing:
+                  # Update source if it was missing full folder path
+                  if existing.source != f"{parent_name} / {channel_name}":
+                      existing.source = f"{parent_name} / {channel_name}"
+                  ch_skipped += 1
+                  skipped_count += 1
+                  continue
 
-            title, tags = clean_video_title(name)
-            item_status = "ready" if auto_approve else "review"
-            next_position += 1
+              title, tags = clean_video_title(name)
+              item_status = "ready" if auto_approve else "review"
+              next_position += 1
 
-            new_item = QueueItem(
-                pipeline=channel_name,
-                video_name=name,
-                drive_link=web_link,
-                thumb_path=thumb,
-                source=f"{parent_name} / {channel_name}",
-                title=title,
-                description=title,
-                tags=tags,
-                status=item_status,
-                position=next_position,
-            )
-            db_session.add(new_item)
-            ch_added += 1
-            added_count += 1
+              new_item = QueueItem(
+                  pipeline=channel_name,
+                  video_name=name,
+                  drive_link=web_link,
+                  thumb_path=thumb,
+                  source=f"{parent_name} / {channel_name}",
+                  title=title,
+                  description=title,
+                  tags=tags,
+                  status=item_status,
+                  position=next_position,
+              )
+              db_session.add(new_item)
+              new_rows.append(new_item)
+              ch_added += 1
+              added_count += 1
 
-        db_session.commit()
-        channels_summary.append({
-            "channel": channel_name,
-            "folder": f"{parent_name} / {channel_name}",
-            "found": len(channel_videos),
-            "added": ch_added,
-            "skipped": ch_skipped
-        })
+          db_session.commit()
+          created_ids.extend(r.id for r in new_rows)
+          new_rows.clear()
+          channels_summary.append({
+              "channel": channel_name,
+              "folder": f"{parent_name} / {channel_name}",
+              "found": len(channel_videos),
+              "added": ch_added,
+              "skipped": ch_skipped
+          })
+    finally:
+        # Undo point for whatever was added, even if the sync was stopped midway.
+        if created_ids:
+            undo.add_created(db_session, "queue", f"Drive sync added {len(created_ids)} videos", created_ids)
+            db_session.commit()
 
     msg = f"Synced {added_count} new video items across {len(targets)} channel(s). ({skipped_count} existing)"
     logbus.log("info", "drive_sync_success", msg)
@@ -393,6 +404,7 @@ def ingest_channel_to_drive(
     }
 
     results_added = []
+    ingest_ids: list[int] = []
     try:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -432,6 +444,7 @@ def ingest_channel_to_drive(
             )
             db_session.add(item)
             db_session.commit()  # per file: a Stop never leaves a Drive upload without its queue row
+            ingest_ids.append(item.id)
             results_added.append({
                 "name": fname,
                 "title": title,
@@ -444,6 +457,10 @@ def ingest_channel_to_drive(
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        if ingest_ids:  # undo removes the queue rows (the Drive files stay)
+            from . import undo
+            undo.add_created(db_session, "queue", f"Channel ingest added {len(ingest_ids)} videos", ingest_ids)
+            db_session.commit()
 
     return {
         "ok": True,

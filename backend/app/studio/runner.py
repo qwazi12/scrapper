@@ -62,6 +62,15 @@ def run_one(project_id: int, name: str) -> str:
     """Run a single stage synchronously (used by the thread and by tests)."""
     if name not in STAGES:
         raise ValueError(f"Unknown stage '{name}'. Stages: {', '.join(STAGES)}")
+    if name in ("script", "plan"):
+        # Re-running these replaces text/plan the owner may have edited: keep an undo point.
+        from .. import undo
+        with SessionLocal() as s:
+            p = s.get(StudioProject, project_id)
+            if p is not None and (p.script or p.plan):
+                undo.record(s, f"studio:{project_id}", f"Re-run {name}", rows=[p], model="studio_projects",
+                            fields=["script", "plan", "render", "target_minutes"])
+                s.commit()
     _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
     logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)
     try:

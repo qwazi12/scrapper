@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..core import engine
-from . import cleanup, control, logbus, rescan, worker
+from . import cleanup, control, logbus, rescan, undo, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
@@ -644,6 +644,8 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1,
     )
     s.add(item)
+    s.flush()
+    undo.add_created(s, "queue", f"Add '{(item.title or '')[:40]}' to the queue", [item.id])
     s.commit()
     s.refresh(item)
     logbus.log("info", "queue_created", f"Queue item #{item.id} ('{item.title[:40]}') [{item.status}]")
@@ -655,6 +657,7 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    undo.record(s, "queue", f"Edit #{item.id} '{(item.title or '')[:40]}'", rows=[item])
 
     if req.title is not None:
         item.title = req.title
@@ -694,6 +697,7 @@ def approve_queue_item(item_id: int, s: Session = Depends(get_session)):
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    undo.record(s, "queue", f"Approve #{item.id}", rows=[item])
     item.status = "ready"
     s.commit()
     s.refresh(item)
@@ -724,6 +728,7 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
         res = await social_metadata.generate_social_metadata(clip_titles, strict=True)
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI generation failed: {exc}")
+    undo.record(s, "queue", f"AI rewrite of #{item.id}", rows=[item])
     ai_bulk.apply_ai(item, res)
     s.commit()
     s.refresh(item)
@@ -735,6 +740,7 @@ def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    undo.record(s, "queue", f"Delete #{item.id} '{(item.title or '')[:40]}'", rows=[item])
     s.delete(item)
     s.commit()
     return {"deleted": item_id}
@@ -744,6 +750,10 @@ def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
 def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -> dict:
     items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
     count = len(items)
+    what = {"approve": "Approve", "review": "Set to Review", "archive": "Archive", "posted": "Mark posted",
+            "change_status": f"Set status {req.target_status}", "set_accounts": "Change targets",
+            "edit": "Mass edit", "delete": "Delete"}.get(req.action, req.action)
+    undo.record(s, "queue", f"{what} on {count} video{'s' if count != 1 else ''}", rows=items)
 
     if req.action == "approve":
         for it in items:
@@ -835,6 +845,7 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
     items = q.all()
     if not items:
         return {"ok": True, "count": 0, "message": "No items to shuffle"}
+    undo.record(s, "queue", f"Mix & Shuffle ({req.mode}) of {len(items)} videos", rows=items)
 
     if req.mode == "round_robin":
         # Group by channel/pipeline
@@ -877,6 +888,52 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
     s.commit()
     logbus.log("info", "queue_shuffled", f"Shuffled {len(items)} items using mode '{req.mode}'")
     return {"ok": True, "count": len(items), "mode": req.mode}
+
+
+# --- Undo -----------------------------------------------------------------------
+def _snapshot_setting(s: Session, key: str, label: str) -> None:
+    from .models import AppSetting
+    row = s.get(AppSetting, key)
+    if row:
+        undo.record(s, "settings", label, rows=[row], model="app_settings")
+    else:
+        undo.add_created(s, "settings", label, [key], model="app_settings")
+
+
+class UndoIn(BaseModel):
+    scope: str
+
+
+def _undo_guard(scope: str) -> None:
+    if scope == "queue" and ai_bulk.status.get("running"):
+        raise HTTPException(409, "An AI rewrite is still running — stop it or wait, then undo")
+    if scope.startswith("studio:"):
+        try:
+            pid = int(scope.split(":", 1)[1])
+        except ValueError:
+            raise HTTPException(400, "bad scope")
+        if control.running(scope="studio", ref=pid):
+            raise HTTPException(409, "A stage is running on this video — stop it or wait, then undo")
+    elif scope not in ("queue", "settings"):
+        raise HTTPException(400, "scope must be queue, settings or studio:<id>")
+
+
+@app.get("/api/undo", dependencies=_AUTH)
+def undo_stack(scope: str, s: Session = Depends(get_session)) -> dict:
+    return {"scope": scope, "stack": undo.stack(s, scope)}
+
+
+@app.post("/api/undo", dependencies=_AUTH)
+def undo_last(req: UndoIn, s: Session = Depends(get_session)) -> dict:
+    _undo_guard(req.scope)
+    try:
+        label = undo.undo(s, req.scope)
+    except undo.NothingToUndo as exc:
+        raise HTTPException(400, str(exc))
+    if req.scope == "settings":
+        queue_manager.load_schedule(s)
+    logbus.log("warning", "undo", f"Undid: {label}", scope=req.scope)
+    return {"undone": label, "stack": undo.stack(s, req.scope)}
 
 
 # --- Stop: every long-running process ------------------------------------------
@@ -930,6 +987,7 @@ class AutopostIn(BaseModel):
 
 @app.put("/api/autopost", dependencies=_AUTH)
 def set_autopost(req: AutopostIn, s: Session = Depends(get_session)) -> dict:
+    _snapshot_setting(s, "autopost", "Pause auto-posting" if req.paused else "Resume auto-posting")
     queue_manager.set_autopost_paused(s, req.paused)
     return {"paused": queue_manager.autopost_paused(s)}
 
@@ -937,6 +995,7 @@ def set_autopost(req: AutopostIn, s: Session = Depends(get_session)) -> dict:
 @app.put("/api/schedule/config", dependencies=_AUTH)
 def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_session)) -> dict:
     """Change posting times from the Settings page; Ready items re-plan now."""
+    _snapshot_setting(s, "schedule", "Reset posting times" if req.reset else "Change posting times")
     try:
         queue_manager.save_schedule(s, None if req.reset else req.model_dump(exclude={"reset"}))
     except ValueError as exc:
@@ -948,9 +1007,14 @@ def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_sessi
 def start_bulk_ai(req: QueueBulkAction, s: Session = Depends(get_session)) -> dict:
     if not settings.gemini_api_key:
         raise HTTPException(400, "GEMINI_API_KEY is not set on the server")
-    ids = [i for (i,) in s.query(QueueItem.id).filter(QueueItem.id.in_(req.ids)).all()]
+    rows = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
+    ids = [r.id for r in rows]
     if not ids:
         raise HTTPException(400, "No matching queue items")
+    if ai_bulk.status.get("running"):
+        raise HTTPException(409, "A bulk AI rewrite is already running")
+    undo.record(s, "queue", f"AI rewrite of {len(ids)} videos", rows=rows)
+    s.commit()  # the undo point exists before the job touches anything
     try:
         return ai_bulk.start(ids)
     except RuntimeError as exc:

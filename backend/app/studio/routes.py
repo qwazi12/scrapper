@@ -16,7 +16,11 @@ from ..auth import require_token
 from ..config import settings
 from ..db import get_session
 from ..models import StudioProject
+from .. import undo
 from . import runner, tmdb
+
+# What a Studio undo restores (text/plan level; footage and shots are files).
+UNDO_FIELDS = ["script", "plan", "render", "target_minutes"]
 
 router = APIRouter(prefix="/api/studio", dependencies=[Depends(require_token)])
 
@@ -137,6 +141,8 @@ def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_s
     p = _get(s, project_id)
     if p.stage_status == "running":
         raise HTTPException(409, "a stage is running on this project; wait for it to finish")
+    what = "Edit script" if req.script is not None else "Swap shots" if req.plan is not None else "Change length"
+    undo.record(s, f"studio:{project_id}", what, rows=[p], model="studio_projects", fields=UNDO_FIELDS)
     changed = []
     if req.target_minutes is not None:
         if not 1 <= req.target_minutes <= 10:
@@ -229,6 +235,7 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
     )
     item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
     if item and item.status in ("review", "ready", "retry", "error"):
+        undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
         for k, v in fields.items():          # re-publishing a re-render updates the same row
             setattr(item, k, v)
     else:
@@ -236,6 +243,7 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
         s.add(item)
         s.flush()
+        undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
         p.queue_item_id = item.id
     s.commit()
     logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id}",

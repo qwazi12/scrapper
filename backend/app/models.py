@@ -185,3 +185,15 @@ class StudioProject(Base):
 
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class UndoEntry(Base):
+    """One undo step: the rows as they were before a change (manhwa-style
+    snapshot, restored as-is — never an "inverse" operation)."""
+    __tablename__ = "undo_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(64), index=True)     # queue | studio:<id> | settings
+    label: Mapped[str] = mapped_column(String(255), default="")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
