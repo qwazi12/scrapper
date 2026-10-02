@@ -438,6 +438,10 @@ export default function Page() {
           </div>
         )}
 
+        {activeTab === "comps" && (
+          <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+        )}
+
         {activeTab === "longform" && <StudioPanel />}
 
         {/* Separate View 4: Live Activity Logs */}

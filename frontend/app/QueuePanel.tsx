@@ -467,19 +467,21 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       {/* Top Header */}
       <div
         style={{
-          padding: "14px 18px",
+          padding: isNarrow ? "10px 12px" : "14px 18px",
           background: "var(--panel2)",
           borderBottom: "1px solid var(--border)",
           display: "flex",
           flexWrap: "wrap",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 12,
+          gap: isNarrow ? 8 : 12,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>
-            {longform ? "🎬 LongForm Breakdowns Queue" : "📋 Posting Queue & Content Calendar"}
+        <div style={{ display: "flex", alignItems: "center", gap: isNarrow ? 6 : 10, flexWrap: "wrap", minWidth: 0 }}>
+          <span style={{ fontSize: isNarrow ? 14 : 15, fontWeight: 700, ...(isNarrow ? { width: "100%" } : {}) }}>
+            {longform
+              ? isNarrow ? "🎬 LongForm Queue" : "🎬 LongForm Breakdowns Queue"
+              : isNarrow ? "📋 Posting Queue" : "📋 Posting Queue & Content Calendar"}
           </span>
           <span
             style={{
@@ -534,12 +536,14 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 color: autopostPaused ? "#fde68a" : "var(--text)",
               }}
             >
-              {autopostPaused ? "▶ Resume auto-posting" : "⏸ Pause auto-posting"}
+              {autopostPaused
+                ? isNarrow ? "▶ Resume posting" : "▶ Resume auto-posting"
+                : isNarrow ? "⏸ Pause posting" : "⏸ Pause auto-posting"}
             </button>
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isNarrow ? 6 : 8, flexWrap: "wrap", ...(isNarrow ? { width: "100%" } : {}) }}>
           {/* Hierarchical Pipeline / Channel Dropdown */}
           {!longform && <select
             value={pipelineFilter}
@@ -583,7 +587,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             title="Toggle ascending / descending"
             style={{ fontSize: 11, padding: "5px 10px", fontWeight: 600 }}
           >
-            {sortDir === "asc" ? "↑ Ascending" : "↓ Descending"}
+            {sortDir === "asc" ? (isNarrow ? "↑" : "↑ Ascending") : isNarrow ? "↓" : "↓ Descending"}
           </button>
 
           {/* Mix & Shuffle Button */}
@@ -603,7 +607,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 gap: 6,
               }}
             >
-              <span>🔀</span> {shuffling ? "Mixing…" : "Mix & Shuffle ▾"}
+              <span>🔀</span> {shuffling ? "Mixing…" : isNarrow ? "Mix ▾" : "Mix & Shuffle ▾"}
             </button>
 
             {showShuffleMenu && (
@@ -619,7 +623,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                   padding: 8,
                   boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
                   zIndex: 50,
-                  width: 270,
+                  width: "min(270px, 85vw)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
@@ -696,7 +700,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             onClick={() => setShowAddModal(true)}
             style={{ background: "#2563eb", borderColor: "#1d4ed8", color: "#fff", fontWeight: 600, fontSize: 11 }}
           >
-            + Add Video to Queue
+            {isNarrow ? "+ Add" : "+ Add Video to Queue"}
           </button>
         </div>
       </div>
