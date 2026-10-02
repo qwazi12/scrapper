@@ -35,7 +35,13 @@ END_CARD = 8.0
 # re-encoding, and mismatched timescales (zoompan vs trimmed clips) scramble
 # the joined timestamps (seen 2026-10-01: a 33 s plan came out as 13 s).
 ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS),
-       "-video_track_timescale", "30000"]
+       "-video_track_timescale", "30000",
+       "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
+# Every segment ends in the same pixel format and colour tags. Stills made from
+# JPEGs (poster, end card) otherwise come out full-range yuvj420p/bt470bg; that
+# mid-stream change makes ffmpeg rebuild its filters and drop an overlay that
+# starts there — the release card vanished from Send Help on 2026-10-02.
+NORM = "scale=out_range=tv:out_color_matrix=bt709,format=yuv420p"
 
 _MOVES = [
     "z='1+0.10*on/{n}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",              # slow push in
@@ -184,13 +190,13 @@ def seg_still(img: pathlib.Path, dur: float, k: int, dest: pathlib.Path) -> None
     move = _MOVES[k % len(_MOVES)].format(n=n)
     vf = (f"scale={W * 2}:{H * 2}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
           f"pad={W * 2}:{H * 2}:(ow-iw)/2:(oh-ih)/2:black,"
-          f"zoompan={move}:d={n}:s={W}x{H}:fps={FPS},setsar=1")
+          f"zoompan={move}:d={n}:s={W}x{H}:fps={FPS},{NORM},setsar=1")
     media.run(["ffmpeg", "-v", "error", "-y", "-i", str(img), "-vf", vf, "-frames:v", str(n), *ENC, str(dest)])
 
 
 def seg_clip(src: str, start: float, dur: float, dest: pathlib.Path, crop: str | None = None) -> None:
     pre = f"crop={crop}," if crop else ""   # remove the source's own letterbox bars
-    vf = f"{pre}{FIT},fps={FPS},setsar=1,tpad=stop_mode=clone:stop_duration={dur:.3f}"
+    vf = f"{pre}{FIT},fps={FPS},{NORM},setsar=1,tpad=stop_mode=clone:stop_duration={dur:.3f}"
     media.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", src, "-vf", vf, "-an",
                "-t", f"{dur:.3f}", *ENC, str(dest)])
 
@@ -303,7 +309,7 @@ def render(project_id: int) -> str:
         if end_motion:
             end_seg_m = segs_dir / "seg_end_motion.mp4"
             media.run(["ffmpeg", "-v", "error", "-y", "-i", str(end_motion), "-t", f"{END_CARD:.3f}", "-an",
-                       "-vf", "setsar=1", *ENC, str(end_seg_m)])
+                       "-vf", f"{NORM},setsar=1", *ENC, str(end_seg_m)])
             motion_segs.append(end_seg_m)
         else:
             motion_segs.append(end_seg)
@@ -314,7 +320,7 @@ def render(project_id: int) -> str:
         motion_info["file"] = str(motion_final.relative_to(root))
         motion_info["overlays"] = [{"piece": f.stem.split("-")[0], "start": round(t, 2),
                                     "seconds": round(media.duration(f), 2)} for f, t in sorted(overlays, key=lambda x: x[1])]
-        # base_m kept for now (debugging the release card, 2026-10-02); remove once fixed
+        base_m.unlink(missing_ok=True)
     final = out_dir / "final.mp4"
 
     lead = (facts.get("cast") or [{}])[0].get("actor")

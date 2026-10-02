@@ -338,6 +338,9 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
                             "-of", "compact", str(final)], capture_output=True, text=True).stdout
     assert "width=1920" in probe and "height=1080" in probe and "codec_type=audio" in probe
     assert 3.8 <= r["seconds"] <= 4.3 and (root / r["thumbnail"]).exists()
+    frames = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries",
+                             "frame=pix_fmt,color_range", "-of", "csv=p=0", str(final)], capture_output=True, text=True).stdout
+    assert {f.strip(",") for f in frames.split()} == {"yuv420p,tv"}   # poster stills must not switch format mid-stream
 
 
 def test_publish_sends_render_to_queue_once(client, monkeypatch):
