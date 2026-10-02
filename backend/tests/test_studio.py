@@ -196,3 +196,114 @@ def test_shots_stage_cuts_and_tags(monkeypatch, three_scene_video):
     assert shots[0]["card"] and not shots[0]["usable"]           # title/logo cards stay out
     assert shots[1]["usable"] and shots[1]["people"] == ["Rachel McAdams"]  # unknown names dropped
     assert (runner.project_dir(pid) / shots[1]["still"]).exists()
+
+
+# --- script / plan / render ---------------------------------------------------
+from backend.app.studio import stage_plan, stage_render, stage_script, tts
+
+
+def _facts():
+    return {"title": "Send Help", "media_type": "movie", "overview": "Stranded on an island.",
+            "primary_date": "2026-01-30", "releases": [{"country": "US", "date": "2026-01-30", "type": "Theatrical", "note": ""}],
+            "directors": ["Sam Raimi"], "cast": [{"actor": "Rachel McAdams", "character": "Linda"}],
+            "genres": ["Thriller"], "source": "https://www.themoviedb.org/movie/1", "local": {}}
+
+
+def test_script_drops_unsupported_claims_and_credits_sources(monkeypatch):
+    calls = []
+
+    def fake(prompt, **kw):
+        calls.append(prompt)
+        if "fact-checker" in prompt:
+            return [{"i": 1, "verdict": "ok"},
+                    {"i": 2, "verdict": "unsupported", "reason": "storyboard says island, not city", "fix": ""},
+                    {"i": 3, "verdict": "unsupported", "reason": "wrong date", "fix": "It opens January 30, 2026."}]
+        return {"sentences": [{"paragraph": 1, "text": "Send Help is Sam Raimi's thriller.", "refs": ["F1"]},
+                              {"paragraph": 1, "text": "Friends are stuck in a big city.", "refs": []},
+                              {"paragraph": 2, "text": "It opens in March.", "refs": ["F5"]}],
+                "youtube_title": "Send Help Trailer Breakdown", "tags": ["send help"]}
+
+    monkeypatch.setattr(gemini, "ask_json", fake)
+    pid = _new_project(facts=_facts(), research={"sources": [{"title": "deadline.com", "url": "https://d"}],
+                                                 "claims": [{"text": "Opens Jan 30.", "sources": [0]}]})
+    summary = runner.run_one(pid, "script")
+    with SessionLocal() as s:
+        sc = s.get(StudioProject, pid).script
+    texts = [x["text"] for x in sc["sentences"]]
+    assert texts == ["Send Help is Sam Raimi's thriller.", "It opens January 30, 2026."]
+    assert sc["sentences"][1]["original"] == "It opens in March."
+    assert "dropped 1" in summary and "fixed 1" in summary
+    assert tmdb.ATTRIBUTION in sc["description"] and "https://d" in sc["description"]
+    assert "Only the storyboard" not in calls[0] and "[R1] Opens Jan 30." in calls[0]  # research is in the board
+
+
+def _tone(dest, seconds=1.2):
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=f=440:d={seconds}", str(dest)], check=True)
+    return dest
+
+
+def _shots(video, n=6):
+    return [{"id": f"s{i:03d}", "file": str(video), "start": i * 0.5, "end": i * 0.5 + 0.5, "usable": True,
+             "description": f"shot {i}", "people": [], "setting": "x", "mood": "tense", "size": "wide",
+             "source_type": "Trailer", "card": False} for i in range(1, n + 1)]
+
+
+def test_validate_repairs_unknown_and_repeated_picks():
+    slots = [{"slot": i} for i in (1, 2, 3)]
+    cat = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    out, repaired = stage_plan._validate([{"slot": 1, "shot": "a"}, {"slot": 2, "shot": "a"},
+                                          {"slot": 3, "shot": "zzz", "mode": "clip"}], slots, cat)
+    assert [o["shot"] for o in out] == ["a", "b", "c"] and repaired == 2 and out[2]["mode"] == "clip"
+
+
+def test_plan_voices_sentences_and_places_poster_on_release_line(monkeypatch, three_scene_video):
+    monkeypatch.setattr(tts, "synth", lambda text, dest: _tone(dest))
+    monkeypatch.setattr(gemini, "ask_json", lambda prompt, **kw: [{"slot": 1, "shot": "nope"}])
+    pid = _new_project(facts=_facts(), shots=_shots(three_scene_video),
+                       script={"sentences": [{"paragraph": 1, "text": "Send Help is here."},
+                                             {"paragraph": 2, "text": "It hits theaters January 30."},
+                                             {"paragraph": 3, "text": "Subscribe for more."}]})
+    runner.run_one(pid, "plan")
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        plan, tl = p.plan, p.script["timeline"]
+    assert plan[0]["kind"] == "poster"                       # no title card in the shots -> poster opens
+    date_slot = next(i for i in plan if i["sentence"] == 2)
+    assert date_slot["kind"] == "poster"                     # release-date line shows the poster card
+    assert all(i.get("shot") for i in plan if i["kind"] in ("still", "clip"))
+    assert tl[1]["start"] > tl[0]["start"] and abs(plan[-1]["end"] - tl[-1]["end"]) < 1e-6
+
+
+def test_tts_requires_key_and_caches(monkeypatch, tmp_path):
+    monkeypatch.setattr(tts.settings, "tts_api_key", "")
+    with pytest.raises(tts.TTSError, match="TTS_API_KEY"):
+        tts.synth("A brand new sentence nobody voiced.", tmp_path / "a.mp3")
+    assert tts.speakable('He said "run" — what the fuck') == "He said run — what the hell"
+
+
+def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_video):
+    pid = _new_project(facts=_facts(), shots=_shots(three_scene_video, 3))
+    root = runner.project_dir(pid)
+    (root / "tts").mkdir(exist_ok=True)
+    for sh in _shots(three_scene_video, 3):
+        media.frame(three_scene_video, sh["start"], root / f"{sh['id']}.jpg")
+    shots = [{**sh, "still": f"{sh['id']}.jpg"} for sh in _shots(three_scene_video, 3)]
+    _tone(root / "tts" / "a.mp3", 1.0)
+    plan = [{"slot": 1, "sentence": 1, "kind": "poster", "start": 0, "end": 1.0, "duration": 1.0},
+            {"slot": 2, "sentence": 1, "kind": "still", "shot": "s001", "start": 1.0, "end": 2.0, "duration": 1.0},
+            {"slot": 3, "sentence": 1, "kind": "clip", "shot": "s002", "start": 2.0, "end": 3.0, "duration": 1.0,
+             "clip_start": 2.1, "clip_len": 1.0}]
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.shots, p.plan = shots, plan
+        p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
+        s.commit()
+    monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    runner.run_one(pid, "render")
+    with SessionLocal() as s:
+        r = s.get(StudioProject, pid).render
+    final = root / r["file"]
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height,duration",
+                            "-of", "compact", str(final)], capture_output=True, text=True).stdout
+    assert "width=1920" in probe and "height=1080" in probe and "codec_type=audio" in probe
+    assert 3.8 <= r["seconds"] <= 4.3 and (root / r["thumbnail"]).exists()

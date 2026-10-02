@@ -67,20 +67,21 @@ def shots(project_id: int) -> str:
     dropped_dark = 0
     for src in sources:
         total = media.duration(src["file"])
+        crop = media.active_area(src["file"])  # trailers often have bars baked in
         for a, b in media.shots_from_cuts(media.scene_cuts(src["file"]), total):
             if len(shots) >= MAX_SHOTS:
                 break
             sid = f"s{len(shots) + 1:03d}"
             mid = a + (b - a) / 2
-            thumb = media.frame(src["file"], mid, thumbs / f"{sid}.jpg", width=480)
+            thumb = media.frame(src["file"], mid, thumbs / f"{sid}.jpg", width=480, crop=crop)
             if media.brightness(thumb) < DARK:
                 thumb.unlink(missing_ok=True)
                 dropped_dark += 1
                 continue
-            still = media.frame(src["file"], mid, stills / f"{sid}.jpg")
+            still = media.frame(src["file"], mid, stills / f"{sid}.jpg", crop=crop)
             shots.append({
                 "id": sid, "source": src.get("id"), "source_type": src.get("type"),
-                "file": src["file"], "start": a, "end": b, "seconds": round(b - a, 2),
+                "file": src["file"], "start": a, "end": b, "seconds": round(b - a, 2), "crop": crop,
                 "still": str(still.relative_to(root)), "thumb": str(thumb.relative_to(root)),
             })
 

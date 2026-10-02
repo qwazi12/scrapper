@@ -57,8 +57,32 @@ def shots_from_cuts(cuts: list[float], total: float, min_len: float = 0.7) -> li
     return [(round(a, 3), round(b, 3)) for a, b in shots]
 
 
-def frame(path: str | pathlib.Path, t: float, dest: pathlib.Path, width: int | None = None) -> pathlib.Path:
-    vf = ["-vf", f"scale={width}:-2"] if width else []
+def active_area(path: str | pathlib.Path) -> str | None:
+    """Detect letterbox/pillarbox bars baked into a video: 'w:h:x:y' of the real
+    picture, or None when the frame is already full. Samples the middle of the file."""
+    total = duration(path)
+    start = max(0.0, total / 2 - 15)
+    proc = subprocess.run(["ffmpeg", "-hide_banner", "-ss", f"{start:.2f}", "-t", "30", "-i", str(path),
+                           "-vf", "cropdetect=limit=24:round=2:reset=0", "-an", "-f", "null", "-"],
+                          capture_output=True, text=True, timeout=600)
+    found = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", proc.stderr)
+    if not found:
+        return None
+    w, h, x, y = map(int, found[-1])
+    probe = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+                 "-of", "csv=p=0", str(path)]).stdout.strip().split(",")
+    fw, fh = int(probe[0]), int(probe[1])
+    if w >= fw - 8 and h >= fh - 8:
+        return None  # no meaningful bars
+    if w < fw * 0.5 or h < fh * 0.4:
+        return None  # a dark scene, not bars — don't trust it
+    return f"{w}:{h}:{x}:{y}"
+
+
+def frame(path: str | pathlib.Path, t: float, dest: pathlib.Path, width: int | None = None,
+          crop: str | None = None) -> pathlib.Path:
+    filters = ([f"crop={crop}"] if crop else []) + ([f"scale={width}:-2"] if width else [])
+    vf = ["-vf", ",".join(filters)] if filters else []
     run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", *vf,
          "-q:v", "2", str(dest)], timeout=120)
     if not dest.exists():

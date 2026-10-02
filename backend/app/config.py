@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     tts_api_key: str = ""
     tts_voice: str = "en-US-Chirp3-HD-Charon"
     studio_region: str = "US"            # release dates / calendar region
+    studio_channel_name: str = "Screen Central"  # said in the closing call to action
 
     # --- CORS ------------------------------------------------------------
     cors_origins: str = "*"                 # comma-separated; set to the Vercel URL in prod
