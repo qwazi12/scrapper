@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { api, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { UndoButton } from "./UndoButton";
+import { SpendingCard } from "./SpendingCard";
 
 function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
@@ -147,6 +148,7 @@ export function SettingsOverview() {
   const [aiResult, setAiResult] = useState<string>("");
   const [aiTesting, setAiTesting] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [seo, setSeo] = useState<{ auto: boolean; clips_without_seo: number } | null>(null);
 
   // Refresh the schedule/heartbeat every 30s so the status stays live.
   useEffect(() => {
@@ -171,6 +173,7 @@ export function SettingsOverview() {
   }
 
   useEffect(() => {
+    api.seo().then(setSeo).catch(() => {});
     api.schedule().then(setSched).catch((e) => setErr(String(e.message || e)));
     api.socialAccounts()
       .then((r) => {
@@ -196,6 +199,8 @@ export function SettingsOverview() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SpendingCard card={card} h2={h2} />
+
       {/* Posting schedule */}
       <div style={card}>
         <h2 style={h2}>⏰ Posting Schedule</h2>
@@ -352,6 +357,24 @@ export function SettingsOverview() {
               <span style={{ color: "var(--red)" }}>GEMINI_API_KEY is not set — the ✨ AI button will report an error.</span>
             )}
           </div>
+          {seo && (
+            <div style={{ fontSize: 12, marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 600 }}>
+                <input type="checkbox" checked={seo.auto}
+                  onChange={async (e) => {
+                    const on = e.target.checked;
+                    if (!confirm(on ? "Turn on auto-SEO? Clips still carrying their raw file name get a TMDB-researched title, caption and hashtags just before they post." : "Turn off auto-SEO? Clips will post with whatever text they have.")) return;
+                    try { setSeo(await api.setSeo(on)); } catch (err: any) { alert(`Could not save: ${err.message || err}`); }
+                  }} />
+                Auto-SEO every clip before it posts
+              </label>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                {seo.auto ? "On" : "Off"} — a clip that never had ✨ AI and still has its raw file name gets researched with TMDB and
+                rewritten (title, caption, hashtags) right before posting. Text you edited yourself is never touched; each rewrite can be undone in the
+                Posting Queue. {seo.clips_without_seo > 0 && <b>{seo.clips_without_seo} queued clip(s) still have raw text.</b>}
+              </div>
+            </div>
+          )}
         </div>
         <div style={card}>
           <h2 style={h2}>🗑 Posted Archive Cleanup</h2>

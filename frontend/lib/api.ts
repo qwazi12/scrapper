@@ -228,6 +228,9 @@ export type StudioProject = {
   created_at: string;
   updated_at: string;
   poster: string | null;
+  cost_usd?: number;
+  drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
+            thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
   facts?: any;
   research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[] }[] } | null;
@@ -299,6 +302,38 @@ function headers(json = true): HeadersInit {
   if (t) h["x-access-token"] = t;
   return h;
 }
+
+export type CostSettings = {
+  budget_usd: number;
+  hard_stop: boolean;
+  upload_post_plan: string;
+  fixed_costs: { name: string; usd: number }[];
+  tts_usd_per_million_chars: number;
+  grounding_usd_per_1000: number;
+  grounding_free_per_month: number;
+  tts_free_chars_per_month: number;
+  gemini: Record<string, { in: number; out: number; in_2027?: number; out_2027?: number }>;
+};
+
+export type CostSummary = {
+  month: string;
+  variable_usd: number;
+  fixed_usd: number;
+  total_usd: number;
+  budget_usd: number;
+  budget_used_pct: number | null;
+  hard_stop: boolean;
+  by_service: Record<string, { cost: number; requests: number; input_tokens: number; output_tokens: number; chars: number }>;
+  by_operation: { operation: string; cost: number; requests: number }[];
+  by_day: { day: string; cost: number }[];
+  by_ref: Record<string, number>;
+  free_tiers: {
+    search_requests: { used: number; free: number };
+    tts_chars: { used: number; free: number };
+    uploads: { used: number; plan: string; limit: number | null; plan_usd: number };
+  };
+  settings: CostSettings;
+};
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, init);
@@ -545,7 +580,7 @@ export const api = {
     req<{ ok: boolean }>(`/api/studio/projects/${id}/run`, {
       method: "POST", headers: headers(), body: JSON.stringify({ stage, auto }) }),
   studioPublish: (id: number) =>
-    req<{ queue_item_id: number; status: string }>(`/api/studio/projects/${id}/publish`, {
+    req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),
   studioUploadTrailer: async (id: number, file: File) => {
     const fd = new FormData();
@@ -601,6 +636,15 @@ export const api = {
   undo: (scope: string) =>
     req<{ undone: string; stack: UndoStep[] }>("/api/undo", {
       method: "POST", headers: headers(), body: JSON.stringify({ scope }) }),
+  costs: (month?: string) =>
+    req<CostSummary>(`/api/costs${month ? `?month=${encodeURIComponent(month)}` : ""}`, { headers: headers(false) }),
+  setCostSettings: (patch: Partial<CostSettings>) =>
+    req<CostSummary>("/api/costs/settings", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  seo: () => req<{ auto: boolean; clips_without_seo: number }>("/api/seo", { headers: headers(false) }),
+  setSeo: (auto: boolean) =>
+    req<{ auto: boolean; clips_without_seo: number }>("/api/seo", { method: "PUT", headers: headers(), body: JSON.stringify({ auto }) }),
+  studioSaveToDrive: (id: number) =>
+    req<{ job_id: string }>(`/api/studio/projects/${id}/drive`, { method: "POST", headers: headers() }),
   setAutopost: (paused: boolean) =>
     req<{ paused: boolean }>("/api/autopost", { method: "PUT", headers: headers(), body: JSON.stringify({ paused }) }),
 

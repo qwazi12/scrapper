@@ -118,6 +118,7 @@ export function StudioPanel() {
                   </b>
                   <StageBadge p={p} />
                   {p.queue_item_id && <span style={{ ...muted, color: "var(--accent)" }}>in Posting Queue #{p.queue_item_id}</span>}
+                  {!!p.cost_usd && <span style={muted}>spent ${p.cost_usd < 1 ? p.cost_usd.toFixed(3) : p.cost_usd.toFixed(2)}</span>}
                 </span>
               </button>
             ))}
@@ -696,6 +697,58 @@ function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p:
   );
 }
 
+/** Where the Drive copy ("LongForm Studio" folder) stands, with Save/Retry. */
+function DriveStatus({ p, onChange }: { p: StudioProject; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const d = p.drive;
+  const stale = d?.status === "saved" && d.rendered_at !== p.render?.rendered_at;
+  const uploading = busy || d?.status === "uploading";
+
+  async function saveNow() {
+    setErr("");
+    setBusy(true);
+    try {
+      const { job_id } = await api.studioSaveToDrive(p.id);
+      onChange();
+      await api.waitJob(job_id).catch(() => {});
+    } catch (e: any) {
+      setErr(String(e.message || e));
+    } finally {
+      setBusy(false);
+      onChange();
+    }
+  }
+
+  return (
+    <div style={{ fontSize: 11, marginTop: 10, padding: 8, background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6 }}>
+      <b>☁️ Drive (LongForm Studio folder): </b>
+      {uploading ? (
+        <span style={{ color: "var(--yellow)" }}>⏳ uploading… (Stop is in the bar at the top)</span>
+      ) : d?.status === "saved" ? (
+        <>
+          <span style={{ color: stale ? "var(--yellow)" : "var(--accent)" }}>{stale ? "⚠ older render saved" : "✓ saved"}</span>{" "}
+          {d.link && <a href={d.link} target="_blank" rel="noreferrer">open video ↗</a>}{" "}
+          {d.thumb_link && <a href={d.thumb_link} target="_blank" rel="noreferrer">thumbnail ↗</a>}
+          {d.saved_at && <span style={{ color: "var(--muted)" }}> · {new Date(parseApiDate(d.saved_at)).toLocaleString()}</span>}
+        </>
+      ) : d?.status === "error" ? (
+        <span style={{ color: "var(--red)" }}>✕ {d.error}</span>
+      ) : d?.status === "stopped" ? (
+        <span style={{ color: "var(--yellow)" }}>■ upload stopped</span>
+      ) : (
+        <span style={{ color: "var(--muted)" }}>not saved yet — saved automatically when you send it to the queue</span>
+      )}
+      {!uploading && (d?.status !== "saved" || stale) && (
+        <button style={{ fontSize: 10, padding: "2px 8px", marginLeft: 8 }} onClick={saveNow}>
+          {d?.status === "error" || d?.status === "stopped" ? "Retry" : "Save to Drive now"}
+        </button>
+      )}
+      {err && <div style={{ color: "var(--red)", marginTop: 4 }}>{err}</div>}
+    </div>
+  );
+}
+
 function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void }) {
   const r = p.render;
   const [msg, setMsg] = useState("");
@@ -718,8 +771,10 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
                 setMsg("");
                 try {
                   const res = await api.studioPublish(p.id);
-                  setMsg(`✓ In the Posting Queue as #${res.queue_item_id} (Needs Review). Pick where it posts and approve it there.`);
+                  setMsg(`✓ In SocialPilot → LongForm Breakdowns as #${res.queue_item_id} (Needs Review). Pick where it posts and approve it there.`
+                    + (res.drive_job_id ? " Saving a copy to Drive…" : ""));
                   onChange();
+                  if (res.drive_job_id) api.waitJob(res.drive_job_id).catch(() => {}).finally(onChange);
                 } catch (e: any) {
                   setMsg(`✕ ${e.message || e}`);
                 }
@@ -729,6 +784,12 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
             </button>
           </div>
           {msg && <div style={{ fontSize: 11, marginTop: 6, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</div>}
+          <DriveStatus p={p} onChange={onChange} />
+          {!!p.cost_usd && (
+            <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)" }}>
+              This video has cost about <b style={{ color: "var(--text)" }}>${p.cost_usd.toFixed(p.cost_usd < 1 ? 3 : 2)}</b> so far (AI + voice-over).
+            </div>
+          )}
         </div>
       </div>
     </Section>
