@@ -411,6 +411,18 @@ def test_redirect_links_are_resolved(monkeypatch):
 
 
 # --- LongForm → Drive -----------------------------------------------------------
+class _SharedDriveSvc:
+    """A Drive client stub whose folder lives in a Shared Drive."""
+    def files(self):
+        class F:
+            def get(self, **kw):
+                class R:
+                    def execute(self):
+                        return {"name": "LongForm Studio", "driveId": "D"}
+                return R()
+        return F()
+
+
 def test_drive_quota_error_is_explained():
     from backend.app.studio import drive_store
     msg = drive_store._explain(Exception("<HttpError 403 ... storageQuotaExceeded: Service Accounts do not have storage quota>"))
@@ -433,7 +445,7 @@ def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path)
     session.add(p)
     session.commit()
     uploaded = []
-    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: object())
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: _SharedDriveSvc())
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "FOLDER")
     monkeypatch.setattr(drive_store, "_upload", lambda svc, path, parent, name: (
         uploaded.append((parent, name)) or {"id": f"id{len(uploaded)}", "webViewLink": f"https://drive/{len(uploaded)}"}))
@@ -454,7 +466,7 @@ def test_drive_save_failure_keeps_reason(session, monkeypatch, tmp_path):
     p = StudioProject(tmdb_id=1, title="X", render={"file": "final.mp4"})
     session.add(p)
     session.commit()
-    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: object())
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: _SharedDriveSvc())
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
 
     def boom(*a):
@@ -601,3 +613,31 @@ def test_motion_settings_validate_and_default_to_compare(client):
     assert r["mode"] == "on" and r["cast_cards"] == 2
     assert stage_render.motion_mode() == "on" and stage_render.motion_cast_cards() == 2
     client.put("/api/studio/motion", json={"mode": "compare"})
+
+
+def test_drive_refuses_my_drive_folder_with_a_clear_reason(session, monkeypatch, tmp_path):
+    from backend.app import drive_sync
+    from backend.app.models import StudioProject
+    from backend.app.studio import drive_store, runner as srunner
+
+    monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
+    (tmp_path / "final.mp4").write_bytes(b"x")
+    p = StudioProject(tmdb_id=1, title="X", render={"file": "final.mp4"})
+    session.add(p)
+    session.commit()
+
+    class Files:
+        def get(self, **kw):
+            class R:
+                def execute(self):
+                    return {"name": "LongForm Studio", "driveId": None}
+            return R()
+
+    class Svc:
+        def files(self):
+            return Files()
+
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: Svc())
+    monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
+    with pytest.raises(drive_store.DriveStoreError, match="My Drive, not a Shared Drive"):
+        drive_store.save(p.id)

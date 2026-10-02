@@ -102,6 +102,13 @@ def save(project_id: int) -> dict[str, Any]:
     try:
         service = get_drive_service()
         parent = folder_id(service)
+        meta = service.files().get(fileId=parent, fields="name,driveId", **ALL).execute()
+        if not meta.get("driveId"):
+            raise DriveStoreError(
+                f"The Drive folder \"{meta.get('name', parent)}\" is in someone's My Drive, not a Shared Drive. "
+                "The service account can see it but has no storage of its own there. Move the folder into a "
+                "Shared Drive (service account = Content manager), or make one there and set "
+                "LONGFORM_DRIVE_FOLDER_ID to it. Then press Retry.")
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         v = _upload(service, video, parent, f"{title} — Trailer Breakdown ({stamp}).mp4")
         t = _upload(service, thumb, parent, f"{title} — Thumbnail ({stamp}){thumb.suffix}") if thumb and thumb.exists() else None
@@ -109,7 +116,7 @@ def save(project_id: int) -> dict[str, Any]:
         _set(project_id, {**old, "status": "stopped", "error": "stopped by user"})
         raise
     except Exception as exc:  # noqa: BLE001 — record a readable reason, keep the old copy
-        reason = _explain(exc)
+        reason = str(exc) if isinstance(exc, DriveStoreError) else _explain(exc)
         _set(project_id, {**old, "status": "error", "error": reason})
         logbus.log("error", "longform_drive_failed", f"Studio #{project_id}: {reason}", project=project_id)
         raise DriveStoreError(reason) from exc
