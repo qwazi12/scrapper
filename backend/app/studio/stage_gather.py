@@ -8,7 +8,7 @@ import httpx
 
 from ..db import SessionLocal
 from ..models import StudioProject
-from . import gemini, tmdb
+from . import gemini, sources, tmdb
 from .runner import project_dir, stage
 
 # The guide's trusted sources, in its order of preference.
@@ -50,6 +50,7 @@ Report, as short factual sentences:
 5. Production facts: studio, filming, source material (book/game/comic), budget if reported.
 6. Reception of the trailer or early reviews, if any.
 7. Anything sources disagree on — say which source says what.
+Do not use Reddit, forums, fan wikis, social media or YouTube comments as sources.
 Do not speculate. If something is unknown, say it is unknown."""
 
 
@@ -74,7 +75,7 @@ def gather(project_id: int) -> str:
             local["cast"][c["actor"]] = path
     facts["local"] = local
 
-    research = gemini.research(research_prompt(facts))
+    research = sources.annotate(gemini.research(research_prompt(facts)))
 
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
@@ -82,5 +83,8 @@ def gather(project_id: int) -> str:
         p.facts = facts
         p.research = research
         s.commit()
+    good = sum(1 for x in research["sources"] if x.get("tier") in ("official", "trusted"))
+    backed = sum(1 for c in research["claims"] if sources.usable(c, research["sources"]))
     return (f"{facts['title']}: {len(facts['cast'])} cast, {len(facts['videos'])} videos, "
-            f"{len(local['backdrops'])} backdrops, {len(research['sources'])} web sources")
+            f"{len(local['backdrops'])} backdrops, {len(research['sources'])} web sources "
+            f"({good} official/trusted); {backed}/{len(research['claims'])} findings backed by them")

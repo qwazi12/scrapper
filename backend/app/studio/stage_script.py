@@ -15,7 +15,7 @@ from __future__ import annotations
 from ..config import settings
 from ..db import SessionLocal
 from ..models import StudioProject
-from . import gemini, tmdb
+from . import gemini, sources as srcq, tmdb
 from .runner import stage
 
 WPM = 180
@@ -48,17 +48,25 @@ def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
     if f.get("runtime"):
         F.append(f"Runtime: {f['runtime']} minutes")
 
+    # Only findings backed by an official/trusted outlet become facts; anything
+    # supported only by forums, fan sites or unknown blogs is left out.
     R: list[dict] = []
     srcs = (research or {}).get("sources", [])
+    skipped = 0
     for c in (research or {}).get("claims", []):
         text = (c.get("text") or "").strip()
-        if text:
-            R.append({"text": text, "sources": [srcs[i] for i in c.get("sources", []) if i < len(srcs)]})
+        if not text:
+            continue
+        if srcs and any("tier" in x for x in srcs) and not srcq.usable(c, srcs):
+            skipped += 1
+            continue
+        R.append({"text": text, "sources": [srcs[i] for i in c.get("sources", []) if i < len(srcs)]})
 
     T = [s["description"] for s in (shots or [])
          if s.get("source_type") == "Trailer" and s.get("description") and not s.get("card")][:60]
 
-    return {"F": F, "R": R, "T": T, "sources": srcs}
+    good = [x for x in srcs if x.get("tier") in ("official", "trusted") or "tier" not in x]
+    return {"F": F, "R": R, "T": T, "sources": good, "skipped_findings": skipped}
 
 
 def _board_text(b: dict) -> str:
@@ -66,7 +74,8 @@ def _board_text(b: dict) -> str:
     lines += ["", "WEB FINDINGS (grounded in the linked sources):"]
     lines += [f"[R{i + 1}] {x['text']}  (sources: {', '.join(s['title'] for s in x['sources']) or 'unlisted'})"
               for i, x in enumerate(b["R"])]
-    lines += ["", "WHAT THE OFFICIAL TRAILER SHOWS, in order:"] + [f"[T{i + 1}] {x}" for i, x in enumerate(b["T"])]
+    lines += ["", "SHOT LOG OF THE OFFICIAL TRAILER, in order (evidence of what it shows — do not narrate shot by shot):"]
+    lines += [f"[T{i + 1}] {x}" for i, x in enumerate(b["T"])]
     return "\n".join(lines)
 
 
@@ -84,8 +93,15 @@ Rules:
 - One continuous narrative: no headings, no scene labels, no lists.
 - Paragraph 1 names "{title}" and hooks the viewer in the first two sentences.
 - Paragraph 2 gives the release date and where to watch.
-- Then walk through what the trailer shows, in order, with vivid but accurate description,
-  and who plays whom.
+- Then break the trailer down as a STORY, not a shot list:
+  * Group the shot log into 4 to 6 story beats (for example: the setup, the inciting event,
+    the turn, the escalation, the tease). Tell each beat in 2 to 4 sentences.
+  * Never describe individual shots, camera framing, clothing or props unless they matter
+    to the story. Do not say "the trailer opens with", "next", "then we see".
+  * After each beat, add one line on what it suggests about the story or tone, but only
+    when the synopsis or web findings support it (e.g. who has the upper hand).
+  * Use character names and say who plays them the first time each appears.
+  * Mention the director's track record or the genre only if the storyboard states it.
 - Do not quote dialogue from the trailer.
 - End with a strong closing line that invites viewers to subscribe to {channel} for more
   trailer breakdowns and release-date updates.
@@ -153,11 +169,11 @@ def script(project_id: int) -> str:
     for i, sen in enumerate(final):
         sen["i"] = i + 1
     words = sum(len(x["text"].split()) for x in final)
-    srcs = [x for x in board["sources"] if x.get("url")]
+    srcs = [x for x in board["sources"] if x.get("url") and "grounding-api-redirect" not in x["url"]]
     desc_facts = " ".join(x["text"] for x in final[:3])
     description = "\n".join([
         desc_facts, "",
-        "Sources:", *[f"- {x['title']}: {x['url']}" for x in srcs[:8]],
+        "Sources:", *[f"- {x.get('domain') or x['title']}: {x['url']}" for x in srcs[:8]],
         f"- TMDB: {facts.get('source')}", "",
         tmdb.ATTRIBUTION,
     ])

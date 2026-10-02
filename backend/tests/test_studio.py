@@ -367,3 +367,36 @@ def test_imdb_check_endpoint(client, monkeypatch):
     monkeypatch.setattr(imdb, "mp4_url", lambda v: "https://cdn/x.mp4")
     d = client.get("/api/studio/imdb-videos", params={"imdb_id": "tt1"}).json()
     assert d["first_has_mp4"] is True and d["videos"][0]["id"] == "vi1"
+
+
+# --- source quality --------------------------------------------------------------
+from backend.app.studio import sources as srcq
+
+
+@pytest.mark.parametrize("url,tier", [
+    ("https://www.deadline.com/2026/send-help", "trusted"), ("https://en.wikipedia.org/wiki/Send_Help", "trusted"),
+    ("https://www.20thcenturystudios.com/movies/send-help", "official"), ("https://www.reddit.com/r/movies", "low"),
+    ("https://unobtainium13.com/x", "other"),
+])
+def test_source_tiers(url, tier):
+    assert srcq.tier(url) == tier
+
+
+def test_storyboard_keeps_only_findings_backed_by_trusted_sources():
+    research = {"sources": [{"title": "reddit.com", "url": "https://reddit.com/x", "tier": "low"},
+                            {"title": "variety.com", "url": "https://variety.com/y", "tier": "trusted"}],
+                "claims": [{"text": "Rumour: a sequel is planned.", "sources": [0]},
+                           {"text": "It opens January 30.", "sources": [0, 1]}]}
+    b = stage_script.storyboard(_facts(), research, [])
+    assert [r["text"] for r in b["R"]] == ["It opens January 30."] and b["skipped_findings"] == 1
+    assert [s["title"] for s in b["sources"]] == ["variety.com"]  # only good sources go in the description
+
+
+def test_redirect_links_are_resolved(monkeypatch):
+    class R:
+        headers = {"location": "https://variety.com/real"}
+    monkeypatch.setattr(srcq.httpx, "head", lambda url, **kw: R())
+    out = srcq.annotate({"sources": [{"title": "variety.com",
+                                      "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"}]})
+    s = out["sources"][0]
+    assert s["url"] == "https://variety.com/real" and s["tier"] == "trusted" and s["domain"] == "variety.com"
