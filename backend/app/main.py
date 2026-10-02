@@ -44,8 +44,11 @@ from .schemas import (
     SelectRequest,
     SocialPostOut,
     SocialPublishRequest,
+    HookVoiceoverRequest,
+    TTSGenerateRequest,
+    TTSGenerateResponse,
 )
-from .social import ai_bulk, metadata as social_metadata, queue_manager, upload_post
+from .social import ai_bulk, metadata as social_metadata, queue_manager, tts, upload_post
 
 app = FastAPI(title="Scrapper API", version="1.0")
 
@@ -1105,6 +1108,130 @@ async def ai_check() -> dict:
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI check failed: {exc}")
     return {"ok": True, "model": res.get("model"), "title": res.get("title"), "hashtags": res.get("hashtags")}
+
+
+# --- Gemini 3.8 Flash Text-to-Speech (TTS) Endpoints ---
+
+@app.get("/api/tts/voices", dependencies=_AUTH)
+def list_tts_voices() -> dict:
+    """Return available Gemini 3.8 Flash studio voices, recommended styles, and vocal tags."""
+    return {
+        "voices": tts.STUDIO_VOICES,
+        "styles": tts.RECOMMENDED_STYLES,
+        "tags": tts.INLINE_VOCAL_TAGS,
+        "default_voice": settings.gemini_tts_voice,
+        "default_model": settings.gemini_tts_model,
+        "configured": bool(settings.gemini_api_key),
+    }
+
+
+@app.post("/api/tts/generate", response_model=TTSGenerateResponse, dependencies=_AUTH)
+async def generate_speech(req: TTSGenerateRequest) -> TTSGenerateResponse:
+    """Generate 24kHz studio WAV audio using Gemini 3.8 Flash TTS."""
+    try:
+        wav_bytes, filename, duration = await tts.synthesize_speech(
+            text=req.text,
+            voice=req.voice or settings.gemini_tts_voice,
+            style=req.style,
+            model=req.model or settings.gemini_tts_model,
+            save_file=True,
+        )
+        return TTSGenerateResponse(
+            ok=True,
+            audio_url=f"/api/tts/audio/{filename}",
+            filename=filename or "",
+            duration_seconds=duration,
+            voice=req.voice or settings.gemini_tts_voice,
+            model=req.model or settings.gemini_tts_model,
+            text=req.text,
+        )
+    except tts.TTSError as exc:
+        raise HTTPException(502, f"Gemini TTS failed: {exc}")
+    except Exception as exc:
+        raise HTTPException(500, f"Speech generation error: {exc}")
+
+
+@app.get("/api/tts/audio/{filename}")
+def get_tts_audio(filename: str):
+    """Serve synthesized WAV audio file for in-browser playback and downloads."""
+    safe_name = pathlib.Path(filename).name
+    path = settings.data_path / "audio" / safe_name
+    if not path.is_file():
+        raise HTTPException(404, "Audio file not found")
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        filename=safe_name,
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.post("/api/tts/check", dependencies=_AUTH)
+async def check_tts() -> dict:
+    """Test synthesis with Gemini 3.8 Flash TTS end-to-end."""
+    try:
+        sample_text = "Gemini 3.8 Flash text to speech is online! <gasp> Natural emotions and audio hooks are fully wired in."
+        wav_bytes, filename, duration = await tts.synthesize_speech(
+            text=sample_text,
+            voice="Puck",
+            style="cheerful and enthusiastic",
+            model="gemini-3.8-flash-tts",
+            save_file=True,
+        )
+        return {
+            "ok": True,
+            "model": "gemini-3.8-flash-tts",
+            "voice": "Puck",
+            "audio_url": f"/api/tts/audio/{filename}",
+            "duration": duration,
+            "sample_text": sample_text,
+        }
+    except Exception as exc:
+        raise HTTPException(502, f"Gemini TTS check failed: {exc}")
+
+
+@app.post("/api/queue/{id}/generate-voiceover", dependencies=_AUTH)
+async def queue_item_voiceover(
+    id: int,
+    req: HookVoiceoverRequest,
+    s: Session = Depends(get_session),
+) -> dict:
+    """Generate an AI spoken hook for a queue video item using Gemini 3.8 Flash TTS."""
+    item = s.get(QueueItem, id)
+    if not item:
+        raise HTTPException(404, "Queue item not found")
+
+    try:
+        script, filename, duration = await tts.generate_hook_voiceover(
+            title=item.title,
+            description=item.description,
+            voice=req.voice,
+            style=req.style,
+            model=req.model,
+        )
+
+        audio_url = f"/api/tts/audio/{filename}"
+        hook_note = f"🎙️ Hook ({duration}s, {req.voice}): \"{script}\""
+        if item.notes:
+            item.notes = f"{item.notes} | {hook_note}"
+        else:
+            item.notes = hook_note
+
+        item.media_url = audio_url
+        s.commit()
+        s.refresh(item)
+
+        return {
+            "ok": True,
+            "script": script,
+            "audio_url": audio_url,
+            "duration": duration,
+            "voice": req.voice,
+            "item_id": item.id,
+        }
+    except Exception as exc:
+        raise HTTPException(502, f"Failed to generate voiceover hook: {exc}")
+
 
 
 @app.get("/api/schedule", dependencies=_AUTH)

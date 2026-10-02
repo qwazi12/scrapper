@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
+import { api, apiBase, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 
@@ -150,6 +150,19 @@ export function SettingsOverview() {
   const [now, setNow] = useState(Date.now());
   const [seo, setSeo] = useState<{ auto: boolean; clips_without_seo: number } | null>(null);
 
+  // Gemini 3.8 Flash TTS Studio State
+  const [ttsVoices, setTtsVoices] = useState<TTSVoice[]>([]);
+  const [ttsVoice, setTtsVoice] = useState("Puck");
+  const [ttsStyle, setTtsStyle] = useState("high energy and enthusiastic");
+  const [ttsModel, setTtsModel] = useState("gemini-3.8-flash-tts");
+  const [ttsText, setTtsText] = useState("You will NOT believe what happened next! <gasp> Watch till the very end.");
+  const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
+  const [ttsDuration, setTtsDuration] = useState<number | null>(null);
+  const [ttsGenerating, setTtsGenerating] = useState(false);
+  const [ttsStatusMsg, setTtsStatusMsg] = useState("");
+  const [ttsCheckTesting, setTtsCheckTesting] = useState(false);
+  const [ttsCheckResult, setTtsCheckResult] = useState("");
+
   // Refresh the schedule/heartbeat every 30s so the status stays live.
   useEffect(() => {
     const t = setInterval(() => {
@@ -157,6 +170,15 @@ export function SettingsOverview() {
       api.schedule().then(setSched).catch(() => {});
     }, 30000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    api.ttsVoices()
+      .then((r) => {
+        setTtsVoices(r.voices || []);
+        if (r.default_voice) setTtsVoice(r.default_voice);
+      })
+      .catch(() => {});
   }, []);
 
   async function testAi() {
@@ -171,6 +193,43 @@ export function SettingsOverview() {
       setAiTesting(false);
     }
   }
+
+  async function handleTtsCheck() {
+    setTtsCheckTesting(true);
+    setTtsCheckResult("");
+    try {
+      const r = await api.ttsCheck();
+      setTtsCheckResult(`✓ ${r.model} (${r.voice}, ${r.duration}s) live!`);
+      setTtsAudioUrl(r.audio_url);
+      setTtsDuration(r.duration);
+    } catch (e: any) {
+      setTtsCheckResult(`✕ ${e.message || e}`);
+    } finally {
+      setTtsCheckTesting(false);
+    }
+  }
+
+  async function handleTtsGenerate() {
+    if (!ttsText.trim()) return;
+    setTtsGenerating(true);
+    setTtsStatusMsg("");
+    try {
+      const res = await api.ttsGenerate({
+        text: ttsText.trim(),
+        voice: ttsVoice,
+        style: ttsStyle.trim() || undefined,
+        model: ttsModel,
+      });
+      setTtsAudioUrl(res.audio_url);
+      setTtsDuration(res.duration_seconds);
+      setTtsStatusMsg(`✓ Synthesized ${res.duration_seconds}s audio with ${res.voice}!`);
+    } catch (e: any) {
+      setTtsStatusMsg(`✕ ${e.message || e}`);
+    } finally {
+      setTtsGenerating(false);
+    }
+  }
+
 
   useEffect(() => {
     api.seo().then(setSeo).catch(() => {});
@@ -386,6 +445,166 @@ export function SettingsOverview() {
               <span style={{ color: "var(--yellow)" }}>Disabled (ARCHIVE_DELETE_DAYS=0).</span>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Gemini 3.8 Flash Voice Studio & Playground */}
+      <div style={{ ...card, marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h2 style={{ ...h2, margin: 0 }}>🎙️ Gemini 3.8 Flash Voice Studio</h2>
+            <span style={{ fontSize: 10, background: "#064e3b", color: "#34d399", padding: "2px 7px", borderRadius: 8, fontWeight: 700 }}>
+              NEW TTS
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              onClick={handleTtsCheck}
+              disabled={ttsCheckTesting}
+              style={{ fontSize: 11, padding: "3px 10px", background: "rgba(255,255,255,0.06)" }}
+            >
+              {ttsCheckTesting ? "Testing…" : "⚡ Test TTS Connection"}
+            </button>
+            {ttsCheckResult && (
+              <span style={{ fontSize: 11, color: ttsCheckResult.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>
+                {ttsCheckResult}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <p style={{ margin: "0 0 14px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
+          Generates expressive, human-like voiceovers with turn-level emotion metadata and point-in-time inline tags
+          (<span className="mono" style={{ color: "#38bdf8" }}>&lt;gasp&gt;</span>, <span className="mono" style={{ color: "#38bdf8" }}>&lt;sigh&gt;</span>, <span className="mono" style={{ color: "#38bdf8" }}>&lt;short pause&gt;</span>).
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 12 }}>
+          {/* Voice Picker */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>
+              Studio Voice:
+            </label>
+            <select
+              value={ttsVoice}
+              onChange={(e) => setTtsVoice(e.target.value)}
+              style={{ width: "100%", padding: "6px 10px", background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 12 }}
+            >
+              {ttsVoices.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name} ({v.timbre}) — {v.gender}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Model Picker */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>
+              TTS Model:
+            </label>
+            <select
+              value={ttsModel}
+              onChange={(e) => setTtsModel(e.target.value)}
+              style={{ width: "100%", padding: "6px 10px", background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 12 }}
+            >
+              <option value="gemini-3.8-flash-tts">gemini-3.8-flash-tts (Studio Fidelity &amp; Acting)</option>
+              <option value="gemini-3.8-flash-lite-tts">gemini-3.8-flash-lite-tts (Fast Bulk Generation)</option>
+            </select>
+          </div>
+
+          {/* Style Input */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4 }}>
+              Turn-Level Style / Emotion:
+            </label>
+            <input
+              type="text"
+              value={ttsStyle}
+              onChange={(e) => setTtsStyle(e.target.value)}
+              placeholder="e.g. urgent and dramatic, whispered urgently"
+              style={{ width: "100%", padding: "6px 10px", background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 12 }}
+            />
+          </div>
+        </div>
+
+        {/* Quick Style Presets */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: "var(--muted)" }}>Quick Styles:</span>
+          {[
+            "urgent and dramatic build-up",
+            "high energy and enthusiastic",
+            "whispered urgently",
+            "deep cinematic movie trailer narrator",
+            "sarcastic and playful",
+            "calm and authoritative",
+          ].map((st) => (
+            <button
+              key={st}
+              type="button"
+              onClick={() => setTtsStyle(st)}
+              style={{ fontSize: 10, padding: "2px 8px", background: ttsStyle === st ? "var(--chip)" : "rgba(255,255,255,0.04)", border: "1px solid var(--border)", borderRadius: 12, color: ttsStyle === st ? "var(--accent)" : "var(--muted)", cursor: "pointer" }}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
+
+        {/* Text Input with Inline Tag Insertions */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>
+              Verbatim Transcript:
+            </label>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, color: "var(--muted)", alignSelf: "center", marginRight: 4 }}>Insert Tag:</span>
+              {["<gasp>", "<sigh>", "<short pause>", "<long pause>", "<chuckle>", "<throat-clearing>"].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => setTtsText((prev) => prev + " " + tag + " ")}
+                  style={{ fontSize: 10, padding: "1px 6px", background: "#1e293b", border: "1px solid #334155", color: "#38bdf8", borderRadius: 4, cursor: "pointer" }}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+          <textarea
+            rows={2}
+            value={ttsText}
+            onChange={(e) => setTtsText(e.target.value)}
+            style={{ width: "100%", padding: "8px 10px", background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontSize: 12, resize: "vertical" }}
+          />
+        </div>
+
+        {/* Action Button & Player */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <button
+            onClick={handleTtsGenerate}
+            disabled={ttsGenerating || !ttsText.trim()}
+            style={{ background: "#2563eb", borderColor: "#1d4ed8", color: "#fff", fontWeight: 600, fontSize: 12, padding: "7px 16px" }}
+          >
+            {ttsGenerating ? "⏳ Synthesizing Voice…" : "▶ Synthesize Audio"}
+          </button>
+
+          {ttsStatusMsg && (
+            <span style={{ fontSize: 11, color: ttsStatusMsg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>
+              {ttsStatusMsg}
+            </span>
+          )}
+
+          {ttsAudioUrl && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+              <audio controls src={`${apiBase()}${ttsAudioUrl}`} autoPlay style={{ height: 32 }} />
+              <a
+                href={`${apiBase()}${ttsAudioUrl}`}
+                download="gemini_tts.wav"
+                style={{ fontSize: 11, color: "var(--accent)", textDecoration: "underline" }}
+              >
+                ⬇ Download WAV
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>

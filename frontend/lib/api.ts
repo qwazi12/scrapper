@@ -107,6 +107,7 @@ export type QueueItem = {
   scheduled_at: string | null;
   published_at: string | null;
   publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
+  media_url?: string | null;
   created_at: string;
 };
 
@@ -115,6 +116,34 @@ export type ScheduleConfig = {
   start_hour: number;
   end_hour: number;
   interval_hours: number;
+};
+
+export type TTSVoice = {
+  id: string;
+  name: string;
+  gender: string;
+  timbre: string;
+  description: string;
+  recommended_for: string[];
+};
+
+export type TTSVoicesResponse = {
+  voices: TTSVoice[];
+  styles: string[];
+  tags: { tag: string; desc: string }[];
+  default_voice: string;
+  default_model: string;
+  configured: boolean;
+};
+
+export type TTSGenerateResponse = {
+  ok: boolean;
+  audio_url: string;
+  filename: string;
+  duration_seconds: number;
+  voice: string;
+  model: string;
+  text: string;
 };
 
 export type BulkAiStatus = {
@@ -680,6 +709,31 @@ export const api = {
       headers: headers(),
       body: JSON.stringify(data),
     }),
+
+  ttsVoices: () => req<TTSVoicesResponse>("/api/tts/voices", { headers: headers(false) }),
+
+  ttsGenerate: (data: { text: string; voice?: string; style?: string; model?: string }) =>
+    req<TTSGenerateResponse>("/api/tts/generate", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(data),
+    }),
+
+  ttsCheck: () =>
+    req<{ ok: boolean; model: string; voice: string; audio_url: string; duration: number; sample_text: string }>(
+      "/api/tts/check",
+      { method: "POST", headers: headers() }
+    ),
+
+  generateQueueVoiceover: (id: number, opts?: { voice?: string; style?: string; model?: string }) =>
+    req<{ ok: boolean; script: string; audio_url: string; duration: number; voice: string; item_id: number }>(
+      `/api/queue/${id}/generate-voiceover`,
+      {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(opts || {}),
+      }
+    ),
 };
 
 /** Days left before the retention sweep deletes this item ("2d", "today", null). */

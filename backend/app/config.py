@@ -100,10 +100,13 @@ class Settings(BaseSettings):
     # removed this many days after they were posted. 0 disables.
     archive_delete_days: int = 4
 
-    # --- AI Metadata (Google Gemini) ------------------------------------
+    # --- AI Metadata & Speech (Google Gemini) ---------------------------
     gemini_api_key: str = ""
     # Newest stable Flash (Sep 2026, ai.google.dev/gemini-api/docs/models).
     gemini_model: str = "gemini-3.8-flash"
+    # Gemini 3.8 Flash TTS for voiceover hooks & studio speech synthesis
+    gemini_tts_model: str = "gemini-3.8-flash-tts"
+    gemini_tts_voice: str = "Puck"
 
     # --- LongForm Studio (trailer breakdowns) ----------------------------
     # TMDB (hobby / non-commercial use). The Read Access Token (Bearer) is

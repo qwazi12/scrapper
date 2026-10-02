@@ -214,3 +214,27 @@ class DriveSyncRequest(BaseModel):
     pipeline: str = "Movie Clips"
     auto_approve: bool = False
 
+
+class TTSGenerateRequest(BaseModel):
+    text: str
+    voice: str = "Puck"
+    style: str | None = None
+    model: str = "gemini-3.8-flash-tts"
+
+
+class TTSGenerateResponse(BaseModel):
+    ok: bool
+    audio_url: str
+    filename: str
+    duration_seconds: float
+    voice: str
+    model: str
+    text: str
+
+
+class HookVoiceoverRequest(BaseModel):
+    voice: str = "Puck"
+    style: str = "high energy and enthusiastic"
+    model: str = "gemini-3.8-flash-tts"
+
+

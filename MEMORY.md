@@ -54,7 +54,18 @@ survives across machines.
     - Automatically discovers or creates the channel subfolder under `Movie Clips` in Google Drive, uploads the 1080p MP4 directly, deletes local temp files, and adds to queue.
   - **Error & Retry Inspector:**
     - Filter tab `⚠️ Errors / Retry` shows error logs and failure reasons with a one-click `↻ Retry All Failed` button.
-- **Repo location:** `~/dev/scrapper` (mapped to `qwazi12/scrapper`). NOT `~/Desktop/scrapper`: that iCloud copy hangs and its `.git` was wiped on 2026-09-30.
+- **Gemini 3.8 Flash Text-to-Speech (TTS, 2026-10-02):**
+  - **Models:** `gemini-3.8-flash-tts` (creative fidelity, acting, nuanced prosody) and `gemini-3.8-flash-lite-tts` (fast bulk shorts hooks).
+  - **Shared Key:** Runs natively on the existing `GEMINI_API_KEY` via Google Interactions API (`POST /v1beta/interactions`) with zero extra SaaS subscriptions.
+  - **Emotional Styling & Inline Vocal Tags:** Separates verbatim transcript from turn-level `speech_metadata.style` (e.g. "urgent and dramatic build-up", "whispered urgently") and native inline vocal bursts (`<gasp>`, `<sigh>`, `<short pause>`, `<chuckle>`, `<throat-clearing>`).
+  - **Multi-Speaker Cadence & Overlaps:** Native support for 2-speaker conversational dialogue with pipe backchannels (`|oh really?|`, `|reaction|`) for natural overlapping speech.
+  - **Studio Voices:** 30 prebuilt curated voices (`Puck`, `Kore`, `Fenrir`, `Charon`, `Aoede`, `Zephyr`, `Algenib`, etc.).
+  - **App Integration:**
+    - Backend: `backend/app/social/tts.py` provides `synthesize_speech()`, `synthesize_dialogue()`, and `generate_hook_voiceover()`.
+    - API endpoints: `GET /api/tts/voices`, `POST /api/tts/generate`, `GET /api/tts/audio/{filename}`, `POST /api/tts/check`, `POST /api/queue/{id}/generate-voiceover`.
+    - Web UI: Added **🎙️ Gemini 3.8 Flash Voice Studio** in `SettingsOverview.tsx` for instant interactive voice synthesis, testing, and downloads, plus 1-click `🎙️ Voice` hook generation in `QueuePanel.tsx` with inline audio player.
+- **Repo location:** `~/Desktop/scrapper` & `~/dev/scrapper` (mapped to `qwazi12/scrapper`).
+
 - **Gotchas that cost real debugging time:** yt-dlp writes typographic quotes (`you’re`, U+2019) so error matching must fold curly quotes; FastAPI needs `Form(...)` on multipart text fields or it reads them as query params and silently drops them; macOS python.org builds have no CA store, so scripts need a certifi SSL context.
 - **Cookies:** `--cookies-from-browser` (`COOKIES_FROM_BROWSER`) only works where a browser profile exists (your Mac / hybrid worker), never on Railway. For the cloud use `scripts/sync_cookies.py` (+ `install_cookie_sync.sh` for a daily launchd job) to push browser cookies to `/api/cookies`. Use a BURNER account — a cookie jar is a live credential.
 - **Retention:** `RETENTION_DAYS=5` — per-item rolling TTL from each row's `created_at` (scraped Thursday → expires Tuesday), swept every 30m by the worker, skipping queued/running items. `0` disables. UI shows an "expires" countdown. SocialPilot queue items are preserved until posted; posted/archived items are removed `ARCHIVE_DELETE_DAYS` (4) after posting, Drive file moved to trash.

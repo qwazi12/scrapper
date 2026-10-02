@@ -19,6 +19,7 @@ backend/.env
 node_modules/
 frontend/.next/
 frontend/out/
+*.tsbuildinfo
 .vercel/
 
 # macOS

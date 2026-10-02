@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { api, BulkAiStatus, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
+import { api, apiBase, BulkAiStatus, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 import { UndoButton } from "./UndoButton";
 
@@ -267,12 +267,28 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     onChange();
   }
 
+  const [generatingVoiceId, setGeneratingVoiceId] = useState<number | null>(null);
+
   async function handleGenerateAi(id: number) {
     try {
       await api.generateQueueAi(id);
       loadQueue();
     } catch (err: any) {
       alert(`AI generation failed: ${err.message}`);
+    }
+  }
+
+  async function handleGenerateVoiceover(id: number) {
+    setGeneratingVoiceId(id);
+    try {
+      const res = await api.generateQueueVoiceover(id);
+      alert(`✓ Generated ${res.duration}s voiceover hook (${res.voice}):\n"${res.script}"`);
+      loadQueue();
+      onChange();
+    } catch (err: any) {
+      alert(`Voiceover generation failed: ${err.message || err}`);
+    } finally {
+      setGeneratingVoiceId(null);
     }
   }
 
@@ -1090,6 +1106,16 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           {item.status === "error" ? "❌ Error:" : "ℹ️"} {item.notes}
                         </div>
                       )}
+                      {item.media_url && (
+                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 10, color: "#34d399", fontWeight: 700 }}>🎙️ Hook:</span>
+                          <audio
+                            controls
+                            src={item.media_url.startsWith("http") ? item.media_url : `${apiBase()}${item.media_url}`}
+                            style={{ height: 26, width: "100%", maxWidth: 240 }}
+                          />
+                        </div>
+                      )}
                     </td>
 
                     {/* Target Social Accounts Column */}
@@ -1219,6 +1245,20 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           title="Auto-generate AI caption & tags"
                         >
                           ✨ AI
+                        </button>
+                        <button
+                          style={{
+                            fontSize: 10,
+                            padding: "3px 7px",
+                            background: item.media_url ? "rgba(52, 211, 153, 0.15)" : undefined,
+                            borderColor: item.media_url ? "#059669" : undefined,
+                            color: item.media_url ? "#34d399" : undefined,
+                          }}
+                          onClick={() => handleGenerateVoiceover(item.id)}
+                          disabled={generatingVoiceId === item.id}
+                          title="Generate Gemini 3.8 Flash TTS Voiceover Hook"
+                        >
+                          {generatingVoiceId === item.id ? "⏳…" : "🎙️ Voice"}
                         </button>
                         <button
                           style={{ fontSize: 10, padding: "3px 7px" }}
