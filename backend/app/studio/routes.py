@@ -189,6 +189,42 @@ async def upload_trailer(project_id: int, file: UploadFile = File(...),
     return _out(p)
 
 
+@router.post("/projects/{project_id}/publish")
+def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Send the rendered video to the Posting Queue (status Review, pipeline
+    LongForm). The owner picks where it posts and approves it there."""
+    from sqlalchemy import func
+    from ..models import QueueItem
+
+    p = _get(s, project_id)
+    root = runner.project_dir(project_id)
+    if not p.render or not (root / p.render["file"]).exists():
+        raise HTTPException(400, "Render the video first")
+    sc = p.script or {}
+    tags = " ".join("#" + "".join(ch for ch in t if ch.isalnum()) for t in sc.get("tags", []) if t.strip())
+    fields = dict(
+        pipeline="LongForm", video_name=f"{p.title} — Trailer Breakdown",
+        video_path=str(root / p.render["file"]),
+        thumb_path=str(root / p.render["thumbnail"]) if p.render.get("thumbnail") else None,
+        title=sc.get("youtube_title") or p.title, description=sc.get("description", ""), tags=tags,
+        source="LongForm Studio",
+    )
+    item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
+    if item and item.status in ("review", "ready", "retry", "error"):
+        for k, v in fields.items():          # re-publishing a re-render updates the same row
+            setattr(item, k, v)
+    else:
+        item = QueueItem(**fields, status="review", accounts=[],
+                         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
+        s.add(item)
+        s.flush()
+        p.queue_item_id = item.id
+    s.commit()
+    logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id}",
+               project=p.id, queue_item=item.id)
+    return {"queue_item_id": item.id, "status": item.status}
+
+
 @router.get("/projects/{project_id}/file")
 def project_file(project_id: int, path: str, s: Session = Depends(get_session)):
     """Serve a file from the project's folder (keyframes, audio, the render)."""

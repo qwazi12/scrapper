@@ -149,6 +149,7 @@ async def upload_video(
     tags: list[str] | None = None,
     privacy: str = "public",
     scheduled_date: str | None = None,
+    thumbnail: pathlib.Path | None = None,
 ) -> str:
     """Submit one async upload for ONE profile. Returns the request_id.
 
@@ -186,9 +187,18 @@ async def upload_video(
         data["media_type"] = "REELS"
 
     with open(video_path, "rb") as fh:
-        files = {"video": (video_path.name, fh, "video/mp4")}
-        async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as client:
-            res = await client.post(f"{API_BASE}/upload", headers=_headers(), data=data, files=files)
+        files: dict[str, Any] = {"video": (video_path.name, fh, "video/mp4")}
+        thumb_fh = None
+        # Custom thumbnail (JPG/PNG, <= 2 MB); YouTube applies it only on verified channels.
+        if thumbnail and thumbnail.exists() and thumbnail.stat().st_size <= 2_000_000:
+            thumb_fh = open(thumbnail, "rb")
+            files["thumbnail"] = (thumbnail.name, thumb_fh, "image/jpeg")
+        try:
+            async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as client:
+                res = await client.post(f"{API_BASE}/upload", headers=_headers(), data=data, files=files)
+        finally:
+            if thumb_fh:
+                thumb_fh.close()
     _raise_for(res, f"Upload-Post upload to profile '{profile}'")
     body = res.json()
     request_id = body.get("request_id")

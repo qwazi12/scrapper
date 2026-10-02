@@ -233,6 +233,7 @@ async def submit_upload(
     description: str,
     tags: list[str],
     scheduled_date: str | None = None,
+    thumbnail: pathlib.Path | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
 
@@ -251,7 +252,7 @@ async def submit_upload(
             rid = await upload_post.upload_video(
                 video_path, profile=profile, platforms=platforms, title=title,
                 description=description, tags=tags, privacy=settings.publish_privacy,
-                scheduled_date=scheduled_date,
+                scheduled_date=scheduled_date, thumbnail=thumbnail,
             )
             entries.append({"profile": profile, "platforms": platforms, "request_id": rid,
                             "submitted_at": scheduled_date or now})  # timeout counts from go-live
@@ -306,9 +307,10 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
 
     try:
         description = "\n\n".join(p.strip() for p in (item.description, item.tags) if p and p.strip())
+        thumb = pathlib.Path(item.thumb_path) if item.thumb_path and not item.thumb_path.startswith("http") else None
         entries = await submit_upload(
             video_path, list(item.accounts), title=item.title or item.video_name,
-            description=description, tags=_hashtags(item.tags),
+            description=description, tags=_hashtags(item.tags), thumbnail=thumb,
         )
         if not any(e.get("request_id") for e in entries):
             raise upload_post.UploadPostError("; ".join(e.get("error", "") for e in entries))

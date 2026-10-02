@@ -307,3 +307,26 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
                             "-of", "compact", str(final)], capture_output=True, text=True).stdout
     assert "width=1920" in probe and "height=1080" in probe and "codec_type=audio" in probe
     assert 3.8 <= r["seconds"] <= 4.3 and (root / r["thumbnail"]).exists()
+
+
+def test_publish_sends_render_to_queue_once(client):
+    from backend.app.models import QueueItem
+    pid = _new_project(script={"youtube_title": "Send Help Trailer Breakdown", "description": "d",
+                               "tags": ["send help", "sam raimi"]})
+    root = runner.project_dir(pid)
+    (root / "render").mkdir(exist_ok=True)
+    (root / "render" / "final.mp4").write_bytes(b"x")
+    with SessionLocal() as s:
+        s.get(StudioProject, pid).render = {"file": "render/final.mp4", "thumbnail": "render/thumbnail.jpg"}
+        s.commit()
+    a = client.post(f"/api/studio/projects/{pid}/publish").json()
+    b = client.post(f"/api/studio/projects/{pid}/publish").json()
+    assert a["queue_item_id"] == b["queue_item_id"] and a["status"] == "review"
+    with SessionLocal() as s:
+        it = s.get(QueueItem, a["queue_item_id"])
+        assert it.pipeline == "LongForm" and it.tags == "#sendhelp #samraimi" and it.accounts == []
+
+
+def test_publish_requires_a_render(client):
+    pid = _new_project()
+    assert client.post(f"/api/studio/projects/{pid}/publish").status_code == 400
