@@ -282,3 +282,17 @@ Env needed on Railway: `TMDB_API_KEY`, `TTS_API_KEY` (same Google key manhwa use
   6. **Access** (~4 h): auth currently FAILS OPEN when ACCESS_TOKEN is empty (`auth.py` "open in local dev") → refuse to start unless DEV_OPEN=1; master token travels in `?token=` URLs (studioFileUrl etc.) → short-lived signed links; `/api/tts/audio/*` unauthenticated → signed; constant-time compare; rate limits (20 bad tokens/10 min per IP → 15 min block; 30 paid actions/min); rotate token with 2-token overlap; optional named tokens. CORS already restricted (scrapper.nodepilot.dev + vercel alias).
   7. **Upkeep** (~1 day): GitHub Vercel secrets (owner), `railway config migrate` before 2026-12-01, RUNBOOK/CONFIG/CHANGELOG, Playwright smoke tests vs local server, log the 9 silent excepts, ruff/pip-audit in CI, review TTS commit 673e7f3 (tests, 7-day /data/audio retention, auth), restructure MEMORY.md.
 - **Decisions pending from owner** (checklist at end of the doc): backup destination, archive days, volume size, Shared Drive move, rate-limit numbers, named tokens, token rotation, auto-deploy secrets vs drop workflow, order.
+
+## Log — 2026-10-02 (night) — Fix 1: Database Backups Built & Verified Live
+- `backend/app/backup.py`: Full SQLite point-in-time backup engine using `sqlite3.Connection.backup` (lock-safe during writes) + `PRAGMA integrity_check` + gzip compression (.db.gz) + SHA-256 validation.
+- **Local & Off-Disk Rotation**: 7-day retention on local Railway disk (`/data/backups/`), 30-day retention in Google Shared Drive folder `14z17C-cYIqUK8teqeOOVtnITx0GHHl8E` ("Scrapper Backups"). If Shared Drive permissions are pending, gracefully defaults to local disk with yellow warning in UI.
+- **Pre-Migration Safety Snapshot**: `init_db()` in `backend/app/db.py` automatically captures a `pre_migration` snapshot before running any additive migrations.
+- **Nightly 3:00 AM Eastern Scheduler**: Automatically triggered inside `run_scheduler_tick()` in `backend/app/social/queue_manager.py` with 26-hour staleness alerting.
+- **Restore CLI (`scripts/restore_db.py`)**: Dry-run by default comparing all table row counts; `--confirm` captures emergency pre-restore snapshot (`scrapper_pre_restore_<ts>.db.gz`) before restoring.
+- **Settings UI (`BackupCard` in `SettingsOverview.tsx`)**: Real-time backup status, metrics, 1-click **"💾 Backup Now"** button, and direct `.db.gz` file downloads.
+- **Verified live in production**:
+  - Live pre-migration snapshot taken on Railway restart: `scrapper_20261002_183619_pre_migration.db.gz` (1.51 MB -> 356 KB in 0.05s).
+  - Manual backup endpoint `POST /api/backup/now` tested live and returned 200 OK.
+  - Live restore dry-run verified against live database snapshot (2,548 total rows: 689 queue items, 31 ingest jobs, 1,387 logs, 435 events).
+  - Unit tests in `backend/tests/test_backup.py` passed 4/4 in 0.016s.
+
