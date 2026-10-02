@@ -615,7 +615,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 style={{
                   position: "absolute",
                   top: "100%",
-                  right: 0,
+                  ...(isNarrow ? { left: 0 } : { right: 0 }), // phones: open rightwards, stay on screen
                   marginTop: 6,
                   background: "#1e1b4b",
                   border: "1px solid #4338ca",
