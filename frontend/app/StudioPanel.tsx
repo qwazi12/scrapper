@@ -173,6 +173,7 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
   const [tab, setTab] = useState<"upcoming_movies" | "trending" | "on_the_air_tv">("upcoming_movies");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [month, setMonth] = useState("all");
 
   useEffect(() => {
     if (status?.tmdb) api.studioCalendar().then(setCal).catch((e) => setErr(e.message || String(e)));
@@ -202,7 +203,12 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
     }
   }
 
-  const list = results ?? cal?.[tab] ?? [];
+  const byMonth = !results && tab === "upcoming_movies";
+  const monthOf = (d: string) => (d || "").slice(0, 7);
+  const monthLabel = (m: string) =>
+    new Date(`${m}-15T12:00:00Z`).toLocaleString("en-US", { month: "long", year: "numeric" });
+  const months = byMonth ? [...new Set((cal?.upcoming_movies ?? []).map((t) => monthOf(t.date)).filter(Boolean))] : [];
+  const list = (results ?? cal?.[tab] ?? []).filter((t) => !byMonth || month === "all" || monthOf(t.date) === month);
   return (
     <div style={card}>
       <h2 style={h2}>Start a new breakdown</h2>
@@ -235,10 +241,27 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
           ))}
         </div>
       )}
+      {byMonth && months.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={muted}>Opening in the US, next 3 months:</span>
+          {["all", ...months].map((m) => (
+            <button key={m} onClick={() => setMonth(m)}
+              style={{ fontSize: 11, padding: "2px 9px", background: month === m ? "var(--chip)" : "transparent" }}>
+              {m === "all" ? "All" : monthLabel(m).split(" ")[0]}
+            </button>
+          ))}
+        </div>
+      )}
       {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, maxHeight: 420, overflowY: "auto" }}>
-        {list.map((t) => (
-          <div key={`${t.media_type}-${t.tmdb_id}`} style={{ background: "var(--row)", borderRadius: 8, padding: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+        {list.map((t, i) => (
+          <React.Fragment key={`${t.media_type}-${t.tmdb_id}`}>
+          {byMonth && monthOf(t.date) !== monthOf(list[i - 1]?.date) && (
+            <div style={{ gridColumn: "1 / -1", fontSize: 12, fontWeight: 700, marginTop: i ? 8 : 0, borderBottom: "1px solid var(--border)", paddingBottom: 4 }}>
+              {monthLabel(monthOf(t.date))}
+            </div>
+          )}
+          <div style={{ background: "var(--row)", borderRadius: 8, padding: 8, display: "flex", flexDirection: "column", gap: 4 }}>
             {t.poster ? (
               <img src={t.poster} alt="" style={{ width: "100%", borderRadius: 6, aspectRatio: "2/3", objectFit: "cover" }} />
             ) : (
@@ -250,6 +273,7 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
               Make breakdown
             </button>
           </div>
+          </React.Fragment>
         ))}
       </div>
       {status && <div style={{ ...muted, marginTop: 10 }}>{status.attribution}</div>}

@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import datetime
 import logging
+import time
 
 import httpx
 
@@ -101,17 +103,75 @@ def search(query: str) -> list[dict[str, Any]]:
     return [_summary(r) for r in data.get("results", []) if r.get("media_type") in ("movie", "tv")]
 
 
+UPCOMING_DAYS = 92          # today through ~3 months out
+UPCOMING_PAGES = 5          # 20 films a page, most popular first
+_cal_cache: dict[str, Any] = {}
+CAL_TTL = 3 * 3600
+
+
+def _regional_date(tmdb_id: int, region: str, start: str, end: str) -> str | None:
+    """The film's theatrical/digital date in `region` inside the window, if any."""
+    data = get(f"/movie/{tmdb_id}/release_dates")
+    for c in data.get("results", []):
+        if c.get("iso_3166_1") == region:
+            dates = sorted(d["release_date"][:10] for d in c.get("release_dates", [])
+                           if d.get("type") in (2, 3, 4) and start <= d["release_date"][:10] <= end)
+            return dates[0] if dates else None
+    return None
+
+
+def upcoming_movies(region: str, today: datetime.date | None = None) -> list[dict[str, Any]]:
+    """New films opening in `region` from today to ~3 months out, by date.
+
+    /movie/upcoming is not used: it lists theatrical RE-releases too, so 1959
+    and 1980 films showed up. Here a film must open (theatrical or digital) in
+    the window AND be new (first released worldwide no earlier than 6 months
+    ago, which still allows festival premieres). The shown date is the
+    regional opening, not a festival date."""
+    today = today or datetime.date.today()
+    start, end = today.isoformat(), (today + datetime.timedelta(days=UPCOMING_DAYS)).isoformat()
+    newest = (today - datetime.timedelta(days=183)).isoformat()
+    seen: dict[int, dict[str, Any]] = {}
+    for page in range(1, UPCOMING_PAGES + 1):
+        data = get("/discover/movie", region=region, page=page, include_adult="false", sort_by="popularity.desc",
+                   with_release_type="2|3|4", **{"release_date.gte": start, "release_date.lte": end,
+                                                 "primary_release_date.gte": newest})
+        for r in data.get("results", []):
+            if r.get("id") not in seen and r.get("poster_path"):
+                seen[r["id"]] = _summary(r, "movie")
+        if page >= (data.get("total_pages") or 1):
+            break
+    out = []
+    for m in seen.values():
+        if not (start <= m["date"] <= end):          # festival premiere earlier: use the regional opening
+            try:
+                m["date"] = _regional_date(m["tmdb_id"], region, start, end) or ""
+            except TMDBError:
+                m["date"] = ""
+        if m["date"]:
+            out.append(m)
+    return sorted(out, key=lambda x: (x["date"], -x["popularity"]))
+
+
 def calendar(region: str | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Our own release calendar: upcoming films, airing TV, and what's trending."""
+    """Our own release calendar: upcoming films, airing TV, and what's trending.
+    Cached for 3 hours (the upcoming list costs ~5–15 TMDB calls)."""
     region = region or settings.studio_region
-    upcoming = get("/movie/upcoming", region=region).get("results", [])
+    key = f"{region}:{datetime.date.today()}"
+    hit = _cal_cache.get(key)
+    if hit and time.time() - hit[0] < CAL_TTL:
+        return hit[1]
+    upcoming = upcoming_movies(region)
     airing = get("/tv/on_the_air").get("results", [])
     trending = get("/trending/all/day").get("results", [])
-    return {
-        "upcoming_movies": sorted((_summary(r, "movie") for r in upcoming), key=lambda x: x["date"] or "9"),
+    result = {
+        "upcoming_movies": upcoming,
         "on_the_air_tv": [_summary(r, "tv") for r in airing],
         "trending": [_summary(r) for r in trending if r.get("media_type") in ("movie", "tv")],
     }
+    _cal_cache.clear()
+    _cal_cache[key] = (time.time(), result)
+    return result
 
 
 _RELEASE_TYPES = {1: "Premiere", 2: "Theatrical (limited)", 3: "Theatrical", 4: "Digital", 5: "Physical", 6: "TV"}

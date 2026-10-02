@@ -462,3 +462,32 @@ def test_drive_save_failure_keeps_reason(session, monkeypatch, tmp_path):
     session.expire_all()
     d = session.get(StudioProject, p.id).drive
     assert d["status"] == "error" and "Shared Drive" in d["error"]
+
+
+# --- upcoming calendar ------------------------------------------------------------
+def test_upcoming_is_new_films_in_the_next_three_months(monkeypatch):
+    import datetime as dt
+    calls = []
+
+    def fake_get(path, **params):
+        calls.append((path, params))
+        if path == "/discover/movie":
+            return {"total_pages": 1, "results": [
+                {"id": 1, "title": "Vampire Carnival", "release_date": "2026-10-07", "poster_path": "/a.jpg", "popularity": 50},
+                {"id": 2, "title": "Festival Darling", "release_date": "2026-09-05", "poster_path": "/b.jpg", "popularity": 80},
+                {"id": 3, "title": "No Poster", "release_date": "2026-11-01", "poster_path": None, "popularity": 10},
+                {"id": 4, "title": "Holiday Film", "release_date": "2026-12-20", "poster_path": "/d.jpg", "popularity": 30},
+            ]}
+        if path == "/movie/2/release_dates":
+            return {"results": [{"iso_3166_1": "US", "release_dates": [
+                {"type": 1, "release_date": "2026-09-05T00:00:00.000Z"},
+                {"type": 3, "release_date": "2026-11-14T00:00:00.000Z"}]}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(tmdb, "get", fake_get)
+    out = tmdb.upcoming_movies("US", today=dt.date(2026, 10, 2))
+    assert [(m["title"], m["date"]) for m in out] == [
+        ("Vampire Carnival", "2026-10-07"), ("Festival Darling", "2026-11-14"), ("Holiday Film", "2026-12-20")]
+    p = calls[0][1]
+    assert p["release_date.gte"] == "2026-10-02" and p["release_date.lte"] == "2027-01-02"
+    assert p["primary_release_date.gte"] == "2026-04-02" and p["region"] == "US"

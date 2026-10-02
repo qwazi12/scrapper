@@ -1,7 +1,9 @@
 """Stage: render — build the final 1080p video in the Screen Central style.
 
-Look (from the reference video): letterboxed footage (2.4:1 band on black),
-hard cuts every ~4 s, slow Ken Burns on stills, short motion clips, the
+Look: full-frame 16:9 1920x1080. Footage is never cropped to fit: a 16:9
+source fills the frame; a wider "scope" source keeps its own black bars
+(owner's call 2026-10-02 — the old forced 2.4:1 band cut ~26% off the top
+and bottom of 16:9 trailers). Hard cuts every ~4 s, slow Ken Burns on stills, short motion clips, the
 poster on a blurred copy of itself when the release date is spoken, a
 "subscribe" lower-third a few times, and an 8 s end card for YouTube's
 end-screen elements. Narration sentences are placed at their planned start
@@ -24,8 +26,9 @@ from . import media
 from .runner import project_dir, stage
 
 W, H, FPS = 1920, 1080, 30
-BAND = 800                      # letterboxed picture height
-BAND_Y = (H - BAND) // 2
+# Fit the whole picture inside 16:9, centred, black where it doesn't reach (never crop).
+FIT = (f"scale={W}:{H}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+       f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black")
 END_CARD = 8.0
 # One timescale for every segment: the concat demuxer joins them without
 # re-encoding, and mismatched timescales (zoompan vs trimmed clips) scramble
@@ -70,7 +73,7 @@ def _text_w(draw: ImageDraw.ImageDraw, text: str, f) -> int:
 def subscribe_png(dest: pathlib.Path, channel: str) -> pathlib.Path:
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    x, y, h = 60, H - BAND_Y - 120, 84
+    x, y, h = 60, H - 260, 84
     name_f, small_f, btn_f = media.font(34), media.font(22, False), media.font(26)
     tagline = "Trailer breakdowns & release dates"
     btn_w = _text_w(d, "SUBSCRIBE", btn_f) + 44
@@ -160,27 +163,27 @@ def thumbnail(still: pathlib.Path | None, poster: pathlib.Path | None, title: st
 
 
 # --- segments (ffmpeg) -------------------------------------------------------
-def seg_still(img: pathlib.Path, dur: float, k: int, dest: pathlib.Path, letterbox: bool = True) -> None:
+def seg_still(img: pathlib.Path, dur: float, k: int, dest: pathlib.Path) -> None:
+    """A still with a slow Ken Burns move. The whole still is fitted into 16:9
+    first (2x size so the move stays sharp); only the move itself zooms (≤10%)."""
     n = max(1, round(dur * FPS))
-    bh = BAND if letterbox else H
     move = _MOVES[k % len(_MOVES)].format(n=n)
-    vf = (f"scale={W * 2}:{bh * 2}:force_original_aspect_ratio=increase,crop={W * 2}:{bh * 2},"
-          f"zoompan={move}:d={n}:s={W}x{bh}:fps={FPS}" +
-          (f",pad={W}:{H}:0:{BAND_Y}:black" if letterbox else "") + ",setsar=1")
+    vf = (f"scale={W * 2}:{H * 2}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+          f"pad={W * 2}:{H * 2}:(ow-iw)/2:(oh-ih)/2:black,"
+          f"zoompan={move}:d={n}:s={W}x{H}:fps={FPS},setsar=1")
     media.run(["ffmpeg", "-v", "error", "-y", "-i", str(img), "-vf", vf, "-frames:v", str(n), *ENC, str(dest)])
 
 
 def seg_clip(src: str, start: float, dur: float, dest: pathlib.Path, crop: str | None = None) -> None:
     pre = f"crop={crop}," if crop else ""   # remove the source's own letterbox bars
-    vf = (f"{pre}scale={W}:{BAND}:force_original_aspect_ratio=increase,crop={W}:{BAND},fps={FPS},"
-          f"pad={W}:{H}:0:{BAND_Y}:black,setsar=1,tpad=stop_mode=clone:stop_duration={dur:.3f}")
+    vf = f"{pre}{FIT},fps={FPS},setsar=1,tpad=stop_mode=clone:stop_duration={dur:.3f}"
     media.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", src, "-vf", vf, "-an",
                "-t", f"{dur:.3f}", *ENC, str(dest)])
 
 
 def seg_image(img: pathlib.Path, dur: float, dest: pathlib.Path) -> None:
     """A full-frame image (poster card, end card) with a very slow push-in."""
-    seg_still(img, dur, 0, dest, letterbox=False)
+    seg_still(img, dur, 0, dest)
 
 
 @stage("render")
