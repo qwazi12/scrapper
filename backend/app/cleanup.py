@@ -114,3 +114,213 @@ def purge_expired(s: Session) -> dict:
         s.commit()
         log("info", "retention_sweep", f"auto-deleted {n_clips} clip(s), {n_comps} compilation(s)")
     return {"clips": n_clips, "compilations": n_comps}
+
+
+# --- Disk Space & Cache Management -------------------------------------------
+class DiskFullError(Exception):
+    """Raised when disk volume usage exceeds settings.max_disk_usage_percent."""
+    pass
+
+
+def get_disk_usage(target_path: pathlib.Path | None = None) -> dict:
+    """Return volume storage statistics and health status."""
+    import shutil
+    target = target_path or settings.data_path
+    try:
+        total, used, free = shutil.disk_usage(target)
+    except Exception:
+        total, used, free = (0, 0, 0)
+    pct = round((used / total) * 100, 1) if total > 0 else 0.0
+    status = "healthy"
+    if pct >= settings.max_disk_usage_percent:
+        status = "critical"
+    elif pct >= settings.warn_disk_usage_percent:
+        status = "warning"
+    return {
+        "total_bytes": total,
+        "used_bytes": used,
+        "free_bytes": free,
+        "total_gb": round(total / (1024**3), 2),
+        "used_gb": round(used / (1024**3), 2),
+        "free_gb": round(free / (1024**3), 2),
+        "percent_used": pct,
+        "status": status,
+        "max_threshold_percent": settings.max_disk_usage_percent,
+        "warn_threshold_percent": settings.warn_disk_usage_percent,
+        "path": str(target),
+    }
+
+
+def check_disk_space() -> None:
+    """Refuse heavy operations if disk space is critical."""
+    usage = get_disk_usage()
+    if usage["percent_used"] >= settings.max_disk_usage_percent:
+        msg = (
+            f"Disk space critical: {usage['percent_used']}% used ({usage['used_gb']} GB / {usage['total_gb']} GB). "
+            f"Operation blocked until volume usage drops below {settings.max_disk_usage_percent}%."
+        )
+        log("error", "disk_space_critical", msg)
+        raise DiskFullError(msg)
+
+
+def cleanup_render_intermediates(out_dir: pathlib.Path) -> dict:
+    """Remove heavy intermediate files (ProRes mov overlays, raw audio, temp frame lists)
+    after video compositing completes to avoid bloating disk space.
+    """
+    if not out_dir.exists():
+        return {"files_removed": 0, "bytes_freed": 0}
+    patterns = [
+        "subscribe_*.mov",
+        "banner_*.mov",
+        "subscribe*.png",
+        "banner*.png",
+        "segments*.txt",
+        "narration.m4a",
+        "poster_clean.jpg",
+        "end_card.jpg",
+        "video_motion.mp4",
+    ]
+    removed = 0
+    freed_bytes = 0
+    for pat in patterns:
+        for f in out_dir.glob(pat):
+            try:
+                sz = f.stat().st_size
+                f.unlink(missing_ok=True)
+                removed += 1
+                freed_bytes += sz
+            except Exception as exc:
+                log("warning", "render_intermediate_cleanup_failed", str(exc), file=str(f))
+    # Segments subfolder if still around
+    segs = out_dir / "segments"
+    if segs.exists():
+        import shutil
+        try:
+            for child in segs.glob("*"):
+                freed_bytes += child.stat().st_size if child.is_file() else 0
+            shutil.rmtree(segs, ignore_errors=True)
+        except Exception:
+            pass
+    if removed:
+        log("info", "render_intermediates_cleaned", f"freed {round(freed_bytes / 1e6, 1)} MB across {removed} files", path=str(out_dir))
+    return {"files_removed": removed, "bytes_freed": freed_bytes}
+
+
+def prune_lru_cache(cache_dir: pathlib.Path, max_bytes: int, target_ratio: float = 0.8) -> dict:
+    """Evict oldest entries in cache_dir until size drops below target_ratio * max_bytes."""
+    if not cache_dir.exists() or not cache_dir.is_dir():
+        return {"files_removed": 0, "bytes_freed": 0, "remaining_bytes": 0}
+    entries: list[tuple[pathlib.Path, int, float]] = []
+    total_bytes = 0
+    for p in cache_dir.iterdir():
+        if p.is_file():
+            try:
+                st = p.stat()
+                entries.append((p, st.st_size, st.st_mtime))
+                total_bytes += st.st_size
+            except OSError:
+                continue
+
+    if total_bytes <= max_bytes:
+        return {"files_removed": 0, "bytes_freed": 0, "remaining_bytes": total_bytes}
+
+    # Sort oldest first
+    entries.sort(key=lambda x: x[2])
+    target_bytes = int(max_bytes * target_ratio)
+    freed = 0
+    removed = 0
+    for path, sz, _ in entries:
+        try:
+            path.unlink(missing_ok=True)
+            freed += sz
+            total_bytes -= sz
+            removed += 1
+        except OSError as exc:
+            log("warning", "cache_eviction_failed", str(exc), path=str(path))
+        if total_bytes <= target_bytes:
+            break
+
+    log("info", "cache_pruned", f"evicted {removed} files, freed {round(freed / 1e6, 1)} MB from {cache_dir.name}")
+    return {"files_removed": removed, "bytes_freed": freed, "remaining_bytes": total_bytes}
+
+
+def prune_all_caches() -> dict:
+    """Enforce LRU cache caps across studio motion graphics, TTS, and temporary audio."""
+    res = {}
+    motion_dir = settings.data_path / "studio" / "_motioncache"
+    res["motion"] = prune_lru_cache(motion_dir, settings.max_motion_cache_mb * 1024 * 1024)
+
+    tts_dir = settings.data_path / "studio" / "_ttscache"
+    res["tts"] = prune_lru_cache(tts_dir, settings.max_tts_cache_mb * 1024 * 1024)
+
+    audio_dir = settings.data_path / "audio"
+    if audio_dir.exists():
+        res["audio"] = prune_lru_cache(audio_dir, settings.max_tts_cache_mb * 1024 * 1024)
+    return res
+
+
+def cleanup_leftover_renders(max_age_seconds: int = 3600) -> dict:
+    """Delete abandoned render_new/ scratch directories older than max_age_seconds."""
+    import shutil
+    import time
+    projects_dir = settings.data_path / "studio" / "projects"
+    if not projects_dir.exists():
+        return {"folders_removed": 0}
+    now = time.time()
+    removed = 0
+    for p in projects_dir.iterdir():
+        if p.is_dir():
+            rn = p / "render_new"
+            if rn.exists():
+                try:
+                    if now - rn.stat().st_mtime > max_age_seconds:
+                        shutil.rmtree(rn, ignore_errors=True)
+                        removed += 1
+                        log("info", "abandoned_render_cleaned", f"removed leftover {rn}")
+                except Exception as exc:
+                    log("warning", "abandoned_render_cleanup_failed", str(exc), path=str(rn))
+    return {"folders_removed": removed}
+
+
+def cleanup_temp_downloads(max_age_seconds: int = 7200) -> dict:
+    """Clean up orphaned download chunks (.part, .ytdl, .tmp) older than 2 hours."""
+    import time
+    dl_dir = settings.data_path / "downloads"
+    if not dl_dir.exists():
+        return {"files_removed": 0, "bytes_freed": 0}
+    now = time.time()
+    removed = 0
+    freed = 0
+    for pat in ("*.part", "*.ytdl", "*.tmp"):
+        for f in dl_dir.glob(pat):
+            try:
+                if now - f.stat().st_mtime > max_age_seconds:
+                    sz = f.stat().st_size
+                    f.unlink(missing_ok=True)
+                    removed += 1
+                    freed += sz
+            except OSError:
+                continue
+    if removed:
+        log("info", "temp_downloads_cleaned", f"removed {removed} orphaned partial downloads ({round(freed / 1e6, 1)} MB)")
+    return {"files_removed": removed, "bytes_freed": freed}
+
+
+def startup_cleanup() -> dict:
+    """Safe cleanup executed on server startup."""
+    leftovers = cleanup_leftover_renders()
+    temp_dl = cleanup_temp_downloads()
+    caches = prune_all_caches()
+    return {"leftover_renders": leftovers, "temp_downloads": temp_dl, "caches": caches}
+
+
+def run_full_sweep(s: Session | None = None) -> dict:
+    """Execute complete cleanup sweep: retention, leftover renders, partial downloads, and cache pruning."""
+    res = {}
+    if s:
+        res["retention"] = purge_expired(s)
+    res["leftover_renders"] = cleanup_leftover_renders()
+    res["temp_downloads"] = cleanup_temp_downloads()
+    res["caches"] = prune_all_caches()
+    res["disk_usage"] = get_disk_usage()
+    return res

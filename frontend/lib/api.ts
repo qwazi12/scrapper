@@ -200,6 +200,39 @@ export type BackupNowResponse = {
   };
 };
 
+export type DiskSystemStatus = {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  total_gb: number;
+  used_gb: number;
+  free_gb: number;
+  percent_used: number;
+  status: "healthy" | "warning" | "critical";
+  max_threshold_percent: number;
+  warn_threshold_percent: number;
+  path: string;
+  caches?: {
+    motion_cache_mb: number;
+    tts_cache_mb: number;
+    audio_cache_mb: number;
+    max_motion_mb: number;
+    max_tts_mb: number;
+  };
+};
+
+export type CleanupResult = {
+  retention?: { clips: number; compilations: number };
+  leftover_renders: { folders_removed: number };
+  temp_downloads: { files_removed: number; bytes_freed: number };
+  caches: {
+    motion: { files_removed: number; bytes_freed: number; remaining_bytes: number };
+    tts: { files_removed: number; bytes_freed: number; remaining_bytes: number };
+    audio?: { files_removed: number; bytes_freed: number; remaining_bytes: number };
+  };
+  disk_usage: DiskSystemStatus;
+};
+
 export type BulkAiStatus = {
   running: boolean;
   total: number;
@@ -794,6 +827,10 @@ export const api = {
   backupStatus: () => req<BackupStatus>("/api/backup/status", { headers: headers(false) }),
 
   backupNow: () => req<BackupNowResponse>("/api/backup/now", { method: "POST", headers: headers() }),
+
+  diskStatus: () => req<DiskSystemStatus>("/api/system/disk", { headers: headers(false) }),
+
+  runCleanup: () => req<CleanupResult>("/api/cleanup/now", { method: "POST", headers: headers() }),
 };
 
 /** Days left before the retention sweep deletes this item ("2d", "today", null). */

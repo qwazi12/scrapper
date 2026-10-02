@@ -83,6 +83,15 @@ def _startup() -> None:
         studio_runner.recover_interrupted()
     except Exception as exc:  # never block startup on recovery
         logbus.log("error", "startup_studio_recover_failed", str(exc))
+    try:
+        with SessionLocal() as s:
+            worker.recover_interrupted_worker(s)
+    except Exception as exc:  # never block startup on recovery
+        logbus.log("error", "startup_worker_recover_failed", str(exc))
+    try:
+        cleanup.startup_cleanup()
+    except Exception as exc:  # never block startup on cleanup
+        logbus.log("error", "startup_cleanup_failed", str(exc))
     if settings.worker_mode != "web_only":
         worker.start_background()
         queue_manager.start_scheduler_thread()
@@ -126,6 +135,10 @@ def stats(s: Session = Depends(get_session)) -> dict:
 # --- ingest ------------------------------------------------------------------
 @app.post("/api/ingest", dependencies=_AUTH)
 def ingest(req: IngestRequest, s: Session = Depends(get_session)) -> dict:
+    try:
+        cleanup.check_disk_space()
+    except cleanup.DiskFullError as exc:
+        raise HTTPException(507, str(exc))
     urls = [u.strip() for u in req.urls if u.strip()]
     if not urls:
         raise HTTPException(400, "no urls provided")
@@ -1061,6 +1074,40 @@ def download_backup_file(filename: str):
     )
 
 
+# --- Disk Space & Cache System Management ---
+
+@app.get("/api/system/disk", dependencies=_AUTH)
+def get_disk_system_status() -> dict:
+    """Return volume disk space utilization, warning thresholds, and cache footprints."""
+    usage = cleanup.get_disk_usage()
+    motion_dir = settings.data_path / "studio" / "_motioncache"
+    tts_dir = settings.data_path / "studio" / "_ttscache"
+    audio_dir = settings.data_path / "audio"
+    
+    def _dir_size(d: pathlib.Path) -> float:
+        if not d.exists() or not d.is_dir():
+            return 0.0
+        return round(sum(f.stat().st_size for f in d.iterdir() if f.is_file()) / (1024 * 1024), 2)
+
+    usage["caches"] = {
+        "motion_cache_mb": _dir_size(motion_dir),
+        "tts_cache_mb": _dir_size(tts_dir),
+        "audio_cache_mb": _dir_size(audio_dir),
+        "max_motion_mb": settings.max_motion_cache_mb,
+        "max_tts_mb": settings.max_tts_cache_mb,
+    }
+    return usage
+
+
+@app.post("/api/cleanup/now", dependencies=_AUTH)
+def run_cleanup_sweep(s: Session = Depends(get_session)) -> dict:
+    """Manually trigger retention sweep, cache eviction, and temp scratch cleanup."""
+    try:
+        return cleanup.run_full_sweep(s)
+    except Exception as exc:
+        raise HTTPException(500, f"Cleanup sweep failed: {exc}")
+
+
 # --- Stop: every long-running process ------------------------------------------
 @app.get("/api/jobs", dependencies=_AUTH)
 def list_jobs(s: Session = Depends(get_session)) -> list[dict]:
@@ -1329,6 +1376,11 @@ def ingest_channel(req: ChannelIngestRequest, s: Session = Depends(get_session))
     automatically label them, upload directly to the channel subfolder in Google Drive,
     and add them to the SocialPilot posting queue. Zero local storage footprint.
     """
+    try:
+        cleanup.check_disk_space()
+    except cleanup.DiskFullError as exc:
+        raise HTTPException(507, str(exc))
+
     from .drive_sync import ingest_channel_to_drive
 
     # Runs as a stoppable background job (it can take many minutes); the UI

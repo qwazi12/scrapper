@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, apiBase, BackupStatus, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, token, TTSVoice } from "../lib/api";
+import { api, apiBase, BackupStatus, DiskSystemStatus, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, token, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 
@@ -311,6 +311,158 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
   );
 }
 
+function DiskCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProperties }) {
+  const [disk, setDisk] = useState<DiskSystemStatus | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function load() {
+    api.diskStatus().then(setDisk).catch((e) => setMsg(`Could not load disk status: ${e.message || e}`));
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleSweep() {
+    setCleaning(true);
+    setMsg("");
+    try {
+      const res = await api.runCleanup();
+      const freedMB = ((res.caches.motion.bytes_freed + res.caches.tts.bytes_freed + res.temp_downloads.bytes_freed) / (1024 * 1024)).toFixed(1);
+      setMsg(`✓ Cleanup sweep complete: freed ${freedMB} MB across temporary files and caches.`);
+      setDisk(res.disk_usage);
+    } catch (e: any) {
+      setMsg(`✕ Cleanup sweep failed: ${e.message || e}`);
+    } finally {
+      setCleaning(false);
+    }
+  }
+
+  const pct = disk?.percent_used ?? 0;
+  const isCrit = disk?.status === "critical";
+  const isWarn = disk?.status === "warning";
+  const badgeColor = isCrit ? "#f87171" : isWarn ? "#fbbf24" : "#34d399";
+  const badgeBg = isCrit ? "rgba(239, 68, 68, 0.2)" : isWarn ? "rgba(245, 158, 11, 0.2)" : "rgba(16, 185, 129, 0.2)";
+  const badgeText = isCrit ? "🛑 Critical (Refusing New Jobs)" : isWarn ? "⚠️ High Usage" : "● Healthy";
+
+  return (
+    <div style={card}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h2 style={{ ...h2, margin: 0 }}>💽 Disk Space &amp; Storage Retention</h2>
+          {disk && (
+            <span
+              style={{
+                fontSize: 10,
+                padding: "2px 8px",
+                borderRadius: 8,
+                fontWeight: 700,
+                background: badgeBg,
+                color: badgeColor,
+              }}
+            >
+              {badgeText}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={handleSweep}
+            disabled={cleaning}
+            style={{
+              fontSize: 11,
+              padding: "4px 12px",
+              background: "#334155",
+              color: "#fff",
+              fontWeight: 600,
+              border: "1px solid #475569",
+            }}
+          >
+            {cleaning ? "⏳ Sweeping…" : "🧹 Run Cleanup Sweep"}
+          </button>
+        </div>
+      </div>
+
+      {msg && (
+        <div style={{ fontSize: 11, marginBottom: 10, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>
+          {msg}
+        </div>
+      )}
+
+      {isCrit && (
+        <div style={{ fontSize: 11, background: "rgba(239, 68, 68, 0.15)", border: "1px solid #dc2626", color: "#f87171", padding: "6px 10px", borderRadius: 6, marginBottom: 12 }}>
+          🛑 Volume disk usage has exceeded {disk?.max_threshold_percent}%. New breakdowns and bulk downloads are paused until space is freed.
+        </div>
+      )}
+
+      <p style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
+        Automated <b>5-day rolling retention sweep</b> cleans un-queued video files every 30m. Proactive <b>LRU cache caps</b> automatically evict the oldest generated assets, and intermediate render workfiles are deleted upon completion.
+        {" "}<span style={{ color: "#38bdf8" }}>SocialPilot queued items are strictly exempt from retention deletion.</span>
+      </p>
+
+      {disk && (
+        <>
+          {/* Visual Disk Meter Bar */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
+              <span>Volume Utilization ({disk.used_gb} GB of {disk.total_gb} GB used)</span>
+              <span style={{ fontWeight: 700, color: badgeColor }}>{pct}%</span>
+            </div>
+            <div style={{ height: 8, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden", position: "relative" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${Math.min(pct, 100)}%`,
+                  background: isCrit ? "#ef4444" : isWarn ? "#f59e0b" : "#10b981",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "var(--muted)", marginTop: 2 }}>
+              <span>0 GB</span>
+              <span>75% Warning</span>
+              <span>90% Refusal Limit</span>
+              <span>{disk.total_gb} GB</span>
+            </div>
+          </div>
+
+          {/* Metric cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+            <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Free Volume Space</div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                {disk.free_gb} GB free <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>({(100 - pct).toFixed(1)}% remaining)</span>
+              </div>
+            </div>
+
+            <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Motion Cache (HyperFrames)</div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                {disk.caches?.motion_cache_mb ?? 0} MB <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>/ {disk.caches?.max_motion_mb ?? 400} MB cap</span>
+              </div>
+            </div>
+
+            <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Voiceover &amp; TTS Cache</div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                {disk.caches?.tts_cache_mb ?? 0} MB <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>/ {disk.caches?.max_tts_mb ?? 200} MB cap</span>
+              </div>
+            </div>
+
+            <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Active Volume Mount</div>
+              <div style={{ fontSize: 12, fontWeight: 500, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <code>{disk.path}</code>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Read-only view of what the server is configured to do: schedule, accounts, AI. */
 export function SettingsOverview() {
   const [sched, setSched] = useState<ScheduleInfo | null>(null);
@@ -433,6 +585,7 @@ export function SettingsOverview() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SpendingCard card={card} h2={h2} />
       <BackupCard card={card} h2={h2} />
+      <DiskCard card={card} h2={h2} />
 
       {/* Posting schedule */}
       <div style={card}>

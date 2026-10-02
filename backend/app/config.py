@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     retention_days: int = 5
     retention_sweep_minutes: int = 30       # how often the worker sweeps
 
+    # --- Disk Space & Cache Management -----------------------------------
+    # Refuse heavy operations (breakdowns, ingest) if disk usage exceeds max threshold.
+    max_disk_usage_percent: float = 90.0
+    warn_disk_usage_percent: float = 75.0
+    # Strict LRU cache caps for auto-eviction of oldest assets
+    max_motion_cache_mb: int = 400
+    max_tts_cache_mb: int = 200
+
     # --- Worker ----------------------------------------------------------
     # "web" runs API + in-process worker (default, all-in-one).
     # "web_only" runs API but no worker (pair with a remote worker).

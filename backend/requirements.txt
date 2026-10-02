@@ -1,19 +1,20 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-sqlalchemy==2.0.36
-pydantic==2.10.4
-pydantic-settings==2.7.1
-python-multipart==0.0.20
-psycopg2-binary==2.9.10
-httpx==0.28.1
+fastapi>=0.115.8
+starlette>=0.45.3
+uvicorn[standard]>=0.34.0
+sqlalchemy>=2.0.37
+pydantic>=2.10.6
+pydantic-settings>=2.7.1
+python-multipart>=0.0.20
+psycopg2-binary>=2.9.10
+httpx>=0.28.1
 # yt-dlp: always install latest. YouTube changed its extractor heavily in 2026
 # (SABR protocol, PO tokens). Pinning an old version is the #1 cause of 403s.
 # NOTE: the Dockerfile runs `yt-dlp -U` after this, so Railway always gets
 # the absolute latest regardless of this floor.
 yt-dlp>=2026.8.19
-google-api-python-client>=2.150.0
-google-auth>=2.35.0
+google-api-python-client>=2.160.0
+google-auth>=2.38.0
 # IANA timezone data for zoneinfo (python:slim ships none) — posting schedule.
-tzdata==2025.2
+tzdata>=2025.2
 # Image work for LongForm Studio (frames, cast sheet, overlays).
-Pillow==11.3.0
+Pillow>=11.1.0

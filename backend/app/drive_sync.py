@@ -108,13 +108,18 @@ def clean_video_title(raw_name: str) -> Tuple[str, str]:
 
 
 def find_or_create_subfolder(service, folder_name: str, parent_id: str) -> str:
-    """Find existing subfolder in parent or create it."""
+    """Find existing subfolder in parent or create it (supports Shared Drives)."""
     clean_name = folder_name.strip()
     query = (
         f"name = '{clean_name}' and '{parent_id}' in parents and "
         f"mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     )
-    res = service.files().list(q=query, fields="files(id, name)").execute()
+    res = service.files().list(
+        q=query,
+        fields="files(id, name)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
     files = res.get("files", [])
     if files:
         return files[0]["id"]
@@ -124,12 +129,12 @@ def find_or_create_subfolder(service, folder_name: str, parent_id: str) -> str:
         "mimeType": "application/vnd.google-apps.folder",
         "parents": [parent_id],
     }
-    created = service.files().create(body=meta, fields="id, name").execute()
+    created = service.files().create(body=meta, fields="id, name", supportsAllDrives=True).execute()
     return created["id"]
 
 
 def upload_file_to_drive(service, file_path: str, parent_folder_id: str, filename: Optional[str] = None) -> Dict[str, Any]:
-    """Uploads a local video file to a Google Drive folder."""
+    """Uploads a local video file to a Google Drive folder (supports Shared Drives)."""
     from googleapiclient.http import MediaFileUpload
 
     file_name = filename or os.path.basename(file_path)
@@ -142,6 +147,7 @@ def upload_file_to_drive(service, file_path: str, parent_folder_id: str, filenam
         body=file_metadata,
         media_body=media,
         fields="id, name, webViewLink, thumbnailLink",
+        supportsAllDrives=True,
     ).execute()
     return res
 
@@ -155,13 +161,13 @@ def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -
         raise ValueError(f"Could not extract Google Drive file ID from {drive_link_or_id}")
 
     service = get_drive_service()
-    meta = service.files().get(fileId=file_id, fields="id, name, mimeType").execute()
+    meta = service.files().get(fileId=file_id, fields="id, name, mimeType", supportsAllDrives=True).execute()
     filename = meta.get("name", f"drive_video_{file_id}.mp4")
 
     target_dir = dest_dir or tempfile.gettempdir()
     target_path = Path(target_dir) / filename
 
-    request = service.files().get_media(fileId=file_id)
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     with io.FileIO(str(target_path), "wb") as fh:
         downloader = MediaIoBaseDownload(fh, request)
         done = False
@@ -211,7 +217,7 @@ def sync_drive_to_queue(
     # Determine parent folder name
     parent_name = "Movie Clips"
     try:
-        parent_meta = service.files().get(fileId=folder_id, fields="name").execute()
+        parent_meta = service.files().get(fileId=folder_id, fields="name", supportsAllDrives=True).execute()
         if parent_meta.get("name"):
             parent_name = parent_meta["name"]
     except Exception:
@@ -222,7 +228,9 @@ def sync_drive_to_queue(
     folders_result = service.files().list(
         q=subfolders_query,
         fields="nextPageToken, files(id, name)",
-        pageSize=100
+        pageSize=100,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
     ).execute()
     # Finished LongForm breakdowns are stored, not imported as clips.
     subfolders = [f for f in folders_result.get("files", []) if f["name"].strip() != "LongForm Studio"]
@@ -262,7 +270,9 @@ def sync_drive_to_queue(
                   q=video_query,
                   fields="nextPageToken, files(id, name, mimeType, webViewLink, thumbnailLink, size)",
                   pageToken=page_token,
-                  pageSize=100
+                  pageSize=100,
+                  supportsAllDrives=True,
+                  includeItemsFromAllDrives=True,
               ).execute()
               channel_videos.extend(resp.get("files", []))
               page_token = resp.get("nextPageToken")

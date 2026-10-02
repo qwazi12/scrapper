@@ -14,18 +14,14 @@ jobs:
     # Job-level env: a step's own `env` is not visible to that step's `if`,
     # which silently skipped every deploy while the run still showed success.
     env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN || secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID || 'team_iwJkBp7HPLUnvJQoEl7gJadj' }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID || 'prj_MvlUvP2cS5vtNBay3V2ISsSCgnJE' }}
     steps:
-      - name: Require Vercel secrets
+      - name: Require Vercel token
         run: |
-          missing=""
-          for v in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
-            [ -n "${!v}" ] || missing="$missing $v"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Missing GitHub secrets:$missing — frontend NOT deployed"
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::Missing GitHub secret: VERCEL_API_TOKEN or VERCEL_TOKEN — frontend NOT deployed"
             exit 1
           fi
 

@@ -1,28 +1,106 @@
-"""Single shared-token auth. If ACCESS_TOKEN is unset (local dev), auth is open.
+"""Single shared-token auth with HMAC signed URLs and rate limiting.
 
-Accepts the token three ways so every access path works:
-  - `x-access-token` header (used by the app's fetch/XHR calls)
-  - `Authorization: Bearer <token>` header
-  - `?token=<token>` query param (needed for browser-native GETs that can't set
-    headers: <a href> downloads, <img src> thumbnails, and the SSE log stream)
+Security features:
+  - Fail-closed in production (refuses open access if ACCESS_TOKEN is missing)
+  - Timing-attack safe token comparison (hmac.compare_digest)
+  - Short-lived HMAC signed URLs for media and downloads (?exp=...&sig=...) so master token is never leaked in URLs
+  - Per-IP rate limiting (120 req/min)
 """
 
 from __future__ import annotations
 
-from fastapi import Header, HTTPException, Query, status
+import hashlib
+import hmac
+import os
+import threading
+import time
+
+from fastapi import Header, HTTPException, Query, Request, status
 
 from .config import settings
 
+_rate_limits: dict[str, list[float]] = {}
+_rl_lock = threading.Lock()
+
+
+def is_production() -> bool:
+    """Return True if running in a production or deployed cloud environment."""
+    return bool(
+        os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("VERCEL")
+        or os.getenv("ENVIRONMENT", "").lower() in ("production", "prod")
+    )
+
+
+def sign_url(path: str, expires_in_seconds: int = 86400) -> str:
+    """Generate HMAC-SHA256 signature parameters for media/downloads."""
+    secret = settings.access_token or "dev-secret-scrapper"
+    exp = int(time.time()) + expires_in_seconds
+    msg = f"{path}:{exp}".encode()
+    sig = hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
+    return f"exp={exp}&sig={sig}"
+
+
+def verify_signature(path: str, exp: int, sig: str) -> bool:
+    """Verify HMAC signature and expiration timestamp in constant time."""
+    if not exp or not sig:
+        return False
+    if exp < int(time.time()):
+        return False
+    secret = settings.access_token or "dev-secret-scrapper"
+    msg = f"{path}:{exp}".encode()
+    expected = hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
+    return hmac.compare_digest(sig, expected)
+
+
+def check_rate_limit(request: Request, max_per_minute: int = 120) -> None:
+    """Sliding-window in-memory rate limiter per client IP."""
+    ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    cutoff = now - 60.0
+    with _rl_lock:
+        timestamps = _rate_limits.setdefault(ip, [])
+        _rate_limits[ip] = [t for t in timestamps if t > cutoff]
+        if len(_rate_limits[ip]) >= max_per_minute:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                "Rate limit exceeded. Please wait a moment before sending more requests.",
+                headers={"Retry-After": "60"},
+            )
+        _rate_limits[ip].append(now)
+
 
 def require_token(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_access_token: str | None = Header(default=None),
     token: str | None = Query(default=None),
+    exp: int | None = Query(default=None),
+    sig: str | None = Query(default=None),
 ) -> None:
+    # 1. Fail-closed: in production, missing ACCESS_TOKEN is a critical misconfiguration
+    if is_production() and not settings.access_token:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Server security error: ACCESS_TOKEN must be configured in production environments.",
+        )
+
+    # 2. In local dev with no access_token set, allow open access
     if not settings.access_token:
-        return  # open in local dev
+        return
+
+    # 3. Check HMAC signed URL (used for media, thumbnail, or download links)
+    if exp is not None and sig is not None:
+        if verify_signature(request.url.path, exp, sig):
+            check_rate_limit(request)
+            return
+
+    # 4. Check token from header or query string
     supplied = x_access_token or token
     if authorization and authorization.lower().startswith("bearer "):
         supplied = authorization[7:]
-    if supplied != settings.access_token:
+
+    if not supplied or not hmac.compare_digest(supplied, settings.access_token):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing access token")
+
+    check_rate_limit(request)

@@ -61,6 +61,10 @@ def _process_ingest(job_id: int) -> None:
             return
         job.status = Status.running
         job.total = len(job.urls)
+        # Check which URLs in job.urls have already finished successfully
+        done_urls = {
+            c.source_url for c in s.query(Clip).filter(Clip.job_id == job_id, Clip.status == Status.done).all()
+        }
         s.commit()
         urls = list(job.urls)
 
@@ -68,6 +72,8 @@ def _process_ingest(job_id: int) -> None:
         with control.job("ingest", f"Scrape job #{job_id} ({len(urls)} link{'s' if len(urls) != 1 else ''})",
                          scope="scraper", ref=job_id):
             for n, url in enumerate(urls, 1):
+                if url in done_urls:
+                    continue
                 control.check()
                 control.progress(f"link {n} of {len(urls)}")
                 _scrape_one(job_id, url)
@@ -129,6 +135,21 @@ def _scrape_one(job_id: int, url: str) -> None:
         s.commit()
         clip_id = clip.id
     log("info", "scrape_start", url, source=src)
+
+    try:
+        cleanup.check_disk_space()
+    except cleanup.DiskFullError as exc:
+        with SessionLocal() as s:
+            clip = s.get(Clip, clip_id)
+            if clip:
+                clip.status = Status.failed
+                clip.error = str(exc)
+            job = s.get(IngestJob, job_id)
+            if job:
+                job.failed_count += 1
+            s.commit()
+        log("error", "scrape_disk_full", str(exc), url=url)
+        return
 
     result = None
     is_bot_blocked = False
@@ -219,6 +240,12 @@ def _process_compile(comp_id: int) -> None:
         _fail_compile(comp_id, "no valid clips selected")
         return
 
+    try:
+        cleanup.check_disk_space()
+    except cleanup.DiskFullError as exc:
+        _fail_compile(comp_id, str(exc))
+        return
+
     stamp = _now().strftime("%Y-%m-%d_%H%M%S")
     suffix = "_landscape" if orientation == "landscape" else ""
     out = settings.compilations_path / f"compilation_{stamp}{suffix}.mp4"
@@ -302,6 +329,61 @@ def _maybe_purge_expired() -> None:
     _last_purge = now
     with SessionLocal() as s:
         cleanup.purge_expired(s)
+    try:
+        cleanup.cleanup_leftover_renders()
+        cleanup.cleanup_temp_downloads()
+        cleanup.prune_all_caches()
+    except Exception as exc:
+        log("warning", "retention_aux_cleanup_failed", str(exc))
+
+
+def recover_interrupted_worker(s: Session) -> dict:
+    """Recover scrape jobs, compilations, and clips interrupted by server restart or deploy."""
+    import pathlib
+    recovered_ingest = 0
+    recovered_comp = 0
+    recovered_clips = 0
+
+    # 1. Clean up clips stuck in running
+    for c in s.query(Clip).filter(Clip.status == Status.running).all():
+        if c.file_path and pathlib.Path(c.file_path).exists() and pathlib.Path(c.file_path).stat().st_size > 0:
+            c.status = Status.done
+        else:
+            if c.file_path:
+                pathlib.Path(c.file_path).unlink(missing_ok=True)
+            # Remove incomplete placeholder clip so re-scrape can run cleanly
+            s.delete(c)
+        recovered_clips += 1
+
+    # 2. Recover IngestJobs stuck in running
+    for job in s.query(IngestJob).filter(IngestJob.status == Status.running).all():
+        done_count = s.query(Clip).filter(Clip.job_id == job.id, Clip.status == Status.done).count()
+        job.done_count = done_count
+        if done_count >= len(job.urls):
+            job.status = Status.done
+            job.finished_at = _now()
+        else:
+            # Re-queue to finish remaining URLs
+            job.status = Status.queued
+            recovered_ingest += 1
+            log("info", "ingest_recovered", f"Job #{job.id} resumed after restart ({done_count}/{len(job.urls)} already completed)")
+
+    # 3. Recover Compilations stuck in running
+    for comp in s.query(Compilation).filter(Compilation.status == Status.running).all():
+        out = pathlib.Path(comp.output_path) if comp.output_path else None
+        if out and out.exists() and out.stat().st_size > 0:
+            comp.status = Status.done
+            comp.finished_at = _now()
+        else:
+            if out:
+                out.unlink(missing_ok=True)
+            comp.status = Status.queued
+            comp.progress = 0.0
+            recovered_comp += 1
+            log("info", "compile_recovered", f"Compilation #{comp.id} re-queued after restart")
+
+    s.commit()
+    return {"ingest": recovered_ingest, "compilations": recovered_comp, "clips": recovered_clips}
 
 
 def run_loop() -> None:

@@ -211,6 +211,8 @@ def seg_image(img: pathlib.Path, dur: float, dest: pathlib.Path) -> None:
 
 @stage("render")
 def render(project_id: int) -> str:
+    from .. import cleanup
+    cleanup.check_disk_space()
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         facts, script, plan, shots = p.facts or {}, p.script or {}, p.plan, p.shots or []
@@ -342,6 +344,7 @@ def render(project_id: int) -> str:
         static_final.unlink(missing_ok=True)
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
     video.unlink(missing_ok=True)
+    cleanup.cleanup_render_intermediates(out_dir)
     live = root / "render"
     if live.exists():
         shutil.rmtree(live)
