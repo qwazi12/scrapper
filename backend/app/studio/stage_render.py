@@ -312,7 +312,9 @@ def render(project_id: int) -> str:
         control.progress("compositing the motion version")
         media.run(motion.overlay_cmd(base_m, sorted(overlays, key=lambda x: x[1]), audio, total, ENC, motion_final))
         motion_info["file"] = str(motion_final.relative_to(root))
-        base_m.unlink(missing_ok=True)
+        motion_info["overlays"] = [{"piece": f.stem.split("-")[0], "start": round(t, 2),
+                                    "seconds": round(media.duration(f), 2)} for f, t in sorted(overlays, key=lambda x: x[1])]
+        # base_m kept for now (debugging the release card, 2026-10-02); remove once fixed
     final = out_dir / "final.mp4"
 
     lead = (facts.get("cast") or [{}])[0].get("actor")
