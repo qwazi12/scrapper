@@ -15,7 +15,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 };
 
 // Top-level pipelines only; Drive subfolders (@channels) show on each row.
-const PIPELINES = ["Movie Clips", "Abyss Declassified", "The ICK Room", "default"];
+const PIPELINES = ["Movie Clips", "Abyss Declassified", "The ICK Room", "LongForm", "default"];
 
 type SortKey = "position" | "id" | "title" | "channel" | "status" | "scheduled";
 const SORT_LABELS: Record<SortKey, string> = {

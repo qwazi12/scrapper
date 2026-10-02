@@ -131,7 +131,12 @@ def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_s
         p.target_minutes = req.target_minutes
         changed.append("length")
     if req.script is not None:
+        old = [x.get("text") for x in (p.script or {}).get("sentences", [])]
+        new = [x.get("text") for x in req.script.get("sentences", [])]
         p.script = req.script
+        if old != new:  # new words -> new voice timings -> old plan/render are stale
+            p.plan = None
+            p.render = None
         changed.append("script")
     if req.plan is not None:
         p.plan = req.plan

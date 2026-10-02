@@ -16,8 +16,9 @@ import { QueuePanel } from "./QueuePanel";
 import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
+import { StudioPanel } from "./StudioPanel";
 
-type NavTab = "scraper" | "socialpilot" | "comps" | "logs" | "settings";
+type NavTab = "scraper" | "socialpilot" | "longform" | "comps" | "logs" | "settings";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -63,7 +64,7 @@ export default function Page() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const hash = window.location.hash.replace("#", "");
-      if (["scraper", "socialpilot", "comps", "logs", "settings"].includes(hash)) {
+      if (["scraper", "socialpilot", "longform", "comps", "logs", "settings"].includes(hash)) {
         setActiveTab(hash as NavTab);
       } else if (hash === "queue") {
         setActiveTab("socialpilot");
@@ -212,6 +213,16 @@ export default function Page() {
             badge={`${comps.length} comps`}
             badgeColor="#fbbf24"
             badgeBg="#78350f"
+          />
+
+          {/* LongForm Studio (trailer breakdowns) */}
+          <NavButton
+            active={activeTab === "longform"}
+            collapsed={sidebarCollapsed}
+            onClick={() => handleTabSelect("longform")}
+            icon="🎬"
+            title="LongForm Studio"
+            subtitle="Trailer breakdown videos"
           />
 
           {/* 4. Live System Logs */}
@@ -390,6 +401,8 @@ export default function Page() {
             {socialPilotTab === "drive" && <DrivePanel onIngested={refresh} />}
           </div>
         )}
+
+        {activeTab === "longform" && <StudioPanel />}
 
         {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (

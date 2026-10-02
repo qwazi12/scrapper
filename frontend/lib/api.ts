@@ -154,6 +154,105 @@ export function parseApiDate(iso: string): number {
   return Date.parse(/([zZ]|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`);
 }
 
+// --- LongForm Studio ---------------------------------------------------------
+export type StudioTitle = {
+  tmdb_id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  date: string;
+  overview: string;
+  poster: string | null;
+  popularity: number;
+};
+
+export type StudioShot = {
+  id: string;
+  source: string;
+  source_type: string;
+  start: number;
+  end: number;
+  seconds: number;
+  still: string;
+  thumb: string;
+  description?: string;
+  people?: string[];
+  setting?: string;
+  mood?: string;
+  size?: string;
+  card?: boolean;
+  text?: boolean;
+  quality?: string;
+  usable?: boolean;
+  tag_error?: string;
+};
+
+export type StudioSentence = {
+  i?: number;
+  paragraph: number;
+  text: string;
+  refs?: string[];
+  check?: string;
+  changed?: boolean;
+  original?: string;
+  reason?: string;
+};
+
+export type StudioPlanItem = {
+  slot: number;
+  sentence: number;
+  text: string;
+  kind: "poster" | "card" | "still" | "clip";
+  shot?: string | null;
+  start: number;
+  end: number;
+  duration: number;
+  clip_start?: number;
+  clip_len?: number;
+};
+
+export type StudioProject = {
+  id: number;
+  tmdb_id: number;
+  media_type: string;
+  title: string;
+  target_minutes: number;
+  stage: string;
+  stage_status: "idle" | "running" | "done" | "error";
+  stage_message: string | null;
+  queue_item_id: number | null;
+  created_at: string;
+  updated_at: string;
+  poster: string | null;
+  has: Record<string, boolean>;
+  facts?: any;
+  research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[] }[] } | null;
+  trailer?: any;
+  shots?: StudioShot[] | null;
+  script?: {
+    sentences: StudioSentence[];
+    changes?: { original: string; fix: string; reason: string }[];
+    word_count?: number;
+    est_seconds?: number;
+    youtube_title?: string;
+    description?: string;
+    tags?: string[];
+    narration_seconds?: number;
+  } | null;
+  plan?: StudioPlanItem[] | null;
+  render?: { file: string; thumbnail: string; seconds: number; size: number; rendered_at: string } | null;
+};
+
+export type StudioStatus = {
+  tmdb: boolean;
+  gemini: boolean;
+  tts: boolean;
+  voice: string;
+  region: string;
+  stages: string[];
+  busy: { project_id: number | null; stage: string | null };
+  attribution: string;
+};
+
 const ENV_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 export function apiBase(): string {
@@ -404,6 +503,45 @@ export const api = {
     }),
 
   bulkAiStatus: () => req<BulkAiStatus>("/api/queue/bulk-ai", { headers: headers(false) }),
+
+  // --- LongForm Studio ---
+  studioStatus: () => req<StudioStatus>("/api/studio/status", { headers: headers(false) }),
+  studioCalendar: () =>
+    req<{ upcoming_movies: StudioTitle[]; on_the_air_tv: StudioTitle[]; trending: StudioTitle[] }>(
+      "/api/studio/calendar", { headers: headers(false) }),
+  studioSearch: (q: string) =>
+    req<StudioTitle[]>(`/api/studio/search?q=${encodeURIComponent(q)}`, { headers: headers(false) }),
+  studioProjects: () => req<StudioProject[]>("/api/studio/projects", { headers: headers(false) }),
+  studioProject: (id: number) => req<StudioProject>(`/api/studio/projects/${id}`, { headers: headers(false) }),
+  studioCreate: (t: { tmdb_id: number; media_type: string; title: string; target_minutes?: number }) =>
+    req<StudioProject>("/api/studio/projects", { method: "POST", headers: headers(), body: JSON.stringify(t) }),
+  studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any }) =>
+    req<StudioProject>(`/api/studio/projects/${id}`, { method: "PATCH", headers: headers(), body: JSON.stringify(data) }),
+  studioDelete: (id: number) =>
+    req<{ deleted: number }>(`/api/studio/projects/${id}`, { method: "DELETE", headers: headers(false) }),
+  studioRun: (id: number, stage: string, auto = false) =>
+    req<{ ok: boolean }>(`/api/studio/projects/${id}/run`, {
+      method: "POST", headers: headers(), body: JSON.stringify({ stage, auto }) }),
+  studioPublish: (id: number) =>
+    req<{ queue_item_id: number; status: string }>(`/api/studio/projects/${id}/publish`, {
+      method: "POST", headers: headers() }),
+  studioUploadTrailer: async (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const h: Record<string, string> = {};
+    const t = token();
+    if (t) h["x-access-token"] = t;
+    const res = await fetch(`${apiBase()}/api/studio/projects/${id}/trailer-upload`, { method: "POST", headers: h, body: fd });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json() as Promise<StudioProject>;
+  },
+  studioFileUrl: (id: number, path: string, bust?: string) => {
+    const q = new URLSearchParams({ path });
+    const t = token();
+    if (t) q.set("token", t);
+    if (bust) q.set("v", bust);
+    return `${apiBase()}/api/studio/projects/${id}/file?${q.toString()}`;
+  },
 
   aiCheck: () =>
     req<{ ok: boolean; model: string; title: string; hashtags: string[] }>("/api/social/ai-check", {
