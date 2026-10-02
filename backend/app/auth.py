@@ -14,6 +14,7 @@ import hmac
 import os
 import threading
 import time
+from typing import Any
 
 from fastapi import Header, HTTPException, Query, Request, status
 
@@ -41,14 +42,18 @@ def sign_url(path: str, expires_in_seconds: int = 86400) -> str:
     return f"exp={exp}&sig={sig}"
 
 
-def verify_signature(path: str, exp: int, sig: str) -> bool:
+def verify_signature(path: str, exp: Any, sig: Any) -> bool:
     """Verify HMAC signature and expiration timestamp in constant time."""
-    if not exp or not sig:
+    if not exp or not sig or not isinstance(sig, str):
         return False
-    if exp < int(time.time()):
+    try:
+        exp_int = int(exp)
+    except (ValueError, TypeError):
+        return False
+    if exp_int < int(time.time()):
         return False
     secret = settings.access_token or "dev-secret-scrapper"
-    msg = f"{path}:{exp}".encode()
+    msg = f"{path}:{exp_int}".encode()
     expected = hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
     return hmac.compare_digest(sig, expected)
 
@@ -90,14 +95,18 @@ def require_token(
         return
 
     # 3. Check HMAC signed URL (used for media, thumbnail, or download links)
-    if exp is not None and sig is not None:
-        if verify_signature(request.url.path, exp, sig):
+    exp_val = exp if isinstance(exp, (int, float, str)) else None
+    sig_val = sig if isinstance(sig, str) else None
+    if exp_val is not None and sig_val is not None:
+        if verify_signature(request.url.path, exp_val, sig_val):
             check_rate_limit(request)
             return
 
     # 4. Check token from header or query string
-    supplied = x_access_token or token
-    if authorization and authorization.lower().startswith("bearer "):
+    tok_val = token if isinstance(token, str) else None
+    hdr_val = x_access_token if isinstance(x_access_token, str) else None
+    supplied = hdr_val or tok_val
+    if authorization and isinstance(authorization, str) and authorization.lower().startswith("bearer "):
         supplied = authorization[7:]
 
     if not supplied or not hmac.compare_digest(supplied, settings.access_token):
