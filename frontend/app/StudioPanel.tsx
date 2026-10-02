@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   parseApiDate,
+  StudioMotion,
   StudioPlanItem,
   StudioProject,
   StudioShot,
@@ -773,6 +774,64 @@ function DriveStatus({ p, onChange }: { p: StudioProject; onChange: () => void }
   );
 }
 
+/** Motion graphics (HyperFrames): the switch + what the last render did. */
+function MotionPanel({ p }: { p: StudioProject }) {
+  const [m, setM] = useState<StudioMotion | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { api.studioMotion().then(setM).catch(() => {}); }, []);
+  const info = p.render?.motion;
+  async function save(patch: Partial<Pick<StudioMotion, "mode" | "cast_cards">>, ask?: string) {
+    if (ask && !confirm(ask)) return;
+    setSaving(true);
+    try { setM(await api.setStudioMotion(patch)); } catch (e: any) { alert(`Could not save: ${e.message || e}`); }
+    finally { setSaving(false); }
+  }
+  if (!m) return null;
+  return (
+    <div style={{ fontSize: 11, marginTop: 10, padding: 8, background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6 }}>
+      <b>🎞 Motion graphics</b> (intro, release card, cast names, subscribe, end screen){" "}
+      <select style={{ width: "auto", fontSize: 11, padding: "1px 6px", marginLeft: 6 }} value={m.mode} disabled={saving}
+        onChange={(e) => save({ mode: e.target.value as StudioMotion["mode"] })}>
+        <option value="compare">Compare — make both versions</option>
+        <option value="on">On — motion version is the video</option>
+        <option value="off">Off — static only</option>
+      </select>
+      <label style={{ marginLeft: 10 }}>
+        cast name cards{" "}
+        <select style={{ width: "auto", fontSize: 11, padding: "1px 6px" }} value={m.cast_cards} disabled={saving}
+          onChange={(e) => save({ cast_cards: Number(e.target.value) })}>
+          {[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}{n === 2 ? " (the two leads)" : ""}</option>)}
+        </select>
+      </label>
+      <div style={{ color: "var(--muted)", marginTop: 4 }}>
+        Changes apply to the next render (step 6).{" "}
+        {!m.available && <span style={{ color: "var(--yellow)" }}>Not available on this server: {m.reason}. Videos use the static look.</span>}
+      </div>
+      {info && (
+        <div style={{ marginTop: 4 }}>
+          Last render: {info.pieces} motion piece{info.pieces === 1 ? "" : "s"}
+          {info.cast_cards.length > 0 && <> · name cards for {info.cast_cards.join(", ")}</>}
+          {info.failures.length > 0 && (
+            <div style={{ color: "var(--yellow)" }}>⚠ {info.failures.length} fell back to the static look: {info.failures[0]}</div>
+          )}
+        </div>
+      )}
+      {p.render?.motion_mode === "compare" && info?.file && (
+        <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+          <button className="primary" style={{ fontSize: 11 }} disabled={saving}
+            onClick={() => save({ mode: "on" }, "Make the motion look the default? Re-render (step 6) to make it this video's file.")}>
+            ✓ Use motion look from now on
+          </button>
+          <button style={{ fontSize: 11 }} disabled={saving}
+            onClick={() => save({ mode: "off" }, "Keep the static look and stop making the motion version?")}>
+            Keep static look
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void }) {
   const r = p.render;
   const [msg, setMsg] = useState("");
@@ -781,7 +840,16 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
   return (
     <Section title={`Video — ${fmtTime(r.seconds)}, ${Math.round(r.size / 1e6)} MB`}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
-        <video controls src={api.studioFileUrl(p.id, r.file, bust)} style={{ width: "100%", borderRadius: 8, background: "black" }} />
+        <div>
+          {r.motion_mode === "compare" && r.motion?.file && <div style={{ fontSize: 11, marginBottom: 4 }}>Static look (current video)</div>}
+          <video controls src={api.studioFileUrl(p.id, r.file, bust)} style={{ width: "100%", borderRadius: 8, background: "black" }} />
+          {r.motion_mode === "compare" && r.motion?.file && (
+            <>
+              <div style={{ fontSize: 11, margin: "10px 0 4px" }}>🎞 Motion graphics look</div>
+              <video controls src={api.studioFileUrl(p.id, r.motion.file, bust)} style={{ width: "100%", borderRadius: 8, background: "black" }} />
+            </>
+          )}
+        </div>
         <div>
           <div style={{ fontSize: 11, marginBottom: 4 }}>Thumbnail</div>
           <img src={api.studioFileUrl(p.id, r.thumbnail, bust)} alt="" style={{ width: "100%", borderRadius: 6 }} />
@@ -809,6 +877,7 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
           </div>
           {msg && <div style={{ fontSize: 11, marginTop: 6, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</div>}
           <DriveStatus p={p} onChange={onChange} />
+          <MotionPanel p={p} />
           {!!p.cost_usd && (
             <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)" }}>
               This video has cost about <b style={{ color: "var(--text)" }}>${p.cost_usd.toFixed(p.cost_usd < 1 ? 3 : 2)}</b> so far (AI + voice-over).

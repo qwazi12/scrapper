@@ -94,6 +94,52 @@ def imdb_videos(imdb_id: str) -> dict[str, Any]:
     return {"videos": vids, "first_has_mp4": playable}
 
 
+class MotionIn(BaseModel):
+    mode: str | None = None          # off | compare | on
+    cast_cards: int | None = None    # 0–4 name cards per video (default 2: the two leads)
+
+
+def _motion_settings(s: Session) -> dict[str, Any]:
+    from ..models import AppSetting
+    from . import motion
+    row = s.get(AppSetting, "studio_motion")
+    v = (row.value or {}) if row else {}
+    ok, why = motion.available()
+    return {"mode": v.get("mode", "compare"), "cast_cards": int(v.get("cast_cards", 2)),
+            "available": ok, "reason": why or None}
+
+
+@router.get("/motion")
+def get_motion(s: Session = Depends(get_session)) -> dict[str, Any]:
+    return _motion_settings(s)
+
+
+@router.put("/motion")
+def put_motion(req: MotionIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """The motion-graphics switch. compare = render both looks for review (the
+    published file stays the static one); on = motion look is the video; off = static only."""
+    from ..models import AppSetting
+    if req.mode is not None and req.mode not in ("off", "compare", "on"):
+        raise HTTPException(400, "mode must be off, compare or on")
+    if req.cast_cards is not None and not 0 <= req.cast_cards <= 4:
+        raise HTTPException(400, "cast_cards must be 0–4")
+    row = s.get(AppSetting, "studio_motion")
+    before = dict((row.value or {}) if row else {})
+    if row:
+        undo.record(s, "settings", "Change motion-graphics settings", rows=[row], model="app_settings")
+    else:
+        undo.add_created(s, "settings", "Change motion-graphics settings", ["studio_motion"], model="app_settings")
+    value = {**before, **{k: v for k, v in req.model_dump().items() if v is not None}}
+    if row:
+        row.value = value
+    else:
+        s.add(AppSetting(key="studio_motion", value=value))
+    s.commit()
+    logbus.log("info", "studio_motion", f"Motion graphics: mode={value.get('mode', 'compare')}, "
+               f"cast cards={value.get('cast_cards', 2)} (applies to the next render)")
+    return _motion_settings(s)
+
+
 @router.get("/calendar")
 def calendar() -> dict[str, Any]:
     return _tmdb_call(tmdb.calendar)

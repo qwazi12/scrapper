@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<script src="gsap.min.js"></script>
+<style>
+  @font-face { font-family: "SC"; src: url("font-bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "SC"; src: url("font-regular.ttf"); font-weight: 400; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: __BG__; }
+  #root { position: relative; width: 1920px; height: 1080px; font-family: "SC", sans-serif; color: #fff; }
+  :root { --red: #E50914; --white: #FFFFFF; }
+__CSS__
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="__DUR__" data-width="1920" data-height="1080">
+__BODY__
+</div>
+<script>
+  const V = __VARS__;
+  const tl = gsap.timeline({ paused: true });
+__JS__
+  window.__timelines = window.__timelines || {};
+  window.__timelines["main"] = tl;
+</script>
+</body>
+</html>

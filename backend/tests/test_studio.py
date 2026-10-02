@@ -329,6 +329,7 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
         p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
         s.commit()
     monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    monkeypatch.setattr(stage_render, "motion_mode", lambda: "off")
     runner.run_one(pid, "render")
     with SessionLocal() as s:
         r = s.get(StudioProject, pid).render
@@ -491,3 +492,107 @@ def test_upcoming_is_new_films_in_the_next_three_months(monkeypatch):
     p = calls[0][1]
     assert p["release_date.gte"] == "2026-10-02" and p["release_date.lte"] == "2027-01-02"
     assert p["primary_release_date.gte"] == "2026-04-02" and p["region"] == "US"
+
+
+# --- motion layer (HyperFrames) -------------------------------------------------------
+def _render_project(three_scene_video):
+    pid = _new_project(facts=_facts(), shots=_shots(three_scene_video, 3))
+    root = runner.project_dir(pid)
+    (root / "tts").mkdir(exist_ok=True)
+    shots = []
+    for sh in _shots(three_scene_video, 3):
+        media.frame(three_scene_video, sh["start"], root / f"{sh['id']}.jpg")
+        shots.append({**sh, "still": f"{sh['id']}.jpg"})
+    _tone(root / "tts" / "a.mp3", 1.0)
+    plan = [{"slot": 1, "sentence": 1, "kind": "poster", "start": 0, "end": 1.0, "duration": 1.0},
+            {"slot": 2, "sentence": 1, "kind": "still", "shot": "s001", "start": 1.0, "end": 2.0, "duration": 1.0},
+            {"slot": 3, "sentence": 1, "kind": "clip", "shot": "s002", "start": 2.0, "end": 3.0, "duration": 1.0,
+             "clip_start": 2.1, "clip_len": 1.0}]
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.shots, p.plan = shots, plan
+        p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
+        s.commit()
+    return pid, root
+
+
+def test_compare_mode_makes_both_versions_and_survives_motion_failure(monkeypatch, three_scene_video):
+    from backend.app.studio import motion
+    pid, root = _render_project(three_scene_video)
+    monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    monkeypatch.setattr(stage_render, "motion_mode", lambda: "compare")
+
+    def boom(kind, values, assets=None):
+        raise motion.MotionError(f"{kind}: HyperFrames render failed — no chrome")
+
+    monkeypatch.setattr(motion, "render_piece", boom)
+    runner.run_one(pid, "render")
+    with SessionLocal() as s:
+        r = s.get(StudioProject, pid).render
+    assert r["file"].endswith("final.mp4") and r["motion_mode"] == "compare"
+    m = r["motion"]
+    assert m["file"].endswith("final_motion.mp4") and (root / m["file"]).exists()
+    assert m["pieces"] == 0 and m["failures"]                    # every piece fell back, video still made
+    assert 3.8 <= media.duration(root / m["file"]) <= 4.3
+
+
+def test_motion_overlays_are_composited(monkeypatch, three_scene_video, tmp_path):
+    from backend.app.studio import motion
+    pid, root = _render_project(three_scene_video)
+    monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    monkeypatch.setattr(stage_render, "motion_mode", lambda: "on")
+    used = []
+
+    def fake(kind, values, assets=None):
+        used.append(kind)
+        dest = tmp_path / f"{kind}.{'mp4' if kind == 'endscreen' else 'mov'}"
+        if kind == "endscreen":
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=1920x1080:d=1:r=30",
+                            "-pix_fmt", "yuv420p", str(dest)], check=True)
+        else:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=white@0.5:s=1920x1080:d=1:r=30,format=yuva444p10le",
+                            "-c:v", "prores_ks", "-profile:v", "4444", str(dest)], check=True)
+        return dest
+
+    monkeypatch.setattr(motion, "render_piece", fake)
+    runner.run_one(pid, "render")
+    with SessionLocal() as s:
+        r = s.get(StudioProject, pid).render
+    assert r["file"].endswith("final.mp4") and r["motion"]["file"].endswith("final.mp4")
+    assert "intro" in used and "release" in used and "endscreen" in used and not r["motion"]["failures"]
+    assert not (root / "render" / "final_static.mp4").exists()
+    assert 3.8 <= r["seconds"] <= 4.3
+
+
+def test_cast_cards_only_on_solo_shots_of_that_actor_and_max_four():
+    from backend.app.studio import motion
+    shots = {"a": {"people": ["Rachel McAdams"]}, "b": {"people": ["Dylan O'Brien", "Rachel McAdams"]},
+             "c": {"people": ["Dylan O'Brien"]}, "d": {"people": ["X"]}}
+    plan = [{"kind": "clip", "shot": "b", "start": 0, "duration": 4},
+            {"kind": "clip", "shot": "a", "start": 4, "duration": 4},
+            {"kind": "still", "shot": "c", "start": 8, "duration": 4},
+            {"kind": "still", "shot": "d", "start": 12, "duration": 4}]
+    cast = [{"actor": "Rachel McAdams", "character": "Linda"}, {"actor": "Dylan O'Brien", "character": "Bradley"},
+            {"actor": "X", "character": "Y"}]
+    cards = motion.cast_cards(plan, shots, cast, 2, [])
+    assert [(c["actor"], c["start"]) for c in cards] == [("Rachel McAdams", 4.2), ("Dylan O'Brien", 8.2)]
+    assert motion.cast_cards(plan, shots, cast, 2, [(8.0, 12.0)])[1:] == []      # never over another overlay
+    assert len(motion.cast_cards(plan, shots, cast * 3, 9, [])) <= 4
+
+
+def test_subscribe_window_moves_off_other_overlays():
+    fw = stage_render._free_window
+    assert fw(18.0, 5.0, [(20.0, 24.0)], 200) == (24.5, 29.5)
+    assert fw(18.0, 5.0, [(30.0, 34.0)], 200) == (18.0, 23.0)
+    assert fw(18.0, 5.0, [(17.0, 30.0)], 33) is None          # no room before the closing line
+
+
+def test_motion_settings_validate_and_default_to_compare(client):
+    r = client.get("/api/studio/motion").json()
+    assert r["mode"] in ("compare", "on", "off") and 0 <= r["cast_cards"] <= 4
+    assert client.put("/api/studio/motion", json={"mode": "sometimes"}).status_code == 400
+    assert client.put("/api/studio/motion", json={"cast_cards": 5}).status_code == 400
+    r = client.put("/api/studio/motion", json={"mode": "on", "cast_cards": 2}).json()
+    assert r["mode"] == "on" and r["cast_cards"] == 2
+    assert stage_render.motion_mode() == "on" and stage_render.motion_cast_cards() == 2
+    client.put("/api/studio/motion", json={"mode": "compare"})

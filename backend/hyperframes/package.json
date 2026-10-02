@@ -1,0 +1,9 @@
+{
+  "name": "scrapper-motion",
+  "private": true,
+  "description": "Pins the HyperFrames CLI + GSAP used by LongForm Studio's motion layer (backend/app/studio/motion.py). Exact versions + lockfile: a new release can never change render output without a commit here (manhwa's lesson).",
+  "dependencies": {
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.35"
+  }
+}

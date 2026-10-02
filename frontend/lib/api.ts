@@ -215,6 +215,8 @@ export type StudioPlanItem = {
   clip_len?: number;
 };
 
+export type StudioMotion = { mode: "off" | "compare" | "on"; cast_cards: number; available: boolean; reason: string | null };
+
 export type StudioProject = {
   id: number;
   tmdb_id: number;
@@ -247,7 +249,10 @@ export type StudioProject = {
     narration_seconds?: number;
   } | null;
   plan?: StudioPlanItem[] | null;
-  render?: { file: string; thumbnail: string; seconds: number; size: number; rendered_at: string } | null;
+  render?: { file: string; thumbnail: string; seconds: number; size: number; rendered_at: string;
+            motion_mode?: "off" | "compare" | "on";
+            motion?: { file?: string; pieces: number; failures: string[]; cast_cards: string[];
+                       available: boolean; reason: string | null } | null } | null;
 };
 
 export type StudioStatus = {
@@ -592,6 +597,9 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return res.json() as Promise<StudioProject>;
   },
+  studioMotion: () => req<StudioMotion>("/api/studio/motion", { headers: headers(false) }),
+  setStudioMotion: (patch: Partial<Pick<StudioMotion, "mode" | "cast_cards">>) =>
+    req<StudioMotion>("/api/studio/motion", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   studioFileUrl: (id: number, path: string, bust?: string) => {
     const q = new URLSearchParams({ path });
     const t = token();

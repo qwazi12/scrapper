@@ -23,6 +23,7 @@ from ..db import SessionLocal
 from ..models import StudioProject
 from .. import control
 from . import media
+from . import motion
 from .runner import project_dir, stage
 
 W, H, FPS = 1920, 1080, 30
@@ -121,6 +122,19 @@ def poster_frame(poster: pathlib.Path | None, backdrop: pathlib.Path | None, lin
     return dest
 
 
+def banner_png(line: str, dest: pathlib.Path) -> pathlib.Path:
+    """poster_frame's red release banner alone, on a transparent canvas."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    f = media.font(40)
+    tw = _text_w(d, line, f)
+    bx, by = (W - tw) // 2 - 30, H - 120
+    d.rounded_rectangle((bx, by, bx + tw + 60, by + 70), radius=12, fill=(229, 9, 20, 235))
+    d.text((bx + 30, by + 12), line, font=f, fill="white")
+    img.save(dest)
+    return dest
+
+
 def end_card(backdrop: pathlib.Path | None, channel: str, dest: pathlib.Path) -> pathlib.Path:
     canvas = Image.new("RGB", (W, H), (10, 10, 10))
     if backdrop:
@@ -205,8 +219,12 @@ def render(project_id: int) -> str:
     poster = pathlib.Path(local["poster"]) if local.get("poster") else None
     backdrop = pathlib.Path(local["backdrops"][0]) if local.get("backdrops") else None
 
-    poster_img = poster_frame(poster, backdrop, release_line(facts), out_dir / "poster_card.jpg")
-    seg_files = []
+    rel_line = release_line(facts)
+    poster_img = poster_frame(poster, backdrop, rel_line, out_dir / "poster_card.jpg")
+    mode = motion_mode()
+    want_motion = mode in ("on", "compare")
+    clean_poster = poster_frame(poster, backdrop, "", out_dir / "poster_clean.jpg") if want_motion else None
+    seg_files, motion_segs, poster_slots = [], [], []
     for k, item in enumerate(plan):
         control.check()
         control.progress(f"rendering segment {k + 1} of {len(plan)}")
@@ -216,20 +234,26 @@ def render(project_id: int) -> str:
         sh = shots_by_id.get(item.get("shot") or "")
         if kind == "poster" or (kind in ("still", "card", "clip") and sh is None):
             seg_image(poster_img, dur, dest)
+            if want_motion:   # the motion version animates the release card over a clean poster
+                clean = segs_dir / f"seg_{k:03d}_clean.mp4"
+                seg_image(clean_poster, dur, clean)
+                motion_segs.append(clean)
+            poster_slots.append((float(item["start"]), dur))
+            seg_files.append(dest)
+            continue
         elif kind == "clip":
             seg_clip(sh["file"], float(item.get("clip_start", sh["start"])), dur, dest, sh.get("crop"))
         else:
             seg_still(root / sh["still"], dur, k, dest)
         seg_files.append(dest)
+        if want_motion:
+            motion_segs.append(dest)
     end_img = end_card(backdrop or poster, channel, out_dir / "end_card.jpg")
     end_seg = segs_dir / "seg_end.mp4"
     seg_image(end_img, END_CARD, end_seg)
     seg_files.append(end_seg)
 
-    concat = out_dir / "segments.txt"
-    concat.write_text("".join(f"file '{f}'\n" for f in seg_files))
-    video = out_dir / "video.mp4"
-    media.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(video)])
+    video = _concat(seg_files, out_dir / "segments.txt", out_dir / "video.mp4")
 
     # Narration: every sentence at its planned start; pad through the end card.
     timeline = script.get("timeline") or []
@@ -246,34 +270,50 @@ def render(project_id: int) -> str:
                                 f"loudnorm=I=-14:TP=-1.5:LRA=11[out]"
         media.run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", fc, "-map", "[out]",
                    "-t", f"{total:.3f}", "-c:a", "aac", "-b:a", "192k", str(narration)])
+    audio = narration if timeline else None
 
     # Subscribe bar: ~20 s in, ~60 % through, and over the closing call to action.
-    sub = subscribe_png(out_dir / "subscribe.png", channel)
     speech_end = float(plan[-1]["end"])
     windows = []
     if speech_end > 40:
         windows.append((18.0, 23.0))
     if speech_end > 90:
         windows.append((round(speech_end * 0.6, 2), round(speech_end * 0.6 + 5, 2)))
+    # Keep the bar off the intro and the release card: a mid-video window moves
+    # to the next free moment (the closing call to action stays where it is).
+    first = next((it for it in plan if it.get("kind") in ("clip", "still") and shots_by_id.get(it.get("shot") or "")), None)
+    taken = [(s0, s0 + d) for s0, d in poster_slots] + ([(float(first["start"]), float(first["start"]) + 3.8)] if first else [])
+    windows = [w for w in (_free_window(a, b - a, taken, speech_end) for a, b in windows) if w]
     if timeline:
         last = timeline[-1]
-        windows.append((float(last["start"]), float(last["end"])))
-    enable = "+".join(f"between(t,{a},{b})" for a, b in windows) or "0"
+        windows.append((float(last["start"]), max(float(last["end"]), float(last["start"]) + 4.0)))
 
+    static_final = out_dir / ("final.mp4" if mode != "on" else "final_static.mp4")
+    sub = subscribe_png(out_dir / "subscribe.png", channel)
+    sub_movs = [(_png_overlay(sub, b - a, out_dir / f"subscribe_{i}.mov"), a) for i, (a, b) in enumerate(windows)]
+    if mode != "on":
+        control.progress("compositing the video")
+        media.run(motion.overlay_cmd(video, sub_movs, audio, total, ENC, static_final))
+
+    motion_info = None
+    if want_motion:
+        control.progress("rendering motion graphics (HyperFrames)")
+        motion_info, overlays, end_motion = _motion_pieces(facts, plan, shots_by_id, poster_slots, windows,
+                                                            rel_line, backdrop or poster, channel, sub_movs, out_dir)
+        if end_motion:
+            end_seg_m = segs_dir / "seg_end_motion.mp4"
+            media.run(["ffmpeg", "-v", "error", "-y", "-i", str(end_motion), "-t", f"{END_CARD:.3f}", "-an",
+                       "-vf", "setsar=1", *ENC, str(end_seg_m)])
+            motion_segs.append(end_seg_m)
+        else:
+            motion_segs.append(end_seg)
+        base_m = _concat(motion_segs, out_dir / "segments_motion.txt", out_dir / "video_motion.mp4")
+        motion_final = out_dir / ("final.mp4" if mode == "on" else "final_motion.mp4")
+        control.progress("compositing the motion version")
+        media.run(motion.overlay_cmd(base_m, sorted(overlays, key=lambda x: x[1]), audio, total, ENC, motion_final))
+        motion_info["file"] = str(motion_final.relative_to(root))
+        base_m.unlink(missing_ok=True)
     final = out_dir / "final.mp4"
-    # Loop the PNG so the overlay input lasts as long as the video. Do NOT add
-    # setpts=PTS-STARTPTS here: on the joined video it cut a 33 s render to
-    # 13.1 s (verified 2026-10-01).
-    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(video), "-loop", "1", "-i", str(sub)]
-    if timeline:
-        cmd += ["-i", str(narration)]
-    cmd += ["-filter_complex",
-            f"[0:v][1:v]overlay=0:0:shortest=1:enable='{enable}'[v]",
-            "-map", "[v]"]
-    if timeline:
-        cmd += ["-map", "2:a", "-c:a", "copy"]
-    cmd += [*ENC, "-movflags", "+faststart", "-t", f"{total:.3f}", str(final)]
-    media.run(cmd)
 
     lead = (facts.get("cast") or [{}])[0].get("actor")
     best = next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and lead in sh.get("people", [])),
@@ -283,11 +323,119 @@ def render(project_id: int) -> str:
     secs = media.duration(final)
     info = {"file": str(final.relative_to(root)), "thumbnail": str(thumb.relative_to(root)),
             "seconds": round(secs, 2), "size": final.stat().st_size, "segments": len(seg_files),
-            "rendered_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+            "rendered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "motion_mode": mode, "motion": motion_info}
+    if mode == "on":
+        static_final.unlink(missing_ok=True)
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
     video.unlink(missing_ok=True)
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         p.render = info
         s.commit()
-    return f"{secs:.0f}s video, {round(info['size'] / 1e6)} MB, {len(seg_files)} segments"
+    note = ""
+    if motion_info:
+        note = f", motion graphics: {motion_info['pieces']} pieces" + (
+            f" ({len(motion_info['failures'])} fell back to static)" if motion_info["failures"] else "")
+    return f"{secs:.0f}s video, {round(info['size'] / 1e6)} MB, {len(seg_files)} segments{note}"
+
+
+# --- helpers -------------------------------------------------------------------------
+def motion_mode() -> str:
+    """off | compare | on — app_settings "studio_motion". Default "compare" until
+    the owner has watched both versions and picked one (plan step 6)."""
+    from ..models import AppSetting
+    with SessionLocal() as s:
+        row = s.get(AppSetting, "studio_motion")
+        v = (row.value or {}) if row else {}
+    mode = v.get("mode", "compare")
+    return mode if mode in ("off", "compare", "on") else "compare"
+
+
+def motion_cast_cards() -> int:
+    from ..models import AppSetting
+    with SessionLocal() as s:
+        row = s.get(AppSetting, "studio_motion")
+        n = ((row.value or {}) if row else {}).get("cast_cards", 2)
+    return max(0, min(4, int(n)))
+
+
+def _free_window(start: float, dur: float, taken: list[tuple[float, float]], limit: float) -> tuple[float, float] | None:
+    """The first window of `dur` seconds at or after `start` that overlaps none of
+    `taken` and ends before `limit` (the closing line); None if there is none."""
+    for _ in range(len(taken) + 1):
+        clash = [b for a, b in taken if a < start + dur and start < b]
+        if not clash:
+            return (round(start, 2), round(start + dur, 2)) if start + dur <= limit else None
+        start = max(clash) + 0.5
+    return None
+
+
+def _concat(files: list[pathlib.Path], listfile: pathlib.Path, dest: pathlib.Path) -> pathlib.Path:
+    listfile.write_text("".join(f"file '{f}'\n" for f in files))
+    media.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listfile), "-c", "copy", str(dest)])
+    return dest
+
+
+def _png_overlay(png: pathlib.Path, dur: float, dest: pathlib.Path) -> pathlib.Path:
+    """A still transparent PNG as a short alpha .mov, so static and motion
+    overlays go through the same compositing path."""
+    media.run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-t", f"{dur:.3f}", "-i", str(png), "-r", str(FPS),
+               "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", str(dest)])
+    return dest
+
+
+def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, backdrop, channel, sub_movs, out_dir):
+    """Render every motion piece; each failure falls back to its static version
+    (release card → the banner baked into the poster is gone, so the static
+    banner PNG is used; subscribe → the static bar; end screen → static card;
+    intro and cast cards have no static version and are simply left out)."""
+    failures: list[str] = []
+    overlays: list[tuple[pathlib.Path, float]] = []
+    busy: list[tuple[float, float]] = []
+    pieces = 0
+
+    first = next((it for it in plan if it.get("kind") in ("clip", "still") and shots_by_id.get(it.get("shot") or "")), None)
+    if first:
+        d = 3.8
+        f = motion.try_piece("intro", {"title": facts.get("title", ""), "meta": motion.intro_meta(facts), "duration": d},
+                             None, failures)
+        if f:
+            start = float(first["start"])
+            overlays.append((f, start)); busy.append((start, start + d)); pieces += 1
+
+    where, _, date = rel_line.partition(" · ")
+    for start, dur in poster_slots:
+        if not rel_line:
+            break
+        d = round(min(dur, 6.0), 2)
+        f = motion.try_piece("release", {"where": where, "date": date, "duration": d}, None, failures)
+        if f:
+            pieces += 1
+        else:  # the motion version's poster has no baked banner: lay the static one on instead
+            f = _png_overlay(banner_png(rel_line, out_dir / "banner.png"), dur, out_dir / f"banner_{len(overlays)}.mov")
+        overlays.append((f, start))
+        busy.append((start, start + d))
+
+    for i, (a, b) in enumerate(windows):
+        d = round(b - a, 2)
+        f = motion.try_piece("subscribe", {"channel": channel, "duration": d}, None, failures)
+        if f:
+            pieces += 1
+        overlays.append((f or sub_movs[i][0], a))
+        busy.append((a, b))
+
+    cast = motion.cast_cards(plan, shots_by_id, facts.get("cast", []), motion_cast_cards(), busy)
+    for c in cast:
+        f = motion.try_piece("cast", {"actor": c["actor"], "character": c["character"], "duration": c["duration"]},
+                             None, failures)
+        if f:
+            overlays.append((f, c["start"])); pieces += 1
+
+    end_motion = motion.try_piece("endscreen", {"channel": channel, "duration": END_CARD},
+                                  {"backdrop.jpg": backdrop} if backdrop else None, failures)
+    if end_motion:
+        pieces += 1
+    ok, why = motion.available()
+    return ({"pieces": pieces, "failures": failures[:6], "cast_cards": [c["actor"] for c in cast],
+             "available": ok, "reason": why or None}, overlays, end_motion)
