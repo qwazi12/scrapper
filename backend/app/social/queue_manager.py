@@ -277,6 +277,38 @@ async def submit_upload(
     return entries
 
 
+def auto_seo_enabled(s: Session) -> bool:
+    row = s.get(AppSetting, "seo")
+    return (row.value or {}).get("auto", True) if row else True
+
+
+def needs_auto_seo(item: QueueItem) -> bool:
+    """A clip that never had the AI/TMDB pass and still carries its raw import
+    text (Drive sync sets description == title). Owner-edited text is left alone."""
+    if item.compilation_id or item.pipeline == "LongForm" or item.research is not None:
+        return False
+    return not item.description or item.description.strip() == (item.title or "").strip()
+
+
+async def auto_seo(item: QueueItem, s: Session) -> bool:
+    """Research + rewrite before posting. Never blocks the post: on any failure
+    the clip goes out with its existing text and the reason is logged."""
+    from .. import costs, undo
+    from . import ai_bulk
+    try:
+        with costs.operation("post:auto_seo", ref=f"queue:{item.id}"):
+            res, research = await ai_bulk.ai_for(item, s)
+    except Exception as exc:  # noqa: BLE001 — any failure: post with existing text
+        logbus.log("warning", "auto_seo_skipped", f"Item #{item.id}: posting without SEO rewrite — {str(exc)[:200]}")
+        return False
+    undo.record(s, "queue", f"Auto-SEO of #{item.id} before posting", rows=[item])
+    ai_bulk.apply_ai(item, res, research)
+    s.commit()
+    logbus.log("info", "auto_seo", f"Item #{item.id}: SEO title/caption/hashtags written"
+               + (f" (TMDB: {research.get('title')})" if research and research.get("matched") else ""))
+    return True
+
+
 async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
@@ -316,6 +348,9 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
         item.notes = "Video file not found on volume, disk, or Google Drive."
         s.commit()
         raise FileNotFoundError(f"Video file not found for queue item {item_id}")
+
+    if needs_auto_seo(item) and auto_seo_enabled(s):
+        await auto_seo(item, s)  # every clip goes out SEO-optimised
 
     item.status = "posting"
     s.commit()

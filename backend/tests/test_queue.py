@@ -554,3 +554,57 @@ def test_research_cache_shares_lookups(session, monkeypatch):
     clip_research.research(a, cache)
     clip_research.research(b, cache)
     assert looked == [1]
+
+
+# --- auto-SEO before posting ---------------------------------------------------
+def test_raw_clip_gets_seo_before_posting(session, monkeypatch):
+    it = _clip(session, accounts=["mk:youtube"])
+    it.description = it.title  # raw Drive import
+    session.commit()
+    monkeypatch.setattr(clip_research, "generate", lambda item, cache=None: (
+        {"title": "SEO title", "caption": "SEO caption", "hashtags": ["#shorts"]}, {"matched": True, "title": "Show"}))
+
+    async def fake_submit(*a, **kw):
+        return [{"profile": "mk", "platforms": ["youtube"], "request_id": "r", "submitted_at": "2026-10-02T00:00:00+00:00"}]
+
+    monkeypatch.setattr(qm, "submit_upload", fake_submit)
+    it.video_path = __file__  # any existing file
+    session.commit()
+    asyncio.run(qm.publish_queue_item(it.id, session))
+    session.refresh(it)
+    assert it.title == "SEO title" and it.research["title"] == "Show" and it.status == "posting"
+
+
+def test_owner_edited_clip_is_not_rewritten(session):
+    it = _clip(session)
+    it.description = "My own hand-written caption"
+    session.commit()
+    assert qm.needs_auto_seo(it) is False
+
+
+def test_auto_seo_failure_never_blocks_posting(session, monkeypatch):
+    it = _clip(session, accounts=["mk:youtube"])
+    it.description, it.video_path = it.title, __file__
+    session.commit()
+
+    def boom(item, cache=None):
+        raise sgem.GeminiError("down")
+
+    monkeypatch.setattr(clip_research, "generate", boom)
+
+    async def fake_submit(*a, **kw):
+        return [{"profile": "mk", "platforms": ["youtube"], "request_id": "r", "submitted_at": "2026-10-02T00:00:00+00:00"}]
+
+    monkeypatch.setattr(qm, "submit_upload", fake_submit)
+    asyncio.run(qm.publish_queue_item(it.id, session))
+    session.refresh(it)
+    assert it.status == "posting" and it.research is None
+
+
+def test_longform_tags_include_basics_and_keywords():
+    from backend.app.studio import stage_script
+    tags = stage_script.seo_tags(["Raimi horror"], {"title": "Send Help", "primary_date": "2026-01-30",
+                                                     "cast": [{"actor": "Rachel McAdams"}], "directors": ["Sam Raimi"],
+                                                     "keywords": ["island", "survival", "send help"]})
+    assert tags[:4] == ["Send Help", "Send Help trailer", "Send Help trailer breakdown", "Send Help release date"]
+    assert "Rachel McAdams" in tags and "island" in tags and tags.count("Send Help") == 1

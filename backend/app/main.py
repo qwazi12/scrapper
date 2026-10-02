@@ -893,6 +893,31 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
 
 
 # --- Spending ---------------------------------------------------------------------
+class SeoIn(BaseModel):
+    auto: bool
+
+
+@app.get("/api/seo", dependencies=_AUTH)
+def get_seo(s: Session = Depends(get_session)) -> dict:
+    unoptimised = sum(1 for it in s.query(QueueItem).filter(QueueItem.status.in_(["review", "ready", "retry"])).all()
+                      if queue_manager.needs_auto_seo(it))
+    return {"auto": queue_manager.auto_seo_enabled(s), "clips_without_seo": unoptimised}
+
+
+@app.put("/api/seo", dependencies=_AUTH)
+def put_seo(req: SeoIn, s: Session = Depends(get_session)) -> dict:
+    from .models import AppSetting
+    _snapshot_setting(s, "seo", "Turn auto-SEO " + ("on" if req.auto else "off"))
+    row = s.get(AppSetting, "seo")
+    if row:
+        row.value = {"auto": req.auto}
+    else:
+        s.add(AppSetting(key="seo", value={"auto": req.auto}))
+    s.commit()
+    logbus.log("info", "seo_settings", f"Auto-SEO before posting turned {'on' if req.auto else 'off'}")
+    return get_seo(s)
+
+
 class CostSettingsIn(BaseModel):
     budget_usd: float | None = None
     hard_stop: bool | None = None

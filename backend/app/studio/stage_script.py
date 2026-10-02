@@ -135,6 +135,24 @@ Script:
 Return a JSON array, one object per sentence."""
 
 
+def seo_tags(model_tags: list, facts: dict) -> list[str]:
+    """Model tags + the searchable basics (title, trailer/release terms, the
+    leads, year) + TMDB keywords; de-duplicated, max 20."""
+    year = (facts.get("primary_date") or "")[:4]
+    title = facts.get("title", "")
+    base = [title, f"{title} trailer", f"{title} trailer breakdown", f"{title} release date"]
+    if year:
+        base.append(f"{title} {year}")
+    base += [c["actor"] for c in facts.get("cast", [])[:3]] + list(facts.get("directors", [])[:1])
+    out, seen = [], set()
+    for t in [*base, *[str(x) for x in model_tags], *facts.get("keywords", [])]:
+        k = t.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(t.strip())
+    return out[:20]
+
+
 @stage("script")
 def script(project_id: int) -> str:
     with SessionLocal() as s:
@@ -184,7 +202,7 @@ def script(project_id: int) -> str:
         "est_seconds": round(words / WPM * 60),
         "youtube_title": str(draft.get("youtube_title") or f"{facts['title']} Trailer Breakdown")[:100],
         "description": description,
-        "tags": [str(t) for t in (draft.get("tags") or [])][:15],
+        "tags": seo_tags(draft.get("tags") or [], facts),
         "storyboard": board,
         "model": settings.gemini_model,
     }

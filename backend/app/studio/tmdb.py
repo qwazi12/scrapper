@@ -122,7 +122,7 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
     region = region or settings.studio_region
     if media_type not in ("movie", "tv"):
         raise TMDBError(f"media_type must be movie or tv, not {media_type}", 400)
-    append = "credits,videos,images,external_ids," + ("release_dates" if media_type == "movie" else "content_ratings")
+    append = "credits,videos,images,external_ids,keywords," + ("release_dates" if media_type == "movie" else "content_ratings")
     d = get(f"/{media_type}/{tmdb_id}", append_to_response=append, include_image_language="en,null")
     src = f"https://www.themoviedb.org/{media_type}/{tmdb_id}"
 
@@ -195,6 +195,8 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
         "backdrops": pick(images.get("backdrops", []), 12, "original"),
         "logos": pick(images.get("logos", []), 2, "original"),
         "imdb_id": (d.get("external_ids") or {}).get("imdb_id"),
+        "keywords": [k["name"] for k in ((d.get("keywords") or {}).get("keywords")
+                                          or (d.get("keywords") or {}).get("results") or [])][:12],
         "source": src,
         "attribution": ATTRIBUTION,
     }
