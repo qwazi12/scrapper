@@ -105,8 +105,10 @@ def _cover(img: Image.Image, w: int, h: int) -> Image.Image:
 
 
 def poster_frame(poster: pathlib.Path | None, backdrop: pathlib.Path | None, line: str,
-                 dest: pathlib.Path) -> pathlib.Path:
-    """Poster centred over a blurred, darkened copy of itself + release banner."""
+                 dest: pathlib.Path, card_room: bool = False) -> pathlib.Path:
+    """Poster centred over a blurred, darkened copy of itself + release banner.
+    card_room: smaller and higher, leaving the bottom ~260 px clear for the
+    animated release card (motion version), so the card never covers the poster's title."""
     src = poster or backdrop
     canvas = Image.new("RGB", (W, H), "black")
     if src:
@@ -114,9 +116,10 @@ def poster_frame(poster: pathlib.Path | None, backdrop: pathlib.Path | None, lin
             im = im.convert("RGB")
             bg = _cover(im, W, H).filter(ImageFilter.GaussianBlur(28)).point(lambda v: int(v * 0.55))
             canvas.paste(bg, (0, 0))
-            ph = 900 if poster else 700
+            ph = (740 if card_room else 900) if poster else (560 if card_room else 700)
             fg = im.resize((int(im.width * ph / im.height), ph))
-            canvas.paste(fg, ((W - fg.width) // 2, (H - ph) // 2 - (20 if line else 0)))
+            top = 50 if card_room else (H - ph) // 2 - (20 if line else 0)
+            canvas.paste(fg, ((W - fg.width) // 2, top))
     if line:
         d = ImageDraw.Draw(canvas, "RGBA")
         f = media.font(40)
@@ -229,7 +232,7 @@ def render(project_id: int) -> str:
     poster_img = poster_frame(poster, backdrop, rel_line, out_dir / "poster_card.jpg")
     mode = motion_mode()
     want_motion = mode in ("on", "compare")
-    clean_poster = poster_frame(poster, backdrop, "", out_dir / "poster_clean.jpg") if want_motion else None
+    clean_poster = poster_frame(poster, backdrop, "", out_dir / "poster_clean.jpg", card_room=True) if want_motion else None
     seg_files, motion_segs, poster_slots = [], [], []
     for k, item in enumerate(plan):
         control.check()

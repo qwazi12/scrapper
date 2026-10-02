@@ -27,7 +27,7 @@ from . import media
 
 logger = logging.getLogger("scrapper.studio.motion")
 
-TEMPLATE_VERSION = "1"            # bump when a template's look changes: old cache entries stop matching
+TEMPLATE_VERSION = "2"            # bump when a template's look changes: old cache entries stop matching
 TEMPLATES = pathlib.Path(__file__).with_name("motion_templates")
 HF_DIR = pathlib.Path(__file__).resolve().parents[2] / "hyperframes"
 RENDER_TIMEOUT = 600
