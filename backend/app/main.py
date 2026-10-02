@@ -722,14 +722,14 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     if not item:
         raise HTTPException(404, "queue item not found")
 
-    clip_titles = ai_bulk.ai_inputs(item, s)
-
+    if not settings.gemini_api_key:
+        raise HTTPException(502, "AI generation failed: GEMINI_API_KEY is not set on the server")
     try:
-        res = await social_metadata.generate_social_metadata(clip_titles, strict=True)
+        res, research = await ai_bulk.ai_for(item, s)
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI generation failed: {exc}")
     undo.record(s, "queue", f"AI rewrite of #{item.id}", rows=[item])
-    ai_bulk.apply_ai(item, res)
+    ai_bulk.apply_ai(item, res, research)
     s.commit()
     s.refresh(item)
     return item

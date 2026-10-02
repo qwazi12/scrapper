@@ -133,6 +133,8 @@ class QueueItem(Base):
     accounts: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(32), default="review", index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # TMDB match + facts used by the AI for this clip (clip_research).
+    research: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Posting order within the queue (lower posts first). Mix & Shuffle and
     # manual reordering rewrite it; the scheduler walks Ready items by it.
     position: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

@@ -165,6 +165,7 @@ class QueueItemOut(BaseModel):
     scheduled_at: UTCDateTime | None
     published_at: UTCDateTime | None
     publish_requests: list | None = None
+    research: dict | None = None
     created_at: UTCDateTime
 
     class Config:

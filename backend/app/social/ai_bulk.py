@@ -39,10 +39,28 @@ def ai_inputs(item: QueueItem, s) -> list[str]:
     return titles
 
 
-def apply_ai(item: QueueItem, res: dict[str, Any]) -> None:
+def apply_ai(item: QueueItem, res: dict[str, Any], research: dict[str, Any] | None = None) -> None:
     item.title = res.get("title", item.title)
     item.description = res.get("caption", item.description)
     item.tags = " ".join(res.get("hashtags", []))
+    if research is not None:
+        item.research = research
+
+
+async def ai_for(item: QueueItem, s, cache: dict | None = None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Metadata for one item. Clips: TMDB-researched (clip_research). Compilations:
+    the clip-titles prompt. Raises metadata.MetadataError with a readable reason."""
+    if item.compilation_id:
+        return await metadata.generate_social_metadata(ai_inputs(item, s), strict=True), None
+    from ..studio import gemini as sgem, tmdb
+    from . import clip_research
+    try:
+        return await asyncio.to_thread(clip_research.generate, item, cache)
+    except (sgem.GeminiError, tmdb.TMDBError) as exc:
+        raise metadata.MetadataError(str(exc)) from exc
+
+
+_cache: dict = {}  # TMDB lookups shared across one bulk run (many clips, few titles)
 
 
 async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
@@ -57,8 +75,8 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 status["failed"] += 1
                 return
             try:
-                res = await metadata.generate_social_metadata(ai_inputs(item, s), strict=True)
-                apply_ai(item, res)
+                res, research = await ai_for(item, s, _cache)
+                apply_ai(item, res, research)
                 s.commit()
                 status["done"] += 1
             except metadata.MetadataError as exc:
@@ -70,6 +88,7 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
 
 
 async def _run(ids: list[int]) -> None:
+    _cache.clear()
     sem = asyncio.Semaphore(CONCURRENCY)
     await asyncio.gather(*(_one(i, sem) for i in ids))
 

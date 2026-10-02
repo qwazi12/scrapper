@@ -465,13 +465,16 @@ def test_bulk_ai_rewrites_every_item_and_reports_failures(session, monkeypatch):
     a, b, c = add(session, 3)
     calls = []
 
-    async def fake(titles, strict=False, **kw):
-        calls.append(titles)
-        if len(calls) == 2:
-            raise metadata.MetadataError("Gemini returned HTTP 500")
-        return {"title": "AI title", "caption": "AI caption", "hashtags": ["#x", "#y"]}
+    from backend.app.social import clip_research
+    from backend.app.studio import gemini as sgem
 
-    monkeypatch.setattr(metadata, "generate_social_metadata", fake)
+    def fake(item, cache=None):
+        calls.append(item.id)
+        if len(calls) == 2:
+            raise sgem.GeminiError("Gemini returned HTTP 500")
+        return {"title": "AI title", "caption": "AI caption", "hashtags": ["#x", "#y"]}, {"matched": False}
+
+    monkeypatch.setattr(clip_research, "generate", fake)
     ai_bulk.status.update(running=False)
     ai_bulk.start([a.id, b.id, c.id])
     import time
@@ -483,3 +486,71 @@ def test_bulk_ai_rewrites_every_item_and_reports_failures(session, monkeypatch):
     assert "HTTP 500" in ai_bulk.status["errors"][0]
     session.expire_all()
     assert sum(1 for it in (a, b, c) if session.get(QueueItem, it.id).title == "AI title") == 2
+
+
+
+# --- TMDB research for queue clips --------------------------------------------
+from backend.app.social import clip_research
+from backend.app.studio import gemini as sgem, tmdb as stmdb
+
+
+def _clip(session, **kw):
+    it = QueueItem(title="Superman's son gets too excited with his new powers", video_name="superman_son.mp4",
+                   tags="#superman", source="Movie Clips / @SolarrEditss", status="review", **kw)
+    session.add(it)
+    session.commit()
+    return it
+
+
+def test_clip_research_uses_tmdb_facts_in_the_prompt(session, monkeypatch):
+    it = _clip(session)
+    monkeypatch.setattr(stmdb.settings, "tmdb_read_token", "tok")
+    prompts = []
+
+    def fake_ask(prompt, **kw):
+        prompts.append(prompt)
+        if "most likely from" in prompt:
+            return {"title": "Superman & Lois", "media_type": "tv", "year": 2021, "confidence": 0.9, "reason": "names"}
+        return {"title": "Jon Kent loses control of his powers | Superman & Lois", "caption": "c",
+                "hashtags": ["#shorts", "#Superman & Lois"]}
+
+    monkeypatch.setattr(sgem, "ask_json", fake_ask)
+    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 95057, "media_type": "tv", "date": "2021-02-23", "popularity": 50}])
+    monkeypatch.setattr(clip_research, "lookup", lambda mt, i: {
+        "tmdb_id": i, "media_type": mt, "title": "Superman & Lois", "year": "2021", "genres": ["Drama"],
+        "overview": "o", "cast": [{"actor": "Tyler Hoechlin", "character": "Clark Kent"}],
+        "keywords": ["superhero", "dc comics"], "watch_on": ["Max"], "source": "https://www.themoviedb.org/tv/95057"})
+    meta, r = clip_research.generate(it)
+    assert r["matched"] and r["title"] == "Superman & Lois"
+    assert "Tyler Hoechlin as Clark Kent" in prompts[1] and "superhero" in prompts[1]
+    assert "#Superman&Lois" in meta["hashtags"]  # no spaces inside hashtags
+
+
+def test_low_confidence_clip_is_not_tied_to_a_title(session, monkeypatch):
+    it = _clip(session)
+    prompts = []
+
+    def fake_ask(prompt, **kw):
+        prompts.append(prompt)
+        if "most likely from" in prompt:
+            return {"title": "Some Show", "media_type": "tv", "confidence": 0.3}
+        return {"title": "t", "caption": "c", "hashtags": []}
+
+    monkeypatch.setattr(sgem, "ask_json", fake_ask)
+    meta, r = clip_research.generate(it)
+    assert r["matched"] is False and "do NOT name any title" in prompts[1]
+
+
+def test_research_cache_shares_lookups(session, monkeypatch):
+    a, b = _clip(session), _clip(session)
+    monkeypatch.setattr(stmdb.settings, "tmdb_read_token", "tok")
+    monkeypatch.setattr(sgem, "ask_json", lambda p, **kw: {"title": "Superman & Lois", "media_type": "tv",
+                                                          "year": 2021, "confidence": 0.9})
+    looked = []
+    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 1, "media_type": "tv", "date": "2021", "popularity": 1}])
+    monkeypatch.setattr(clip_research, "lookup", lambda mt, i: looked.append(i) or {"title": "S", "cast": [],
+                        "genres": [], "keywords": [], "watch_on": [], "overview": "", "media_type": mt, "tmdb_id": i})
+    cache = {}
+    clip_research.research(a, cache)
+    clip_research.research(b, cache)
+    assert looked == [1]
