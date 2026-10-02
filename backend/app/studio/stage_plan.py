@@ -19,6 +19,7 @@ import re
 
 from ..db import SessionLocal
 from ..models import StudioProject
+from .. import control
 from . import gemini, media, tts
 from .runner import project_dir, stage
 
@@ -100,6 +101,7 @@ def plan(project_id: int) -> str:
     t, timeline, prev_para = 0.0, [], None
     sentences = script["sentences"]
     for k, sen in enumerate(sentences):
+        control.progress(f"voicing sentence {k + 1} of {len(sentences)}")
         mp3 = tts.synth(sen["text"], tts_dir / f"sent_{k + 1:03d}.mp3")
         d = media.duration(mp3)
         gap = PARA_GAP if (k + 1 < len(sentences) and sentences[k + 1]["paragraph"] != sen["paragraph"]) else GAP

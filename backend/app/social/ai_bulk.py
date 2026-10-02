@@ -11,7 +11,7 @@ import logging
 import threading
 from typing import Any
 
-from .. import logbus
+from .. import control, logbus
 from ..db import SessionLocal
 from ..models import Clip, Compilation, QueueItem
 from . import metadata
@@ -47,6 +47,8 @@ def apply_ai(item: QueueItem, res: dict[str, Any]) -> None:
 
 async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
     async with sem:
+        if control.stopped():
+            status["aborted"] = "stopped by user"
         if status["aborted"]:
             return
         with SessionLocal() as s:
@@ -82,7 +84,10 @@ def start(ids: list[int]) -> dict[str, Any]:
 
     def work() -> None:
         try:
-            asyncio.run(_run(ids))
+            with control.job("ai", f"AI rewrite of {len(ids)} video(s)", scope="socialpilot"):
+                asyncio.run(_run(ids))
+        except control.Cancelled:
+            status["aborted"] = "stopped by user"
         except Exception as exc:  # never leave the job stuck "running"
             logger.exception("bulk AI crashed")
             status["aborted"] = str(exc)[:200]

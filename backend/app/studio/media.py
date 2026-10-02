@@ -22,7 +22,8 @@ class MediaError(Exception):
 
 
 def run(cmd: list[str], timeout: int = 1800) -> subprocess.CompletedProcess:
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    from .. import control  # Stop can kill this process
+    proc = control.run(cmd, timeout=timeout)
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout).strip().splitlines()[-6:]
         raise MediaError(f"{cmd[0]} failed: {' | '.join(tail)[:600]}")
@@ -36,9 +37,10 @@ def duration(path: str | pathlib.Path) -> float:
 
 def scene_cuts(path: str | pathlib.Path, threshold: float = 0.3) -> list[float]:
     """Times (seconds) where the picture changes hard, i.e. editor's cuts."""
-    proc = subprocess.run(
+    from .. import control
+    proc = control.run(
         ["ffmpeg", "-hide_banner", "-i", str(path), "-vf", f"select='gt(scene,{threshold})',showinfo",
-         "-an", "-f", "null", "-"], capture_output=True, text=True, timeout=1800)
+         "-an", "-f", "null", "-"], timeout=1800)
     return sorted(float(t) for t in re.findall(r"pts_time:([0-9.]+)", proc.stderr))
 
 
@@ -62,9 +64,9 @@ def active_area(path: str | pathlib.Path) -> str | None:
     picture, or None when the frame is already full. Samples the middle of the file."""
     total = duration(path)
     start = max(0.0, total / 2 - 15)
-    proc = subprocess.run(["ffmpeg", "-hide_banner", "-ss", f"{start:.2f}", "-t", "30", "-i", str(path),
-                           "-vf", "cropdetect=limit=24:round=2:reset=0", "-an", "-f", "null", "-"],
-                          capture_output=True, text=True, timeout=600)
+    from .. import control
+    proc = control.run(["ffmpeg", "-hide_banner", "-ss", f"{start:.2f}", "-t", "30", "-i", str(path),
+                        "-vf", "cropdetect=limit=24:round=2:reset=0", "-an", "-f", "null", "-"], timeout=600)
     found = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", proc.stderr)
     if not found:
         return None

@@ -15,11 +15,12 @@ import time
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..core import engine
-from . import cleanup, logbus, rescan, worker
+from . import cleanup, control, logbus, rescan, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
@@ -878,6 +879,61 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
     return {"ok": True, "count": len(items), "mode": req.mode}
 
 
+# --- Stop: every long-running process ------------------------------------------
+@app.get("/api/jobs", dependencies=_AUTH)
+def list_jobs(s: Session = Depends(get_session)) -> list[dict]:
+    """Running + recently finished jobs, plus scrape/compile jobs still queued."""
+    out = control.list_jobs()
+    for j in s.query(IngestJob).filter(IngestJob.status == Status.queued).all():
+        out.append({"id": f"ingest:{j.id}", "kind": "ingest", "scope": "scraper", "status": "queued",
+                    "label": f"Scrape job #{j.id} ({len(j.urls)} links)", "message": "waiting to start"})
+    for c in s.query(Compilation).filter(Compilation.status == Status.queued).all():
+        out.append({"id": f"compile:{c.id}", "kind": "compile", "scope": "compile", "status": "queued",
+                    "label": f"Compilation #{c.id}", "message": "waiting to start"})
+    return out
+
+
+@app.get("/api/jobs/{job_id}", dependencies=_AUTH)
+def get_job(job_id: str) -> dict:
+    j = next((x for x in control.list_jobs() if x["id"] == job_id), None)
+    if not j:
+        raise HTTPException(404, "job not found (finished jobs are kept for a while, then dropped)")
+    return j
+
+
+@app.post("/api/jobs/{job_id}/stop", dependencies=_AUTH)
+def stop_job(job_id: str, s: Session = Depends(get_session)) -> dict:
+    """Stop a job. Queued scrape/compile jobs never start; running ones stop at
+    their next safe point and any ffmpeg/yt-dlp process is killed at once."""
+    if job_id.startswith(("ingest:", "compile:")):
+        kind, _, num = job_id.partition(":")
+        row = s.get(IngestJob if kind == "ingest" else Compilation, int(num))
+        if not row or row.status != Status.queued:
+            raise HTTPException(409, "not queued any more — stop it from the running list")
+        row.status = Status.failed
+        if kind == "compile":
+            row.error = "stopped before it started"
+        s.commit()
+        logbus.log("warning", "job_stopped", f"{job_id} stopped before it started")
+        return {"id": job_id, "status": "cancelled"}
+    try:
+        j = control.request_stop(job_id)
+    except KeyError:
+        raise HTTPException(404, "job not found")
+    logbus.log("warning", "job_stopped", f"Stop pressed: {j.label}", job=job_id, kind=j.kind)
+    return j.public()
+
+
+class AutopostIn(BaseModel):
+    paused: bool
+
+
+@app.put("/api/autopost", dependencies=_AUTH)
+def set_autopost(req: AutopostIn, s: Session = Depends(get_session)) -> dict:
+    queue_manager.set_autopost_paused(s, req.paused)
+    return {"paused": queue_manager.autopost_paused(s)}
+
+
 @app.put("/api/schedule/config", dependencies=_AUTH)
 def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_session)) -> dict:
     """Change posting times from the Settings page; Ready items re-plan now."""
@@ -954,7 +1010,8 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "pipelines": pipelines,
         "ai": {"configured": bool(settings.gemini_api_key), "model": settings.gemini_model},
         "scheduler": {**queue_manager.scheduler_status, "tick_seconds": queue_manager.TICK_SECONDS,
-                      "enabled": settings.worker_mode != "web_only"},
+                      "enabled": settings.worker_mode != "web_only",
+                      "paused": queue_manager.autopost_paused(s)},
         "publisher": {"name": "Upload-Post", "configured": upload_post.configured(),
                       "privacy": settings.publish_privacy},
     }
@@ -969,20 +1026,25 @@ def ingest_channel(req: ChannelIngestRequest, s: Session = Depends(get_session))
     """
     from .drive_sync import ingest_channel_to_drive
 
-    try:
-        res = ingest_channel_to_drive(
-            url=req.url,
-            parent_folder_id=req.parent_folder_id,
-            parent_folder_name=req.parent_folder_name,
-            channel_name=req.channel_name,
-            max_videos=req.max_videos,
-            auto_approve=req.auto_approve,
-            db_session=s,
-        )
-        return res
-    except Exception as exc:
-        logbus.log("error", "channel_ingest_failed", f"Channel ingest failed for {req.url}: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+    # Runs as a stoppable background job (it can take many minutes); the UI
+    # polls GET /api/jobs/{job_id} for the result.
+    def work():
+        with SessionLocal() as js:
+            try:
+                return ingest_channel_to_drive(
+                    url=req.url, parent_folder_id=req.parent_folder_id,
+                    parent_folder_name=req.parent_folder_name, channel_name=req.channel_name,
+                    max_videos=req.max_videos, auto_approve=req.auto_approve, db_session=js,
+                )
+            except control.Cancelled:
+                logbus.log("warning", "channel_ingest_stopped", f"Channel ingest stopped by user: {req.url}")
+                raise
+            except Exception as exc:
+                logbus.log("error", "channel_ingest_failed", f"Channel ingest failed for {req.url}: {exc}")
+                raise
+
+    job_id = control.start_thread("channel_ingest", f"Channel ingest: {req.url[:60]}", "socialpilot", work)
+    return {"job_id": job_id, "status": "running"}
 
 
 @app.post("/api/drive/sync", dependencies=_AUTH)
@@ -993,15 +1055,19 @@ def sync_drive_folder(req: DriveSyncRequest, s: Session = Depends(get_session)):
     """
     from .drive_sync import sync_drive_to_queue
 
-    try:
-        folder_target = req.folder_url or req.folder_id
-        res = sync_drive_to_queue(
-            folder_url_or_id=folder_target,
-            default_pipeline=req.pipeline,
-            auto_approve=req.auto_approve,
-            db_session=s,
-        )
-        return res
-    except Exception as exc:
-        logbus.log("error", "drive_sync_failed", f"Drive sync failed for {req.folder_id}: {exc}")
-        raise HTTPException(status_code=500, detail=str(exc))
+    folder_target = req.folder_url or req.folder_id
+
+    def work():
+        with SessionLocal() as js:
+            try:
+                return sync_drive_to_queue(folder_url_or_id=folder_target, default_pipeline=req.pipeline,
+                                           auto_approve=req.auto_approve, db_session=js)
+            except control.Cancelled:
+                logbus.log("warning", "drive_sync_stopped", f"Drive sync stopped by user ({req.folder_id})")
+                raise
+            except Exception as exc:
+                logbus.log("error", "drive_sync_failed", f"Drive sync failed for {req.folder_id}: {exc}")
+                raise
+
+    job_id = control.start_thread("drive_sync", f"Drive sync: {req.pipeline or folder_target}", "socialpilot", work)
+    return {"job_id": job_id, "status": "running"}

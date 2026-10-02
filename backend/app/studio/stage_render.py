@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from ..config import settings
 from ..db import SessionLocal
 from ..models import StudioProject
+from .. import control
 from . import media
 from .runner import project_dir, stage
 
@@ -204,6 +205,8 @@ def render(project_id: int) -> str:
     poster_img = poster_frame(poster, backdrop, release_line(facts), out_dir / "poster_card.jpg")
     seg_files = []
     for k, item in enumerate(plan):
+        control.check()
+        control.progress(f"rendering segment {k + 1} of {len(plan)}")
         dest = segs_dir / f"seg_{k:03d}.mp4"
         dur = float(item["duration"])
         kind = item["kind"]

@@ -26,9 +26,11 @@ class GeminiError(Exception):
 def _post(body: dict[str, Any], model: str | None = None, retries: int = 3) -> dict[str, Any]:
     if not settings.gemini_api_key:
         raise GeminiError("GEMINI_API_KEY is not set on the server")
+    from .. import control
     url = f"{BASE}/{model or settings.gemini_model}:generateContent"
     last = ""
     for attempt in range(retries):
+        control.check()  # Stop lands before the next (slow) model call
         res = httpx.post(url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}, timeout=TIMEOUT)
         if res.is_success:
             return res.json()

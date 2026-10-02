@@ -149,8 +149,12 @@ def scrape(
     sleep_preset: bool = True,
     cookies_from_browser: str | None = None,
     po_token: str | None = None,
+    runner=None,
 ) -> ScrapeResult:
-    """Download a single URL. Returns a ScrapeResult with per-clip metadata."""
+    """Download a single URL. Returns a ScrapeResult with per-clip metadata.
+
+    runner: optional subprocess runner (the app passes control.run so a Stop
+    can kill yt-dlp); defaults to subprocess.run."""
     result = ScrapeResult(url=url)
     out_template = str(downloads_dir / "%(extractor)s" / "%(uploader_id)s_%(id)s_%(title).60B.%(ext)s")
 
@@ -183,7 +187,7 @@ def scrape(
         cmd += ["--proxy", proxy]
     cmd.append(url)
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = runner(cmd) if runner else subprocess.run(cmd, capture_output=True, text=True)
     result.log_lines = (proc.stdout + proc.stderr).splitlines()
 
     final_paths: list[str] = []

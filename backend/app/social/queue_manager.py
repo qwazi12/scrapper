@@ -137,6 +137,22 @@ def save_schedule(s: Session, cfg: dict[str, Any] | None) -> dict[str, Any]:
     return after
 
 
+def autopost_paused(s: Session) -> bool:
+    row = s.get(AppSetting, "autopost")
+    return bool(row and (row.value or {}).get("paused"))
+
+
+def set_autopost_paused(s: Session, paused: bool) -> None:
+    row = s.get(AppSetting, "autopost")
+    if row:
+        row.value = {"paused": paused}
+    else:
+        s.add(AppSetting(key="autopost", value={"paused": paused}))
+    s.commit()
+    logbus.log("warning" if paused else "info", "autopost_paused" if paused else "autopost_resumed",
+               "Auto-posting PAUSED — nothing new will be submitted" if paused else "Auto-posting resumed")
+
+
 def slots_per_day() -> int:
     c = _schedule_cfg
     return len(range(c["start_hour"], c["end_hour"] + 1, c["interval_hours"]))
@@ -509,6 +525,8 @@ def run_scheduler_tick():
             .order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id)
             .all()
         )
+        if autopost_paused(s):
+            due = []  # paused: plan and check results, but submit nothing new
         seen: set[str] = set()
         for item in due:
             group = pipeline_group(item)

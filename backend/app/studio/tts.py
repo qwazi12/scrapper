@@ -46,6 +46,8 @@ def cache_dir() -> pathlib.Path:
 
 def synth(text: str, dest: pathlib.Path) -> pathlib.Path:
     """Voice one sentence to MP3 at dest (from cache when possible)."""
+    from .. import control
+    control.check()  # Stop between sentences
     spoken = speakable(text)
     key = hashlib.sha1(f"{settings.tts_voice}|{spoken}".encode()).hexdigest()
     cached = cache_dir() / f"{key}.mp3"

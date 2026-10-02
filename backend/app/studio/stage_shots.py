@@ -13,6 +13,7 @@ import pathlib
 
 from ..db import SessionLocal
 from ..models import StudioProject
+from .. import control
 from . import gemini, media
 from .runner import project_dir, stage
 
@@ -71,6 +72,8 @@ def shots(project_id: int) -> str:
         for a, b in media.shots_from_cuts(media.scene_cuts(src["file"]), total):
             if len(shots) >= MAX_SHOTS:
                 break
+            control.check()
+            control.progress(f"cutting {src.get('id')}: shot {len(shots) + 1}")
             sid = f"s{len(shots) + 1:03d}"
             mid = a + (b - a) / 2
             thumb = media.frame(src["file"], mid, thumbs / f"{sid}.jpg", width=480, crop=crop)
@@ -90,6 +93,7 @@ def shots(project_id: int) -> str:
     tagged = 0
     for i in range(0, len(shots), BATCH):
         batch = shots[i:i + BATCH]
+        control.progress(f"tagging shots {i + 1}–{i + len(batch)} of {len(shots)}")
         try:
             tags = _tag(sheet, [root / sh["thumb"] for sh in batch])
         except gemini.GeminiError as exc:

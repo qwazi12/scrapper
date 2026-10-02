@@ -70,15 +70,21 @@ def mp4_url(video_id: str) -> str:
 
 def download(video_id: str, dest, max_bytes: int = 400_000_000) -> int:
     """Stream the MP4 to dest; returns bytes written. Refuses oversized files."""
+    import pathlib
     url = mp4_url(video_id)
     n = 0
+    dest = pathlib.Path(dest)
+    part = dest.with_name(dest.name + ".part")  # only a finished file gets the real name
     with httpx.stream("GET", url, timeout=300, follow_redirects=True) as r:
         if not r.is_success:
             raise IMDbError(f"Download of {video_id} failed: HTTP {r.status_code}")
-        with open(dest, "wb") as fh:
+        with open(part, "wb") as fh:
+            from .. import control
             for chunk in r.iter_bytes(1024 * 1024):
+                control.check()  # Stop mid-download
                 n += len(chunk)
                 if n > max_bytes:
                     raise IMDbError(f"{video_id} is larger than {max_bytes // 1_000_000} MB; skipped")
                 fh.write(chunk)
+    part.replace(dest)
     return n

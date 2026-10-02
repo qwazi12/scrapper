@@ -15,7 +15,7 @@ import threading
 import traceback
 from typing import Callable
 
-from .. import logbus
+from .. import control, logbus
 from ..config import settings
 from ..db import SessionLocal
 from ..models import StudioProject
@@ -65,7 +65,13 @@ def run_one(project_id: int, name: str) -> str:
     _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
     logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)
     try:
-        summary = STAGES[name](project_id) or "done"
+        with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id):
+            summary = STAGES[name](project_id) or "done"
+    except control.Cancelled:
+        _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
+        logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
+                   project=project_id, stage=name)
+        raise
     except Exception as exc:
         msg = f"{type(exc).__name__}: {exc}"[:1000]
         logger.error("Studio #%s %s failed:\n%s", project_id, name, traceback.format_exc())

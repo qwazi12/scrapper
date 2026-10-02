@@ -36,6 +36,7 @@ def compile_videos(
     bitrate: str = "6000k",
     fps: int = 30,
     on_progress: Callable[[float], None] | None = None,
+    on_start: Callable[[subprocess.Popen], None] | None = None,
 ) -> pathlib.Path:
     """Stitch `files` into a single normalized MP4 at `output`. Returns the path."""
     files = [pathlib.Path(f) for f in files]
@@ -81,6 +82,8 @@ def compile_videos(
     ]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if on_start:
+        on_start(proc)  # lets the app's Stop button kill ffmpeg
     assert proc.stdout is not None
     for line in proc.stdout:
         line = line.strip()

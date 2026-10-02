@@ -16,7 +16,7 @@ import time
 
 from ..core import compiler, engine
 from ..core.scraper import platform_of, scrape
-from . import cleanup
+from . import cleanup, control
 from .config import settings
 from .db import SessionLocal, init_db
 from .logbus import log, record_outcome
@@ -46,6 +46,14 @@ def _maybe_update_engine() -> None:
         log(level if ok else "warning", "engine_update", msg)
 
 
+def _sleep(seconds: float) -> None:
+    """time.sleep that a Stop interrupts."""
+    end = time.time() + seconds
+    while time.time() < end:
+        control.check()
+        time.sleep(min(0.5, end - time.time()) if end > time.time() else 0)
+
+
 def _process_ingest(job_id: int) -> None:
     with SessionLocal() as s:
         job = s.get(IngestJob, job_id)
@@ -56,9 +64,24 @@ def _process_ingest(job_id: int) -> None:
         s.commit()
         urls = list(job.urls)
 
-    for url in urls:
-        _scrape_one(job_id, url)
-        time.sleep(settings.per_clip_delay_seconds)  # Layer 3: self-rate-limit
+    try:
+        with control.job("ingest", f"Scrape job #{job_id} ({len(urls)} link{'s' if len(urls) != 1 else ''})",
+                         scope="scraper", ref=job_id):
+            for n, url in enumerate(urls, 1):
+                control.check()
+                control.progress(f"link {n} of {len(urls)}")
+                _scrape_one(job_id, url)
+                if n < len(urls):
+                    _sleep(settings.per_clip_delay_seconds)  # Layer 3: self-rate-limit
+    except control.Cancelled:
+        with SessionLocal() as s:
+            job = s.get(IngestJob, job_id)
+            job.status = Status.done
+            job.finished_at = _now()
+            s.commit()
+        log("warning", "ingest_stopped", f"job {job_id}: stopped by user "
+            f"({job.done_count} ok, {len(urls) - job.done_count - job.failed_count} not started)")
+        return
 
     with SessionLocal() as s:
         job = s.get(IngestJob, job_id)
@@ -83,6 +106,21 @@ def _process_ingest(job_id: int) -> None:
         log("info", "ingest_done", f"job {job_id}: {', '.join(parts)}")
 
 
+def _scrape_call(url: str):
+    """One yt-dlp run; Stop kills it (control.run)."""
+    return scrape(
+        url,
+        downloads_dir=settings.downloads_path,
+        archive_path=settings.archive_path,
+        cookies_path=settings.cookies_path,
+        proxy=settings.proxy_url or None,
+        sleep_preset=settings.ytdlp_sleep_preset,
+        cookies_from_browser=settings.cookies_from_browser or None,
+        po_token=settings.ytdlp_po_token or None,
+        runner=control.run,
+    )
+
+
 def _scrape_one(job_id: int, url: str) -> None:
     src = platform_of(url)
     with SessionLocal() as s:
@@ -95,16 +133,18 @@ def _scrape_one(job_id: int, url: str) -> None:
     result = None
     is_bot_blocked = False
     for attempt in range(1, settings.max_retries + 1):
-        result = scrape(
-            url,
-            downloads_dir=settings.downloads_path,
-            archive_path=settings.archive_path,
-            cookies_path=settings.cookies_path,
-            proxy=settings.proxy_url or None,
-            sleep_preset=settings.ytdlp_sleep_preset,
-            cookies_from_browser=settings.cookies_from_browser or None,
-            po_token=settings.ytdlp_po_token or None,
-        )
+        try:
+            result = _scrape_call(url)
+        except control.Cancelled:
+            with SessionLocal() as s:
+                clip = s.get(Clip, clip_id)
+                # skipped, not failed: a failed clip with no file is what the
+                # home Mac worker picks up, and a stopped link must stay stopped.
+                clip.status = Status.skipped
+                clip.error = "stopped by user"
+                clip.title = clip.title or "stopped by user"
+                s.commit()
+            raise
         if result.ok:
             break
         if result.permanent:
@@ -119,7 +159,7 @@ def _scrape_one(job_id: int, url: str) -> None:
         log("warning", "scrape_retry", f"{url} attempt {attempt} failed: {result.error}",
             source=src, wait=wait)
         if attempt < settings.max_retries:
-            time.sleep(wait)
+            _sleep(wait)
 
     with SessionLocal() as s:
         job = s.get(IngestJob, job_id)
@@ -192,11 +232,17 @@ def _process_compile(comp_id: int) -> None:
                 s.commit()
 
     try:
-        compiler.compile_videos(
-            files, out, orientation=orientation,
-            encoder=settings.video_encoder, bitrate=settings.video_bitrate,
-            fps=settings.encode_fps, on_progress=progress,
-        )
+        with control.job("compile", f"Compilation #{comp_id} ({len(files)} clips)", scope="compile", ref=comp_id):
+            compiler.compile_videos(
+                files, out, orientation=orientation,
+                encoder=settings.video_encoder, bitrate=settings.video_bitrate,
+                fps=settings.encode_fps, on_progress=progress, on_start=control.track,
+            )
+            control.check()
+    except control.Cancelled:
+        out.unlink(missing_ok=True)
+        _fail_compile(comp_id, "stopped by user")
+        return
     except Exception as exc:  # noqa: BLE001
         _fail_compile(comp_id, str(exc))
         return

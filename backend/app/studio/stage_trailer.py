@@ -16,6 +16,7 @@ import pathlib
 from ..db import SessionLocal
 from ..models import Clip, StudioProject, Status
 from ...core.scraper import platform_of
+from .. import control
 from . import imdb
 from .runner import project_dir, stage
 
@@ -83,6 +84,8 @@ def trailer(project_id: int) -> str:
             chosen = pick_videos(imdb.list_videos(facts["imdb_id"]))
             got = []
             for v in chosen:
+                control.check()
+                control.progress(f"downloading {v.get('type')} {v['id']}")
                 dest = footage / f"{v['id']}.mp4"
                 try:
                     if not dest.exists() or dest.stat().st_size == 0:

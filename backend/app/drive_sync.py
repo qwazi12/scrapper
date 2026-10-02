@@ -242,7 +242,10 @@ def sync_drive_to_queue(
     skipped_count = 0
     channels_summary = []
 
+    from . import control
     for fid, channel_name in targets:
+        control.check()
+        control.progress(f"scanning {channel_name}")
         video_query = (
             f"'{fid}' in parents and trashed = false and "
             f"(mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.webm')"
@@ -372,7 +375,15 @@ def ingest_channel_to_drive(
     temp_dir = tempfile.mkdtemp(prefix="socialpilot_scrape_")
     out_tmpl = os.path.join(temp_dir, "%(title)s_%(id)s.%(ext)s")
 
+    from . import control
+
+    def _stop_hook(_d):
+        # Stop button: yt-dlp aborts the whole download on DownloadCancelled.
+        if control.stopped():
+            raise yt_dlp.utils.DownloadCancelled("stopped by user")
+
     ydl_opts = {
+        "progress_hooks": [_stop_hook],
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",
         "outtmpl": out_tmpl,
@@ -383,15 +394,21 @@ def ingest_channel_to_drive(
 
     results_added = []
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except yt_dlp.utils.DownloadCancelled:
+            raise control.Cancelled("channel ingest stopped")
+        control.check()
 
         # 3. Upload each downloaded file to Drive & create QueueItem
         VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv")
         downloaded_files = [f for f in os.listdir(temp_dir) if f.endswith(VIDEO_EXTS)]
         logbus.log("info", "scrape_downloaded", f"Downloaded {len(downloaded_files)} video(s) to temp. Uploading to Drive...")
 
-        for fname in downloaded_files:
+        for n, fname in enumerate(downloaded_files, 1):
+            control.check()
+            control.progress(f"uploading {n} of {len(downloaded_files)} to Drive")
             local_path = os.path.join(temp_dir, fname)
             upload_res = upload_file_to_drive(service, local_path, channel_folder_id, filename=fname)
 
@@ -414,6 +431,7 @@ def ingest_channel_to_drive(
                 status=item_status,
             )
             db_session.add(item)
+            db_session.commit()  # per file: a Stop never leaves a Drive upload without its queue row
             results_added.append({
                 "name": fname,
                 "title": title,
