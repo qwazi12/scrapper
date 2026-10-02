@@ -51,14 +51,43 @@ def test_fact_sheet_shapes_tmdb_data(fake_tmdb):
 
 def test_tmdb_key_missing_is_a_clear_error(monkeypatch):
     monkeypatch.setattr(tmdb.settings, "tmdb_api_key", "")
-    with pytest.raises(tmdb.TMDBError, match="TMDB_API_KEY"):
+    monkeypatch.setattr(tmdb.settings, "tmdb_read_token", "")
+    with pytest.raises(tmdb.TMDBError, match="API_Read_Access_Token or TMDB_API_KEY"):
         tmdb.fact_sheet("movie", 1)
 
 
-def test_v4_token_uses_bearer(monkeypatch):
-    monkeypatch.setattr(tmdb.settings, "tmdb_api_key", "eyJabc")
+def test_read_token_is_preferred_and_sent_as_bearer(monkeypatch):
+    monkeypatch.setattr(tmdb.settings, "tmdb_read_token", "eyJtok")
+    monkeypatch.setattr(tmdb.settings, "tmdb_api_key", "k3")
     headers, params = tmdb._auth()
-    assert headers["Authorization"] == "Bearer eyJabc" and params == {}
+    assert headers["Authorization"] == "Bearer eyJtok" and params == {}
+
+
+def test_falls_back_to_api_key_on_401(monkeypatch):
+    monkeypatch.setattr(tmdb.settings, "tmdb_read_token", "bad")
+    monkeypatch.setattr(tmdb.settings, "tmdb_api_key", "good")
+    seen = []
+
+    class R:
+        def __init__(self, code):
+            self.status_code, self.is_success, self.text = code, code == 200, "x"
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        seen.append(("Authorization" in headers, params.get("api_key")))
+        return R(401) if "Authorization" in headers else R(200)
+
+    monkeypatch.setattr(tmdb.httpx, "get", fake_get)
+    assert tmdb.get("/movie/1") == {"ok": True}
+    assert seen == [(True, None), (False, "good")]
+
+
+def test_env_name_from_railway_is_read(monkeypatch):
+    from backend.app.config import Settings
+    monkeypatch.setenv("API_Read_Access_Token", "eyJfromrailway")
+    assert Settings().tmdb_read_token == "eyJfromrailway"
 
 
 def _new_project(**kw) -> int:
@@ -118,7 +147,8 @@ def test_file_route_blocks_path_escape(client):
     assert client.get(f"/api/studio/projects/{pid}/file", params={"path": "../../scrapper.db"}).status_code == 404
 
 
-def test_status_reports_missing_keys(client):
+def test_status_reports_missing_keys(client, monkeypatch):
+    monkeypatch.setattr(tmdb.settings, "tmdb_read_token", "")
     d = client.get("/api/studio/status").json()
     assert d["tmdb"] is False and d["tts"] is False and d["stages"][0] == "gather"
 

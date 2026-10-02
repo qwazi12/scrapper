@@ -1,5 +1,10 @@
 """TMDB client (The Movie Database) — facts, calendar, cast, videos, images.
 
+Auth (developer.themoviedb.org/docs/authentication-application): the Read
+Access Token as `Authorization: Bearer` is TMDB's default; the v3 key as the
+`api_key` query param gives the same access. We send the token first and fall
+back to the key on a 401 (logged), so one bad credential never fails silently.
+
 Hobby / non-commercial use (owner decision 2026-10-01). Every video
 description credits TMDB, as its terms require:
   "This product uses the TMDB API but is not endorsed or certified by TMDB."
@@ -10,9 +15,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 import httpx
 
 from ..config import settings
+
+logger = logging.getLogger("scrapper.studio.tmdb")
 
 API = "https://api.themoviedb.org/3"
 IMG = "https://image.tmdb.org/t/p"
@@ -28,25 +37,44 @@ class TMDBError(Exception):
 
 
 def configured() -> bool:
-    return bool(settings.tmdb_api_key)
+    return bool(settings.tmdb_read_token or settings.tmdb_api_key)
+
+
+def _auths() -> list[tuple[str, dict[str, str], dict[str, str]]]:
+    """Credentials to try, in order: (label, headers, query params)."""
+    out = []
+    accept = {"Accept": "application/json"}
+    if settings.tmdb_read_token:
+        out.append(("API_Read_Access_Token", {**accept, "Authorization": f"Bearer {settings.tmdb_read_token}"}, {}))
+    key = settings.tmdb_api_key
+    if key:
+        if key.startswith("eyJ"):  # someone pasted the token into the key slot
+            out.append(("TMDB_API_KEY", {**accept, "Authorization": f"Bearer {key}"}, {}))
+        else:
+            out.append(("TMDB_API_KEY", accept, {"api_key": key}))
+    if not out:
+        raise TMDBError("TMDB is not configured: set API_Read_Access_Token or TMDB_API_KEY on the server", 400)
+    return out
 
 
 def _auth() -> tuple[dict[str, str], dict[str, str]]:
-    key = settings.tmdb_api_key
-    if not key:
-        raise TMDBError("TMDB_API_KEY is not set on the server", 400)
-    if key.startswith("eyJ"):  # v4 read-access token (a JWT)
-        return {"Authorization": f"Bearer {key}", "Accept": "application/json"}, {}
-    return {"Accept": "application/json"}, {"api_key": key}
+    _, headers, params = _auths()[0]
+    return headers, params
 
 
 def get(path: str, **params: Any) -> dict[str, Any]:
-    headers, auth_params = _auth()
-    res = httpx.get(f"{API}{path}", headers=headers, params={**auth_params, **params}, timeout=TIMEOUT)
-    if not res.is_success:
-        # Body only: the key may sit in the URL, never log the request itself.
-        raise TMDBError(f"TMDB {path} failed ({res.status_code}): {res.text[:300]}", res.status_code)
-    return res.json()
+    last = None
+    for i, (label, headers, auth_params) in enumerate(_auths()):
+        res = httpx.get(f"{API}{path}", headers=headers, params={**auth_params, **params}, timeout=TIMEOUT)
+        if res.is_success:
+            if i > 0:
+                logger.warning("TMDB: first credential rejected; %s worked — check the other one", label)
+            return res.json()
+        last = res
+        if res.status_code != 401:
+            break  # only an auth failure is worth retrying with the other credential
+    # Body only: the key may sit in the URL, never log the request itself.
+    raise TMDBError(f"TMDB {path} failed ({last.status_code}): {last.text[:300]}", last.status_code)
 
 
 def image_url(path: str | None, size: str = "original") -> str | None:

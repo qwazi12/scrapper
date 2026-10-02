@@ -106,8 +106,14 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
 
     # --- LongForm Studio (trailer breakdowns) ----------------------------
-    # TMDB: v3 API key or v4 read-access token (hobby / non-commercial use).
+    # TMDB (hobby / non-commercial use). The Read Access Token (Bearer) is
+    # TMDB's default method; the v3 API key is the fallback. Railway names:
+    # API_Read_Access_Token and TMDB_API_KEY.
     tmdb_api_key: str = ""
+    tmdb_read_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("API_READ_ACCESS_TOKEN", "TMDB_READ_ACCESS_TOKEN", "TMDB_API_READ_ACCESS_TOKEN"),
+    )
     # Google Cloud Text-to-Speech API key (same one manhwa uses).
     tts_api_key: str = ""
     tts_voice: str = "en-US-Chirp3-HD-Charon"
