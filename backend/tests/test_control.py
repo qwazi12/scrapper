@@ -131,3 +131,27 @@ def test_autopost_pause_blocks_new_submissions(client, monkeypatch):
     with SessionLocal() as s:
         s.query(QueueItem).delete()
         s.commit()
+
+
+def test_job_lookup_by_registry_id_and_by_ingest_number():
+    import threading, time
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import control
+    c = TestClient(app)
+    hdr = {"Authorization": f"Bearer {__import__('backend.app.config', fromlist=['settings']).settings.access_token}"}
+    started = threading.Event()
+
+    def work():
+        with control.job("test", "lookup test", "studio", 99):
+            started.set()
+            while not control.stopped():
+                time.sleep(0.05)
+
+    threading.Thread(target=work, daemon=True).start()
+    started.wait(2)
+    jid = next(j["id"] for j in control.list_jobs() if j["label"] == "lookup test")
+    r = c.get(f"/api/jobs/{jid}", headers=hdr)
+    assert r.status_code == 200 and r.json()["status"] == "running"     # was a 422 from the int-only route
+    assert c.post(f"/api/jobs/{jid}/stop", headers=hdr).json()["status"] == "stopping"
+    assert c.get("/api/jobs/999999", headers=hdr).status_code == 404     # numeric ids still mean ingest jobs

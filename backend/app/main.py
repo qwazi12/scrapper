@@ -132,8 +132,16 @@ def ingest(req: IngestRequest, s: Session = Depends(get_session)) -> dict:
 
 
 @app.get("/api/jobs/{job_id}", dependencies=_AUTH)
-def job_status(job_id: int, s: Session = Depends(get_session)) -> dict:
-    job = s.get(IngestJob, job_id)
+def job_status(job_id: str, s: Session = Depends(get_session)) -> dict:
+    """A numeric id is a scrape (ingest) job; anything else is a background job
+    from the Stop registry. One route: two routes with the same path meant the
+    int-only one swallowed every registry id with a 422 (fixed 2026-10-02)."""
+    if not job_id.isdigit():
+        j = next((x for x in control.list_jobs() if x["id"] == job_id), None)
+        if not j:
+            raise HTTPException(404, "job not found (finished jobs are kept for a while, then dropped)")
+        return j
+    job = s.get(IngestJob, int(job_id))
     if not job:
         raise HTTPException(404, "job not found")
     return {
@@ -1024,14 +1032,6 @@ def list_jobs(s: Session = Depends(get_session)) -> list[dict]:
         out.append({"id": f"compile:{c.id}", "kind": "compile", "scope": "compile", "status": "queued",
                     "label": f"Compilation #{c.id}", "message": "waiting to start"})
     return out
-
-
-@app.get("/api/jobs/{job_id}", dependencies=_AUTH)
-def get_job(job_id: str) -> dict:
-    j = next((x for x in control.list_jobs() if x["id"] == job_id), None)
-    if not j:
-        raise HTTPException(404, "job not found (finished jobs are kept for a while, then dropped)")
-    return j
 
 
 @app.post("/api/jobs/{job_id}/stop", dependencies=_AUTH)

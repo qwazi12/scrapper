@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { StopButton } from "./StopButton";
 import { api, Job, parseApiDate } from "../lib/api";
 
 // Shown at the top of every tab: everything running or queued on the server,
@@ -21,7 +22,6 @@ function fmtElapsed(s?: number): string {
 
 export function JobsBar({ scope }: { scope?: string }) {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -45,16 +45,8 @@ export function JobsBar({ scope }: { scope?: string }) {
   if (shown.length === 0) return null;
 
   async function stop(j: Job) {
-    if (!confirm(`Stop "${j.label}"?\n\nIt stops at the next safe point; any render or download in progress is killed.`)) return;
-    setBusy(j.id);
-    try {
-      await api.stopJob(j.id);
-      setJobs(await api.jobs());
-    } catch (e: any) {
-      alert(`Could not stop: ${e.message || e}`);
-    } finally {
-      setBusy(null);
-    }
+    await api.stopJob(j.id);
+    setJobs(await api.jobs());
   }
 
   return (
@@ -86,14 +78,9 @@ export function JobsBar({ scope }: { scope?: string }) {
               {active && j.elapsed !== undefined ? ` · ${fmtElapsed(j.elapsed)}` : ""}
             </span>
             {active && j.status !== "stopping" && (
-              <button
-                className="danger"
-                style={{ fontSize: 11, padding: "3px 12px", fontWeight: 700 }}
-                disabled={busy === j.id}
-                onClick={() => stop(j)}
-              >
-                ■ Stop
-              </button>
+              <StopButton style={{ fontSize: 11, padding: "3px 12px" }}
+                what="Stops at the next safe point; any render or download in progress is killed"
+                onStop={() => stop(j)} />
             )}
           </div>
         );

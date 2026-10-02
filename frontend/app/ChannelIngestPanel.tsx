@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { StopButton } from "./StopButton";
 import { api } from "../lib/api";
 
 const PRESET_PARENT_FOLDERS = [
@@ -217,10 +218,7 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
             {loading ? "⏳ Scraping Channel & Uploading to Drive…" : "🚀 Scrape & File Directly to Google Drive"}
           </button>
           {loading && jobId && (
-            <button className="danger" style={{ fontWeight: 700 }}
-              onClick={() => confirm("Stop the channel ingest? Videos already uploaded are kept.") && api.stopJob(jobId)}>
-              ■ Stop
-            </button>
+            <StopButton what="Videos already uploaded are kept" onStop={() => api.stopJob(jobId)} />
           )}
 
           {status && (

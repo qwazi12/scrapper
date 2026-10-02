@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 import { UndoButton } from "./UndoButton";
@@ -753,10 +754,8 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             </span>
           )}
           {aiJob.running && (
-            <button className="danger" style={{ fontSize: 11, padding: "3px 12px", fontWeight: 700 }}
-              onClick={() => confirm("Stop the AI rewrite? Videos already rewritten keep their new text (use Undo to revert them).") && stopAiRewrite()}>
-              ■ Stop
-            </button>
+            <StopButton style={{ fontSize: 11, padding: "3px 12px" }}
+              what="Videos already rewritten keep their new text (use Undo to revert them)" onStop={stopAiRewrite} />
           )}
           {!aiJob.running && (
             <button style={{ fontSize: 10, padding: "1px 8px" }} onClick={() => setAiJob(null)}>dismiss</button>

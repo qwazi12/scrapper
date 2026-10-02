@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { StopButton } from "./StopButton";
 import {
   api,
   parseApiDate,
@@ -313,14 +314,10 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
   const [undoV, setUndoV] = useState(0);
 
   async function stopStage() {
-    if (!confirm("Stop this stage? Finished steps are kept; you can re-run it any time.")) return;
-    try {
-      const j = (await api.jobs()).find((x) => x.scope === "studio" && x.ref === id && ["running", "stopping"].includes(x.status));
-      if (j) await api.stopJob(j.id);
-      await load();
-    } catch (e: any) {
-      setErr(e.message || String(e));
-    }
+    const j = (await api.jobs()).find((x) => x.scope === "studio" && Number(x.ref) === Number(id) && ["running", "stopping"].includes(x.status));
+    if (!j) throw new Error("no running step found — it may have just finished");
+    await api.stopJob(j.id);
+    await load();
   }
 
   async function run(stage: string, auto = false) {
@@ -362,9 +359,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
           {err && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{err}</div>}
         </div>
         {running && (
-          <button className="danger" style={{ fontSize: 12, fontWeight: 700 }} onClick={stopStage}>
-            ■ Stop
-          </button>
+          <StopButton style={{ fontSize: 12 }} what="Finished steps are kept; you can re-run this one any time" onStop={stopStage} />
         )}
         <UndoButton
           scope={`studio:${id}`}

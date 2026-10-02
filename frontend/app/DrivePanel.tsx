@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { StopButton } from "./StopButton";
 import { api } from "../lib/api";
 
 const DETECTED_CHANNELS = [
@@ -204,10 +205,7 @@ export function DrivePanel({ onIngested }: { onIngested: () => void }) {
             {loading ? "⏳ Scanning & Syncing Google Drive…" : "🔄 Sync & Pull Videos into Queue"}
           </button>
           {loading && jobId && (
-            <button className="danger" style={{ fontWeight: 700 }}
-              onClick={() => confirm("Stop the Drive sync? Videos already added are kept.") && api.stopJob(jobId)}>
-              ■ Stop
-            </button>
+            <StopButton what="Videos already added are kept" onStop={() => api.stopJob(jobId)} />
           )}
 
           {status && (
