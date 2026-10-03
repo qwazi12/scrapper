@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -16,7 +16,11 @@ class Base(DeclarativeBase):
 
 _url = settings.resolved_database_url
 _connect_args = {"check_same_thread": False} if _url.startswith("sqlite") else {}
-engine = create_engine(_url, connect_args=_connect_args, pool_pre_ping=True)
+# Headroom over the default 5 + 10: the scheduler, job threads, heartbeats and
+# request handlers all share it. A short timeout fails a stuck request fast
+# instead of piling up behind it.
+engine = create_engine(_url, connect_args=_connect_args, pool_pre_ping=True,
+                       pool_size=10, max_overflow=20, pool_timeout=15)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -86,8 +90,17 @@ def _migrate() -> None:
         logging.getLogger("scrapper.db").error("unique drive_link index not created: %s", exc)
 
 
-def get_session() -> Iterator[Session]:
-    """FastAPI dependency: one session per request."""
+async def get_session() -> AsyncIterator[Session]:
+    """FastAPI dependency: one session per request.
+
+    Async on purpose (2026-10-03 outage): FastAPI runs the clean-up of a *sync*
+    generator dependency on the same 40-thread pool the endpoints use. Under
+    load every worker thread sat waiting for a DB connection while the
+    connections belonged to finished requests whose s.close() was queued for a
+    worker thread — a deadlock that took the whole site down. As an async
+    dependency the close runs on the event loop and never needs a worker
+    thread. The session itself is still used only by the endpoint's thread
+    (created here lazily — no connection until the first query)."""
     s = SessionLocal()
     try:
         yield s

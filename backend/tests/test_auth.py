@@ -157,3 +157,27 @@ def test_media_pass_opens_media_only_and_token_never_works_in_a_url():
     old = f"{int(time.time()) - 5}.{g.split('.', 1)[1]}"
     assert c.get(f"/api/tts/audio/x.wav?g={old}").status_code == 401           # expired
     assert auth.verify_media_pass(g) and not auth.verify_media_pass("nonsense")
+
+
+def test_session_dependency_closes_on_the_event_loop():
+    """Regression (2026-10-03 outage): a sync generator dependency's clean-up
+    needs a worker thread; with every worker waiting for a DB connection the
+    sessions holding those connections could never close. Must stay async."""
+    import asyncio
+    import inspect
+
+    from backend.app import db
+
+    assert inspect.isasyncgenfunction(db.get_session)
+
+    async def run():
+        gen = db.get_session()
+        s = await gen.__anext__()
+        s.execute(db.text("SELECT 1")) if hasattr(db, "text") else s.connection()
+        assert db.engine.pool.checkedout() >= 1
+        await gen.aclose()
+        return s
+
+    before = db.engine.pool.checkedout()
+    asyncio.run(run())
+    assert db.engine.pool.checkedout() == before
