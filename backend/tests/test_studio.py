@@ -629,7 +629,9 @@ def test_motion_settings_validate_and_default_to_compare(client):
     client.put("/api/studio/motion", json={"mode": "compare"})
 
 
-def test_drive_allows_my_drive_folder_and_uploads(session, monkeypatch, tmp_path):
+def test_drive_names_the_real_problem_for_a_my_drive_folder(session, monkeypatch, tmp_path):
+    """Google refuses files from a robot account in a My Drive folder (verified on the
+    live account 2026-10-02/03). The upload must not be attempted; the message says why."""
     from backend.app import drive_sync
     from backend.app.models import StudioProject
     from backend.app.studio import drive_store, runner as srunner
@@ -639,28 +641,26 @@ def test_drive_allows_my_drive_folder_and_uploads(session, monkeypatch, tmp_path
     p = StudioProject(tmdb_id=1, title="X", render={"file": "final.mp4"})
     session.add(p)
     session.commit()
-
-    class Files:
-        def get(self, **kw):
-            class R:
-                def execute(self):
-                    return {"name": "LongForm Studio", "driveId": None}
-            return R()
-
-        def create(self, **kw):
-            class R:
-                def next_chunk(self):
-                    return (None, {"id": "uploaded_123", "webViewLink": "https://drive.google.com/file/d/uploaded_123"})
-            return R()
+    uploads = []
 
     class Svc:
         def files(self):
-            return Files()
+            class F:
+                def get(self, **kw):
+                    return type("R", (), {"execute": lambda self: {"name": "LongForm Studio", "driveId": None}})()
+
+                def create(self, **kw):
+                    uploads.append(kw)
+            return F()
+
+        def drives(self):
+            return type("D", (), {"list": lambda self, **kw: type("R", (), {"execute": lambda self: {"drives": []}})()})()
 
     monkeypatch.setattr(drive_sync, "get_drive_service", lambda: Svc())
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
-    result = drive_store.save(p.id)
-    assert result["link"] == "https://drive.google.com/file/d/uploaded_123"
+    with pytest.raises(drive_store.DriveStoreError, match="member of 0 Shared Drive"):
+        drive_store.save(p.id)
+    assert uploads == []
 
 
 def test_select_and_generate_three_thumbnails(session, tmp_path, monkeypatch):

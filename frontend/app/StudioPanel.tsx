@@ -14,6 +14,7 @@ import {
   StudioTitle,
 } from "../lib/api";
 import { UndoButton } from "./UndoButton";
+import { askConfirm, notify } from "../lib/dialogs";
 
 // LongForm Studio: trailer breakdowns from research to rendered video.
 // Every stage runs on the server and saves its own output, so any step can be
@@ -406,7 +407,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
           style={{ fontSize: 11 }}
           disabled={running}
           onClick={async () => {
-            if (!confirm(`Delete "${p.title}" and all its files? This cannot be undone.`)) return;
+            if (!await askConfirm(`Delete "${p.title}" and all its files? This cannot be undone.`)) return;
             await api.studioDelete(id);
             onBack();
           }}
@@ -941,9 +942,9 @@ function MotionPanel({ p }: { p: StudioProject }) {
   useEffect(() => { api.studioMotion().then(setM).catch(() => {}); }, []);
   const info = p.render?.motion;
   async function save(patch: Partial<Pick<StudioMotion, "mode" | "cast_cards">>, ask?: string) {
-    if (ask && !confirm(ask)) return;
+    if (ask && !await askConfirm(ask)) return;
     setSaving(true);
-    try { setM(await api.setStudioMotion(patch)); } catch (e: any) { alert(`Could not save: ${e.message || e}`); }
+    try { setM(await api.setStudioMotion(patch)); } catch (e: any) { notify(`Could not save: ${e.message || e}`); }
     finally { setSaving(false); }
   }
   if (!m) return null;

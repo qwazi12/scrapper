@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api, UndoStep } from "../lib/api";
+import { notify } from "../lib/dialogs";
 
 // Names the step it will undo ("Undo: Mass edit on 12 videos"), the way
 // manhwa's storyboard undo does. `version` changes whenever the parent made a
@@ -40,7 +41,7 @@ export function UndoButton({
       setTop(r.stack[0] || null);
       onUndone?.(r.undone);
     } catch (e: any) {
-      alert(`Undo failed: ${e.message || e}`);
+      notify(`Undo failed: ${e.message || e}`);
       load();
     } finally {
       setBusy(false);

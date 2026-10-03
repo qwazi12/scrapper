@@ -5,6 +5,7 @@ import { api, apiBase, BackupStatus, DiskSystemStatus, mediaUrl, parseApiDate, S
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 import { PacingThrottle } from "./PacingThrottle";
+import { askConfirm, notify } from "../lib/dialogs";
 
 function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
@@ -49,7 +50,7 @@ function ScheduleEditor({ sched, onSaved }: { sched: ScheduleInfo; onSaved: (s: 
     const what = reset
       ? `Reset posting times to the defaults (${slotHours(sched.defaults).map(fmtHour).join(", ")} ${sched.defaults.timezone})?`
       : `Post at ${hours.map(fmtHour).join(", ")} (${form.timezone}) — ${hours.length} slots/day?`;
-    if (!confirm(`${what}\n\nReady videos move onto the new slots right away.`)) return;
+    if (!await askConfirm(`${what}\n\nReady videos move onto the new slots right away.`)) return;
     setSaving(true);
     setMsg("");
     try {
@@ -734,8 +735,8 @@ export function SettingsOverview() {
                 <input type="checkbox" checked={seo.auto}
                   onChange={async (e) => {
                     const on = e.target.checked;
-                    if (!confirm(on ? "Turn on auto-SEO? Clips still carrying their raw file name get a TMDB-researched title, caption and hashtags just before they post." : "Turn off auto-SEO? Clips will post with whatever text they have.")) return;
-                    try { setSeo(await api.setSeo(on)); } catch (err: any) { alert(`Could not save: ${err.message || err}`); }
+                    if (!await askConfirm(on ? "Turn on auto-SEO? Clips still carrying their raw file name get a TMDB-researched title, caption and hashtags just before they post." : "Turn off auto-SEO? Clips will post with whatever text they have.")) return;
+                    try { setSeo(await api.setSeo(on)); } catch (err: any) { notify(`Could not save: ${err.message || err}`); }
                   }} />
                 Auto-SEO every clip before it posts
               </label>

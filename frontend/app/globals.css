@@ -62,6 +62,9 @@ input, textarea {
   width: 100%;
 }
 input:focus, textarea:focus { outline: none; border-color: var(--accent-dim); }
+/* Checkboxes/radios keep their own size: the rule above made them full-width,
+   squeezing their labels into a thin column (Settings → Auto-SEO, 2026-10-03). */
+input[type="checkbox"], input[type="radio"] { width: auto; padding: 0; flex: none; }
 
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }

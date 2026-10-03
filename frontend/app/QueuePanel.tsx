@@ -5,6 +5,7 @@ import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 import { UndoButton } from "./UndoButton";
+import { askConfirm, notify } from "../lib/dialogs";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   review: { bg: "#1e293b", text: "#38bdf8", label: "👁 Review" },
@@ -90,7 +91,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
   async function handleBulkAi() {
     const ids = Array.from(sel);
     if (ids.length === 0) return;
-    if (!confirm(
+    if (!await askConfirm(
       `Rewrite the title, description and hashtags of ${ids.length} video(s) with AI?\n\n` +
       "This replaces their current text. It runs in the background; you can keep working."
     )) return;
@@ -98,7 +99,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       setAiJob(await api.bulkAi(ids));
       setSel(new Set());
     } catch (err: any) {
-      alert(`AI rewrite failed to start: ${err.message}`);
+      notify(`AI rewrite failed to start: ${err.message}`);
     }
   }
 
@@ -151,14 +152,14 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   async function toggleAutopost() {
     const next = !autopostPaused;
-    if (!confirm(next
+    if (!await askConfirm(next
       ? "Pause auto-posting?\n\nNothing new will be submitted until you resume. A video already uploading finishes."
       : "Resume auto-posting? Ready videos will post at their scheduled times.")) return;
     try {
       setAutopostPaused((await api.setAutopost(next)).paused);
       setUndoVersion((v) => v + 1);
     } catch (e: any) {
-      alert(`Could not change auto-posting: ${e.message || e}`);
+      notify(`Could not change auto-posting: ${e.message || e}`);
     }
   }
 
@@ -167,7 +168,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       const j = (await api.jobs()).find((x) => x.kind === "ai" && ["running", "stopping"].includes(x.status));
       if (j) await api.stopJob(j.id);
     } catch (e: any) {
-      alert(`Could not stop: ${e.message || e}`);
+      notify(`Could not stop: ${e.message || e}`);
     }
   }
 
@@ -257,7 +258,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       setUndoVersion((v) => v + 1);
       onChange();
     } catch (err: any) {
-      alert(`Could not update pacing: ${err.message || err}`);
+      notify(`Could not update pacing: ${err.message || err}`);
     } finally {
       setPacingSaving(false);
     }
@@ -299,16 +300,16 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   async function handlePublishNow(item: QueueItem) {
     if (!item.accounts || item.accounts.length === 0) {
-      alert("Pick where this video posts first: click ⚠ None picked in its row (or 🔗 Set Target Accounts).");
+      notify("Pick where this video posts first: click ⚠ None picked in its row (or 🔗 Set Target Accounts).");
       return;
     }
     const names = targetNames(item.accounts, accounts);
-    if (!confirm(`Post "${item.title}" now to ${names} as ${privacy} via Upload-Post?`)) return;
+    if (!await askConfirm(`Post "${item.title}" now to ${names} as ${privacy} via Upload-Post?`)) return;
     try {
       await api.publishQueueItem(item.id);
-      alert("✓ Submitted to Upload-Post. It shows ⏳ Posting until each platform confirms (usually a few minutes); results and links appear in the row's notes.");
+      notify("✓ Submitted to Upload-Post. It shows ⏳ Posting until each platform confirms (usually a few minutes); results and links appear in the row's notes.");
     } catch (err: any) {
-      alert(`Publish failed: ${err.message}`);
+      notify(`Publish failed: ${err.message}`);
     }
     loadQueue();
     onChange();
@@ -321,7 +322,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       await api.generateQueueAi(id);
       loadQueue();
     } catch (err: any) {
-      alert(`AI generation failed: ${err.message}`);
+      notify(`AI generation failed: ${err.message}`);
     }
   }
 
@@ -329,18 +330,18 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     setGeneratingVoiceId(id);
     try {
       const res = await api.generateQueueVoiceover(id);
-      alert(`✓ Generated ${res.duration}s voiceover hook (${res.voice}):\n"${res.script}"`);
+      notify(`✓ Generated ${res.duration}s voiceover hook (${res.voice}):\n"${res.script}"`);
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Voiceover generation failed: ${err.message || err}`);
+      notify(`Voiceover generation failed: ${err.message || err}`);
     } finally {
       setGeneratingVoiceId(null);
     }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Delete this queue item?")) return;
+    if (!await askConfirm("Delete this queue item?")) return;
     await api.deleteQueueItem(id).catch(() => {});
     loadQueue();
     onChange();
@@ -355,7 +356,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Bulk status change failed: ${err.message}`);
+      notify(`Bulk status change failed: ${err.message}`);
     }
   }
 
@@ -375,7 +376,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Account assignment failed: ${err.message}`);
+      notify(`Account assignment failed: ${err.message}`);
     }
   }
 
@@ -388,10 +389,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     if (bulkTags.trim()) opts.tags = bulkTags.trim();
     if (bulkPipeline) opts.pipeline = bulkPipeline;
     if (Object.keys(opts).length === 0) {
-      alert("Fill in at least one field to change.");
+      notify("Fill in at least one field to change.");
       return;
     }
-    if (!confirm(`Apply ${Object.keys(opts).join(", ")} to ${ids.length} selected item(s)?`)) return;
+    if (!await askConfirm(`Apply ${Object.keys(opts).join(", ")} to ${ids.length} selected item(s)?`)) return;
     try {
       await api.bulkQueueAction(ids, "edit", opts);
       setShowBulkEdit(false);
@@ -403,21 +404,21 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Mass edit failed: ${err.message}`);
+      notify(`Mass edit failed: ${err.message}`);
     }
   }
 
   async function handleBulkDelete() {
     const ids = Array.from(sel);
     if (ids.length === 0) return;
-    if (!confirm(`Permanently delete ${ids.length} selected item(s) from the queue?`)) return;
+    if (!await askConfirm(`Permanently delete ${ids.length} selected item(s) from the queue?`)) return;
     try {
       await api.bulkQueueAction(ids, "delete");
       setSel(new Set());
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Bulk delete failed: ${err.message}`);
+      notify(`Bulk delete failed: ${err.message}`);
     }
   }
 
@@ -430,13 +431,13 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
         pipeline: pipelineFilter === "all" ? undefined : pipelineFilter,
         status: statusFilter === "all" ? undefined : statusFilter,
       });
-      alert(`✓ ${res.message || `Re-ordered ${res.count} items ('${mode}'). Table now shows the new posting order.`}`);
+      notify(`✓ ${res.message || `Re-ordered ${res.count} items ('${mode}'). Table now shows the new posting order.`}`);
       setSortKey("position");
       setSortDir("asc");
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Shuffle failed: ${err.message}`);
+      notify(`Shuffle failed: ${err.message}`);
     } finally {
       setShuffling(false);
     }
@@ -445,17 +446,17 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
   async function handleRetryAllFailed() {
     const errorIds = allItems.filter((i) => i.status === "error" || i.status === "retry").map((i) => i.id);
     if (errorIds.length === 0) {
-      alert("No failed items to retry.");
+      notify("No failed items to retry.");
       return;
     }
-    if (!confirm(`Reset and retry ${errorIds.length} failed item(s)?`)) return;
+    if (!await askConfirm(`Reset and retry ${errorIds.length} failed item(s)?`)) return;
     try {
       await api.bulkQueueAction(errorIds, "change_status", { target_status: "ready" });
       loadQueue();
       onChange();
-      alert(`✓ Reset ${errorIds.length} failed item(s) to 'ready'. Automated scheduler will re-attempt publishing.`);
+      notify(`✓ Reset ${errorIds.length} failed item(s) to 'ready'. Automated scheduler will re-attempt publishing.`);
     } catch (err: any) {
-      alert(`Retry failed: ${err.message}`);
+      notify(`Retry failed: ${err.message}`);
     }
   }
 
@@ -477,7 +478,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Save failed: ${err.message}`);
+      notify(`Save failed: ${err.message}`);
     } finally {
       setSavingEdit(false);
     }
@@ -485,7 +486,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   async function handleCreateNew() {
     if (!newTitle.trim()) {
-      alert("Please enter a title");
+      notify("Please enter a title");
       return;
     }
     try {
@@ -507,7 +508,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       loadQueue();
       onChange();
     } catch (err: any) {
-      alert(`Create failed: ${err.message}`);
+      notify(`Create failed: ${err.message}`);
     }
   }
 

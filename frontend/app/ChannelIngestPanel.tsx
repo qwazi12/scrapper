@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { StopButton } from "./StopButton";
 import { api } from "../lib/api";
+import { notify } from "../lib/dialogs";
 
 const PRESET_PARENT_FOLDERS = [
   { name: "Movie Clips", id: "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo" },
@@ -27,7 +28,7 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
 
   async function handleIngest() {
     if (!url.trim()) {
-      alert("Please enter a YouTube channel, shorts, or video URL.");
+      notify("Please enter a YouTube channel, shorts, or video URL.");
       return;
     }
     setLoading(true);

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { api, PacingOverride, ScheduleConfig, ScheduleInfo } from "../lib/api";
 import { UndoButton } from "./UndoButton";
+import { askConfirm } from "../lib/dialogs";
 
 const PRESET_PACING = [
   { count: 1, label: "1 / day", desc: "Daily Highlight ( Drop)" },
@@ -109,7 +110,7 @@ export function PacingThrottle({
 
   async function handleSave(reset = false) {
     if (reset) {
-      if (!confirm("Reset all posting pacing & schedule back to defaults (8 posts/day, 8 AM - 10 PM ET)?")) {
+      if (!await askConfirm("Reset all posting pacing & schedule back to defaults (8 posts/day, 8 AM - 10 PM ET)?")) {
         return;
       }
     } else {
@@ -120,7 +121,7 @@ export function PacingThrottle({
         `• Pipeline Overrides: ${Object.keys(form.pipeline_overrides || {}).length} configured\n` +
         `• Account Overrides: ${Object.keys(form.account_overrides || {}).length} configured\n\n` +
         `Ready videos in the queue will immediately re-plan onto the new slots.`;
-      if (!confirm(promptText)) return;
+      if (!await askConfirm(promptText)) return;
     }
 
     setSaving(true);
@@ -728,7 +729,7 @@ export function PacingThrottle({
             onClick={async () => {
               const next = !sched.scheduler.paused;
               if (
-                !confirm(
+                !await askConfirm(
                   next
                     ? "Pause auto-posting? Nothing new will be submitted until you resume."
                     : "Resume auto-posting?"

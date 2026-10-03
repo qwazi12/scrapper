@@ -19,7 +19,9 @@ import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
 import { JobsBar } from "./JobsBar";
+import { DialogHost } from "./DialogHost";
 import { SchedulerView } from "./PacingThrottle";
+import { askConfirm, notify } from "@/lib/dialogs";
 
 type NavTab = "scraper" | "socialpilot" | "longform" | "comps" | "logs" | "settings";
 
@@ -241,6 +243,16 @@ export default function Page() {
             badgeBg={readyQueueCount > 0 ? "#064e3b" : "#1e293b"}
           />
 
+          {/* LongForm Studio (trailer breakdowns) */}
+          <NavButton
+            active={activeTab === "longform"}
+            collapsed={collapsed}
+            onClick={() => handleTabSelect("longform")}
+            icon="🎬"
+            title="LongForm Studio"
+            subtitle="Trailer breakdown videos"
+          />
+
           {/* 3. Compilations & Stitching */}
           <NavButton
             active={activeTab === "comps"}
@@ -252,16 +264,6 @@ export default function Page() {
             badge={`${comps.length} comps`}
             badgeColor="#fbbf24"
             badgeBg="#78350f"
-          />
-
-          {/* LongForm Studio (trailer breakdowns) */}
-          <NavButton
-            active={activeTab === "longform"}
-            collapsed={collapsed}
-            onClick={() => handleTabSelect("longform")}
-            icon="🎬"
-            title="LongForm Studio"
-            subtitle="Trailer breakdown videos"
           />
 
           {/* 4. Live System Logs */}
@@ -343,6 +345,7 @@ export default function Page() {
                    compact={isMobile} onMenu={() => setNavOpen(true)} />
         {/* Everything running on the server, with Stop — on every tab */}
         <JobsBar />
+        <DialogHost />
 
         {/* Dedicated Tab 1: POSTING QUEUE (Google Sheets Experience) */}
         {/* Landing Page: Original Scrapper (Paste Link -> Scrape -> Download to Device) */}
@@ -398,7 +401,9 @@ export default function Page() {
               </div>
 
               {/* Sub-view switcher */}
-              <div style={{ display: "flex", gap: 8, background: "var(--bg)", padding: 4, borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", gap: 8, background: "var(--bg)", padding: 4, borderRadius: 8, border: "1px solid var(--border)",
+                            // phones: wrap instead of running off the screen (it made the whole page wider than the viewport)
+                            flexWrap: "wrap", maxWidth: "100%", minWidth: 0 }}>
                 <button
                   onClick={() => setSocialPilotTab("queue")}
                   style={{
@@ -783,10 +788,10 @@ function SettingsBar({ onSaved }: { onSaved: () => void }) {
   async function rescan() {
     try {
       const r = await api.rescan();
-      alert(`Rescan complete — recovered ${r.clips_added} clip(s) and ${r.compilations_added} compilation(s) from disk.`);
+      notify(`Rescan complete — recovered ${r.clips_added} clip(s) and ${r.compilations_added} compilation(s) from disk.`);
       onSaved();
     } catch (e: any) {
-      alert(`Rescan failed: ${e.message}`);
+      notify(`Rescan failed: ${e.message}`);
     }
   }
 
@@ -910,13 +915,13 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
     onChange();
   }
   async function del(c: Clip) {
-    if (!confirm(`Delete "${c.title || c.source_url}"? Removes the downloaded file too.`)) return;
+    if (!await askConfirm(`Delete "${c.title || c.source_url}"? Removes the downloaded file too.`)) return;
     await api.deleteClip(c.id).catch(() => {});
     onChange();
   }
   async function deleteSelected() {
     if (selectedIds.length === 0) return;
-    if (!confirm(`Delete ${selectedIds.length} selected clip(s)? This removes the downloaded files too.`)) return;
+    if (!await askConfirm(`Delete ${selectedIds.length} selected clip(s)? This removes the downloaded files too.`)) return;
     setDeleting(true);
     try {
       await Promise.all(selectedIds.map((id) => api.deleteClip(id).catch(() => {})));
@@ -931,7 +936,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
       await api.compile(orientation);
       onChange();
     } catch (e: any) {
-      alert(e.message);
+      notify(e.message);
     } finally {
       setBusy(false);
     }
@@ -1082,7 +1087,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
                         onClick={async () => {
                           await api.createQueueItem({ clip_id: c.id, pipeline: "Movie Clips", status: "review" });
                           onChange();
-                          alert(`Added Clip #${c.id} to Posting Queue!`);
+                          notify(`Added Clip #${c.id} to Posting Queue!`);
                         }}
                         title="Add this clip to the Posting Queue"
                       >
@@ -1161,13 +1166,13 @@ function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[];
     setSel(check ? new Set(validIds) : new Set());
   }
   async function del(c: Compilation) {
-    if (!confirm("Delete this compilation file?")) return;
+    if (!await askConfirm("Delete this compilation file?")) return;
     await api.deleteCompilation(c.id).catch(() => {});
     onChange();
   }
   async function deleteSelected() {
     if (selectedIds.length === 0) return;
-    if (!confirm(`Delete ${selectedIds.length} selected compilation(s)?`)) return;
+    if (!await askConfirm(`Delete ${selectedIds.length} selected compilation(s)?`)) return;
     setDeleting(true);
     try {
       await Promise.all(selectedIds.map((id) => api.deleteCompilation(id).catch(() => {})));
@@ -1255,7 +1260,7 @@ function ExportPanel({ comps, onChange, retentionDays }: { comps: Compilation[];
                   onClick={async () => {
                     await api.createQueueItem({ compilation_id: c.id, pipeline: "Movie Clips", status: "review" });
                     onChange();
-                    alert(`Added Compilation #${c.id} to Posting Queue!`);
+                    notify(`Added Compilation #${c.id} to Posting Queue!`);
                   }}
                   title="Add to Posting Queue"
                 >

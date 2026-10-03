@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { StopButton } from "./StopButton";
 import { api } from "../lib/api";
+import { notify } from "../lib/dialogs";
 
 const DETECTED_CHANNELS = [
   "@VynixAE",
@@ -38,7 +39,7 @@ export function DrivePanel({ onIngested }: { onIngested: () => void }) {
 
   async function handleSync() {
     if (!folderId) {
-      alert("Please provide a valid Google Drive folder link or Folder ID.");
+      notify("Please provide a valid Google Drive folder link or Folder ID.");
       return;
     }
     setLoading(true);

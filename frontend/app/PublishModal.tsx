@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { api, Compilation, fmtBytes, fmtDuration, SocialAccount } from "../lib/api";
 import { TargetPicker, targetNames } from "./TargetPicker";
+import { askConfirm } from "../lib/dialogs";
 
 export function PublishModal({
   compilation,
@@ -99,7 +100,7 @@ export function PublishModal({
     // Name exactly the picked channels — what the server will actually use.
     const names = targetNames(targets, accounts);
     const when = isoScheduled ? `on ${new Date(isoScheduled).toLocaleString()}` : "now";
-    if (!confirm(`Publish this compilation ${when} to ${names} as ${privacy} via Upload-Post?`)) return;
+    if (!await askConfirm(`Publish this compilation ${when} to ${names} as ${privacy} via Upload-Post?`)) return;
 
     setPublishing(true);
     setError(null);

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { api, CostSummary } from "../lib/api";
 import { UndoButton } from "./UndoButton";
+import { notify } from "../lib/dialogs";
 
 // Settings → Spending. Every paid call is recorded server-side (backend/app/costs.py)
 // with its estimated cost; this card shows the month, the budget, the free tiers
@@ -80,7 +81,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
     try {
       setData(await api.setCostSettings(patch));
     } catch (e: any) {
-      alert(`Could not save ${what}: ${e.message || e}`);
+      notify(`Could not save ${what}: ${e.message || e}`);
     } finally {
       setSaving(false);
     }
@@ -94,9 +95,9 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
 
   async function saveEdit() {
     const b = budget.trim() === "" ? 0 : Number(budget);
-    if (!Number.isFinite(b) || b < 0) return alert("Budget must be a number, 0 or more (0 = no budget).");
+    if (!Number.isFinite(b) || b < 0) return notify("Budget must be a number, 0 or more (0 = no budget).");
     const fc = fixed.filter((f) => f.name.trim() || f.usd.trim()).map((f) => ({ name: f.name.trim(), usd: Number(f.usd) }));
-    if (fc.some((f) => !f.name || !Number.isFinite(f.usd) || f.usd < 0)) return alert("Each fixed cost needs a name and an amount.");
+    if (fc.some((f) => !f.name || !Number.isFinite(f.usd) || f.usd < 0)) return notify("Each fixed cost needs a name and an amount.");
     await save({ budget_usd: b, fixed_costs: fc }, "budget");
     setEditing(false);
   }

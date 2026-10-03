@@ -106,6 +106,18 @@ def save(project_id: int) -> dict[str, Any]:
             meta = service.files().get(fileId=parent, fields="name,driveId", **ALL).execute()
         except Exception as exc:
             raise DriveStoreError(f"Drive folder '{parent}' could not be accessed. Check LONGFORM_DRIVE_FOLDER_ID.") from exc
+        if not meta.get("driveId"):
+            # Google refuses every file a service account tries to store in a My Drive
+            # folder (it has no storage of its own). Say exactly that instead of letting
+            # the upload fail with a quota error (restored 2026-10-03; removing this
+            # check did not "unblock" anything — the upload itself is what Google refuses).
+            n = len(service.drives().list(pageSize=10).execute().get("drives", []))
+            raise DriveStoreError(
+                f"The folder \"{meta.get('name', parent)}\" was found, but it is in a personal My Drive, and the "
+                f"robot account is a member of {n} Shared Drive(s). Google only lets a robot account save files "
+                "inside a Shared Drive. Fix: in Google Drive → Shared drives → New, add "
+                "omnistream-bot@manhwa-engine.iam.gserviceaccount.com as Content manager, then move the "
+                "\"LongForm Studio\" folder into it (the folder ID stays the same). Then press Retry.")
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         v = _upload(service, video, parent, f"{title} — Trailer Breakdown ({stamp}).mp4")
         t = _upload(service, thumb, parent, f"{title} — Thumbnail ({stamp}){thumb.suffix}") if thumb and thumb.exists() else None
