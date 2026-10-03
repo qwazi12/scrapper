@@ -271,11 +271,25 @@ def queued_jobs(s=None) -> list:
     own = s is None
     s = s or SessionLocal()
     try:
-        return s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "queued") \
+        rows = s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "queued") \
             .order_by(ResumableJob.id).all()
+        # "Move up" gives a row a priority; higher goes first, then oldest first.
+        return sorted(rows, key=lambda r: (-int((r.checkpoint or {}).get("priority", 0)), r.id))
     finally:
         if own:
             s.close()
+
+
+def move_to_front(project_id: int) -> bool:
+    """Owner pressed "Move up": this project's waiting start goes first."""
+    from .. import resume
+    rows = queued_jobs()
+    mine = [r for r in rows if int((r.params or {}).get("project_id", -1)) == project_id]
+    if not mine:
+        return False
+    top = max([int((r.checkpoint or {}).get("priority", 0)) for r in rows] + [0])
+    resume.checkpoint(mine[0].id, priority=top + 1)
+    return True
 
 
 def start_next_waiting() -> bool:

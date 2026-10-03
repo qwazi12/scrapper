@@ -343,3 +343,47 @@ def test_cut_off_job_waits_in_line_when_studio_is_busy(monkeypatch):
     started = []
     monkeypatch.setattr(runner, "start", lambda pid, name, auto=False, rid=None, until="script", message=None: started.append((pid, name)))
     assert runner.start_next_waiting() and started == [(77, "shots")]               # resumes from its step
+
+
+def test_resume_route_continues_from_the_step(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(runner, "start_or_queue", lambda pid, st, auto=False, until="script": calls.append((st, until)) or "started")
+    pid = _proj(tmdb_id=950, stage="shots", stage_status="stopped")
+    assert client.post(f"/api/studio/projects/{pid}/resume").json()["state"] == "started"
+    rid = _proj(tmdb_id=951, stage="render", stage_status="error")
+    client.post(f"/api/studio/projects/{rid}/resume")
+    assert calls == [("shots", "plan"), ("render", "render")]
+    done = _proj(tmdb_id=952, stage="plan", stage_status="done")
+    assert client.post(f"/api/studio/projects/{done}/resume").status_code == 409
+
+
+def test_move_up_puts_a_waiting_start_first(client):
+    a, b = _proj(tmdb_id=960, stage_status="queued"), _proj(tmdb_id=961, stage_status="queued")
+    for pid in (a, b):
+        r = resume.begin("studio", f"x{pid}", {"project_id": pid, "stage": "gather"})
+        resume.finish(r, "queued")
+    assert [int(r.params["project_id"]) for r in runner.queued_jobs()] == [a, b]
+    assert client.post(f"/api/studio/projects/{b}/move-up").status_code == 200
+    assert [int(r.params["project_id"]) for r in runner.queued_jobs()] == [b, a]
+
+
+def test_pause_for_today_and_skip_next(world, client, monkeypatch):
+    calls = _started(monkeypatch)
+    auto.save_settings({"enabled": True})
+    d = client.post("/api/studio/auto/pause-today", json={"paused": True}).json()
+    assert "paused for today" in d["waiting"]
+    assert auto.tick() is None and calls == []
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1, hours=1)
+    assert not auto.paused_now(auto.settings_value(), later)                       # back on after midnight
+    client.post("/api/studio/auto/pause-today", json={"paused": False})
+    first = auto.status()["next"]["title"]
+    d = client.post("/api/studio/auto/skip-next").json()
+    assert d["skipped"] == first and d["next"]["title"] != first
+
+
+def test_plus_two_today_only(client):
+    d = client.post("/api/costs/today-extra", json={"usd": 2}).json()
+    assert d["cap_usd"] == 8.0 and d["extra_today_usd"] == 2.0
+    tomorrow = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
+    assert costs.effective_cap(costs.settings_dict(), tomorrow) == 6.0              # gone tomorrow
+    assert client.post("/api/costs/today-extra", json={"usd": 0}).status_code == 400

@@ -1013,6 +1013,20 @@ def get_costs(month: str | None = None) -> dict:
     return costs.summary(month)
 
 
+class TodayExtraIn(BaseModel):
+    usd: float = 2.0
+
+
+@app.post("/api/costs/today-extra", dependencies=_AUTH)
+def today_extra(req: TodayExtraIn) -> dict:
+    """"+$2 today only" on the Spending card."""
+    from . import costs
+    try:
+        return costs.add_today_extra(req.usd)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.put("/api/costs/settings", dependencies=_AUTH)
 def put_cost_settings(req: CostSettingsIn, s: Session = Depends(get_session)) -> dict:
     from . import costs

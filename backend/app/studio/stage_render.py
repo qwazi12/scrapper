@@ -624,6 +624,38 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
              "available": ok, "reason": why or None}, overlays, end_motion)
 
 
+def thumbnail_candidates(shots: list[dict], lead: str | None) -> tuple[list[dict], list[dict]]:
+    """Ranked, look-deduplicated stills for the two shot options:
+    close-ups (lead first) and scenes (medium/wide with people first)."""
+    ok = [sh for sh in shots if sh.get("usable") and sh.get("still")]
+
+    def ranked(tiers):
+        out, seen_ids, seen_looks = [], set(), set()
+        for tier in tiers:
+            for sh in ok:
+                look = sh.get("look")
+                if sh["id"] in seen_ids or (look is not None and look in seen_looks) or not tier(sh):
+                    continue
+                out.append(sh)
+                seen_ids.add(sh["id"])
+                if look is not None:
+                    seen_looks.add(look)
+        return out
+
+    close = ranked([
+        lambda sh: sh.get("size") == "close" and lead in sh.get("people", []),
+        lambda sh: sh.get("size") == "close" and bool(sh.get("people")),
+        lambda sh: lead in sh.get("people", []),
+        lambda sh: bool(sh.get("people")),
+        lambda sh: True,
+    ])
+    scene = ranked([
+        lambda sh: sh.get("size") in ("medium", "wide", None) and bool(sh.get("people")),
+        lambda sh: True,
+    ])
+    return close, scene
+
+
 def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
     """Generate the 3 thumbnail options for an already rendered or existing project."""
     with SessionLocal() as s:
@@ -646,17 +678,15 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
 
     thumb_poster = thumbnail(None, poster, title, render_dir / "thumbnail_poster.jpg")
 
-    best_shot1 = next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and lead in sh.get("people", []) and sh.get("still")),
-                      next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and sh.get("people") and sh.get("still")),
-                           next((sh for sh in shots if sh.get("usable") and lead in sh.get("people", []) and sh.get("still")),
-                                next((sh for sh in shots if sh.get("usable") and sh.get("people") and sh.get("still")),
-                                     next((sh for sh in shots if sh.get("usable") and sh.get("still")), None)))))
-    thumb_shot1 = thumbnail(root / best_shot1["still"] if best_shot1 else None, poster, title, render_dir / "thumbnail_shot1.jpg")
-
+    # Each refresh shows the NEXT-best shots, not the same ones again (owner:
+    # "Refresh Options doesn't really work" — it redrew identical picks).
+    rnd = int(render_info.get("thumb_round", -1)) + 1
+    close_ranked, scene_ranked = thumbnail_candidates(shots, lead)
+    best_shot1 = close_ranked[rnd % len(close_ranked)] if close_ranked else None
     s1_id = best_shot1.get("id") if best_shot1 else None
-    best_shot2 = next((sh for sh in shots if sh.get("usable") and sh.get("id") != s1_id and (sh.get("size") in ("medium", "wide") or not sh.get("size")) and sh.get("people") and sh.get("still")),
-                      next((sh for sh in shots if sh.get("usable") and sh.get("id") != s1_id and sh.get("still")),
-                           None))
+    rest = [sh for sh in scene_ranked if sh.get("id") != s1_id]
+    best_shot2 = rest[rnd % len(rest)] if rest else None
+    thumb_shot1 = thumbnail(root / best_shot1["still"] if best_shot1 else None, poster, title, render_dir / "thumbnail_shot1.jpg")
     thumb_shot2 = thumbnail(root / best_shot2["still"] if best_shot2 else backdrop, poster, title, render_dir / "thumbnail_shot2.jpg")
 
     selected = render_info.get("selected_thumbnail") or ("shot1" if best_shot1 else "poster")
@@ -673,6 +703,8 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
             {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": "render/thumbnail_shot2.jpg"},
         ],
         "thumbnails_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "thumb_round": rnd,
+        "thumb_shots": {"shot1": s1_id, "shot2": best_shot2.get("id") if best_shot2 else None},
     }
 
     with SessionLocal() as s:

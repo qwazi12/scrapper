@@ -123,7 +123,8 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
         </div>
       </div>
 
-      <DailyCap data={data} saving={saving} onSave={(v) => save({ daily_usd: v }, "daily cap")} />
+      <DailyCap data={data} saving={saving} onSave={(v) => save({ daily_usd: v }, "daily cap")} onReload={load} />
+      {!!data.breakdowns?.length && <BreakdownCosts rows={data.breakdowns} />}
 
       {data.budget_usd > 0 ? (
         <div style={{ marginBottom: 14 }}>
@@ -245,10 +246,11 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
   );
 }
 
-function DailyCap({ data, saving, onSave }: { data: CostSummary; saving: boolean; onSave: (v: number) => void }) {
+function DailyCap({ data, saving, onSave, onReload }: { data: CostSummary; saving: boolean; onSave: (v: number) => void; onReload: () => void }) {
   const t = data.today;
-  const [val, setVal] = useState(String(t.cap_usd || ""));
-  useEffect(() => setVal(String(t.cap_usd || "")), [t.cap_usd]);
+  const base = t.base_cap_usd ?? t.cap_usd;          // the saved cap, without today's extra
+  const [val, setVal] = useState(String(base || ""));
+  useEffect(() => setVal(String(base || "")), [base]);
   const resets = new Date(t.resets_at).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
   return (
     <div style={{ marginBottom: 14, padding: 10, background: "var(--row)", borderRadius: 8, fontSize: 11 }}>
@@ -276,16 +278,41 @@ function DailyCap({ data, saving, onSave }: { data: CostSummary; saving: boolean
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
         <span style={{ color: "var(--muted)" }}>Daily cap $</span>
         <input style={{ width: 70, fontSize: 11 }} inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} placeholder="0 = off" />
-        <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving || Number(val || 0) === t.cap_usd}
+        <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving || Number(val || 0) === base}
                 onClick={() => {
                   const v = val.trim() === "" ? 0 : Number(val);
                   if (!Number.isFinite(v) || v < 0) return notify("Daily cap must be a number, 0 or more (0 = off).");
                   onSave(v);
                 }}>Save</button>
+        <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving || !t.cap_usd}
+                title="Raise today's cap by $2; back to normal at midnight"
+                onClick={async () => {
+                  try { await api.costsTodayExtra(2); onReload(); }
+                  catch (e: any) { notify(`Could not raise today's cap: ${e.message || e}`); }
+                }}>+$2 today only</button>
         <span style={{ color: "var(--muted)" }}>
-          Resets {resets}. Counts pay-as-you-go spend only (not subscriptions).
+          {t.extra_today_usd ? `Today +$${t.extra_today_usd.toFixed(2)} extra. ` : ""}Resets {resets}. Counts pay-as-you-go spend only (not subscriptions).
         </span>
       </div>
+    </div>
+  );
+}
+
+function BreakdownCosts({ rows }: { rows: { id: number; title: string; auto: boolean; cost: number }[] }) {
+  const max = Math.max(...rows.map((r) => r.cost), 0.0001);
+  const avg = rows.filter((r) => r.cost > 0).reduce((a, r, _, arr) => a + r.cost / arr.length, 0);
+  return (
+    <div style={{ marginBottom: 14, fontSize: 11 }}>
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>Cost per breakdown this month <span style={{ color: "var(--muted)", fontWeight: 400 }}>(avg {usd(avg)})</span></div>
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "minmax(90px, 160px) 1fr 60px", gap: 6, alignItems: "center", marginBottom: 3 }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.title}>{r.auto ? "🤖 " : ""}{r.title}</span>
+          <div style={{ background: "var(--row)", borderRadius: 3, height: 10 }}>
+            <div style={{ width: `${(r.cost / max) * 100}%`, background: "var(--accent)", height: 10, borderRadius: 3 }} />
+          </div>
+          <span style={{ textAlign: "right" }}>{usd(r.cost)}</span>
+        </div>
+      ))}
     </div>
   );
 }

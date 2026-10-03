@@ -1033,3 +1033,120 @@ def test_scene_cuts_lowers_the_threshold_for_dark_footage(monkeypatch, tmp_path)
     dark = [(10.0, 0.4), (70.0, 0.4)] + [(i * 3.0 + 0.5, 0.15) for i in range(1, 40)]
     monkeypatch.setattr(control, "run", lambda cmd, timeout=0, text=True: subprocess.CompletedProcess(cmd, 0, "", log(dark)))
     assert len(media.scene_cuts(tmp_path / "d.mp4")) == 41
+
+
+def test_refresh_options_rotates_to_different_shots(session, tmp_path, monkeypatch):
+    from PIL import Image
+    from backend.app.models import StudioProject
+    from backend.app.studio import stage_render
+
+    monkeypatch.setattr(stage_render, "project_dir", lambda pid: tmp_path)
+    shots = []
+    for i in range(4):
+        f = tmp_path / f"st{i}.jpg"
+        Image.new("RGB", (64, 36), (i * 60, 10, 10)).save(f)
+        shots.append({"id": f"s{i}", "usable": True, "still": f.name, "size": "close", "people": ["Lead"]})
+    p = StudioProject(tmdb_id=3, title="Rotate", facts={"cast": [{"actor": "Lead"}]}, shots=shots,
+                      render={"file": "render/final.mp4"})
+    session.add(p)
+    session.commit()
+    picks = []
+    for _ in range(3):
+        r = stage_render.generate_thumbnails_for_project(p.id)
+        picks.append(r["thumb_shots"]["shot1"])
+    assert picks == ["s0", "s1", "s2"]          # a new shot every refresh
+
+
+def test_ask_json_batch_submits_polls_and_records_half_price(monkeypatch, tmp_path):
+    import json as _json
+    from backend.app import costs
+    from backend.app.studio import gemini
+    monkeypatch.setattr(gemini.settings, "gemini_api_key", "mock-key")
+    monkeypatch.setattr(gemini.time, "sleep", lambda s: None)
+    sent = {}
+
+    class R:
+        def __init__(self, data, ok=True):
+            self._d, self.is_success, self.status_code, self.text = data, ok, 200 if ok else 500, _json.dumps(data)
+
+        def json(self):
+            return self._d
+
+    def fake_post(url, content=None, headers=None, timeout=None, **kw):
+        sent["url"], sent["body"] = url, _json.loads(content)
+        return R({"name": "batches/abc"})
+
+    states = iter(["JOB_STATE_PENDING", "JOB_STATE_SUCCEEDED"])
+    usage = {"promptTokenCount": 1_000_000, "candidatesTokenCount": 0}
+
+    def fake_get(url, headers=None, timeout=None):
+        st = next(states)
+        d = {"metadata": {"state": st}}
+        if "SUCCEEDED" in st:
+            d["response"] = {"inlinedResponses": {"inlinedResponses": [
+                {"metadata": {"key": "1"}, "response": {"usageMetadata": usage, "candidates": [{"content": {"parts": [{"text": "[2]"}]}}]}},
+                {"metadata": {"key": "0"}, "response": {"usageMetadata": usage, "candidates": [{"content": {"parts": [{"text": "[1]"}]}}]}},
+            ]}}
+        return R(d)
+
+    monkeypatch.setattr(gemini.httpx, "post", fake_post)
+    monkeypatch.setattr(gemini.httpx, "get", fake_get)
+    with SessionLocal() as s:
+        from backend.app.models import UsageEvent
+        s.query(UsageEvent).delete()
+        s.commit()
+    out = gemini.ask_json_batch([{"key": "0", "prompt": "a"}, {"key": "1", "prompt": "b"}])
+    assert out == {"0": [1], "1": [2]}
+    assert sent["url"].endswith(":batchGenerateContent")
+    assert [r["metadata"]["key"] for r in sent["body"]["batch"]["input_config"]["requests"]["requests"]] == ["0", "1"]
+    d = costs.summary()
+    assert d["by_service"]["gemini-batch"]["cost"] == pytest.approx(2 * 0.75 * 0.5)   # half price
+
+
+def test_automation_shots_use_batch_and_fall_back(monkeypatch, three_scene_video):
+    pid = _new_project(facts={"cast": [{"actor": "Rachel McAdams", "character": "Linda"}], "local": {"cast": {}}},
+                       trailer={"file": str(three_scene_video), "sources": [
+                           {"id": "vi1", "type": "Trailer", "file": str(three_scene_video)}]})
+    with SessionLocal() as s:
+        s.get(StudioProject, pid).review = {"auto": True}
+        s.commit()
+
+    def tags(n):
+        return [{"i": k + 1, "description": f"shot {k + 1}", "people": ["Rachel McAdams"], "size": "wide",
+                 "card": False, "text": False, "quality": "good"} for k in range(n)]
+
+    normal = []
+    monkeypatch.setattr(gemini, "ask_json", lambda prompt, images=None, **kw: normal.append(1) or tags(len(images)))
+    monkeypatch.setattr(gemini, "ask_json_batch", lambda items, **kw: {it["key"]: tags(len(it["images"])) for it in items})
+    summary = runner.run_one(pid, "shots")
+    assert "batch (1/1 groups at half price)" in summary and normal == []
+    with SessionLocal() as s:
+        assert all(sh["usable"] for sh in s.get(StudioProject, pid).shots)
+
+    def down(items, **kw):
+        raise gemini.BatchUnavailable("refused")
+
+    monkeypatch.setattr(gemini, "ask_json_batch", down)
+    summary = runner.run_one(pid, "shots")
+    assert "batch unavailable" in summary and normal == [1]                       # asked the normal way
+
+
+def test_lookalike_neighbours_are_tagged_once(monkeypatch, three_scene_video):
+    pid = _new_project(facts={"cast": [], "local": {"cast": {}}},
+                       trailer={"file": str(three_scene_video), "sources": [
+                           {"id": "vi1", "type": "Trailer", "file": str(three_scene_video)}]})
+    # Pretend there's an extra cut inside the blue scene: two near-identical shots.
+    monkeypatch.setattr(media, "scene_cuts", lambda f, threshold=None: [2.0, 3.0, 4.0])
+    seen = []
+
+    def fake_tag(prompt, images=None, **kw):
+        seen.append(len(images))
+        return [{"i": k + 1, "description": f"d{k}", "people": [], "size": "wide", "card": False,
+                 "text": False, "quality": "good"} for k in range(len(images))]
+
+    monkeypatch.setattr(gemini, "ask_json", fake_tag)
+    summary = runner.run_one(pid, "shots")
+    with SessionLocal() as s:
+        shots = s.get(StudioProject, pid).shots
+    assert len(shots) == 4 and "1 look-alikes reused" in summary
+    assert shots[2]["tags_from"] == shots[1]["id"] and shots[2]["description"] == shots[1]["description"]

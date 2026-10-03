@@ -98,6 +98,82 @@ def ask_json(prompt: str, images: list[pathlib.Path] | None = None, temperature:
     raise GeminiError(f"Gemini returned invalid JSON: {last}")
 
 
+class BatchUnavailable(Exception):
+    """Batch Mode didn't work out (refused, failed, too slow): use normal calls."""
+
+
+BATCH_MAX_BYTES = 19_000_000    # inline batch requests must stay under 20 MB
+
+
+def ask_json_batch(items: list[dict[str, Any]], max_wait: int = 1800, poll: int = 20,
+                   max_tokens: int = 16384) -> dict[str, Any]:
+    """Gemini Batch Mode: the same JSON questions at 50% of the price, answered
+    asynchronously (Google targets 24 h; usually minutes). For work nobody is
+    waiting on (automation runs). items: [{"key", "prompt", "images", "temperature"}].
+    Returns {key: parsed JSON} for the answers that came back valid; the caller
+    asks the missing ones the normal way. Raises BatchUnavailable when the whole
+    batch can't be used (refused, failed, expired, or slower than max_wait —
+    then it is cancelled)."""
+    if not settings.gemini_api_key:
+        raise GeminiError("GEMINI_API_KEY is not set on the server")
+    from .. import control, costs
+    costs.check_budget()       # DailyCapReached / BudgetExceeded propagate like any paid call
+    model = settings.gemini_model
+    reqs = []
+    for it in items:
+        parts = [_image_part(p) for p in (it.get("images") or [])] + [{"text": it["prompt"]}]
+        reqs.append({"request": {"contents": [{"parts": parts}],
+                                 "generationConfig": {"temperature": it.get("temperature", 0.4),
+                                                      "maxOutputTokens": max_tokens,
+                                                      "responseMimeType": "application/json"}},
+                     "metadata": {"key": str(it["key"])}})
+    body = {"batch": {"display_name": f"scrapper-{int(time.time())}",
+                      "input_config": {"requests": {"requests": reqs}}}}
+    raw = json.dumps(body)
+    if len(raw) > BATCH_MAX_BYTES:
+        raise BatchUnavailable(f"batch too large for inline mode ({len(raw) // 1_000_000} MB)")
+    headers = {"x-goog-api-key": settings.gemini_api_key, "content-type": "application/json"}
+    res = httpx.post(f"{BASE}/{model}:batchGenerateContent", content=raw, headers=headers, timeout=TIMEOUT)
+    if not res.is_success:
+        raise BatchUnavailable(f"batch refused: HTTP {res.status_code}: {res.text[:200]}")
+    name = res.json().get("name")
+    if not name:
+        raise BatchUnavailable(f"batch refused: no job name in {res.text[:200]}")
+    url = f"https://generativelanguage.googleapis.com/v1beta/{name}"
+    deadline = time.time() + max_wait
+    while True:
+        control.check()       # Stop works while waiting
+        r = httpx.get(url, headers=headers, timeout=60)
+        data = r.json() if r.is_success else {}
+        state = str((data.get("metadata") or {}).get("state") or data.get("state") or "")
+        if "SUCCEEDED" in state or data.get("done") and "FAILED" not in state:
+            break
+        if any(x in state for x in ("FAILED", "CANCELLED", "EXPIRED")):
+            raise BatchUnavailable(f"batch {name} ended {state}")
+        if time.time() > deadline:
+            httpx.post(f"{url}:cancel", headers=headers, timeout=30)
+            raise BatchUnavailable(f"batch {name} not done after {max_wait // 60} min — cancelled")
+        control.progress(f"Gemini batch (half price) {state.replace('JOB_STATE_', '').replace('BATCH_STATE_', '').lower() or 'queued'}…")
+        time.sleep(poll)
+    resp = data.get("response") or data.get("dest") or {}
+    inl = resp.get("inlinedResponses") or resp.get("inlined_responses") or {}
+    if isinstance(inl, dict):
+        inl = inl.get("inlinedResponses") or inl.get("inlined_responses") or []
+    out: dict[str, Any] = {}
+    for n, item in enumerate(inl):
+        key = str(((item.get("metadata") or {}).get("key")) or (items[n]["key"] if n < len(items) else n))
+        answer = item.get("response")
+        if not answer:
+            continue
+        costs.record_gemini(model, answer.get("usageMetadata") or {}, batch=True)
+        try:
+            out[key] = parse_json(_text(answer))
+        except (json.JSONDecodeError, GeminiError):
+            continue          # asked again the normal way by the caller
+    logger.info("Gemini batch %s: %s of %s answers usable", name, len(out), len(items))
+    return out
+
+
 def research(prompt: str) -> dict[str, Any]:
     """Web research with Google Search grounding.
 

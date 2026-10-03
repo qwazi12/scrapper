@@ -140,15 +140,51 @@ def today_spend(s, now: datetime.datetime | None = None) -> float:
         UsageEvent.created_at >= start, UsageEvent.created_at < end).scalar() or 0)
 
 
+def today_key(now: datetime.datetime | None = None) -> str:
+    return (now or datetime.datetime.now(UTC)).astimezone(day_tz()).strftime("%Y-%m-%d")
+
+
+def effective_cap(cfg: dict[str, Any], now: datetime.datetime | None = None) -> float:
+    """Daily cap + any "+$ today only" extra for today (0 = no cap)."""
+    cap = float(cfg.get("daily_usd") or 0)
+    extra = cfg.get("daily_extra") or {}
+    if cap and extra.get("day") == today_key(now):
+        cap += float(extra.get("usd") or 0)
+    return cap
+
+
+def add_today_extra(usd: float) -> dict[str, Any]:
+    """"+$2 today only": raise today's cap; gone at midnight (operator timezone)."""
+    if not 0 < usd <= 50:
+        raise ValueError("extra must be between $0 and $50")
+    with SessionLocal() as s:
+        row = s.get(AppSetting, "costs")
+        value = dict((row.value or {}) if row else {})
+        extra = value.get("daily_extra") or {}
+        day = today_key()
+        total = (float(extra.get("usd") or 0) if extra.get("day") == day else 0.0) + usd
+        value["daily_extra"] = {"day": day, "usd": round(total, 2)}
+        if row:
+            row.value = value
+        else:
+            s.add(AppSetting(key="costs", value=value))
+        s.commit()
+    from . import logbus
+    logbus.log("info", "daily_cap_extra", f"Daily cap raised by ${usd:.2f} for today only ({day}); +${total:.2f} today")
+    return daily_status()
+
+
 def daily_status(s=None) -> dict[str, Any]:
     own = s is None
     s = s or SessionLocal()
     try:
         cfg = settings_dict(s)
-        cap = float(cfg.get("daily_usd") or 0)
+        base = float(cfg.get("daily_usd") or 0)
+        cap = effective_cap(cfg)
         spent = today_spend(s)
         _, resets = day_bounds()
-        return {"cap_usd": cap, "spent_usd": round(spent, 4),
+        return {"cap_usd": cap, "base_cap_usd": base, "extra_today_usd": round(cap - base, 2) if base else 0.0,
+                "spent_usd": round(spent, 4),
                 "remaining_usd": round(max(0.0, cap - spent), 4) if cap else None,
                 "reached": bool(cap) and spent >= cap, "resets_at": resets.isoformat(),
                 "timezone": str(day_tz())}
@@ -168,7 +204,7 @@ def check_budget() -> None:
             raise BudgetExceeded(
                 f"Monthly budget reached (${total:.2f} of ${float(cfg['budget_usd']):.2f}). "
                 "Raise the budget or turn off the hard stop in Settings → Spending.")
-        cap = float(cfg.get("daily_usd") or 0)
+        cap = effective_cap(cfg)
         if cap:
             spent = today_spend(s)
             if spent >= cap:
@@ -196,18 +232,21 @@ def gemini_price(model: str, cfg: dict, now: datetime.datetime | None = None) ->
     return p["in"], p["out"]
 
 
-def record_gemini(model: str, usage: dict, grounded: bool = False) -> float:
+BATCH_DISCOUNT = 0.5   # Gemini Batch Mode: 50% of the standard price (ai.google.dev/gemini-api/docs/batch-mode)
+
+
+def record_gemini(model: str, usage: dict, grounded: bool = False, batch: bool = False) -> float:
     inp = int(usage.get("promptTokenCount") or 0)
     out = int(usage.get("candidatesTokenCount") or 0) + int(usage.get("thoughtsTokenCount") or 0)
     with SessionLocal() as s:
         cfg = settings_dict(s)
         pin, pout = gemini_price(model, cfg)
-        cost = inp / 1e6 * pin + out / 1e6 * pout
+        cost = (inp / 1e6 * pin + out / 1e6 * pout) * (BATCH_DISCOUNT if batch else 1.0)
         if grounded:
             used = _month_sum(s, UsageEvent.requests, "gemini-search", month_key())
             if used >= cfg["grounding_free_per_month"]:
                 cost += cfg["grounding_usd_per_1000"] / 1000
-    _record("gemini", cost, model=model, input_tokens=inp, output_tokens=out, requests=1)
+    _record("gemini-batch" if batch else "gemini", cost, model=model, input_tokens=inp, output_tokens=out, requests=1)
     if grounded:
         _record("gemini-search", 0.0, model=model, requests=1)
     return cost
@@ -281,8 +320,20 @@ def summary(month: str | None = None) -> dict[str, Any]:
                             "plan_usd": plan_fee},
             },
             "today": {**daily_status(s), "paused_jobs": _paused_jobs(s)},
+            "breakdowns": _breakdown_costs(s, by_ref),
             "settings": cfg,
         }
+
+
+def _breakdown_costs(s, by_ref: dict[str, float]) -> list[dict[str, Any]]:
+    """This month's cost per Studio breakdown, with its title (newest first)."""
+    from .models import StudioProject
+    ids = sorted((int(k.split(":")[1]) for k in by_ref if k.startswith("studio:") and k.split(":")[1].isdigit()),
+                 reverse=True)
+    titles = {p.id: (p.title, (p.review or {}).get("auto", False))
+              for p in s.query(StudioProject).filter(StudioProject.id.in_(ids)).all()} if ids else {}
+    return [{"id": i, "title": titles.get(i, (f"#{i} (deleted)", False))[0], "auto": titles.get(i, ("", False))[1],
+             "cost": round(by_ref[f"studio:{i}"], 4)} for i in ids]
 
 
 def _paused_jobs(s) -> list[dict[str, Any]]:

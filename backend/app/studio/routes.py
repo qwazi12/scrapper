@@ -329,6 +329,31 @@ def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session))
     return {"ok": True, "stage": req.stage, "auto": req.auto, "state": state}
 
 
+@router.post("/projects/{project_id}/resume")
+def resume_project(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """▶ Resume a stopped / failed / paused project from the step it was on,
+    on through step 5 (or through render if it stopped while rendering)."""
+    p = _get(s, project_id)
+    if p.stage_status not in ("stopped", "error", "paused") or p.stage in ("new", None):
+        raise HTTPException(409, f"nothing to resume (status {p.stage_status})")
+    until = "render" if p.stage == "render" else "plan"
+    stage = p.stage if p.stage in runner.ORDER else "gather"
+    if runner.ORDER.index(stage) > runner.ORDER.index(until):
+        until = stage
+    state = runner.start_or_queue(p.id, stage, auto=True, until=until)
+    logbus.log("info", "studio_resumed", f"Studio #{p.id}: resumed at {stage} ({state})", project=p.id)
+    return {"ok": True, "stage": stage, "until": until, "state": state}
+
+
+@router.post("/projects/{project_id}/move-up")
+def move_up(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    p = _get(s, project_id)
+    if p.stage_status != "queued" or not runner.move_to_front(p.id):
+        raise HTTPException(409, "this project isn't waiting in line")
+    logbus.log("info", "studio_moved_up", f"Studio #{p.id}: moved to the front of Studio's line", project=p.id)
+    return {"ok": True}
+
+
 @router.post("/projects/{project_id}/stop")
 def stop_project(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Stop all running work on a studio project immediately."""
@@ -601,6 +626,25 @@ def put_auto(req: AutoIn) -> dict[str, Any]:
         from ..social import queue_manager
         queue_manager.wake()  # first pick within seconds, not at the next 5-min tick
     return auto.status()
+
+
+class PauseIn(BaseModel):
+    paused: bool
+
+
+@router.post("/auto/pause-today")
+def auto_pause_today(req: PauseIn) -> dict[str, Any]:
+    from . import auto
+    return auto.pause_today(req.paused)
+
+
+@router.post("/auto/skip-next")
+def auto_skip_next() -> dict[str, Any]:
+    from . import auto
+    try:
+        return auto.skip_next()
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
 
 
 @router.put("/projects/{project_id}/review")

@@ -30,7 +30,7 @@ from ..models import AppSetting, StudioProject
 
 logger = logging.getLogger("scrapper.studio.auto")
 UTC = datetime.timezone.utc
-DEFAULTS = {"enabled": False, "movies_per_day": 3, "tv_per_day": 2}
+DEFAULTS = {"enabled": False, "movies_per_day": 3, "tv_per_day": 2, "paused_until": None}
 DEFAULT_ESTIMATE = 0.60   # $ per breakdown until there's history
 MAX_PER_TYPE = 20
 
@@ -72,6 +72,43 @@ def save_settings(patch: dict[str, Any]) -> dict[str, Any]:
                f"{value['movies_per_day']} movies + {value['tv_per_day']} TV per day",
                before=before, after=value)
     return value
+
+
+def pause_today(on: bool) -> dict[str, Any]:
+    """⏸ Pause for today: nothing new starts until midnight (posting-schedule
+    timezone), then the automation carries on by itself. on=False resumes now."""
+    _, midnight = costs.day_bounds()
+    with SessionLocal() as s:
+        row = s.get(AppSetting, "studio_auto")
+        value = {**settings_value(s), "paused_until": midnight.isoformat() if on else None}
+        if row:
+            row.value = value
+        else:
+            s.add(AppSetting(key="studio_auto", value=value))
+        s.commit()
+    logbus.log("info", "studio_auto_paused" if on else "studio_auto_unpaused",
+               f"Breakdown automation {'paused until ' + midnight.isoformat()[:16] + ' UTC' if on else 'pause lifted'}")
+    return status()
+
+
+def paused_now(cfg: dict[str, Any], now: datetime.datetime | None = None) -> bool:
+    pu = cfg.get("paused_until")
+    return bool(pu) and (now or datetime.datetime.now(UTC)) < datetime.datetime.fromisoformat(pu)
+
+
+def skip_next() -> dict[str, Any]:
+    """⏭ Skip the title the automation would start next (marked ✕ skip)."""
+    from . import candidates
+    with SessionLocal() as s:
+        cfg = settings_value(s)
+        today = made_today(s)
+    types = [mt for mt in ("movie", "tv") if today.get(mt, 0) < limit_for(mt, cfg)] or ["movie", "tv"]
+    pick = candidates.next_pick(types)
+    if not pick:
+        raise ValueError("there is no next pick to skip")
+    candidates.set_mark(pick["key"] if "key" in pick else candidates._key(pick["media_type"], pick["tmdb_id"]), "skip")
+    logbus.log("info", "studio_auto_skipped", f"Automation: skipped next pick {pick['title']}")
+    return {**status(), "skipped": pick["title"]}
 
 
 def limit_for(media_type: str, cfg: dict[str, Any]) -> int:
@@ -143,6 +180,9 @@ def tick() -> dict[str, Any] | None:
     if not cfg["enabled"]:
         state["last_result"] = "off"
         return None
+    if paused_now(cfg, now):
+        state["last_result"] = f"paused for today (until {cfg['paused_until'][:16]} UTC)"
+        return None
     if candidates.is_stale(now):
         candidates.refresh_async()
     with SessionLocal() as s:
@@ -193,6 +233,8 @@ def status() -> dict[str, Any]:
         last_auto = s.query(StudioProject).filter(StudioProject.review.isnot(None)) \
             .order_by(StudioProject.id.desc()).limit(20).all()
         last_auto = next((p for p in last_auto if (p.review or {}).get("auto")), None)
+    if paused_now(cfg):
+        reason = "paused for today — starts again at midnight"
     nxt = candidates.next_pick(open_types) if cfg["enabled"] and not reason else None
     return {
         **cfg,

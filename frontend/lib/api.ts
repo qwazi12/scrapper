@@ -395,6 +395,7 @@ export type StudioCandidates = {
 };
 export type StudioAuto = {
   enabled: boolean;
+  paused_until?: string | null;
   movies_per_day: number;
   tv_per_day: number;
   today: { movie: number; tv: number };
@@ -540,8 +541,11 @@ export type CostSummary = {
   by_operation: { operation: string; cost: number; requests: number }[];
   by_day: { day: string; cost: number }[];
   by_ref: Record<string, number>;
+  breakdowns?: { id: number; title: string; auto: boolean; cost: number }[];
   today: {
     cap_usd: number;
+    base_cap_usd?: number;
+    extra_today_usd?: number;
     spent_usd: number;
     remaining_usd: number | null;
     reached: boolean;
@@ -836,6 +840,17 @@ export const api = {
   studioAuto: () => req<StudioAuto>("/api/studio/auto", { headers: headers(false) }),
   studioAutoSet: (patch: { enabled?: boolean; movies_per_day?: number; tv_per_day?: number }) =>
     req<StudioAuto>("/api/studio/auto", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  studioResume: (id: number) =>
+    req<{ ok: boolean; stage: string; until: string; state: "started" | "queued" }>(`/api/studio/projects/${id}/resume`, {
+      method: "POST", headers: headers() }),
+  studioMoveUp: (id: number) =>
+    req<{ ok: boolean }>(`/api/studio/projects/${id}/move-up`, { method: "POST", headers: headers() }),
+  studioAutoPauseToday: (paused: boolean) =>
+    req<StudioAuto>("/api/studio/auto/pause-today", { method: "POST", headers: headers(), body: JSON.stringify({ paused }) }),
+  studioAutoSkipNext: () =>
+    req<StudioAuto & { skipped: string }>("/api/studio/auto/skip-next", { method: "POST", headers: headers() }),
+  costsTodayExtra: (usd: number) =>
+    req<CostSummary["today"]>("/api/costs/today-extra", { method: "POST", headers: headers(), body: JSON.stringify({ usd }) }),
   studioReview: (id: number, reviewed: boolean) =>
     req<StudioProject>(`/api/studio/projects/${id}/review`, {
       method: "PUT", headers: headers(), body: JSON.stringify({ reviewed }) }),
@@ -854,9 +869,9 @@ export const api = {
   studioArchiveProject: (id: number, archived: boolean) =>
     req<StudioProject>(`/api/studio/projects/${id}/archive`, {
       method: "PUT", headers: headers(), body: JSON.stringify({ archived }) }),
-  studioRun: (id: number, stage: string, auto = false) =>
-    req<{ ok: boolean }>(`/api/studio/projects/${id}/run`, {
-      method: "POST", headers: headers(), body: JSON.stringify({ stage, auto }) }),
+  studioRun: (id: number, stage: string, auto = false, until: "script" | "plan" | "render" = "script") =>
+    req<{ ok: boolean; state?: "started" | "queued" }>(`/api/studio/projects/${id}/run`, {
+      method: "POST", headers: headers(), body: JSON.stringify({ stage, auto, until }) }),
   studioStop: (id: number) =>
     req<StudioProject>(`/api/studio/projects/${id}/stop`, {
       method: "POST", headers: headers() }),

@@ -125,6 +125,29 @@ export function AutomationCard({ onChange }: { onChange?: () => void }) {
           {a.last_started ? <>#{a.last_started.project_id} {a.last_started.title} <span style={muted}>· {ago(a.last_started.at)}</span></> : <span style={muted}>none yet</span>}
         </div>
         <div style={muted}>Last check: {ago(a.last_check_at)}{a.last_result ? ` — ${a.last_result}` : ""}</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "6px 0" }}>
+          <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving || !a.enabled || !a.next}
+                  title="Mark the next pick as skipped; the automation moves on to the one after it"
+                  onClick={async () => {
+                    if (!a.next || !(await askConfirm(`Skip "${a.next.title}"? It moves to "Didn't make the list" (un-skip it there any time).`))) return;
+                    setSaving(true);
+                    try { const d = await api.studioAutoSkipNext(); setA(d); notify(`Skipped ${d.skipped}.`); }
+                    catch (e: any) { notify(`Could not skip: ${e.message || e}`); }
+                    finally { setSaving(false); }
+                  }}>⏭ Skip next pick</button>
+          {a.paused_until && new Date(a.paused_until) > new Date() ? (
+            <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving}
+                    onClick={async () => { setSaving(true); try { setA(await api.studioAutoPauseToday(false)); } catch (e: any) { notify(String(e.message || e)); } finally { setSaving(false); } }}>
+              ▶ Resume today (paused until {new Date(a.paused_until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})
+            </button>
+          ) : (
+            <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving || !a.enabled}
+                    title="Nothing new starts until midnight; it switches back on by itself"
+                    onClick={async () => { setSaving(true); try { setA(await api.studioAutoPauseToday(true)); } catch (e: any) { notify(String(e.message || e)); } finally { setSaving(false); } }}>
+              ⏸ Pause for today
+            </button>
+          )}
+        </div>
         <div style={muted}>Undo: {a.undo}</div>
       </div>
 
@@ -176,9 +199,52 @@ function Sentiment({ c }: { c: StudioCandidate }) {
   return <div style={{ ...muted, fontSize: 10, lineHeight: 1.4 }}>{bits.join(" · ") || "no audience data yet"}</div>;
 }
 
+async function addToLine(c: StudioCandidate): Promise<boolean> {
+  const create = (force: boolean) => api.studioCreate({ tmdb_id: c.tmdb_id, media_type: c.media_type, title: c.title, force });
+  let p: StudioProject;
+  try {
+    p = await create(false);
+  } catch (e: any) {
+    const m = String(e.message || e).match(/(daily_limit|already_made): ([^"]*)/);
+    if (!m) { notify(`Could not add "${c.title}": ${e.message || e}`); return false; }
+    if (!(await askConfirm(m[2]))) return false;
+    try { p = await create(true); } catch (e2: any) { notify(`Could not add "${c.title}": ${e2.message || e2}`); return false; }
+  }
+  try {
+    const r = await api.studioRun(p.id, "gather", true, "plan");
+    notify(r.state === "queued" ? `✓ "${c.title}" is waiting in Studio's line (steps 1–5).` : `✓ "${c.title}" started (steps 1–5).`);
+    return true;
+  } catch (e: any) {
+    notify(`"${c.title}" was created but couldn't start: ${e.message || e} — use ▶ Resume on its card.`);
+    return true;
+  }
+}
+
+function TrailerModal({ c, onClose }: { c: StudioCandidate; onClose: () => void }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 1000,
+                                    display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(900px, 100%)", background: "var(--panel)", borderRadius: 10, padding: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <b style={{ fontSize: 13 }}>{c.title} — official trailer</b>
+          <button style={{ fontSize: 11, padding: "2px 10px" }} onClick={onClose}>✕ Close</button>
+        </div>
+        {c.youtube_trailer ? (
+          <iframe title="trailer" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(c.youtube_trailer)}?autoplay=1`}
+                  style={{ width: "100%", aspectRatio: "16/9", border: 0, borderRadius: 6 }} allow="autoplay; encrypted-media; fullscreen" allowFullScreen />
+        ) : (
+          <div style={muted}>No YouTube trailer listed — {c.imdb?.page ? <a href={c.imdb.page} target="_blank" rel="noreferrer">open IMDb ↗</a> : "none on IMDb either"}.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CandidateCard({ c, busy, onCreate, onMark }: {
   c: StudioCandidate; busy: boolean; onCreate: (c: StudioCandidate) => void; onMark: (c: StudioCandidate, m: "pin" | "skip" | null) => void;
 }) {
+  const [preview, setPreview] = useState(false);
+  const [adding, setAdding] = useState(false);
   const parts = Object.entries(c.score.parts).filter(([, v]) => v > 0).map(([k, v]) => `${k.replace("_", " ")} ${v}`).join(", ");
   return (
     <div style={{ background: "var(--row)", borderRadius: 8, padding: 8, display: "flex", gap: 8,
@@ -201,13 +267,20 @@ function CandidateCard({ c, busy, onCreate, onMark }: {
         )}
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           <button className="primary" style={{ fontSize: 10, padding: "2px 8px" }} disabled={busy || c.checks.not_made.status === "fail"}
+                  title="Create it, run steps 1–4 and open it"
                   onClick={() => onCreate(c)}>Make breakdown</button>
+          <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={busy || adding || c.checks.not_made.status === "fail"}
+                  title="Run steps 1–5 in Studio's line without leaving this list"
+                  onClick={async () => { setAdding(true); await addToLine(c); setAdding(false); }}>
+            {adding ? "Adding…" : "+ Add to line"}</button>
+          <button style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => setPreview(true)}>👁 Preview trailer</button>
           <button style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => onMark(c, c.mark === "pin" ? null : "pin")}>
             {c.mark === "pin" ? "Unpin" : "⭐ Pin"}</button>
           <button style={{ fontSize: 10, padding: "2px 8px" }} onClick={() => onMark(c, c.mark === "skip" ? null : "skip")}>
             {c.mark === "skip" ? "Un-skip" : "✕ Skip"}</button>
         </div>
       </div>
+      {preview && <TrailerModal c={c} onClose={() => setPreview(false)} />}
     </div>
   );
 }
@@ -453,6 +526,21 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
                     <span style={{ ...muted, fontSize: 10, color: "#f59e0b" }}>🗄 deletes {fmtDay(p.review.delete_after)}</span>
                   )}
                   <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                    {(p.stage_status === "stopped" || p.stage_status === "error" || p.stage_status === "paused") && p.stage !== "new" && (
+                      <button className="primary" title="Continue from the step it was on" style={{ fontSize: 10, padding: "1px 6px" }}
+                              disabled={working}
+                              onClick={async () => {
+                                try { const r = await api.studioResume(p.id); notify(r.state === "queued" ? `✓ "${p.title}" is waiting in line (from ${r.stage}).` : `✓ "${p.title}" resumed at ${r.stage}.`); onReload(); }
+                                catch (e: any) { notify(`Could not resume "${p.title}": ${e.message || e}`); }
+                              }}>▶ Resume</button>
+                    )}
+                    {p.stage_status === "queued" && (
+                      <button title="Go to the front of Studio's line" style={{ fontSize: 10, padding: "1px 6px" }} disabled={working}
+                              onClick={async () => {
+                                try { await api.studioMoveUp(p.id); notify(`✓ "${p.title}" is next in line.`); onReload(); }
+                                catch (e: any) { notify(`Could not move "${p.title}": ${e.message || e}`); }
+                              }}>⏫ Move up</button>
+                    )}
                     <button title={p.review?.delete_after ? "Keep it (cancel the automatic delete)" : "Archive: delete automatically in 5 days"}
                             style={{ fontSize: 10, padding: "1px 6px" }}
                             disabled={working || p.stage_status === "running" || p.stage_status === "queued"}

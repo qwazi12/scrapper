@@ -361,10 +361,10 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
     }
   }
 
-  async function run(stage: string, auto = false) {
+  async function run(stage: string, auto = false, until: "script" | "plan" | "render" = "script") {
     setErr("");
     try {
-      await api.studioRun(id, stage, auto);
+      await api.studioRun(id, stage, auto, until);
       await load();
     } catch (e: any) {
       setErr(e.message || String(e));
@@ -441,9 +441,22 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
             >
               <div style={{ fontSize: 12, fontWeight: 700 }}>{done ? "✓ " : ""}{s.label}</div>
               <div style={{ ...muted, minHeight: 28 }}>{s.hint}</div>
-              <button style={{ fontSize: 10, padding: "2px 8px", marginTop: 4 }} disabled={running} onClick={() => run(s.key)}>
-                {done ? "Re-run" : "Run"}
-              </button>
+              <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={running} onClick={() => run(s.key)}
+                        title={done ? "Run just this step again" : "Run just this step"}>
+                  {done ? "Re-run" : "Run"}
+                </button>
+                {done && s.key !== "render" && s.key !== "plan" && (
+                  <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={running}
+                          title="Redo this step and every step after it, up to step 5 (Voice + shots)"
+                          onClick={async () => {
+                            if (await askConfirm(`Redo "${s.label}" and the steps after it up to step 5? Later steps are rebuilt from the new result (an undo point is kept for the script and plan).`))
+                              run(s.key, true, "plan");
+                          }}>
+                    ↻ from here
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -451,6 +464,18 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
           <button className="primary" style={{ fontSize: 11 }} disabled={running} onClick={() => run("gather", true)}>
             Run research → script
           </button>
+          {(() => {
+            const order = ["gather", "trailer", "shots", "script", "plan"];
+            const hasKey = (k: string) => p.has[k === "gather" ? "facts" : k];
+            const next = order.find((k) => !hasKey(k));
+            return (
+              <button style={{ fontSize: 11 }} disabled={running || !next}
+                      title={next ? `Runs ${order.slice(order.indexOf(next)).join(" → ")}, then stops before render` : "Steps 1–5 are done"}
+                      onClick={() => next && run(next, true, "plan")}>
+                {next ? `▶ Continue to step 5 (from ${STAGES.find((x) => x.key === next)?.label})` : "✓ Steps 1–5 done"}
+              </button>
+            );
+          })()}
           <button style={{ fontSize: 11 }} disabled={running || !p.has.script} onClick={() => run("plan")}>
             Voice + shots
           </button>
@@ -1088,6 +1113,7 @@ function ArchivedNotice({ p, onChange }: { p: StudioProject; onChange: () => voi
 function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void }) {
   const r = p.render;
   const [msg, setMsg] = useState("");
+  const [thumbBusy, setThumbBusy] = useState(false);
   if (p.archive?.archived_at) return <ArchivedNotice p={p} onChange={onChange} />;
   if (!r) return <Section title="Video">Run step 6 to render the video.</Section>;
   const bust = String(parseApiDate(r.rendered_at) || "");
@@ -1111,18 +1137,23 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
             <span style={{ fontSize: 12, fontWeight: 700 }}>Thumbnail Options (3 choices)</span>
             <button
               style={{ fontSize: 10, padding: "2px 6px" }}
+              disabled={thumbBusy}
               onClick={async () => {
                 setMsg("");
+                setThumbBusy(true);
                 try {
                   await api.studioGenerateThumbnails(p.id);
+                  setMsg("✓ New options — showing the next-best shots");
                   onChange();
                 } catch (e: any) {
                   setMsg(`✕ ${e.message || e}`);
+                } finally {
+                  setThumbBusy(false);
                 }
               }}
-              title="Regenerate all 3 thumbnail options"
+              title="Show the next-best close-up and scene shots (the poster stays)"
             >
-              🔄 Refresh Options
+              {thumbBusy ? "⏳ Refreshing…" : "🔄 Refresh Options"}
             </button>
           </div>
 

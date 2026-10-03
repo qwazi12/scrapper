@@ -20,6 +20,32 @@ from .runner import project_dir, stage
 MAX_SHOTS = 220
 BATCH = 12          # frames per Gemini call
 DARK = 14           # mean luma below this = black frame, dropped without asking
+DUP_BITS = 5        # dHash bits apart: neighbouring frames this close share one tag result
+
+
+DUP_COLOR = 12      # …and mean R/G/B within this: dHash alone ignores colour (flat red = flat blue)
+
+
+def _signature(path: pathlib.Path) -> tuple[int, tuple[float, float, float]] | None:
+    """(dHash, mean RGB) of a frame — both must match for two frames to be look-alikes."""
+    from PIL import Image, ImageStat
+    from .stage_plan import dhash
+    h = dhash(path)
+    if h is None:
+        return None
+    try:
+        with Image.open(path) as im:
+            mean = tuple(ImageStat.Stat(im.convert("RGB")).mean)
+    except Exception:  # noqa: BLE001
+        return None
+    return h, mean
+
+
+def use_batch(project_id: int) -> bool:
+    """Batch Mode (half price, async) only for automation runs — nobody waits."""
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        return bool(p and (p.review or {}).get("auto"))
 
 TAG_PROMPT = """You are logging shots from official trailer footage for a video editor.
 Image 1 is a labelled sheet of the cast (number, actor, character). The next {n} images
@@ -91,19 +117,23 @@ def shots(project_id: int) -> str:
 
     sheet = media.cast_sheet(facts.get("cast", [])[:8], (facts.get("local") or {}).get("cast", {}),
                              root / "assets" / "cast_sheet.jpg")
-    tagged = 0
-    for i in range(0, len(shots), BATCH):
-        control.check()
-        batch = shots[i:i + BATCH]
-        control.progress(f"tagging shots {i + 1}–{i + len(batch)} of {len(shots)}")
-        try:
-            tags = _tag(sheet, [root / sh["thumb"] for sh in batch])
-        except gemini.GeminiError as exc:
-            for sh in batch:
-                sh["tag_error"] = str(exc)[:200]
-            continue
-        for sh, t in zip(batch, tags):
-            known = {c["actor"] for c in facts.get("cast", [])}
+    # Near-identical neighbouring frames (same source, a few dHash bits apart)
+    # are tagged once and share the answer — fewer images sent to Gemini.
+    reps, dup_of, prev = [], {}, None
+    for sh in shots:
+        h = _signature(root / sh["thumb"])
+        if prev and h and prev[1] and prev[0]["source"] == sh["source"] \
+                and bin(h[0] ^ prev[1][0]).count("1") <= DUP_BITS \
+                and max(abs(a - b) for a, b in zip(h[1], prev[1][1])) <= DUP_COLOR:
+            dup_of[sh["id"]] = prev[0]["id"]
+        else:
+            reps.append(sh)
+            prev = (sh, h)
+    batches = [reps[i:i + BATCH] for i in range(0, len(reps), BATCH)]
+    known = {c["actor"] for c in facts.get("cast", [])}
+
+    def apply(batch_shots, tags):
+        for sh, t in zip(batch_shots, tags):
             sh.update({
                 "description": str(t.get("description") or "")[:200],
                 "people": [x for x in (t.get("people") or []) if x in known],
@@ -114,6 +144,44 @@ def shots(project_id: int) -> str:
                 "text": bool(t.get("text")),
                 "quality": t.get("quality") if t.get("quality") in ("good", "blurry", "dark") else "good",
             })
+
+    # Automation runs (nobody waiting) use Gemini Batch Mode: half price.
+    answers: dict[str, list] = {}
+    how = "standard"
+    if use_batch(project_id) and batches:
+        control.progress(f"tagging {len(reps)} shots in one Gemini batch (half price)")
+        items = [{"key": str(n), "prompt": TAG_PROMPT.format(n=len(bt)),
+                  "images": ([sheet] if sheet else []) + [root / sh["thumb"] for sh in bt], "temperature": 0.2}
+                 for n, bt in enumerate(batches)]
+        try:
+            got = gemini.ask_json_batch(items)
+            answers = {k: v for k, v in got.items() if isinstance(v, list)}
+            how = f"batch ({len(answers)}/{len(batches)} groups at half price)"
+        except gemini.BatchUnavailable as exc:
+            how = f"standard (batch unavailable: {str(exc)[:80]})"
+    tagged = 0
+    for n, bt in enumerate(batches):
+        control.check()
+        if str(n) in answers:
+            by_i = {int(o.get("i", 0)): o for o in answers[str(n)] if isinstance(o, dict)}
+            tags = [by_i.get(k + 1, {}) for k in range(len(bt))]
+        else:
+            control.progress(f"tagging shots group {n + 1} of {len(batches)}")
+            try:
+                tags = _tag(sheet, [root / sh["thumb"] for sh in bt])
+            except gemini.GeminiError as exc:
+                for sh in bt:
+                    sh["tag_error"] = str(exc)[:200]
+                continue
+        apply(bt, tags)
+        tagged += len(bt)
+    by_id = {sh["id"]: sh for sh in shots}
+    for sid, rep in dup_of.items():
+        src = by_id[rep]
+        if src.get("description"):
+            by_id[sid].update({k: src[k] for k in ("description", "people", "setting", "mood", "size",
+                                                   "card", "text", "quality") if k in src})
+            by_id[sid]["tags_from"] = rep
             tagged += 1
     for sh in shots:
         sh["usable"] = bool(sh.get("description")) and not sh.get("card") and not sh.get("text") \
@@ -126,5 +194,6 @@ def shots(project_id: int) -> str:
         s.commit()
     usable = sum(1 for sh in shots if sh["usable"])
     with_people = sum(1 for sh in shots if sh.get("people"))
-    return (f"{len(shots)} shots from {len(sources)} video(s); {tagged} tagged, {usable} usable, "
+    return (f"{len(shots)} shots from {len(sources)} video(s); {tagged} tagged ({len(reps)} sent to Gemini, "
+            f"{len(dup_of)} look-alikes reused; {how}), {usable} usable, "
             f"{with_people} with a named actor; {dropped_dark} black frames dropped")
