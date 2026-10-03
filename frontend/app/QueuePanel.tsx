@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { StopButton } from "./StopButton";
-import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
+import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 import { UndoButton } from "./UndoButton";
 
@@ -117,6 +117,12 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
   const [showShuffleMenu, setShowShuffleMenu] = useState(false);
   const [shuffling, setShuffling] = useState(false);
 
+  // Pacing / posting frequency menu
+  const [schedInfo, setSchedInfo] = useState<ScheduleInfo | null>(null);
+  const [showPacingMenu, setShowPacingMenu] = useState(false);
+  const [pacingSaving, setPacingSaving] = useState(false);
+  const [customPacingInput, setCustomPacingInput] = useState("");
+
   // New item modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -211,11 +217,51 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   useEffect(() => {
     api.schedule().then((r) => {
+      setSchedInfo(r);
       setArchiveDays(r.archive_delete_days);
       setPrivacy(r.publisher.privacy);
       setAutopostPaused(!!r.scheduler.paused);
     }).catch(() => {});
   }, []);
+
+  const currentPpd = useMemo(() => {
+    if (!schedInfo) return 8;
+    if (longform) {
+      const overrides = schedInfo.pipeline_overrides || schedInfo.pipelines || {};
+      return overrides["LongForm"]?.posts_per_day ?? schedInfo.posts_per_day ?? schedInfo.slots_per_day ?? 8;
+    }
+    return schedInfo.posts_per_day ?? schedInfo.slots_per_day ?? 8;
+  }, [schedInfo, longform]);
+
+  async function applyPacing(count: number) {
+    if (count <= 0 || isNaN(count)) return;
+    setPacingSaving(true);
+    try {
+      if (longform) {
+        const existingOverrides = { ...(schedInfo?.pipeline_overrides || schedInfo?.pipelines || {}) };
+        const lfOverride = { ...(existingOverrides["LongForm"] || {}), posts_per_day: count };
+        await api.updateSchedule({
+          pipeline_overrides: {
+            ...existingOverrides,
+            LongForm: lfOverride,
+          },
+        });
+      } else {
+        await api.updateSchedule({
+          posts_per_day: count,
+        });
+      }
+      const updated = await api.schedule();
+      setSchedInfo(updated);
+      setShowPacingMenu(false);
+      setUndoVersion((v) => v + 1);
+      onChange();
+    } catch (err: any) {
+      alert(`Could not update pacing: ${err.message || err}`);
+    } finally {
+      setPacingSaving(false);
+    }
+  }
 
   const sortedItems = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -709,6 +755,135 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                     Randomizes internal order inside each channel bucket.
                   </span>
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Posting Frequency / Pacing Dropdown */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowPacingMenu(!showPacingMenu)}
+              disabled={pacingSaving}
+              title="Change posting frequency and pacing"
+              style={{
+                background: "#065f46",
+                borderColor: "#059669",
+                color: "#a7f3d0",
+                fontWeight: 600,
+                fontSize: 11,
+                padding: "6px 12px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span>⚡</span> {pacingSaving ? "Saving…" : isNarrow ? `${currentPpd}/d ▾` : `Pacing: ${currentPpd}/day ▾`}
+            </button>
+
+            {showPacingMenu && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  ...(isNarrow ? { left: 0 } : { right: 0 }),
+                  marginTop: 6,
+                  background: "#064e3b",
+                  border: "1px solid #059669",
+                  borderRadius: 8,
+                  padding: 8,
+                  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
+                  zIndex: 50,
+                  width: "min(280px, 85vw)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                <div style={{ padding: "4px 8px", fontSize: 10, color: "#a7f3d0", fontWeight: 700, textTransform: "uppercase", display: "flex", justifyContent: "space-between" }}>
+                  <span>Posting Frequency</span>
+                  <span style={{ opacity: 0.8, fontSize: 9 }}>{longform ? "LongForm" : "All Pipelines"}</span>
+                </div>
+
+                {[
+                  { count: 1, label: "1 / day", desc: "Daily highlight drop (every 24h)" },
+                  { count: 3, label: "3 / day", desc: "Morning, afternoon, evening" },
+                  { count: 4, label: "4 / day", desc: "Every 4 hours evenly" },
+                  { count: 8, label: "8 / day (Standard)", desc: "Every 2 hours during posting hours" },
+                  { count: 12, label: "12 / day", desc: "High velocity (every ~70 min)" },
+                  { count: 20, label: "20 / day (Blitz)", desc: "Maximum output (every ~44 min)" },
+                ].map((preset) => {
+                  const isSelected = currentPpd === preset.count;
+                  return (
+                    <button
+                      key={preset.count}
+                      onClick={() => applyPacing(preset.count)}
+                      style={{
+                        background: isSelected ? "rgba(16, 185, 129, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                        border: isSelected ? "1px solid #10b981" : "none",
+                        color: "#ecfdf5",
+                        textAlign: "left",
+                        padding: "7px 10px",
+                        borderRadius: 6,
+                        fontSize: 11,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, color: isSelected ? "#34d399" : "#6ee7b7", display: "flex", justifyContent: "space-between" }}>
+                        <span>{preset.label}</span>
+                        {isSelected && <span style={{ fontSize: 10 }}>✓ Active</span>}
+                      </span>
+                      <span style={{ fontSize: 10, color: "#94a3b8" }}>{preset.desc}</span>
+                    </button>
+                  );
+                })}
+
+                {/* Custom input */}
+                <div style={{ marginTop: 4, paddingTop: 6, borderTop: "1px solid rgba(255, 255, 255, 0.1)", display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    placeholder="Custom / day"
+                    value={customPacingInput}
+                    onChange={(e) => setCustomPacingInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && customPacingInput) {
+                        applyPacing(parseInt(customPacingInput, 10));
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "5px 8px",
+                      fontSize: 11,
+                      background: "rgba(0, 0, 0, 0.3)",
+                      border: "1px solid #059669",
+                      borderRadius: 4,
+                      color: "#ecfdf5",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const val = parseInt(customPacingInput, 10);
+                      if (val > 0) applyPacing(val);
+                    }}
+                    disabled={!customPacingInput || parseInt(customPacingInput, 10) <= 0}
+                    style={{
+                      background: "#10b981",
+                      border: "none",
+                      color: "#022c22",
+                      fontWeight: 700,
+                      fontSize: 11,
+                      padding: "5px 10px",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Set
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -1098,8 +1098,104 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
           )}
         </div>
         <div>
-          <div style={{ fontSize: 11, marginBottom: 4 }}>Thumbnail</div>
-          <img src={api.studioFileUrl(p.id, r.thumbnail, bust)} alt="" style={{ width: "100%", borderRadius: 6 }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 12, fontWeight: 700 }}>Thumbnail Options (3 choices)</span>
+            <button
+              style={{ fontSize: 10, padding: "2px 6px" }}
+              onClick={async () => {
+                setMsg("");
+                try {
+                  await api.studioGenerateThumbnails(p.id);
+                  onChange();
+                } catch (e: any) {
+                  setMsg(`✕ ${e.message || e}`);
+                }
+              }}
+              title="Regenerate all 3 thumbnail options"
+            >
+              🔄 Refresh Options
+            </button>
+          </div>
+
+          {/* Active Thumbnail Preview */}
+          <div style={{ marginBottom: 10 }}>
+            <img src={api.studioFileUrl(p.id, r.thumbnail, bust)} alt="Active Thumbnail" style={{ width: "100%", borderRadius: 6, border: "2px solid var(--accent)", boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }} />
+            <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 4, fontWeight: 600 }}>
+              ✓ Current Active Thumbnail (used for download, queue &amp; Drive)
+            </div>
+          </div>
+
+          {/* 3 Selectable Thumbnails Grid */}
+          {r.thumbnails && r.thumbnails.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
+              {r.thumbnails.map((t) => {
+                const isSelected = (r.selected_thumbnail === t.id) || (r.thumbnail?.endsWith(t.file) ?? false);
+                return (
+                  <div
+                    key={t.id}
+                    onClick={async () => {
+                      setMsg("");
+                      try {
+                        await api.studioSelectThumbnail(p.id, t.id);
+                        onChange();
+                      } catch (e: any) {
+                        setMsg(`✕ ${e.message || e}`);
+                      }
+                    }}
+                    style={{
+                      cursor: "pointer",
+                      border: isSelected ? "2px solid var(--accent)" : "1px solid var(--border)",
+                      background: isSelected ? "rgba(52, 211, 153, 0.12)" : "var(--row)",
+                      borderRadius: 6,
+                      padding: 6,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <img
+                      src={api.studioFileUrl(p.id, t.file, bust)}
+                      alt={t.label}
+                      style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", borderRadius: 4 }}
+                    />
+                    <div style={{ fontSize: 11, fontWeight: 700, color: isSelected ? "var(--accent)" : "var(--text)" }}>
+                      {t.id === "poster" ? "🪧 " : t.id === "shot1" ? "👤 " : "🎬 "}
+                      {t.label}
+                    </div>
+                    <div style={{ fontSize: 9, color: "var(--muted)", lineHeight: 1.2 }}>{t.desc}</div>
+                    <div style={{
+                      marginTop: "auto",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      textAlign: "center",
+                      padding: "2px 4px",
+                      borderRadius: 4,
+                      background: isSelected ? "var(--accent)" : "rgba(255, 255, 255, 0.08)",
+                      color: isSelected ? "#064e3b" : "var(--text)",
+                    }}>
+                      {isSelected ? "✓ Active" : "Select"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <button
+              style={{ fontSize: 11, padding: "6px 12px", width: "100%", marginTop: 4 }}
+              onClick={async () => {
+                setMsg("");
+                try {
+                  await api.studioGenerateThumbnails(p.id);
+                  onChange();
+                } catch (e: any) {
+                  setMsg(`✕ ${e.message || e}`);
+                }
+              }}
+            >
+              ✨ Generate 3 Thumbnail Options (Poster, Close-Up, Scene Still)
+            </button>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             <a href={api.studioFileUrl(p.id, r.file, bust)} download>
               <button>⬇ Download</button>

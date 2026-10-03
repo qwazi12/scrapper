@@ -629,7 +629,7 @@ def test_motion_settings_validate_and_default_to_compare(client):
     client.put("/api/studio/motion", json={"mode": "compare"})
 
 
-def test_drive_refuses_my_drive_folder_with_a_clear_reason(session, monkeypatch, tmp_path):
+def test_drive_allows_my_drive_folder_and_uploads(session, monkeypatch, tmp_path):
     from backend.app import drive_sync
     from backend.app.models import StudioProject
     from backend.app.studio import drive_store, runner as srunner
@@ -647,14 +647,46 @@ def test_drive_refuses_my_drive_folder_with_a_clear_reason(session, monkeypatch,
                     return {"name": "LongForm Studio", "driveId": None}
             return R()
 
+        def create(self, **kw):
+            class R:
+                def next_chunk(self):
+                    return (None, {"id": "uploaded_123", "webViewLink": "https://drive.google.com/file/d/uploaded_123"})
+            return R()
+
     class Svc:
         def files(self):
             return Files()
 
     monkeypatch.setattr(drive_sync, "get_drive_service", lambda: Svc())
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
-    with pytest.raises(drive_store.DriveStoreError, match="My Drive, not a Shared Drive"):
-        drive_store.save(p.id)
+    result = drive_store.save(p.id)
+    assert result["link"] == "https://drive.google.com/file/d/uploaded_123"
+
+
+def test_select_and_generate_three_thumbnails(session, tmp_path, monkeypatch):
+    from backend.app.models import StudioProject
+    from backend.app.studio import stage_render, runner as srunner
+
+    monkeypatch.setattr(stage_render, "project_dir", lambda pid: tmp_path)
+    p = StudioProject(tmdb_id=2, title="Thumbnail Test", render={"file": "render/final.mp4"})
+    session.add(p)
+    session.commit()
+
+    rdir = tmp_path / "render"
+    rdir.mkdir(parents=True, exist_ok=True)
+    (rdir / "thumbnail_poster.jpg").write_bytes(b"poster_data")
+    (rdir / "thumbnail_shot1.jpg").write_bytes(b"shot1_data")
+    (rdir / "thumbnail_shot2.jpg").write_bytes(b"shot2_data")
+
+    # Select poster
+    res = stage_render.select_project_thumbnail(p.id, "poster")
+    assert res["selected_thumbnail"] == "poster"
+    assert (rdir / "thumbnail.jpg").read_bytes() == b"poster_data"
+
+    # Select shot2
+    res2 = stage_render.select_project_thumbnail(p.id, "shot2")
+    assert res2["selected_thumbnail"] == "shot2"
+    assert (rdir / "thumbnail.jpg").read_bytes() == b"shot2_data"
 
 
 def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_video):

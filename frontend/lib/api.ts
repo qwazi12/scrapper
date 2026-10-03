@@ -380,6 +380,7 @@ export type StudioProject = {
   research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[] }[] } | null;
   trailer?: any;
   shots?: StudioShot[] | null;
+  plan?: StudioPlanItem[] | null;
   script?: {
     sentences: StudioSentence[];
     changes?: { original: string; fix: string; reason: string }[];
@@ -390,8 +391,9 @@ export type StudioProject = {
     tags?: string[];
     narration_seconds?: number;
   } | null;
-  plan?: StudioPlanItem[] | null;
-  render?: { file: string; thumbnail: string; seconds: number; size: number; rendered_at: string;
+  render?: { file: string; thumbnail: string; selected_thumbnail?: string;
+            thumbnails?: { id: string; label: string; desc: string; file: string }[];
+            seconds: number; size: number; rendered_at: string;
             motion_mode?: "off" | "compare" | "on";
             motion?: { file?: string; pieces: number; failures: string[]; cast_cards: string[];
                        available: boolean; reason: string | null } | null } | null;
@@ -727,7 +729,7 @@ export const api = {
 
   schedule: () => req<ScheduleInfo>("/api/schedule", { headers: headers(false) }),
 
-  updateSchedule: (cfg: ScheduleConfig | { reset: true }) =>
+  updateSchedule: (cfg: Partial<ScheduleConfig> | { reset: true }) =>
     req<ScheduleInfo>("/api/schedule/config", {
       method: "PUT",
       headers: headers(),
@@ -763,6 +765,12 @@ export const api = {
       method: "POST", headers: headers(), body: JSON.stringify({ stage, auto }) }),
   studioStop: (id: number) =>
     req<StudioProject>(`/api/studio/projects/${id}/stop`, {
+      method: "POST", headers: headers() }),
+  studioSelectThumbnail: (id: number, thumbId: string) =>
+    req<StudioProject>(`/api/studio/projects/${id}/thumbnail/select`, {
+      method: "POST", headers: headers(), body: JSON.stringify({ id: thumbId }) }),
+  studioGenerateThumbnails: (id: number) =>
+    req<StudioProject>(`/api/studio/projects/${id}/thumbnail/generate`, {
       method: "POST", headers: headers() }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {

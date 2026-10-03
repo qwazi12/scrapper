@@ -250,6 +250,36 @@ def stop_project(project_id: int, s: Session = Depends(get_session)) -> dict[str
     return _out(p)
 
 
+class ThumbnailSelect(BaseModel):
+    id: str
+
+
+@router.post("/projects/{project_id}/thumbnail/select")
+def select_thumbnail(project_id: int, req: ThumbnailSelect, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Choose which of the 3 thumbnail options to use."""
+    from . import stage_render
+    p = _get(s, project_id)
+    try:
+        stage_render.select_project_thumbnail(project_id, req.id)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(400, str(exc))
+    s.refresh(p)
+    return _out(p)
+
+
+@router.post("/projects/{project_id}/thumbnail/generate")
+def generate_thumbnails(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Generate or refresh the 3 thumbnail options for this project."""
+    from . import stage_render
+    p = _get(s, project_id)
+    try:
+        stage_render.generate_thumbnails_for_project(project_id)
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc))
+    s.refresh(p)
+    return _out(p)
+
+
 @router.post("/projects/{project_id}/trailer-upload")
 async def upload_trailer(project_id: int, file: UploadFile = File(...),
                          s: Session = Depends(get_session)) -> dict[str, Any]:

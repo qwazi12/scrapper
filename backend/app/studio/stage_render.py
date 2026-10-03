@@ -162,9 +162,18 @@ def end_card(backdrop: pathlib.Path | None, channel: str, dest: pathlib.Path) ->
 def thumbnail(still: pathlib.Path | None, poster: pathlib.Path | None, title: str, dest: pathlib.Path) -> pathlib.Path:
     src = still or poster
     canvas = Image.new("RGB", (1280, 720), "black")
-    if src:
+    if src and pathlib.Path(src).exists():
         with Image.open(src) as im:
-            canvas.paste(_cover(im.convert("RGB"), 1280, 720), (0, 0))
+            im = im.convert("RGB")
+            # If the source is portrait (e.g. 2:3 vertical poster), center cleanly with blurred ambient backdrop
+            if im.width / max(1, im.height) < 1.1:
+                bg = _cover(im, 1280, 720).filter(ImageFilter.GaussianBlur(24)).point(lambda v: int(v * 0.45))
+                canvas.paste(bg, (0, 0))
+                ph = 700
+                fg = im.resize((int(im.width * ph / im.height), ph))
+                canvas.paste(fg, ((1280 - fg.width) // 2, 10))
+            else:
+                canvas.paste(_cover(im, 1280, 720), (0, 0))
     d = ImageDraw.Draw(canvas, "RGBA")
     d.rectangle((0, 470, 1280, 720), fill=(0, 0, 0, 170))
     f = media.font(86)
@@ -354,13 +363,40 @@ def render(project_id: int) -> str:
         base_m.unlink(missing_ok=True)
     final = out_dir / "final.mp4"
 
+    title = facts.get("title", "")
     lead = (facts.get("cast") or [{}])[0].get("actor")
-    best = next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and lead in sh.get("people", [])),
-                next((sh for sh in shots if sh.get("usable") and sh.get("people")), None))
-    thumb = thumbnail(root / best["still"] if best else None, poster, facts.get("title", ""), out_dir / "thumbnail.jpg")
+
+    # 1. Option 1: Always using the official poster
+    thumb_poster = thumbnail(None, poster, title, out_dir / "thumbnail_poster.jpg")
+
+    # 2. Option 2: Best Lead Character / Close-Up Still
+    best_shot1 = next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and lead in sh.get("people", []) and sh.get("still")),
+                      next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and sh.get("people") and sh.get("still")),
+                           next((sh for sh in shots if sh.get("usable") and lead in sh.get("people", []) and sh.get("still")),
+                                next((sh for sh in shots if sh.get("usable") and sh.get("people") and sh.get("still")),
+                                     next((sh for sh in shots if sh.get("usable") and sh.get("still")), None)))))
+    thumb_shot1 = thumbnail(root / best_shot1["still"] if best_shot1 else None, poster, title, out_dir / "thumbnail_shot1.jpg")
+
+    # 3. Option 3: Best Key Scene / Dramatic / Action Still (different from shot 1)
+    s1_id = best_shot1.get("id") if best_shot1 else None
+    best_shot2 = next((sh for sh in shots if sh.get("usable") and sh.get("id") != s1_id and (sh.get("size") in ("medium", "wide") or not sh.get("size")) and sh.get("people") and sh.get("still")),
+                      next((sh for sh in shots if sh.get("usable") and sh.get("id") != s1_id and sh.get("still")),
+                           None))
+    thumb_shot2 = thumbnail(root / best_shot2["still"] if best_shot2 else backdrop, poster, title, out_dir / "thumbnail_shot2.jpg")
+
+    # Default active thumbnail is shot1 (character close-up) if available, else poster
+    default_thumb_src = out_dir / "thumbnail_shot1.jpg" if best_shot1 else out_dir / "thumbnail_poster.jpg"
+    shutil.copy(default_thumb_src, out_dir / "thumbnail.jpg")
+    active_thumb = out_dir / "thumbnail.jpg"
 
     secs = media.duration(final)
-    info = {"file": str(final.relative_to(root)), "thumbnail": str(thumb.relative_to(root)),
+    info = {"file": str(final.relative_to(root)), "thumbnail": str(active_thumb.relative_to(root)),
+            "selected_thumbnail": "shot1" if best_shot1 else "poster",
+            "thumbnails": [
+                {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": str(thumb_poster.relative_to(root))},
+                {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": str(thumb_shot1.relative_to(root))},
+                {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": str(thumb_shot2.relative_to(root))},
+            ],
             "seconds": round(secs, 2), "size": final.stat().st_size, "segments": len(seg_files),
             "rendered_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "motion_mode": mode, "motion": motion_info}
@@ -378,6 +414,10 @@ def render(project_id: int) -> str:
     out_dir.rename(live)
     info["file"] = info["file"].replace("render_new/", "render/", 1)
     info["thumbnail"] = info["thumbnail"].replace("render_new/", "render/", 1)
+    info["thumbnails"] = [
+        {**t, "file": t["file"].replace("render_new/", "render/", 1)}
+        for t in info["thumbnails"]
+    ]
     if motion_info and motion_info.get("file"):
         motion_info["file"] = motion_info["file"].replace("render_new/", "render/", 1)
     with SessionLocal() as s:
@@ -597,3 +637,82 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
     ok, why = motion.available()
     return ({"pieces": pieces, "failures": failures[:6], "cast_cards": [c["actor"] for c in cast],
              "available": ok, "reason": why or None}, overlays, end_motion)
+
+
+def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
+    """Generate the 3 thumbnail options for an already rendered or existing project."""
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        if not p:
+            raise RuntimeError("Project not found")
+        facts, shots, render_info = p.facts or {}, p.shots or [], dict(p.render or {})
+
+    root = project_dir(project_id)
+    render_dir = root / "render"
+    render_dir.mkdir(exist_ok=True)
+
+    title = facts.get("title", "") or p.title or "Trailer Breakdown"
+    local = facts.get("local") or {}
+    poster = pathlib.Path(local["poster"]) if local.get("poster") else None
+    backdrop = pathlib.Path(local["backdrops"][0]) if local.get("backdrops") else None
+    lead = (facts.get("cast") or [{}])[0].get("actor")
+
+    thumb_poster = thumbnail(None, poster, title, render_dir / "thumbnail_poster.jpg")
+
+    best_shot1 = next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and lead in sh.get("people", []) and sh.get("still")),
+                      next((sh for sh in shots if sh.get("usable") and sh.get("size") == "close" and sh.get("people") and sh.get("still")),
+                           next((sh for sh in shots if sh.get("usable") and lead in sh.get("people", []) and sh.get("still")),
+                                next((sh for sh in shots if sh.get("usable") and sh.get("people") and sh.get("still")),
+                                     next((sh for sh in shots if sh.get("usable") and sh.get("still")), None)))))
+    thumb_shot1 = thumbnail(root / best_shot1["still"] if best_shot1 else None, poster, title, render_dir / "thumbnail_shot1.jpg")
+
+    s1_id = best_shot1.get("id") if best_shot1 else None
+    best_shot2 = next((sh for sh in shots if sh.get("usable") and sh.get("id") != s1_id and (sh.get("size") in ("medium", "wide") or not sh.get("size")) and sh.get("people") and sh.get("still")),
+                      next((sh for sh in shots if sh.get("usable") and sh.get("id") != s1_id and sh.get("still")),
+                           None))
+    thumb_shot2 = thumbnail(root / best_shot2["still"] if best_shot2 else backdrop, poster, title, render_dir / "thumbnail_shot2.jpg")
+
+    selected = render_info.get("selected_thumbnail") or ("shot1" if best_shot1 else "poster")
+    active_src = render_dir / f"thumbnail_{selected}.jpg"
+    if active_src.exists():
+        shutil.copy(active_src, render_dir / "thumbnail.jpg")
+
+    render_info["thumbnail"] = "render/thumbnail.jpg"
+    render_info["selected_thumbnail"] = selected
+    render_info["thumbnails"] = [
+        {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": "render/thumbnail_poster.jpg"},
+        {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": "render/thumbnail_shot1.jpg"},
+        {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": "render/thumbnail_shot2.jpg"},
+    ]
+
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        p.render = render_info
+        s.commit()
+    return render_info
+
+
+def select_project_thumbnail(project_id: int, thumb_id: str) -> dict[str, Any]:
+    """Select one of the 3 thumbnails as the active thumbnail."""
+    if thumb_id not in ("poster", "shot1", "shot2"):
+        raise ValueError(f"Invalid thumbnail id: {thumb_id}. Must be poster, shot1, or shot2.")
+
+    root = project_dir(project_id)
+    render_dir = root / "render"
+    target = render_dir / f"thumbnail_{thumb_id}.jpg"
+    if not target.exists():
+        generate_thumbnails_for_project(project_id)
+
+    if target.exists():
+        shutil.copy(target, render_dir / "thumbnail.jpg")
+
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        if not p:
+            raise RuntimeError("Project not found")
+        render_info = dict(p.render or {})
+        render_info["selected_thumbnail"] = thumb_id
+        render_info["thumbnail"] = "render/thumbnail.jpg"
+        p.render = render_info
+        s.commit()
+    return render_info
