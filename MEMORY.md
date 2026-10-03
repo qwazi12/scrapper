@@ -497,3 +497,10 @@ Already existed (not duplicated): Posting Queue "↩ Undo" (top of queue) and "�
    b. **Look-alike shots tagged once**: shots whose frames are near-identical (dHash) share one tag result instead of a Gemini call each.
    Expected: −50% on automation tagging plus fewer frames sent → roughly $0.39 → ~$0.20–0.25 per automated breakdown. Measure on the next runs.
 Tests for each; commit + push; manual frontend deploy until the VERCEL_API_TOKEN secret exists.
+
+## Log — 2026-10-03 (evening) — Plan done: buttons, Refresh Options, Batch Mode (64ac08c)
+- **Built & verified live**: ▶ Continue to step 5, ↻ from here, ▶ Resume, ⏫ Move up, ⏭ Skip next pick, ⏸ Pause for today, 👁 Preview trailer, + Add to line, +$2 today only, cost-per-breakdown bars. All strings are in the served bundle; the routes answer (resume on a finished project → 409 as designed; move-up on a non-waiting one → 409).
+- **Refresh Options** live on Digger: round 0 → shots s036/s002, round 1 → s171/s005 (it redrew identical picks before).
+- **Gemini Batch Mode verified in production** (`railway ssh` → `gemini.ask_json_batch`): 2/2 answers in **109 s**. Automation shot tagging now uses it (half price, recorded as service `gemini-batch`); after 30 min it falls back to normal calls. Look-alike neighbours (dHash ≤5 bits AND mean RGB within 12) share one tag call. The colour check was needed: dHash alone merged flat red/blue/green frames.
+- **Not yet measured**: savings on a full automated breakdown (the next automation run — today's limits are full). Expected ~$0.39 → ~$0.20–0.25.
+- Today: $1.94 of $6. Breakdown costs: Verity $0.44, RE $0.48 (shots run twice), Lanterns $0.39, East of Eden $0.33, Love Hypothesis $0.31.
