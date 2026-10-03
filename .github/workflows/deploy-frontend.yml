@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'   # a change to this workflow tests itself
   workflow_dispatch:
 
 jobs:
