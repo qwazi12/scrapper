@@ -430,3 +430,11 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - **Thumbnails**: plain picture only — no dark band, title or "TRAILER BREAKDOWN" badge (owner).
 - **Drive**: owner pointed LONGFORM_DRIVE_FOLDER_ID at 1wnjIQGf-Ftk2PSBYHG0LCy2K99yaXiUk. Live retry still refused: the folder is in a personal My Drive, and the robot is a member of 0 Shared Drives. Still pending on the owner.
 - **Button audit**: all 85 frontend API calls map to a backend route (FastAPI 0.142 nests included routers as `_IncludedRouter`; recurse to list them). 27 read endpoints answer 200 in about 0.1 s on prod (calendar 5.6 s cold, cached 3 h). Signed media works (206), unsigned is refused (401). Clip thumbs 404 because the 5-day retention removed the files (expected).
+
+## PLAN — 2026-10-03 (pm, owner request) — Drive, 25+25 list, never repeat, 3-day refresh, cost deep dive
+1. **Drive**: owner set LONGFORM_DRIVE_FOLDER_ID on Railway to `0AJrfdFAM4T9iUk9PVA` (a Shared Drive root id — "0A…" ids are drives). Verify with a live "Save to Drive" retry on Digger (#3); then By Any Means (#2) and Send Help (#1) if it works.
+2. **Top trending 25 movies + 25 TV** (was 10): `candidates.TOP_N = 25`; pool goes from 2 to 4 TMDB pages per type (80 per type) so 25 can still pass the checks.
+3. **Never repeat a breakdown**: today "not made" is live from existing projects, so deleting a project would make its title eligible again. Add a permanent ledger (`app_settings.studio_made`: every movie/tv id ever started, manual or automatic, written on project create and back-filled from existing projects). The "not made" check and the automation both read it. A title that keeps trending stays ✕ "already made" forever. (Manual "Make breakdown" on an already-made title asks to confirm.)
+4. **Refresh every 3 days** (was 24 h): `STALE_HOURS = 72`; ↻ still refreshes on demand. Cost: $0 — TMDB and IMDb are free; YouTube uses ~2–4 of the 10,000 free daily quota units per refresh.
+5. **Cost deep dive**: every service that costs money, the measured cost per unit from Spending data, and projections per day / week / month / year for the current setup (5 breakdowns/day + queue AI + posting), written into MEMORY.md and reported to the owner.
+Each step: tests, commit, push, frontend deploy (manual until the VERCEL_API_TOKEN GitHub secret exists).
