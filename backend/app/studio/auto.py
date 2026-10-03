@@ -112,6 +112,8 @@ def _wait_reason(s, cfg: dict[str, Any]) -> tuple[str | None, list[str]]:
     from . import runner
     if resume.budget_paused(s):
         return "jobs paused by the daily cap resume first", []
+    if runner.queued_jobs(s):
+        return "breakdowns you started are waiting in line first", []
     if runner.busy().get("project_id"):
         return f"Studio is busy with #{runner.busy()['project_id']}", []
     today = made_today(s)

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import pathlib
 import re
 import time
@@ -15,6 +16,7 @@ import httpx
 
 from ..config import settings
 
+logger = logging.getLogger("scrapper.studio.gemini")
 BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 TIMEOUT = 180.0
 
@@ -61,6 +63,9 @@ def _image_part(path: pathlib.Path) -> dict[str, Any]:
     return {"inline_data": {"mime_type": mime, "data": base64.b64encode(path.read_bytes()).decode()}}
 
 
+JSON_ATTEMPTS = 3
+
+
 def parse_json(text: str) -> Any:
     text = re.sub(r"^```(?:json)?\s*", "", text.strip())
     text = re.sub(r"\s*```$", "", text).strip()
@@ -69,17 +74,28 @@ def parse_json(text: str) -> Any:
 
 def ask_json(prompt: str, images: list[pathlib.Path] | None = None, temperature: float = 0.4,
              max_tokens: int = 16384) -> Any:
+    """JSON answer. A cut-off or malformed answer is asked again (up to
+    JSON_ATTEMPTS). Thinking tokens count toward maxOutputTokens on Gemini 3.x,
+    so an answer that stopped on MAX_TOKENS is retried with double the room —
+    Lanterns' script failed that way at char 1738 (2026-10-03)."""
     parts: list[dict[str, Any]] = [_image_part(p) for p in (images or [])]
     parts.append({"text": prompt})
-    data = _post({
-        "contents": [{"parts": parts}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens,
-                             "responseMimeType": "application/json"},
-    })
-    try:
-        return parse_json(_text(data))
-    except json.JSONDecodeError as exc:
-        raise GeminiError(f"Gemini returned invalid JSON: {exc}") from exc
+    last = ""
+    for attempt in range(JSON_ATTEMPTS):
+        data = _post({
+            "contents": [{"parts": parts}],
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens,
+                                 "responseMimeType": "application/json"},
+        })
+        finish = ((data.get("candidates") or [{}])[0]).get("finishReason") or "?"
+        try:
+            return parse_json(_text(data))
+        except json.JSONDecodeError as exc:
+            last = f"{exc} (finish reason {finish}, attempt {attempt + 1} of {JSON_ATTEMPTS})"
+            logger.warning("Gemini returned invalid JSON: %s", last)
+            if finish == "MAX_TOKENS":
+                max_tokens = min(max_tokens * 2, 65536)
+    raise GeminiError(f"Gemini returned invalid JSON: {last}")
 
 
 def research(prompt: str) -> dict[str, Any]:

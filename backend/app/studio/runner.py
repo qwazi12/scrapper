@@ -73,7 +73,8 @@ def stop(project_id: int) -> bool:
     control.stop_jobs_for("studio", project_id)
     with SessionLocal() as s:
         from ..models import ResumableJob
-        for r in s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "running").all():
+        for r in s.query(ResumableJob).filter(ResumableJob.kind == "studio",
+                                              ResumableJob.status.in_(("running", "queued"))).all():
             if int((r.params or {}).get("project_id", -1)) == project_id:
                 r.status = "stopped"
                 r.last_error = "Stopped by user"
@@ -162,7 +163,8 @@ def recover_interrupted() -> int:
         return len(stuck)
 
 
-def start(project_id: int, name: str, auto: bool = False, rid: int | None = None, until: str = "script") -> None:
+def start(project_id: int, name: str, auto: bool = False, rid: int | None = None, until: str = "script",
+          message: str | None = None) -> None:
     """Start a stage (and, with auto, the following ones up to `until`) in the background.
     Recorded as a ResumableJob: a restart re-runs the step it was on and the
     auto-chain carries on (checkpoint = the current step)."""
@@ -176,7 +178,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
     stop_event = threading.Event()
     _stop_events[project_id] = stop_event
     _set(project_id, stage=name, stage_status="running",
-         stage_message=f"{name} resumed after a server restart…" if rid else f"{name} queued…")
+         stage_message=message or (f"{name} resumed after a server restart…" if rid else f"{name} queued…"))
     if rid:
         resume.reopen(rid)
     else:
@@ -226,8 +228,75 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
             _current.update(project_id=None, stage=None)
             _stop_events.pop(project_id, None)
             _lock.release()
+            try:
+                start_next_waiting()
+            except Exception as exc:  # noqa: BLE001 — the scheduler tick tries again
+                logger.warning("could not start the next waiting Studio job: %s", exc)
 
     threading.Thread(target=work, daemon=True, name=f"studio-{project_id}-{name}").start()
+
+
+def start_or_queue(project_id: int, name: str, auto: bool = False, until: str = "script") -> str:
+    """Start now, or — if Studio is busy — wait in line (ResumableJob status
+    "queued"); the next one starts as soon as the running job ends. Returns
+    "started" or "queued". (Before: a second "Make breakdown" while one was
+    running was refused and the project sat at "not started" — 2026-10-03.)"""
+    from .. import resume
+    try:
+        start(project_id, name, auto=auto, until=until)
+        return "started"
+    except RuntimeError:
+        pass
+    if name not in STAGES or until not in ORDER:
+        raise ValueError(f"Unknown stage '{name}'")
+    with SessionLocal() as s:
+        from ..models import ResumableJob
+        if any(int((r.params or {}).get("project_id", -1)) == project_id
+               for r in s.query(ResumableJob).filter(ResumableJob.kind == "studio",
+                                                     ResumableJob.status == "queued").all()):
+            return "queued"
+    rid = resume.begin("studio", f"Studio #{project_id}: {name}" + (" + following steps" if auto else ""),
+                       {"project_id": project_id, "stage": name, "auto": auto, "until": until})
+    resume.finish(rid, "queued")
+    busy_with = _current.get("project_id")
+    _set(project_id, stage=name, stage_status="queued",
+         stage_message=f"{name} waiting — Studio is busy with #{busy_with}; starts automatically next")
+    logbus.log("info", "studio_queued", f"Studio #{project_id}: {name} waiting for Studio (busy with #{busy_with})",
+               project=project_id)
+    return "queued"
+
+
+def queued_jobs(s=None) -> list:
+    from ..models import ResumableJob
+    own = s is None
+    s = s or SessionLocal()
+    try:
+        return s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "queued") \
+            .order_by(ResumableJob.id).all()
+    finally:
+        if own:
+            s.close()
+
+
+def start_next_waiting() -> bool:
+    """Studio is free: jobs the daily cap paused go first (when there's
+    budget), then the oldest queued start. Returns True if one started."""
+    from .. import resume
+    if _current.get("project_id"):
+        return False
+    if resume.budget_paused():
+        return resume.resume_budget_paused() > 0
+    for r in queued_jobs():
+        p = dict(r.params or {})
+        try:
+            start(int(p["project_id"]), p["stage"], bool(p.get("auto")), r.id, p.get("until") or "script",
+                  message=f"{p['stage']} starting (was waiting in line)…")
+            return True
+        except RuntimeError:
+            return False
+        except Exception as exc:  # noqa: BLE001 — drop a broken entry, keep the line moving
+            resume.finish(r.id, "failed", f"could not start from the line: {exc}")
+    return False
 
 
 def _resume(p: dict, cp: dict, rid: int) -> None:

@@ -958,3 +958,42 @@ def test_thumbnail_falls_back_to_poster_when_still_is_missing(tmp_path):
     with Image.open(out) as im:
         r, g, b = im.convert("RGB").getpixel((640, 100))
     assert r > 150 and g < 80  # poster pixels, not a black canvas
+
+
+def test_thumbnail_is_the_plain_picture(tmp_path):
+    from PIL import Image
+    from backend.app.studio import stage_render
+
+    src = tmp_path / "still.jpg"
+    Image.new("RGB", (1920, 1080), (20, 120, 220)).save(src)
+    out = stage_render.thumbnail(src, None, "Some Title", tmp_path / "t.jpg")
+    with Image.open(out) as im:
+        im = im.convert("RGB")
+        for xy in [(100, 600), (640, 650), (200, 430)]:   # where the band, title and badge used to be
+            r, g, b = im.getpixel(xy)
+            assert abs(r - 20) < 12 and abs(g - 120) < 12 and abs(b - 220) < 12, xy
+
+
+def test_ask_json_retries_a_cut_off_answer_with_more_room(monkeypatch):
+    from backend.app.studio import gemini
+    sent = []
+    answers = [
+        {"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": '{"a": "cut'}]}}]},
+        {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": '{"a": 1}'}]}}]},
+    ]
+
+    def fake_post(body, model=None, retries=3):
+        sent.append(body["generationConfig"]["maxOutputTokens"])
+        return answers[len(sent) - 1]
+
+    monkeypatch.setattr(gemini, "_post", fake_post)
+    assert gemini.ask_json("x", max_tokens=1000) == {"a": 1}
+    assert sent == [1000, 2000]
+
+
+def test_ask_json_gives_up_with_the_reason(monkeypatch):
+    from backend.app.studio import gemini
+    monkeypatch.setattr(gemini, "_post", lambda body, model=None, retries=3: {
+        "candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "not json"}]}}]})
+    with pytest.raises(gemini.GeminiError, match="finish reason STOP, attempt 3 of 3"):
+        gemini.ask_json("x")

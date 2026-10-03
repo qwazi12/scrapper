@@ -228,3 +228,46 @@ def test_publish_batch_reports_each(client, tmp_path, monkeypatch):
     with SessionLocal() as s:
         s.query(QueueItem).filter(QueueItem.id == d["results"][0]["queue_item_id"]).delete()
         s.commit()
+
+
+def test_second_start_waits_in_line_and_runs_when_studio_frees(monkeypatch):
+    with SessionLocal() as s:
+        a = StudioProject(tmdb_id=40, title="First")
+        b = StudioProject(tmdb_id=41, title="Second")
+        s.add_all([a, b])
+        s.commit()
+        ia, ib = a.id, b.id
+    gate = __import__("threading").Event()
+    ran = []
+
+    def slow(pid):
+        ran.append(pid)
+        if pid == ia:
+            gate.wait(5)
+        return "ok"
+
+    monkeypatch.setitem(runner.STAGES, "gather", slow)
+    assert runner.start_or_queue(ia, "gather") == "started"
+    assert runner.start_or_queue(ib, "gather") == "queued"
+    assert runner.start_or_queue(ib, "gather") == "queued"          # no duplicate entry
+    with SessionLocal() as s:
+        assert s.get(StudioProject, ib).stage_status == "queued"
+    assert len(runner.queued_jobs()) == 1
+    gate.set()
+    for _ in range(100):
+        if ib in ran:
+            break
+        time.sleep(0.05)
+    assert ran == [ia, ib] and runner.queued_jobs() == []
+
+
+def test_stop_removes_a_queued_start(monkeypatch):
+    with SessionLocal() as s:
+        p = StudioProject(tmdb_id=42, title="Waiting")
+        s.add(p)
+        s.commit()
+        pid = p.id
+    rid = resume.begin("studio", "x", {"project_id": pid, "stage": "gather"})
+    resume.finish(rid, "queued")
+    runner.stop(pid)
+    assert runner.queued_jobs() == []

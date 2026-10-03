@@ -238,13 +238,13 @@ def delete_project(project_id: int, s: Session = Depends(get_session)) -> dict[s
 @router.post("/projects/{project_id}/run")
 def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session)) -> dict[str, Any]:
     p = _get(s, project_id)
+    if p.stage_status in ("running", "queued"):
+        raise HTTPException(409, f"this project is already {p.stage_status}")
     try:
-        runner.start(p.id, req.stage, auto=req.auto)
+        state = runner.start_or_queue(p.id, req.stage, auto=req.auto)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(409, str(exc))
-    return {"ok": True, "stage": req.stage, "auto": req.auto}
+    return {"ok": True, "stage": req.stage, "auto": req.auto, "state": state}
 
 
 @router.post("/projects/{project_id}/stop")

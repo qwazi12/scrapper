@@ -156,12 +156,12 @@ function KeyChips({ status }: { status: StudioStatus }) {
 
 function StageBadge({ p }: { p: StudioProject }) {
   const color =
-    p.stage_status === "error" ? "var(--red)" : p.stage_status === "running" ? "var(--yellow)" : "var(--muted)";
+    p.stage_status === "error" ? "var(--red)" : p.stage_status === "running" || p.stage_status === "queued" ? "var(--yellow)" : "var(--muted)";
   const label = STAGES.find((s) => s.key === p.stage)?.label || p.stage;
   return (
     <span style={{ fontSize: 10, color }}>
-      {p.stage_status === "running" ? "⏳ " : p.stage_status === "error" ? "✕ " : ""}
-      {p.stage === "new" ? "not started" : `${label} — ${p.stage_status}`}
+      {p.stage_status === "running" ? "⏳ " : p.stage_status === "queued" ? "⏳ " : p.stage_status === "error" ? "✕ " : ""}
+      {p.stage === "new" ? "not started" : `${label} — ${p.stage_status === "queued" ? "waiting in line" : p.stage_status}`}
     </span>
   );
 }
@@ -335,7 +335,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
 
   // Poll while a stage runs so progress shows up without refreshing.
   useEffect(() => {
-    if (p?.stage_status === "running") {
+    if (p?.stage_status === "running" || p?.stage_status === "queued") {
       timer.current = setInterval(load, 3000);
       return () => {
         if (timer.current) clearInterval(timer.current);
@@ -372,7 +372,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
   }
 
   if (!p) return <div style={card}>{err || "Loading…"}</div>;
-  const running = p.stage_status === "running";
+  const running = p.stage_status === "running" || p.stage_status === "queued";
   const f = p.facts || {};
 
   return (

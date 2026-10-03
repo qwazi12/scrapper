@@ -772,7 +772,14 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error resuming budget-paused jobs: %s", exc)
 
-        # Breakdown automation (after paused jobs, which go first).
+        # Studio's waiting line (manual starts that arrived while it was busy).
+        try:
+            from ..studio import runner as studio_runner
+            studio_runner.start_next_waiting()
+        except Exception as exc:
+            logger.error("Error starting a waiting Studio job: %s", exc)
+
+        # Breakdown automation (after paused and waiting jobs, which go first).
         try:
             from ..studio import auto as studio_auto
             studio_auto.tick()

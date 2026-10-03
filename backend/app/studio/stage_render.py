@@ -174,23 +174,8 @@ def thumbnail(still: pathlib.Path | None, poster: pathlib.Path | None, title: st
                 canvas.paste(fg, ((1280 - fg.width) // 2, 10))
             else:
                 canvas.paste(_cover(im, 1280, 720), (0, 0))
-    d = ImageDraw.Draw(canvas, "RGBA")
-    d.rectangle((0, 470, 1280, 720), fill=(0, 0, 0, 170))
-    f = media.font(86)
-    words, lines, cur = title.upper().split(), [], ""
-    for w in words:
-        if _text_w(d, (cur + " " + w).strip(), f) > 1180 and cur:
-            lines.append(cur)
-            cur = w
-        else:
-            cur = (cur + " " + w).strip()
-    lines.append(cur)
-    y = 490
-    for ln in lines[:2]:
-        d.text((50, y), ln, font=f, fill="white")
-        y += 96
-    d.rounded_rectangle((50, 410, 470, 466), radius=10, fill=(229, 9, 20, 240))
-    d.text((66, 418), "TRAILER BREAKDOWN", font=media.font(34), fill="white")
+    # Plain picture only (owner, 2026-10-03): no dark band, title or
+    # "TRAILER BREAKDOWN" badge. `title` is kept in the signature for callers.
     canvas.save(dest, quality=92)
     return dest
 

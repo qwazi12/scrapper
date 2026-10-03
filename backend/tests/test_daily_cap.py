@@ -87,6 +87,7 @@ def test_studio_step_pauses_on_cap_then_resumes_from_that_step(monkeypatch):
     monkeypatch.setitem(runner.STAGES, "shots", capped)
     monkeypatch.setitem(runner.STAGES, "gather", lambda project_id: "ok")
     monkeypatch.setitem(runner.STAGES, "trailer", lambda project_id: "ok")
+    _spend(6)                                     # the cap really is reached
     runner.start(pid, "gather", auto=True)
     for _ in range(100):
         with SessionLocal() as s:
@@ -104,7 +105,6 @@ def test_studio_step_pauses_on_cap_then_resumes_from_that_step(monkeypatch):
     # Still capped: nothing resumes. Budget back: it resumes from "shots".
     calls = []
     monkeypatch.setitem(resume._launchers, "studio", lambda params, cp, rid: calls.append(cp["stage"]))
-    _spend(6)
     assert resume.resume_budget_paused() == 0
     with SessionLocal() as s:
         s.query(UsageEvent).delete()

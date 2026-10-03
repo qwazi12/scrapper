@@ -425,7 +425,7 @@ export type StudioProject = {
   title: string;
   target_minutes: number;
   stage: string;
-  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused";
+  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused" | "queued";
   stage_message: string | null;
   queue_item_id: number | null;
   created_at: string;
