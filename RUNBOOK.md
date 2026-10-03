@@ -101,6 +101,7 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
 ## 6. Deployments & CI/CD
 - **Frontend to Vercel**: Automatically deployed via GitHub Actions (`.github/workflows/deploy-frontend.yml`) on git push to `main`.
   - Requires `VERCEL_API_TOKEN` (or `VERCEL_TOKEN`) in GitHub repository secrets.
+  - **Broken until the owner adds the secret**: every run since at least 7d4a067 failed at "Require Vercel token": the repo has no `VERCEL_API_TOKEN` secret. Until it's added, deploy with `cd frontend && vercel deploy --prod --yes` (this is what produced every "Ready" deploy so far).
   - This is the **only** frontend deploy path. Vercel's own Git integration was disconnected 2026-10-03: it built from the repo root (no `package.json` → "npm install exited with 254" emails on every push). Don't reconnect it unless the project's Root Directory is set to `frontend` and this Action is removed.
 - **Manual Local Frontend Deploy**:
   ```bash

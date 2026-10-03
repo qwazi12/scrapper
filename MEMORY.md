@@ -405,3 +405,16 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - **Candidates** (`studio/candidates.py`): TMDB trending/week (2 pages per type), checks (new / IMDb trailer / facts / release window / interest), sentiment = IMDb rating + Metacritic + newest user-review stars + MOVIEmeter direction + trailer like rate + TMDB vote; score 0–100 with parts. YouTube key was unused before; now `studio/youtube.py` reads trailer stats only. IMDb GraphQL returns a notice that non-commercial use only — same endpoint the trailer step already uses.
 - **Automation** (`studio/auto.py`), **render batch** (`studio/batch.py`, ResumableJob `studio_batch`), **publish batch** route, **review** column. UI in `frontend/app/StudioAuto.tsx`.
 - Verified: 187 backend tests pass; `tsc` clean. Local `next build` couldn't finish (laptop disk 96% full), so the CI build is the check. Live checks: see next entry.
+
+## Log — 2026-10-03 — Live verification + frontend deploy finding
+- Railway live with ee93516 in ~50 s. `/api/studio/auto`: OFF (default), 3 movies + 2 TV, estimate $0.47/breakdown. `/api/costs` today: $0 of $6 (day resets 04:00 UTC = midnight ET).
+- First live candidate build: **10 movies + 10 TV** all auto-eligible, with real IMDb rating/Metacritic/review stars/trailer views (e.g. Lanterns 89.5, Resident Evil 84.4, Avengers: Doomsday 79.1). 60 didn't make the list: 40 passed but ranked below the top 10; the failures were mostly the release window (19), then facts (3), already made (1), interest (1).
+- **The GitHub Action has never deployed**: all recent runs fail at "Require Vercel token" (no `VERCEL_API_TOKEN` repo secret). Every "Ready" deploy came from a manual `vercel deploy`. With the Git integration disconnected, **nothing auto-deploys the frontend until the owner adds that secret**. Deployed ee93516 manually; the live bundle has the new UI strings ("Breakdown automation", "Top trending (checked", "Daily cap", "Render selected").
+- Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
+
+### Pending / Next
+1. Owner: add GitHub secret `VERCEL_API_TOKEN` (Vercel → Account Settings → Tokens) so pushes deploy the frontend again.
+2. Owner: move "LongForm Studio" Drive folder into a Shared Drive (robot as Content manager); Drive copies fail until then.
+3. Owner: switch on automation when ready; watch the first run (card shows next title and why it's waiting).
+4. Gemini voice-overs in SocialPilot are refused at the cap but their cost isn't recorded (pricing not tracked there).
+5. Candidate thresholds (release window −30/+90 days, interest floors) are constants in `studio/candidates.py`; tune after a week of results.
