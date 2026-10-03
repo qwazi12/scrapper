@@ -219,6 +219,11 @@ def render(project_id: int) -> str:
         facts, script, plan, shots = p.facts or {}, p.script or {}, p.plan, p.shots or []
     if not plan:
         raise RuntimeError("Run 'plan' first")
+    with SessionLocal() as s:
+        archived = ((s.get(StudioProject, project_id).archive) or {}).get("archived_at")
+    if archived:
+        raise RuntimeError("This breakdown is archived (footage deleted to save space; the video is in Drive). "
+                           "Press Restore footage first, then render.")
     root = project_dir(project_id)
     # Build in render_new/ and swap it in only when finished: a stopped or failed
     # re-render must never delete the last good video (it did until 2026-10-02).

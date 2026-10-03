@@ -57,6 +57,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
         d.update(facts=p.facts, research=p.research, trailer=p.trailer, shots=p.shots,
                  script=p.script, plan=p.plan, render=p.render)
     d["drive"] = p.drive
+    d["archive"] = p.archive
     return d
 
 
@@ -259,6 +260,55 @@ async def upload_trailer(project_id: int, file: UploadFile = File(...),
     logbus.log("info", "studio_trailer_upload", f"Studio #{p.id}: trailer uploaded ({round(size / 1e6)} MB)",
                project=p.id)
     return _out(p)
+
+
+class ArchiveIn(BaseModel):
+    enabled: bool | None = None
+    days: int | None = None
+
+
+@router.get("/archive")
+def archive_status() -> dict[str, Any]:
+    """The 14-day rule's settings and a dry run: which breakdowns would be archived and why not."""
+    from . import archive
+    return archive.preview()
+
+
+@router.put("/archive")
+def archive_settings(req: ArchiveIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    from ..models import AppSetting
+    from . import archive
+    if req.days is not None and not 1 <= req.days <= 365:
+        raise HTTPException(400, "days must be 1–365")
+    row = s.get(AppSetting, "studio_archive")
+    if row:
+        undo.record(s, "settings", "Change breakdown archiving", rows=[row], model="app_settings")
+    else:
+        undo.add_created(s, "settings", "Change breakdown archiving", ["studio_archive"], model="app_settings")
+    value = {**((row.value or {}) if row else {}), **{k: v for k, v in req.model_dump().items() if v is not None}}
+    if row:
+        row.value = value
+    else:
+        s.add(AppSetting(key="studio_archive", value=value))
+    s.commit()
+    logbus.log("info", "studio_archive_settings", f"Breakdown archiving: {value}")
+    return archive.preview()
+
+
+@router.post("/archive/run")
+def archive_now() -> dict[str, Any]:
+    from . import archive
+    done = archive.sweep()
+    return {"archived": done, **archive.preview()}
+
+
+@router.post("/projects/{project_id}/restore")
+def restore_footage(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    from . import archive
+    p = _get(s, project_id)
+    if not (p.archive or {}).get("archived_at"):
+        raise HTTPException(400, "This breakdown isn't archived")
+    return {"job_id": archive.start_restore(p.id, p.title)}
 
 
 class ShotUse(BaseModel):

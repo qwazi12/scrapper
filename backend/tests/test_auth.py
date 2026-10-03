@@ -152,7 +152,8 @@ def test_media_pass_opens_media_only_and_token_never_works_in_a_url():
     assert c.get(f"/api/jobs?g={g}").status_code == 401                          # not a media route
     assert c.post(f"/api/clips/1/select?g={g}", json={"selected": True}).status_code == 401  # never writes
     assert c.get("/api/jobs?token=test-token").status_code == 401               # token in a URL: refused
-    assert c.get(f"/api/tts/audio/x.wav?g={g[:-1]}0").status_code == 401        # tampered
+    bad = g[:-1] + ("1" if g[-1] != "1" else "2")
+    assert c.get(f"/api/tts/audio/x.wav?g={bad}").status_code == 401           # tampered
     old = f"{int(time.time()) - 5}.{g.split('.', 1)[1]}"
     assert c.get(f"/api/tts/audio/x.wav?g={old}").status_code == 401           # expired
     assert auth.verify_media_pass(g) and not auth.verify_media_pass("nonsense")

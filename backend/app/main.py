@@ -97,6 +97,7 @@ def _startup() -> None:
         try:  # relaunch jobs a restart/deploy cut off (Studio, Drive sync/ingest/save, bulk AI)
             from .social import ai_bulk  # noqa: F401  (each module registers its resume launcher)
             from .studio import drive_store  # noqa: F401
+            from .studio import archive as _studio_archive  # noqa: F401
             resume.resume_interrupted()
         except Exception as exc:  # never block startup on recovery
             logbus.log("error", "startup_resume_failed", str(exc))

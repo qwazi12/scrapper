@@ -5,6 +5,7 @@ import { StopButton } from "./StopButton";
 import {
   api,
   parseApiDate,
+  StudioArchive,
   StudioMotion,
   StudioPlanItem,
   StudioProject,
@@ -88,6 +89,7 @@ export function StudioPanel() {
         </div>
         {status && <KeyChips status={status} />}
       </div>
+      <ArchiveRule />
       {err && <div style={{ ...card, color: "var(--red)", fontSize: 12 }}>{err}</div>}
 
       <div style={card}>
@@ -112,6 +114,7 @@ export function StudioPanel() {
                     {p.title || `TMDB ${p.tmdb_id}`}
                   </b>
                   <StageBadge p={p} />
+                  {p.archive?.archived_at && <span style={{ ...muted, color: "#93c5fd" }}>📦 archived — video in Drive</span>}
                   {p.queue_item_id && <span style={{ ...muted, color: "var(--accent)" }}>in Posting Queue #{p.queue_item_id}</span>}
                   {!!p.cost_usd && <span style={muted}>spent ${p.cost_usd < 1 ? p.cost_usd.toFixed(3) : p.cost_usd.toFixed(2)}</span>}
                 </span>
@@ -980,9 +983,96 @@ function MotionPanel({ p }: { p: StudioProject }) {
   );
 }
 
+/** The 14-day archive rule: switch, day count, and a dry-run preview. */
+function ArchiveRule() {
+  const [a, setA] = useState<StudioArchive | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => { api.studioArchive().then(setA).catch(() => {}); }, []);
+  if (!a) return null;
+  const due = a.projects.filter((x) => x.eligible);
+  async function save(patch: { enabled?: boolean; days?: number }) {
+    setBusy(true);
+    try { setA(await api.setStudioArchive(patch)); } catch (e: any) { setMsg(String(e.message || e)); } finally { setBusy(false); }
+  }
+  return (
+    <div style={{ ...card, fontSize: 12, padding: "10px 14px" }}>
+      <span>📦 <b>Archive finished breakdowns</b> </span>
+      <label style={{ marginLeft: 6 }}>
+        <input type="checkbox" checked={a.settings.enabled} disabled={busy} onChange={(e) => save({ enabled: e.target.checked })} /> on
+      </label>
+      <span style={muted}> · </span>
+      <select style={{ width: "auto", fontSize: 11, padding: "1px 6px" }} value={a.settings.days} disabled={busy}
+        onChange={(e) => save({ days: Number(e.target.value) })}>
+        {[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} days</option>)}
+      </select>
+      <span style={muted}> after posting, once the Drive copy is confirmed. Deletes footage, stills and render files (the video stays in Drive; script, plan and thumbnails are kept). </span>
+      <button style={{ fontSize: 10, padding: "1px 8px" }} onClick={() => setOpen(!open)}>
+        {open ? "Hide preview" : `Preview${due.length ? ` (${due.length} due, ${a.would_free_mb} MB)` : ""}`}
+      </button>
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          {a.projects.length === 0 ? <div style={muted}>No breakdowns yet.</div> : a.projects.map((x) => (
+            <div key={x.id} style={{ color: x.eligible ? "var(--yellow)" : "var(--muted)" }}>
+              {x.title}: {x.archived_at ? `archived ${new Date(parseApiDate(x.archived_at)).toLocaleDateString()}` : x.eligible ? `due — frees ${x.frees_mb} MB` : `not yet (${x.reason})`}
+            </div>
+          ))}
+          {due.length > 0 && (
+            <button style={{ fontSize: 11, marginTop: 6 }} disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await api.studioArchiveNow();
+                  setA(r);
+                  setMsg(`Archived ${r.archived.length} breakdown(s).`);
+                } catch (e: any) { setMsg(String(e.message || e)); } finally { setBusy(false); }
+              }}>
+              Archive the due ones now
+            </button>
+          )}
+          {msg && <div style={{ marginTop: 4 }}>{msg}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Shown instead of the player once a breakdown is archived. */
+function ArchivedNotice({ p, onChange }: { p: StudioProject; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const a = p.archive!;
+  return (
+    <Section title="Video — archived">
+      <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div>
+          📦 Archived {a.archived_at ? new Date(parseApiDate(a.archived_at)).toLocaleDateString() : ""} to save space
+          {a.freed_mb ? ` (freed ${a.freed_mb} MB)` : ""}. The finished video is in Drive
+          {p.drive?.link && <> — <a href={p.drive.link} target="_blank" rel="noreferrer">open it ↗</a></>}.
+        </div>
+        <div style={muted}>To edit and re-render, restore the footage first: the same trailers are re-downloaded and the stills rebuilt (no AI cost).</div>
+        <div>
+          <button className="primary" disabled={busy} onClick={async () => {
+            setBusy(true); setErr("");
+            try {
+              const { job_id } = await api.studioRestore(p.id);
+              await api.waitJob(job_id).catch((e) => setErr(String(e?.message || e)));
+            } catch (e: any) { setErr(String(e.message || e)); } finally { setBusy(false); onChange(); }
+          }}>
+            {busy ? "Restoring footage…" : "Restore footage"}
+          </button>
+        </div>
+        {err && <div style={{ color: "var(--red)" }}>{err}</div>}
+      </div>
+    </Section>
+  );
+}
+
 function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void }) {
   const r = p.render;
   const [msg, setMsg] = useState("");
+  if (p.archive?.archived_at) return <ArchivedNotice p={p} onChange={onChange} />;
   if (!r) return <Section title="Video">Run step 6 to render the video.</Section>;
   const bust = String(parseApiDate(r.rendered_at) || "");
   return (

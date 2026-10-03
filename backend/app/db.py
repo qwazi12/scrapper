@@ -49,6 +49,9 @@ def _migrate() -> None:
         if "drive" not in st_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE studio_projects ADD COLUMN drive JSON"))
+        if "archive" not in st_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE studio_projects ADD COLUMN archive JSON"))
     if "queue_items" not in tables:
         return
     cols = {c["name"] for c in insp.get_columns("queue_items")}

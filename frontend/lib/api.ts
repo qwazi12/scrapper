@@ -337,6 +337,12 @@ export type StudioPlanItem = {
   clip_len?: number;
 };
 
+export type StudioArchive = {
+  settings: { enabled: boolean; days: number };
+  projects: { id: number; title: string; eligible: boolean; reason: string; frees_mb: number; archived_at: string | null }[];
+  would_free_mb: number;
+};
+
 export type StudioMotion = { mode: "off" | "compare" | "on"; cast_cards: number; available: boolean; reason: string | null };
 
 export type StudioProject = {
@@ -353,6 +359,7 @@ export type StudioProject = {
   updated_at: string;
   poster: string | null;
   cost_usd?: number;
+  archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
   drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
             thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
@@ -757,6 +764,13 @@ export const api = {
   studioSetShot: (id: number, shotId: string, usable: boolean) =>
     req<StudioProject>(`/api/studio/projects/${id}/shots/${encodeURIComponent(shotId)}`, {
       method: "PUT", headers: headers(), body: JSON.stringify({ usable }) }),
+  studioArchive: () => req<StudioArchive>("/api/studio/archive", { headers: headers(false) }),
+  setStudioArchive: (patch: { enabled?: boolean; days?: number }) =>
+    req<StudioArchive>("/api/studio/archive", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  studioArchiveNow: () =>
+    req<StudioArchive & { archived: { id: number; freed_mb: number }[] }>("/api/studio/archive/run", { method: "POST", headers: headers() }),
+  studioRestore: (id: number) =>
+    req<{ job_id: string }>(`/api/studio/projects/${id}/restore`, { method: "POST", headers: headers() }),
   studioMotion: () => req<StudioMotion>("/api/studio/motion", { headers: headers(false) }),
   setStudioMotion: (patch: Partial<Pick<StudioMotion, "mode" | "cast_cards">>) =>
     req<StudioMotion>("/api/studio/motion", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),

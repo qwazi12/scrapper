@@ -542,6 +542,9 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
             + (" — Drive file moved to trash" if trashed else ""),
             drive_link=item.drive_link, published_at=str(item.published_at),
         )
+        if item.pipeline == "LongForm":   # the studio archive rule needs to know when it posted
+            from ..studio import archive as studio_archive
+            studio_archive.note_posted(s, item)
         s.delete(item)
         s.commit()
         removed += 1
@@ -596,6 +599,8 @@ def run_scheduler_tick():
         # Trigger 3:00 AM nightly database snapshot (safe lock-free SQLite online backup)
         try:
             backup.maybe_run_nightly_backup()
+            from ..studio import archive as studio_archive
+            studio_archive.maybe_sweep()      # once a day: archive breakdowns 14 days after posting
         except Exception as exc:
             logger.error("Error checking nightly backup in scheduler: %s", exc)
 

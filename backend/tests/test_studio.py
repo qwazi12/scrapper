@@ -763,3 +763,91 @@ def test_rerender_reuses_unchanged_segments(monkeypatch, three_scene_video):
     assert "0 rendered" in second and calls == []                 # nothing changed -> nothing re-encoded
     with SessionLocal() as s:
         assert (root / s.get(StudioProject, pid).render["file"]).exists()
+
+
+# --- 14-day archive -------------------------------------------------------------------
+def _archivable(posted_days_ago: float, drive_ok: bool = True, origin: str = "imdb"):
+    import datetime as dt
+    from backend.app.models import QueueItem
+    now = dt.datetime.now(dt.timezone.utc)
+    with SessionLocal() as s:
+        it = QueueItem(title="t", status="posted", pipeline="LongForm", accounts=[],
+                       published_at=now - dt.timedelta(days=posted_days_ago))
+        s.add(it); s.commit(); qid = it.id
+    pid = _new_project()
+    root = runner.project_dir(pid)
+    for d in ("footage", "stills", "render", "segcache", "thumbs"):
+        (root / d).mkdir(exist_ok=True)
+        (root / d / "x.bin").write_bytes(b"0" * 300_000)
+    (root / "render" / "thumbnail.jpg").write_bytes(b"jpg")
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.queue_item_id = qid
+        p.render = {"file": "render/final.mp4", "thumbnail": "render/thumbnail.jpg", "rendered_at": "r1"}
+        p.drive = {"status": "saved", "rendered_at": "r1" if drive_ok else "r0", "link": "https://drive/x"}
+        p.trailer = {"origin": origin, "sources": [{"id": "vi1", "origin": origin, "file": str(root / "footage" / "x.bin")}]}
+        p.plan = [{"slot": 1}]
+        s.commit()
+    return pid, root
+
+
+def test_archive_only_after_14_days_with_a_current_drive_copy():
+    from backend.app.studio import archive
+    young, _ = _archivable(3)
+    stale_drive, _ = _archivable(30, drive_ok=False)
+    old, root = _archivable(15)
+    rows = {r["id"]: r for r in archive.preview()["projects"]}
+    assert not rows[young]["eligible"] and "3 day" in rows[young]["reason"]
+    assert not rows[stale_drive]["eligible"] and "older render" in rows[stale_drive]["reason"]
+    assert rows[old]["eligible"] and rows[old]["frees_mb"] > 0
+    out = archive.archive_project(old)
+    assert out["archived"] is True
+    assert not (root / "footage").exists() and not (root / "stills").exists() and not (root / "render").exists()
+    assert (root / "thumbs").exists() and (root / "thumbnail.jpg").exists()     # kept
+    with SessionLocal() as s:
+        p = s.get(StudioProject, old)
+        assert p.archive["archived_at"] and p.plan == [{"slot": 1}]            # script/plan/metadata kept
+    import pytest as _pt
+    with _pt.raises(RuntimeError, match="archived"):
+        runner.run_one(old, "render")                                          # must restore first
+
+
+def test_uploaded_footage_is_never_deleted():
+    from backend.app.studio import archive
+    pid, root = _archivable(20, origin="upload")
+    assert archive.archive_project(pid)["archived"]
+    assert (root / "footage" / "x.bin").exists() and not (root / "stills").exists()
+
+
+def test_posted_date_survives_the_4_day_queue_cleanup(monkeypatch):
+    import datetime as dt
+    from backend.app.models import QueueItem
+    from backend.app.social import queue_manager as qmm
+    from backend.app.studio import archive
+    pid, root = _archivable(5)
+    monkeypatch.setattr(qmm.settings, "archive_delete_days", 4)
+    with SessionLocal() as s:
+        qmm.sweep_archive(s, dt.datetime.now(dt.timezone.utc))
+        p = s.get(StudioProject, pid)
+        assert s.get(QueueItem, p.queue_item_id) is None                         # the row is gone…
+        assert p.archive["posted_at"]                                            # …but the project remembers
+
+
+def test_restore_rebuilds_stills_without_ai(monkeypatch, three_scene_video):
+    import shutil as _sh
+    from backend.app.studio import archive, imdb
+    pid = _new_project(shots=[{**sh, "still": f"stills/{sh['id']}.jpg"} for sh in _shots(three_scene_video, 2)])
+    root = runner.project_dir(pid)
+    dest = root / "footage" / "vi9.mp4"
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.trailer = {"origin": "imdb", "sources": [{"id": "vi9", "origin": "imdb", "file": str(dest)}]}
+        p.shots = [{**sh, "file": str(dest)} for sh in p.shots]
+        p.archive = {"archived_at": "2026-10-01T00:00:00+00:00"}
+        s.commit()
+    monkeypatch.setattr(imdb, "download", lambda vid, d: (pathlib.Path(d).parent.mkdir(exist_ok=True), _sh.copy(three_scene_video, d)))
+    archive.restore(pid)
+    assert dest.exists() and all((root / f"stills/s00{i}.jpg").exists() for i in (1, 2))
+    with SessionLocal() as s:
+        a = s.get(StudioProject, pid).archive
+        assert a["archived_at"] is None and a["restored_at"]
