@@ -43,7 +43,17 @@ ARCHIVE_SWEEP_EVERY = datetime.timedelta(minutes=10)
 ARCHIVE_SWEEP_BATCH = 50  # scope limit per sweep
 
 UTC = datetime.timezone.utc
-TICK_SECONDS = 30
+# Owner's choice 2026-10-03: a quiet check every 5 minutes (was 30 s). Any queue
+# change (approve, edit, schedule, pause…) wakes the poster at once via wake(),
+# so a newly approved video still gets its time slot immediately; posts go out
+# within 5 minutes of their slot (DUE_GRACE covers 30).
+TICK_SECONDS = 300
+_wake = threading.Event()
+
+
+def wake() -> None:
+    """Run the scheduler now instead of at the next 5-minute check."""
+    _wake.set()
 
 
 def pipeline_group(item: QueueItem) -> str:
@@ -611,7 +621,8 @@ def start_scheduler_thread():
                 scheduler_status["last_error_at"] = datetime.datetime.now(UTC).isoformat()
             scheduler_status["last_tick_at"] = datetime.datetime.now(UTC).isoformat()
             scheduler_status["ticks"] += 1
-            time.sleep(TICK_SECONDS)
+            _wake.wait(TICK_SECONDS)
+            _wake.clear()
 
     t = threading.Thread(target=loop, daemon=True, name="posting_queue_scheduler")
     t.start()

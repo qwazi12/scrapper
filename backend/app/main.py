@@ -69,6 +69,16 @@ from .studio import runner as studio_runner, stage_gather, stage_plan, stage_ren
 app.include_router(studio_routes.router)
 
 
+@app.middleware("http")
+async def _wake_poster_on_queue_change(request, call_next):
+    """Any change to the queue or schedule wakes the auto-poster now (it otherwise
+    checks every 5 minutes), so approvals get their time slot immediately."""
+    response = await call_next(request)
+    if request.method != "GET" and request.url.path.startswith(("/api/queue", "/api/schedule", "/api/autopost")):
+        queue_manager.wake()
+    return response
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()

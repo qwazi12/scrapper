@@ -594,7 +594,7 @@ export function SettingsOverview() {
           {!sc.enabled
             ? "is OFF on this server (WORKER_MODE=web_only)"
             : alive
-            ? `running — last check ${tickAgo}s ago (every ${sc.tick_seconds}s)`
+            ? `running — last check ${tickAgo < 120 ? `${tickAgo}s` : `${Math.round(tickAgo / 60)} min`} ago (checks every ${Math.round(sc.tick_seconds / 60)} min, and at once when the queue changes)`
             : sc.last_tick_at
             ? `NOT running — last check ${tickAgo}s ago`
             : "has not run since the server started"}
@@ -610,7 +610,7 @@ export function SettingsOverview() {
           )}
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
-          How it works: set a video to <b>Ready to Post</b> (and pick where it posts) — within 30s it gets the next
+          How it works: set a video to <b>Ready to Post</b> (and pick where it posts) — within a few seconds it gets the next
           free slot for its pipeline and posts at that time. Set it back to Review to take it out.
         </div>
         <div style={{ fontSize: 13, marginBottom: 10 }}>
