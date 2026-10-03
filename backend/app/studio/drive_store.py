@@ -152,6 +152,17 @@ def _set(project_id: int, drive: dict) -> None:
             s.commit()
 
 
-def start(project_id: int, title: str) -> str:
-    return control.start_thread("drive", f"Save '{title}' to Drive", "studio", save, project_id,
-                                ref=project_id)
+def start(project_id: int, title: str, rid: int | None = None) -> str:
+    """Background upload, recorded so a restart starts it again."""
+    from .. import resume
+    label = f"Save '{title}' to Drive" + (" (resumed after a restart)" if rid else "")
+    return resume.tracked_thread("drive_save", label, "studio", {"project_id": project_id, "title": title},
+                                 lambda: save(project_id), rid=rid, ref=project_id)
+
+
+def _resume(p: dict, cp: dict, rid: int) -> str:
+    return start(int(p["project_id"]), p.get("title", ""), rid)
+
+
+from .. import resume as _resume_mod  # noqa: E402  (registered at import)
+_resume_mod.launcher("drive_save")(_resume)

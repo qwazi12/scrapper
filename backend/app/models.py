@@ -202,6 +202,23 @@ class UndoEntry(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
 
+class ResumableJob(Base):
+    """A long background job recorded in the database so a restart or deploy
+    can't silently lose it: still "running" at startup = cut off -> resumed."""
+    __tablename__ = "resumable_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)       # studio | drive_sync | channel_ingest | bulk_ai | drive_save
+    label: Mapped[str] = mapped_column(String(255), default="")
+    params: Mapped[dict] = mapped_column(JSON, default=dict)        # what to run again
+    checkpoint: Mapped[dict] = mapped_column(JSON, default=dict)    # how far it got
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running|done|stopped|failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)       # resumes so far
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class UsageEvent(Base):
     """One paid (or counted) call: which service, what for, how much, est. cost."""
     __tablename__ = "usage_events"

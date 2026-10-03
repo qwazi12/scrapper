@@ -112,15 +112,25 @@ def recover_interrupted() -> int:
         return len(stuck)
 
 
-def start(project_id: int, name: str, auto: bool = False) -> None:
-    """Start a stage (and, with auto, the following ones) in the background."""
+def start(project_id: int, name: str, auto: bool = False, rid: int | None = None) -> None:
+    """Start a stage (and, with auto, the following ones) in the background.
+    Recorded as a ResumableJob: a restart re-runs the step it was on and the
+    auto-chain carries on (checkpoint = the current step)."""
+    from .. import resume
     if name not in STAGES:
         raise ValueError(f"Unknown stage '{name}'")
     if not _lock.acquire(blocking=False):
         raise RuntimeError(f"Studio is busy with #{_current['project_id']} ({_current['stage']}); try again shortly")
-    _set(project_id, stage=name, stage_status="running", stage_message=f"{name} queued…")
+    _set(project_id, stage=name, stage_status="running",
+         stage_message=f"{name} resumed after a server restart…" if rid else f"{name} queued…")
+    if rid:
+        resume.reopen(rid)
+    else:
+        rid = resume.begin("studio", f"Studio #{project_id}: {name}" + (" + following steps" if auto else ""),
+                           {"project_id": project_id, "stage": name, "auto": auto})
 
     def work() -> None:
+        outcome, err = "done", None
         try:
             names = [name]
             if auto:
@@ -129,12 +139,26 @@ def start(project_id: int, name: str, auto: bool = False) -> None:
                 names = ORDER[i:stop + 1] if i <= stop else [name]
             for n in names:
                 _current.update(project_id=project_id, stage=n)
+                resume.checkpoint(rid, stage=n)
                 try:
                     run_one(project_id, n)
-                except Exception:
+                except control.Cancelled:
+                    outcome = "stopped"
+                    return
+                except Exception as exc:
+                    outcome, err = "failed", str(exc)
                     return
         finally:
+            resume.finish(rid, outcome, err)
             _current.update(project_id=None, stage=None)
             _lock.release()
 
     threading.Thread(target=work, daemon=True, name=f"studio-{project_id}-{name}").start()
+
+
+def _resume(p: dict, cp: dict, rid: int) -> None:
+    start(int(p["project_id"]), cp.get("stage") or p["stage"], bool(p.get("auto")), rid)
+
+
+from .. import resume as _resume_mod  # noqa: E402  (registered at import)
+_resume_mod.launcher("studio")(_resume)

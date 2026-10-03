@@ -63,6 +63,9 @@ async def ai_for(item: QueueItem, s, cache: dict | None = None) -> tuple[dict[st
 _cache: dict = {}  # TMDB lookups shared across one bulk run (many clips, few titles)
 
 
+_rid: int | None = None   # ResumableJob row of the running bulk run
+
+
 async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
     async with sem:
         if control.stopped():
@@ -81,6 +84,8 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 apply_ai(item, res, research)
                 s.commit()
                 status["done"] += 1
+                from .. import resume
+                resume.add_done(_rid, item_id)        # a resume after a restart skips it
             except metadata.MetadataError as exc:
                 status["failed"] += 1
                 if len(status["errors"]) < 5:
@@ -95,24 +100,41 @@ async def _run(ids: list[int]) -> None:
     await asyncio.gather(*(_one(i, sem) for i in ids))
 
 
-def start(ids: list[int]) -> dict[str, Any]:
+def start(ids: list[int], rid: int | None = None, already_done: list[int] | None = None) -> dict[str, Any]:
+    """Recorded as a ResumableJob: after a restart it continues with the videos
+    it hadn't finished (already_done = the checkpoint)."""
+    global _rid
+    from .. import resume
     ids = list(dict.fromkeys(ids))[:MAX_ITEMS]
+    todo = [i for i in ids if i not in set(already_done or [])]
     with _lock:
         if status["running"]:
             raise RuntimeError("A bulk AI rewrite is already running")
-        status.update(running=True, total=len(ids), done=0, failed=0, errors=[], aborted=None,
+        status.update(running=True, total=len(todo), done=0, failed=0, errors=[], aborted=None,
                       started_at=datetime.datetime.now(datetime.timezone.utc).isoformat(), finished_at=None)
+    if rid:
+        resume.reopen(rid)
+    else:
+        rid = resume.begin("bulk_ai", f"AI rewrite of {len(ids)} video(s)", {"ids": ids})
+    _rid = rid
+    label = f"AI rewrite of {len(todo)} video(s)" + (" (resumed after a restart)" if already_done is not None else "")
 
     def work() -> None:
+        outcome = "done"
         try:
-            with control.job("ai", f"AI rewrite of {len(ids)} video(s)", scope="socialpilot"):
-                asyncio.run(_run(ids))
+            with control.job("ai", label, scope="socialpilot"):
+                asyncio.run(_run(todo))
+            if status["aborted"]:
+                outcome = "stopped" if "stopped" in status["aborted"] else "failed"
         except control.Cancelled:
             status["aborted"] = "stopped by user"
+            outcome = "stopped"
         except Exception as exc:  # never leave the job stuck "running"
             logger.exception("bulk AI crashed")
             status["aborted"] = str(exc)[:200]
+            outcome = "failed"
         finally:
+            resume.finish(rid, outcome, status["aborted"])
             status["running"] = False
             status["finished_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             logbus.log("info" if not status["failed"] else "error", "queue_bulk_ai",
@@ -121,3 +143,11 @@ def start(ids: list[int]) -> dict[str, Any]:
 
     threading.Thread(target=work, daemon=True, name="bulk_ai").start()
     return dict(status)
+
+
+def _resume(p: dict, cp: dict, rid: int) -> dict[str, Any]:
+    return start(p.get("ids", []), rid=rid, already_done=cp.get("done", []))
+
+
+from .. import resume as _resume_mod  # noqa: E402  (registered at import)
+_resume_mod.launcher("bulk_ai")(_resume)
