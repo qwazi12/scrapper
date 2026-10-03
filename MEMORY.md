@@ -438,3 +438,40 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 4. **Refresh every 3 days** (was 24 h): `STALE_HOURS = 72`; ↻ still refreshes on demand. Cost: $0 — TMDB and IMDb are free; YouTube uses ~2–4 of the 10,000 free daily quota units per refresh.
 5. **Cost deep dive**: every service that costs money, the measured cost per unit from Spending data, and projections per day / week / month / year for the current setup (5 breakdowns/day + queue AI + posting), written into MEMORY.md and reported to the owner.
 Each step: tests, commit, push, frontend deploy (manual until the VERCEL_API_TOKEN GitHub secret exists).
+
+## Log — 2026-10-03 (pm) — Plan done: Drive works, delete/archive, never-repeat, 25+25 / 3 days, cost deep dive
+- **Drive works**: LONGFORM_DRIVE_FOLDER_ID = `0AJrfdFAM4T9iUk9PVA` (a real Shared Drive). Live saves OK for Digger, By Any Means, Send Help (links in each project's Drive status).
+- **Your videos**: 🗄 Archive (deleted automatically 5 days later; ↩ Keep cancels) and 🗑 Delete, per card and bulk, plus an "Archived" filter showing the delete date. Delete refuses a video whose queue post hasn't gone out unless confirmed, then removes that queue row too. The old project-page Delete failed silently on any refusal; it now shows the reason. Drive copies are never touched.
+- **Never repeat**: `app_settings.studio_made` ledger, written on create and on delete. The list, the automation and manual create (asks to confirm) all respect it.
+- **List**: top 25 movies + 25 TV (TMDB trending week, 4 pages per type), rebuilt every 72 h; ↻ any time. Cost $0.
+- **Restart/line**: a live deploy mid-run showed a resume losing the race to a new automation pick and getting marked failed (Resident Evil). Fixed (dd58528): it waits in line and resumes from its step, and the automation waits for cut-off jobs. RE re-queued.
+- **Waiting line verified live**: #6 finished → #4 Lanterns' script started by itself → #5 started by itself. Lanterns' script succeeded after the JSON-retry fix.
+
+### Cost deep dive (measured 2026-10-03; prices in costs.py / Settings → Spending)
+**What costs money**
+| Item | Kind | Measured / price |
+|---|---|---|
+| Gemini 3.8 Flash (Studio + queue AI) | pay-as-you-go | $0.75 in / $3.75 out per 1M tokens until 2026-12-31, then **$1.50 / $7.50** |
+| — one breakdown, steps 1–5 | | **avg $0.39** (5 runs: $0.31–0.57) = shot tagging 64%, script 19%, plan 10%, research 5% |
+| — render (step 6) | | $0 API (Railway CPU only) |
+| — queue AI captions | | ~$0.002 per video ($0.05 for 30 so far) |
+| Google TTS (Chirp 3 HD) | free tier | 1M chars/month free, then $30/M. ~3.3K chars per breakdown → ~500K/month at 5/day = **$0** |
+| Gemini search grounding | free tier | 5,000/month free, then $14/1K; ~1 per breakdown → **$0** |
+| Upload-Post Basic | subscription | **$24/month** flat (biggest fixed cost) |
+| Railway (server + volume + egress) | usage | **$7.61 so far this period (Sep 7–Oct 7), Railway estimates $9.01**: memory $4.15, egress $2.19, CPU $0.66, volume $0.43, backups $0.19 |
+| TMDB, IMDb, YouTube Data API, Google Drive | free | $0 (YouTube ~4 quota units per list refresh) |
+| Vercel (frontend) | assumed Hobby | $0 (not verified) |
+| Gemini voice-overs in SocialPilot | **not tracked** | refused at the cap, but their cost isn't recorded |
+| Domain, Google Workspace (Shared Drive storage) | outside the app | not tracked here |
+
+**Projection at 5 breakdowns/day + light queue AI**
+| | per day | per week | per month | per year |
+|---|---|---|---|---|
+| Gemini (2026 prices) | $2.00 | $14 | $60 | $730 |
+| Upload-Post | $0.80 | $5.60 | $24 | $288 |
+| Railway (est. with 5 renders/day + uploads) | ~$0.40 | ~$2.80 | ~$12 | ~$145 |
+| **Total, 2026 prices** | **~$3.20** | **~$22** | **~$96** | **~$1,160** |
+| **Total, 2027 Gemini prices** | **~$5.15** | **~$36** | **~$155** | **~$1,880** |
+Both stay under the $6/day cap (which counts Gemini/TTS/search only, not subscriptions or Railway).
+
+**Where to save, biggest first**: (1) shot tagging = 64% of each breakdown — tag with Gemini Flash-Lite ($0.30/$2.50) and skip look-alike shots before tagging → est. −$0.15 to −$0.20 per breakdown (~$25–30/month); (2) the 2027 price rise doubles Gemini, so do (1) before January; (3) Railway memory is the largest Railway line — check the plan's container size; (4) Upload-Post plan only if the posting volume needs it.
