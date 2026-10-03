@@ -663,6 +663,34 @@ def test_drive_names_the_real_problem_for_a_my_drive_folder(session, monkeypatch
     assert uploads == []
 
 
+def test_drive_uploads_to_shared_drive_folder(session, monkeypatch, tmp_path):
+    from backend.app import drive_sync
+    from backend.app.models import StudioProject
+    from backend.app.studio import drive_store, runner as srunner
+
+    monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
+    (tmp_path / "final.mp4").write_bytes(b"x")
+    p = StudioProject(tmdb_id=1, title="X", render={"file": "final.mp4"})
+    session.add(p)
+    session.commit()
+
+    class Svc:
+        def files(self):
+            class F:
+                def get(self, **kw):
+                    return type("R", (), {"execute": lambda self: {"name": "LongForm Studio", "driveId": "SD1"}})()
+
+                def create(self, **kw):
+                    done = (None, {"id": "uploaded_123", "webViewLink": "https://drive.google.com/file/d/uploaded_123"})
+                    return type("R", (), {"next_chunk": lambda self: done})()
+            return F()
+
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: Svc())
+    monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
+    result = drive_store.save(p.id)
+    assert result["link"] == "https://drive.google.com/file/d/uploaded_123"
+
+
 def test_select_and_generate_three_thumbnails(session, tmp_path, monkeypatch):
     from backend.app.models import StudioProject
     from backend.app.studio import stage_render, runner as srunner
@@ -883,3 +911,48 @@ def test_restore_rebuilds_stills_without_ai(monkeypatch, three_scene_video):
     with SessionLocal() as s:
         a = s.get(StudioProject, pid).archive
         assert a["archived_at"] is None and a["restored_at"]
+
+
+def test_thumbnail_refresh_keeps_newer_render_info_and_refuses_while_running(session, tmp_path, monkeypatch):
+    from backend.app.models import StudioProject
+    from backend.app.studio import stage_render
+
+    monkeypatch.setattr(stage_render, "project_dir", lambda pid: tmp_path)
+    p = StudioProject(tmdb_id=3, title="Merge Test", render={"file": "render/final.mp4", "rendered_at": "old"})
+    session.add(p)
+    session.commit()
+
+    real_thumbnail = stage_render.thumbnail
+
+    def thumb_then_render_finishes(still, poster, title, dest):
+        # A render lands while the options are being drawn.
+        with stage_render.SessionLocal() as s:
+            row = s.get(StudioProject, p.id)
+            row.render = {**(row.render or {}), "rendered_at": "new", "seconds": 99}
+            s.commit()
+        return real_thumbnail(still, poster, title, dest)
+
+    monkeypatch.setattr(stage_render, "thumbnail", thumb_then_render_finishes)
+    out = stage_render.generate_thumbnails_for_project(p.id)
+    assert out["rendered_at"] == "new" and out["seconds"] == 99
+    assert out["thumbnails_updated_at"]
+
+    session.refresh(p)
+    p.stage_status = "running"
+    session.commit()
+    with pytest.raises(RuntimeError, match="running"):
+        stage_render.generate_thumbnails_for_project(p.id)
+    with pytest.raises(RuntimeError, match="running"):
+        stage_render.select_project_thumbnail(p.id, "poster")
+
+
+def test_thumbnail_falls_back_to_poster_when_still_is_missing(tmp_path):
+    from PIL import Image
+    from backend.app.studio import stage_render
+
+    poster = tmp_path / "poster.jpg"
+    Image.new("RGB", (1280, 720), (200, 30, 30)).save(poster)
+    out = stage_render.thumbnail(tmp_path / "missing.jpg", poster, "", tmp_path / "t.jpg")
+    with Image.open(out) as im:
+        r, g, b = im.convert("RGB").getpixel((640, 100))
+    assert r > 150 and g < 80  # poster pixels, not a black canvas

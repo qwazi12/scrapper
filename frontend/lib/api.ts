@@ -393,6 +393,7 @@ export type StudioProject = {
   } | null;
   render?: { file: string; thumbnail: string; selected_thumbnail?: string;
             thumbnails?: { id: string; label: string; desc: string; file: string }[];
+            thumbnails_updated_at?: string;
             seconds: number; size: number; rendered_at: string;
             motion_mode?: "off" | "compare" | "on";
             motion?: { file?: string; pieces: number; failures: string[]; cast_cards: string[];

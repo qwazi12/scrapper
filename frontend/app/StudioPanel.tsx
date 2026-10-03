@@ -1085,6 +1085,8 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
   if (p.archive?.archived_at) return <ArchivedNotice p={p} onChange={onChange} />;
   if (!r) return <Section title="Video">Run step 6 to render the video.</Section>;
   const bust = String(parseApiDate(r.rendered_at) || "");
+  // Selecting / refreshing thumbnails rewrites the files without a new render.
+  const thumbBust = `${bust}-${parseApiDate(r.thumbnails_updated_at || "") || ""}`;
   return (
     <Section title={`Video — ${fmtTime(r.seconds)}, ${Math.round(r.size / 1e6)} MB`}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
@@ -1120,7 +1122,7 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
 
           {/* Active Thumbnail Preview */}
           <div style={{ marginBottom: 10 }}>
-            <img src={api.studioFileUrl(p.id, r.thumbnail, bust)} alt="Active Thumbnail" style={{ width: "100%", borderRadius: 6, border: "2px solid var(--accent)", boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }} />
+            <img src={api.studioFileUrl(p.id, r.thumbnail, thumbBust)} alt="Active Thumbnail" style={{ width: "100%", borderRadius: 6, border: "2px solid var(--accent)", boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }} />
             <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 4, fontWeight: 600 }}>
               ✓ Current Active Thumbnail (used for download, queue &amp; Drive)
             </div>
@@ -1156,7 +1158,7 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
                     }}
                   >
                     <img
-                      src={api.studioFileUrl(p.id, t.file, bust)}
+                      src={api.studioFileUrl(p.id, t.file, thumbBust)}
                       alt={t.label}
                       style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", borderRadius: 4 }}
                     />

@@ -160,9 +160,9 @@ def end_card(backdrop: pathlib.Path | None, channel: str, dest: pathlib.Path) ->
 
 
 def thumbnail(still: pathlib.Path | None, poster: pathlib.Path | None, title: str, dest: pathlib.Path) -> pathlib.Path:
-    src = still or poster
+    src = next((c for c in (still, poster) if c and pathlib.Path(c).exists()), None)
     canvas = Image.new("RGB", (1280, 720), "black")
-    if src and pathlib.Path(src).exists():
+    if src:
         with Image.open(src) as im:
             im = im.convert("RGB")
             # If the source is portrait (e.g. 2:3 vertical poster), center cleanly with blurred ambient backdrop
@@ -645,6 +645,8 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
         p = s.get(StudioProject, project_id)
         if not p:
             raise RuntimeError("Project not found")
+        if p.stage_status == "running":
+            raise RuntimeError("A step is running on this project; wait for it to finish")
         facts, shots, render_info = p.facts or {}, p.shots or [], dict(p.render or {})
 
     root = project_dir(project_id)
@@ -677,16 +679,22 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
     if active_src.exists():
         shutil.copy(active_src, render_dir / "thumbnail.jpg")
 
-    render_info["thumbnail"] = "render/thumbnail.jpg"
-    render_info["selected_thumbnail"] = selected
-    render_info["thumbnails"] = [
-        {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": "render/thumbnail_poster.jpg"},
-        {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": "render/thumbnail_shot1.jpg"},
-        {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": "render/thumbnail_shot2.jpg"},
-    ]
+    thumb_fields = {
+        "thumbnail": "render/thumbnail.jpg",
+        "selected_thumbnail": selected,
+        "thumbnails": [
+            {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": "render/thumbnail_poster.jpg"},
+            {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": "render/thumbnail_shot1.jpg"},
+            {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": "render/thumbnail_shot2.jpg"},
+        ],
+        "thumbnails_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
+        # Merge into the current render info, not the copy read above: a render
+        # that finished meanwhile must keep its rendered_at/seconds/size/motion.
+        render_info = {**(p.render or {}), **thumb_fields}
         p.render = render_info
         s.commit()
     return render_info
@@ -696,6 +704,11 @@ def select_project_thumbnail(project_id: int, thumb_id: str) -> dict[str, Any]:
     """Select one of the 3 thumbnails as the active thumbnail."""
     if thumb_id not in ("poster", "shot1", "shot2"):
         raise ValueError(f"Invalid thumbnail id: {thumb_id}. Must be poster, shot1, or shot2.")
+
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        if p and p.stage_status == "running":
+            raise RuntimeError("A step is running on this project; wait for it to finish")
 
     root = project_dir(project_id)
     render_dir = root / "render"
@@ -713,6 +726,7 @@ def select_project_thumbnail(project_id: int, thumb_id: str) -> dict[str, Any]:
         render_info = dict(p.render or {})
         render_info["selected_thumbnail"] = thumb_id
         render_info["thumbnail"] = "render/thumbnail.jpg"
+        render_info["thumbnails_updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         p.render = render_info
         s.commit()
     return render_info

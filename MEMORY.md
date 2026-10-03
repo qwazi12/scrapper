@@ -342,3 +342,11 @@ Env needed on Railway: `TMDB_API_KEY`, `TTS_API_KEY` (same Google key manhwa use
 - **Menu**: LongForm Studio now above Compilations & Exports.
 - **Drive "no storage" error**: LONGFORM_DRIVE_FOLDER_ID is found fine; the folder is in a kymediamgmt.com **My Drive** and the robot is a member of **0 Shared Drives** (checked live). Commit 7d4a067 removed the My-Drive pre-check ("unblock Drive") and changed the test to claim My-Drive uploads succeed — Google refuses them, so it only turned a clear message into the quota error. Check restored with an exact message; test now asserts no upload is attempted. **Owner action still needed**: create a Shared Drive, add the robot as Content manager, move "LongForm Studio" into it. (Same applies to the "Scrapper Backups" Drive folder.)
 - Trending: explained to owner (TMDB `/trending/all/day` only — TMDB-site activity, no cross-check); proposal for a demand score pending decision.
+
+## Log — 2026-10-03 — Review fixes for 7d4a067 (pacing dropdown, thumbnails, Drive)
+- **Pacing dropdown wiped the schedule**: `PUT /api/schedule/config` replaces the whole schedule, but `applyPacing` (QueuePanel) sent only `posts_per_day` / `pipeline_overrides`, so timezone, hours, interval and all overrides went back to defaults. It now sends the full saved schedule with only the one value changed. Custom input capped at 48 (backend limit) with a clear message.
+- **Thumbnail previews didn't refresh**: images were cache-busted by `rendered_at` only. Select/refresh now stamps `render.thumbnails_updated_at`, used in the thumbnail URLs.
+- **Thumbnail refresh vs. render**: generate/select now refuse while `stage_status == "running"` (could write into `render/` mid-swap and fail the render) and generate merges into the *current* `p.render` instead of an earlier copy (was overwriting a newer render's `rendered_at`/`seconds`/`size`/`motion`).
+- **Missing still → black thumbnail**: `thumbnail()` now uses the first of still/poster that exists on disk.
+- **Drive guard**: the other session (fe6647d) restored the My Drive check with a more exact message; kept theirs, added a Shared Drive upload test.
+- Verified: backend tests 169 pass / 1 skipped (new: Shared Drive upload, My Drive refusal, render-info merge + running refusal, poster fallback); `tsc --noEmit` clean. Not verified in the browser or on prod.

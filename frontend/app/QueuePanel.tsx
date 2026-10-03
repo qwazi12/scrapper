@@ -236,21 +236,30 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   async function applyPacing(count: number) {
     if (count <= 0 || isNaN(count)) return;
+    if (count > 48) {
+      notify("Pacing must be between 1 and 48 posts per day.");
+      return;
+    }
+    if (!schedInfo) return;
     setPacingSaving(true);
     try {
+      // PUT /api/schedule/config replaces the whole schedule, so send every
+      // field as currently saved and change only the posts-per-day value.
+      const pipelineOverrides = { ...(schedInfo.pipeline_overrides || {}) };
+      const full = {
+        timezone: schedInfo.timezone,
+        start_hour: schedInfo.start_hour,
+        end_hour: schedInfo.end_hour,
+        interval_hours: schedInfo.interval_hours,
+        posts_per_day: schedInfo.posts_per_day ?? null,
+        pipeline_overrides: pipelineOverrides,
+        account_overrides: { ...(schedInfo.account_overrides || {}) },
+      };
       if (longform) {
-        const existingOverrides = { ...(schedInfo?.pipeline_overrides || schedInfo?.pipelines || {}) };
-        const lfOverride = { ...(existingOverrides["LongForm"] || {}), posts_per_day: count };
-        await api.updateSchedule({
-          pipeline_overrides: {
-            ...existingOverrides,
-            LongForm: lfOverride,
-          },
-        });
+        pipelineOverrides["LongForm"] = { ...(pipelineOverrides["LongForm"] || {}), posts_per_day: count };
+        await api.updateSchedule(full);
       } else {
-        await api.updateSchedule({
-          posts_per_day: count,
-        });
+        await api.updateSchedule({ ...full, posts_per_day: count });
       }
       const updated = await api.schedule();
       setSchedInfo(updated);
@@ -846,7 +855,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                   <input
                     type="number"
                     min="1"
-                    max="100"
+                    max="48"
                     placeholder="Custom / day"
                     value={customPacingInput}
                     onChange={(e) => setCustomPacingInput(e.target.value)}
