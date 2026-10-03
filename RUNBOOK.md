@@ -106,3 +106,9 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
   ./scripts/deploy_frontend.sh
   ```
 - **Backend to Railway**: Automatically built via Railway GitHub integration using `backend/Dockerfile`.
+
+## Interrupted jobs, archive, media links (2026-10-03)
+
+- **A deploy/restart cut a job off:** nothing to do. The new server resumes it once the old one has been silent for 75 s (logs: `job_resumed`). After 2 interruptions it stops (`job_not_resumed`) — re-run it by hand. Rows: table `resumable_jobs`.
+- **Archived breakdown needs editing:** open it in LongForm Studio → **Restore footage** (re-downloads the IMDb trailers, rebuilds stills, no AI cost), then re-render. Preview / switch / days: the 📦 line at the top of LongForm Studio, or `GET/PUT /api/studio/archive`; run now: `POST /api/studio/archive/run`.
+- **Images/videos 401 "media link expired":** reload the page (the media pass is refreshed every 6 h and lasts 12 h). Never put the access token in a URL — it is refused.
