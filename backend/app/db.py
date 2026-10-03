@@ -52,6 +52,9 @@ def _migrate() -> None:
         if "archive" not in st_cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE studio_projects ADD COLUMN archive JSON"))
+        if "review" not in st_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE studio_projects ADD COLUMN review JSON"))
     if "resumable_jobs" in tables:
         rj_cols = {c["name"] for c in insp.get_columns("resumable_jobs")}
         if "owner" not in rj_cols:

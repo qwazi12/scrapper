@@ -186,6 +186,7 @@ class StudioProject(Base):
     queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     drive: Mapped[dict | None] = mapped_column(JSON, nullable=True)      # LongForm Studio Drive copy: links, status
     archive: Mapped[dict | None] = mapped_column(JSON, nullable=True)    # posted_at, archived_at, freed_mb, restored_at
+    review: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # auto (started by the automation), reviewed_at
 
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

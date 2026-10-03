@@ -397,3 +397,11 @@ Env needed on Railway: `TMDB_API_KEY`, `TTS_API_KEY` (same Google key manhwa use
 
 ### Build order (each its own commit + push)
 E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Tests for each; RUNBOOK/CONFIG updated.
+
+## Log — 2026-10-03 — Built: daily cap, checked trending list, automation, batch render/queue
+- Owner approved the plan with changes: manual breakdowns count toward the daily limit (editable); cap stops all AI and paused work must resume first; split **3 movies + 2 TV** a day; trending list = **top 10 movies + top 10 TV**, checked, with **IMDb/other-site sentiment**; keep the release calendar.
+- **Vercel Git integration disconnected** (`vercel git disconnect`); the GitHub Action is the only frontend deploy path. Rebased review fixes onto the other session's work and pushed (7841ebb).
+- **Daily cap** (d791e72): see RUNBOOK "Daily spend cap". `DailyCapReached` is deliberately not wrapped, because shots/plan steps swallow GeminiError and would carry on degraded.
+- **Candidates** (`studio/candidates.py`): TMDB trending/week (2 pages per type), checks (new / IMDb trailer / facts / release window / interest), sentiment = IMDb rating + Metacritic + newest user-review stars + MOVIEmeter direction + trailer like rate + TMDB vote; score 0–100 with parts. YouTube key was unused before; now `studio/youtube.py` reads trailer stats only. IMDb GraphQL returns a notice that non-commercial use only — same endpoint the trailer step already uses.
+- **Automation** (`studio/auto.py`), **render batch** (`studio/batch.py`, ResumableJob `studio_batch`), **publish batch** route, **review** column. UI in `frontend/app/StudioAuto.tsx`.
+- Verified: 187 backend tests pass; `tsc` clean. Local `next build` couldn't finish (laptop disk 96% full), so the CI build is the check. Live checks: see next entry.

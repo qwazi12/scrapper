@@ -15,6 +15,7 @@ import {
 } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
+import { AutomationCard, RankedTrending, VideosList } from "./StudioAuto";
 
 // LongForm Studio: trailer breakdowns from research to rendered video.
 // Every stage runs on the server and saves its own output, so any step can be
@@ -93,37 +94,31 @@ export function StudioPanel() {
       <ArchiveRule />
       {err && <div style={{ ...card, color: "var(--red)", fontSize: 12 }}>{err}</div>}
 
-      <div style={card}>
-        <h2 style={h2}>Your videos ({projects.length})</h2>
-        {projects.length === 0 ? (
-          <div style={muted}>Nothing yet. Pick a title below to start one.</div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-            {projects.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setOpenId(p.id)}
-                style={{ display: "flex", gap: 10, textAlign: "left", padding: 8, background: "var(--row)", alignItems: "center" }}
-              >
-                {p.poster ? (
-                  <img src={p.poster.replace("/original/", "/w92/")} alt="" style={{ width: 46, borderRadius: 4 }} />
-                ) : (
-                  <div style={{ width: 46, height: 69, background: "var(--chip)", borderRadius: 4 }} />
-                )}
-                <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <b style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {p.title || `TMDB ${p.tmdb_id}`}
-                  </b>
-                  <StageBadge p={p} />
-                  {p.archive?.archived_at && <span style={{ ...muted, color: "#93c5fd" }}>📦 archived — video in Drive</span>}
-                  {p.queue_item_id && <span style={{ ...muted, color: "var(--accent)" }}>in Posting Queue #{p.queue_item_id}</span>}
-                  {!!p.cost_usd && <span style={muted}>spent ${p.cost_usd < 1 ? p.cost_usd.toFixed(3) : p.cost_usd.toFixed(2)}</span>}
-                </span>
-              </button>
-            ))}
-          </div>
+      <AutomationCard onChange={loadList} />
+
+      <VideosList
+        projects={projects}
+        onOpen={setOpenId}
+        onReload={loadList}
+        renderItem={(p) => (
+          <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {p.poster ? (
+              <img src={p.poster.replace("/original/", "/w92/")} alt="" style={{ width: 46, borderRadius: 4 }} />
+            ) : (
+              <div style={{ width: 46, height: 69, background: "var(--chip)", borderRadius: 4 }} />
+            )}
+            <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+              <b style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.title || `TMDB ${p.tmdb_id}`}
+              </b>
+              <StageBadge p={p} />
+              {p.archive?.archived_at && <span style={{ ...muted, color: "#93c5fd" }}>📦 archived — video in Drive</span>}
+              {p.queue_item_id && <span style={{ ...muted, color: "var(--accent)" }}>in Posting Queue #{p.queue_item_id}</span>}
+              {!!p.cost_usd && <span style={muted}>spent ${p.cost_usd < 1 ? p.cost_usd.toFixed(3) : p.cost_usd.toFixed(2)}</span>}
+            </span>
+          </span>
         )}
-      </div>
+      />
 
       <NewVideo
         status={status}
@@ -200,7 +195,16 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
   async function create(t: StudioTitle) {
     setBusy(true);
     try {
-      const p = await api.studioCreate({ tmdb_id: t.tmdb_id, media_type: t.media_type, title: t.title });
+      let p: StudioProject;
+      try {
+        p = await api.studioCreate({ tmdb_id: t.tmdb_id, media_type: t.media_type, title: t.title });
+      } catch (e: any) {
+        const msg = String(e.message || e);
+        if (!msg.includes("daily_limit")) throw e;
+        const why = (msg.match(/daily_limit: ([^"]*)/) || [])[1] || "Today's limit is reached.";
+        if (!(await askConfirm(why))) return;
+        p = await api.studioCreate({ tmdb_id: t.tmdb_id, media_type: t.media_type, title: t.title, force: true });
+      }
       await api.studioRun(p.id, "gather", true); // research through script, then the owner reviews
       onCreated(p);
     } catch (e: any) {
@@ -240,7 +244,7 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           {([
             ["upcoming_movies", "Upcoming movies"],
-            ["trending", "Trending today"],
+            ["trending", "🔥 Top trending (checked & ranked)"],
             ["on_the_air_tv", "TV airing now"],
           ] as const).map(([k, label]) => (
             <button
@@ -272,6 +276,9 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
         </div>
       )}
       {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
+      {!results && tab === "trending" ? (
+        <RankedTrending busy={busy} onCreate={(c) => create({ tmdb_id: c.tmdb_id, media_type: c.media_type, title: c.title } as StudioTitle)} />
+      ) : (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10, maxHeight: 420, overflowY: "auto" }}>
         {list.map((t, i) => (
           <React.Fragment key={`${t.media_type}-${t.tmdb_id}`}>
@@ -302,6 +309,7 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
           </React.Fragment>
         ))}
       </div>
+      )}
       {status && <div style={{ ...muted, marginTop: 10 }}>{status.attribution}</div>}
     </div>
   );

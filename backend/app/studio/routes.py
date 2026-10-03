@@ -30,6 +30,7 @@ class ProjectCreate(BaseModel):
     media_type: str = "movie"
     title: str = ""
     target_minutes: float = 3.0
+    force: bool = False            # owner confirmed going past today's limit
 
 
 class ProjectPatch(BaseModel):
@@ -58,6 +59,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
                  script=p.script, plan=p.plan, render=p.render)
     d["drive"] = p.drive
     d["archive"] = p.archive
+    d["review"] = p.review
     return d
 
 
@@ -164,6 +166,10 @@ def create_project(req: ProjectCreate, s: Session = Depends(get_session)) -> dic
         raise HTTPException(400, "media_type must be movie or tv")
     if not 1 <= req.target_minutes <= 10:
         raise HTTPException(400, "target_minutes must be 1–10")
+    from . import auto
+    over = auto.over_limit(s, req.media_type)
+    if over and not req.force:
+        raise HTTPException(409, f"daily_limit: {over} Start it anyway?")
     p = StudioProject(tmdb_id=req.tmdb_id, media_type=req.media_type, title=req.title,
                       target_minutes=req.target_minutes)
     s.add(p)
@@ -449,3 +455,116 @@ def project_file(project_id: int, path: str, s: Session = Depends(get_session)):
     if root not in target.parents or not target.is_file():
         raise HTTPException(404, "file not found")
     return FileResponse(target)
+
+
+# --- candidates, automation, batches -------------------------------------------
+class MarkIn(BaseModel):
+    mark: str | None = None        # pin | skip | None (clear)
+
+
+class AutoIn(BaseModel):
+    enabled: bool | None = None
+    movies_per_day: int | None = None
+    tv_per_day: int | None = None
+
+
+class ReviewIn(BaseModel):
+    reviewed: bool
+
+
+class IdsIn(BaseModel):
+    ids: list[int]
+
+
+@router.get("/candidates")
+def get_candidates() -> dict[str, Any]:
+    from . import candidates
+    if candidates.is_stale() and not candidates.state["refreshing"]:
+        candidates.refresh_async()
+    return candidates.listing()
+
+
+@router.post("/candidates/refresh")
+def refresh_candidates() -> dict[str, Any]:
+    from . import candidates
+    if not tmdb.configured():
+        raise HTTPException(400, "TMDB_API_KEY is not set on the server")
+    started = candidates.refresh_async()
+    return {"started": started, "refreshing": True}
+
+
+@router.put("/candidates/{key}/mark")
+def mark_candidate(key: str, req: MarkIn) -> dict[str, Any]:
+    from . import candidates
+    try:
+        return candidates.set_mark(key, req.mark or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.get("/auto")
+def get_auto() -> dict[str, Any]:
+    from . import auto
+    return auto.status()
+
+
+@router.put("/auto")
+def put_auto(req: AutoIn) -> dict[str, Any]:
+    from . import auto
+    try:
+        auto.save_settings(req.model_dump())
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc))
+    if req.enabled:
+        from ..social import queue_manager
+        queue_manager.wake()  # first pick within seconds, not at the next 5-min tick
+    return auto.status()
+
+
+@router.put("/projects/{project_id}/review")
+def set_reviewed(project_id: int, req: ReviewIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    import datetime
+    p = _get(s, project_id)
+    rv = dict(p.review or {})
+    rv["reviewed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat() if req.reviewed else None
+    p.review = rv
+    s.commit()
+    logbus.log("info", "studio_reviewed", f"Studio #{p.id}: marked {'reviewed' if req.reviewed else 'not reviewed'}",
+               project=p.id)
+    return _out(p, full=False)
+
+
+@router.get("/render-batch")
+def render_batch_status() -> dict[str, Any]:
+    from . import batch
+    return batch.public()
+
+
+@router.post("/render-batch")
+def render_batch(req: IdsIn) -> dict[str, Any]:
+    from . import batch
+    try:
+        out = batch.start(req.ids)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    logbus.log("info", "studio_render_batch_started", f"Render batch started: {len(req.ids)} breakdown(s)")
+    return out
+
+
+@router.post("/publish-batch")
+def publish_batch(req: IdsIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Send each rendered breakdown to the Posting Queue (same as the single
+    button); one result per project, failures don't stop the others."""
+    results = []
+    for pid in list(dict.fromkeys(req.ids))[:50]:
+        title = (s.get(StudioProject, pid).title if s.get(StudioProject, pid) else f"#{pid}")
+        try:
+            r = publish(pid, s)
+            results.append({"id": pid, "title": title, "ok": True, "queue_item_id": r["queue_item_id"]})
+        except HTTPException as exc:
+            results.append({"id": pid, "title": title, "ok": False, "why": str(exc.detail)})
+    ok = sum(1 for r in results if r["ok"])
+    logbus.log("info", "studio_publish_batch", f"Sent {ok} of {len(results)} breakdown(s) to the Posting Queue")
+    return {"results": results, "sent": ok}

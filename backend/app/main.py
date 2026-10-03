@@ -65,6 +65,7 @@ _AUTH = [Depends(require_token)]
 # LongForm Studio: importing the stage modules registers them with the runner.
 from .studio import routes as studio_routes
 from .studio import runner as studio_runner, stage_gather, stage_plan, stage_render, stage_script, stage_shots, stage_trailer  # noqa: E402,F401
+from .studio import batch as studio_batch  # noqa: E402,F401  (registers the render-batch resume)
 
 app.include_router(studio_routes.router)
 

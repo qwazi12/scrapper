@@ -772,6 +772,13 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error resuming budget-paused jobs: %s", exc)
 
+        # Breakdown automation (after paused jobs, which go first).
+        try:
+            from ..studio import auto as studio_auto
+            studio_auto.tick()
+        except Exception as exc:
+            logger.error("Error in breakdown automation: %s", exc)
+
 
 _scheduler_running = False
 

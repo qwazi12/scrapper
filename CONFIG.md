@@ -83,3 +83,15 @@ This document defines all configuration options, environment variables, default 
 | `daily_usd` | `app_settings.costs` (Settings → Spending) | 6.0 | Site-wide cap on today's tracked spend; 0 = off |
 | day boundary | posting schedule `timezone` | America/New_York | When "today" resets |
 | `resumable_jobs.status = budget_paused` | DB | — | Paused by the cap; resumed first by the scheduler tick |
+
+## Breakdown automation & candidates (2026-10-03)
+| Setting | Where | Default | Meaning |
+|---|---|---|---|
+| `studio_auto.enabled` | `app_settings` (LongForm Studio → 🤖 Breakdown automation) | false | Scheduler starts breakdowns from the ranked list |
+| `studio_auto.movies_per_day` / `tv_per_day` | same | 3 / 2 | Daily limits; count manual "Make breakdown" too (manual past the limit asks to confirm) |
+| `studio_candidates` | `app_settings` | — | Last built list (TMDB trending week, 40 per type, checked + scored); rebuilt when >24 h old or on ↻ |
+| `studio_candidate_marks` | `app_settings` | — | Owner ⭐ pin / ✕ skip per `movie:<id>` / `tv:<id>` |
+| `YOUTUBE_API_KEY` | Railway env | — | YouTube Data API v3, read-only trailer stats (~2 quota units per refresh). Optional |
+| `studio_projects.review` | DB column | — | `{auto, reviewed_at, score}` |
+| Check thresholds | `studio/candidates.py` constants | release −30…+90 days; popularity 20 / 100K views / IMDb rank 1000 | |
+| Auto steps | `runner.start(..., until="plan")` | steps 1–5 | Stops before render for review |

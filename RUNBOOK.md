@@ -119,3 +119,10 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
 - **What happens at the cap**: every paid call on the site is refused (`costs.DailyCapReached`). Running jobs **pause**, not fail: Studio steps show ⏸ "paused — daily spend cap reached"; bulk AI rewrites stop with the finished videos checkpointed. Their job rows get status `budget_paused` and are listed under "Paused by the cap".
 - **Resume**: automatic. The scheduler (every 5 min) relaunches `budget_paused` jobs **first, oldest first**, as soon as there's budget (new day, or you raise the cap). A Studio step restarts from the beginning of the step it was on; finished steps are kept. Single-click AI actions (one caption, one voice-over) are just refused with the reason — press again later.
 - **Not tracked → not capped**: Railway CPU (renders), Gemini voice-overs in SocialPilot (refused at the cap, but their cost isn't recorded).
+
+## Breakdown automation (2026-10-03)
+- **Turn on/off**: LongForm Studio → 🤖 Breakdown automation. Off = nothing new starts; a running breakdown finishes its step (■ Stop it to halt).
+- **Order each 5-min tick**: budget-paused jobs resume first → Studio must be idle → today's limits (3 movies + 2 TV) → today's spend + estimated breakdown cost must fit the daily cap → best checked candidate (pins first) with an **IMDb** trailer (YouTube-only trailers need the Mac worker, so they're manual-only) → steps 1–5.
+- **Why isn't it starting?** The card's "Next" line says exactly what it's waiting on. Check the trending tab's "Didn't make the list" for each title's failed checks.
+- **Review → render**: Your videos → filter "Needs review" → tick "✓ Reviewed" → Select all shown → 🎞 Render selected. The batch renders one at a time (runs step 5 first if missing), survives restarts, and stops from the running-jobs list.
+- **Queue**: filter "Rendered" → select → 📤 Send to queue (status Review in the Posting Queue).

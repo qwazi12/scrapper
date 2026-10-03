@@ -358,6 +358,66 @@ export type StudioArchive = {
 
 export type StudioMotion = { mode: "off" | "compare" | "on"; cast_cards: number; available: boolean; reason: string | null };
 
+export type CandidateCheck = { status: "pass" | "warn" | "fail"; why: string };
+export type StudioCandidate = {
+  key: string;
+  tmdb_id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  poster: string | null;
+  overview: string;
+  trending_rank: number;
+  popularity: number;
+  release: { date: string; kind: string; next?: string | null; last?: string | null };
+  imdb_id: string | null;
+  imdb: {
+    rating: number | null; votes: number; metascore: number | null; meter_rank: number | null;
+    meter_change: string | null; meter_change_by: number | null; review_avg: number | null;
+    review_lines: string[]; reviews_total: number; has_trailer: boolean; page?: string;
+  } | null;
+  trailer_stats?: { views: number; likes: number | null; comments: number | null; published_at: string | null } | null;
+  youtube_trailer: string | null;
+  checks: Record<"not_made" | "trailer" | "facts" | "release" | "interest", CandidateCheck>;
+  score: { total: number; parts: Record<string, number>; views_per_day: number;
+           sentiment: { value: number; parts: Record<string, number> } };
+  mark: "pin" | "skip" | null;
+  auto_ok: boolean;
+  beyond_top?: boolean;
+};
+export type StudioCandidates = {
+  built_at: string | null;
+  youtube_note: string | null;
+  refreshing: boolean;
+  last_error: string | null;
+  movie: StudioCandidate[];
+  tv: StudioCandidate[];
+  not_passing: StudioCandidate[];
+};
+export type StudioAuto = {
+  enabled: boolean;
+  movies_per_day: number;
+  tv_per_day: number;
+  today: { movie: number; tv: number };
+  estimate_usd: number;
+  waiting: string | null;
+  next: { title: string; media_type: string; score: number } | null;
+  last_check_at: string | null;
+  last_result: string | null;
+  last_started: { project_id: number; title: string; media_type: string; at: string | null; score?: number } | null;
+  busy: { project_id: number | null; stage: string | null };
+  undo: string;
+};
+export type RenderBatch = {
+  running: boolean;
+  total: number;
+  done: number;
+  current: number | null;
+  results: { id: number; title: string; ok: boolean; why?: string | null }[];
+  started_at: string | null;
+  finished_at: string | null;
+  job_status: string | null;
+};
+
 export type StudioProject = {
   id: number;
   tmdb_id: number;
@@ -373,6 +433,7 @@ export type StudioProject = {
   poster: string | null;
   cost_usd?: number;
   archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
+  review?: { auto?: boolean; reviewed_at?: string | null; score?: number } | null;
   drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
             thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
@@ -765,7 +826,25 @@ export const api = {
     req<StudioTitle[]>(`/api/studio/search?q=${encodeURIComponent(q)}`, { headers: headers(false) }),
   studioProjects: () => req<StudioProject[]>("/api/studio/projects", { headers: headers(false) }),
   studioProject: (id: number) => req<StudioProject>(`/api/studio/projects/${id}`, { headers: headers(false) }),
-  studioCreate: (t: { tmdb_id: number; media_type: string; title: string; target_minutes?: number }) =>
+  studioCandidates: () => req<StudioCandidates>("/api/studio/candidates", { headers: headers(false) }),
+  studioCandidatesRefresh: () =>
+    req<{ started: boolean }>("/api/studio/candidates/refresh", { method: "POST", headers: headers() }),
+  studioCandidateMark: (key: string, mark: "pin" | "skip" | null) =>
+    req<StudioCandidates>(`/api/studio/candidates/${encodeURIComponent(key)}/mark`, {
+      method: "PUT", headers: headers(), body: JSON.stringify({ mark }) }),
+  studioAuto: () => req<StudioAuto>("/api/studio/auto", { headers: headers(false) }),
+  studioAutoSet: (patch: { enabled?: boolean; movies_per_day?: number; tv_per_day?: number }) =>
+    req<StudioAuto>("/api/studio/auto", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  studioReview: (id: number, reviewed: boolean) =>
+    req<StudioProject>(`/api/studio/projects/${id}/review`, {
+      method: "PUT", headers: headers(), body: JSON.stringify({ reviewed }) }),
+  studioRenderBatch: (ids: number[]) =>
+    req<RenderBatch>("/api/studio/render-batch", { method: "POST", headers: headers(), body: JSON.stringify({ ids }) }),
+  studioRenderBatchStatus: () => req<RenderBatch>("/api/studio/render-batch", { headers: headers(false) }),
+  studioPublishBatch: (ids: number[]) =>
+    req<{ sent: number; results: { id: number; title: string; ok: boolean; why?: string; queue_item_id?: number }[] }>(
+      "/api/studio/publish-batch", { method: "POST", headers: headers(), body: JSON.stringify({ ids }) }),
+  studioCreate: (t: { tmdb_id: number; media_type: string; title: string; target_minutes?: number; force?: boolean }) =>
     req<StudioProject>("/api/studio/projects", { method: "POST", headers: headers(), body: JSON.stringify(t) }),
   studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any }) =>
     req<StudioProject>(`/api/studio/projects/${id}`, { method: "PATCH", headers: headers(), body: JSON.stringify(data) }),

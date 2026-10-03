@@ -30,6 +30,8 @@ MOVIE = {
 @pytest.fixture()
 def client():
     from backend.app.main import app
+    from backend.app.studio import auto
+    auto.save_settings({"movies_per_day": 20, "tv_per_day": 20})  # these tests make many projects a day
     return TestClient(app, headers={"x-access-token": "test-token"})
 
 

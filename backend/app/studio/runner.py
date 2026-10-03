@@ -162,13 +162,15 @@ def recover_interrupted() -> int:
         return len(stuck)
 
 
-def start(project_id: int, name: str, auto: bool = False, rid: int | None = None) -> None:
-    """Start a stage (and, with auto, the following ones) in the background.
+def start(project_id: int, name: str, auto: bool = False, rid: int | None = None, until: str = "script") -> None:
+    """Start a stage (and, with auto, the following ones up to `until`) in the background.
     Recorded as a ResumableJob: a restart re-runs the step it was on and the
     auto-chain carries on (checkpoint = the current step)."""
     from .. import resume
     if name not in STAGES:
         raise ValueError(f"Unknown stage '{name}'")
+    if until not in ORDER:
+        raise ValueError(f"Unknown stage '{until}'")
     if not _lock.acquire(blocking=False):
         raise RuntimeError(f"Studio is busy with #{_current['project_id']} ({_current['stage']}); try again shortly")
     stop_event = threading.Event()
@@ -179,7 +181,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
         resume.reopen(rid)
     else:
         rid = resume.begin("studio", f"Studio #{project_id}: {name}" + (" + following steps" if auto else ""),
-                           {"project_id": project_id, "stage": name, "auto": auto})
+                           {"project_id": project_id, "stage": name, "auto": auto, "until": until})
 
     def work() -> None:
         from .. import costs
@@ -188,7 +190,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
             names = [name]
             if auto:
                 i = ORDER.index(name) if name in ORDER else len(ORDER)
-                stop_idx = ORDER.index("script")
+                stop_idx = ORDER.index(until)
                 names = ORDER[i:stop_idx + 1] if i <= stop_idx else [name]
             for n in names:
                 if stop_event.is_set():
@@ -229,7 +231,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
 
 
 def _resume(p: dict, cp: dict, rid: int) -> None:
-    start(int(p["project_id"]), cp.get("stage") or p["stage"], bool(p.get("auto")), rid)
+    start(int(p["project_id"]), cp.get("stage") or p["stage"], bool(p.get("auto")), rid, p.get("until") or "script")
 
 
 from .. import resume as _resume_mod  # noqa: E402  (registered at import)

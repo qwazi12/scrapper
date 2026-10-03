@@ -55,6 +55,41 @@ def list_videos(imdb_id: str, limit: int = 20) -> list[dict[str, Any]]:
     } for e in edges]
 
 
+def audience(imdb_id: str, reviews: int = 10) -> dict[str, Any]:
+    """Audience reaction on IMDb: rating + votes, Metacritic, MOVIEmeter /
+    TVmeter popularity rank and its direction, and the average star rating of
+    the newest user reviews (+ their one-line summaries) — plus whether a
+    trailer exists, in the same call."""
+    tid = _safe_id(imdb_id, "tt")
+    d = _query(f'query {{ title(id: "{tid}") {{ '
+               f'ratingsSummary {{ aggregateRating voteCount }} '
+               f'meterRanking {{ currentRank rankChange {{ changeDirection difference }} }} '
+               f'metacritic {{ metascore {{ score }} }} '
+               f'reviews(first: {int(reviews)}, sort: {{ by: SUBMISSION_DATE, order: DESC }}) {{ total edges {{ node {{ '
+               f'authorRating summary {{ originalText }} }} }} }} '
+               f'primaryVideos(first: 10) {{ edges {{ node {{ contentType {{ displayName {{ value }} }} }} }} }} '
+               f'}} }}')
+    t = d.get("title") or {}
+    rs, mr = t.get("ratingsSummary") or {}, t.get("meterRanking") or {}
+    revs = [e["node"] for e in ((t.get("reviews") or {}).get("edges") or [])]
+    stars = [r["authorRating"] for r in revs if r.get("authorRating")]
+    kinds = [(((e["node"].get("contentType") or {}).get("displayName") or {}).get("value") or "")
+             for e in ((t.get("primaryVideos") or {}).get("edges") or [])]
+    return {
+        "rating": rs.get("aggregateRating"),
+        "votes": rs.get("voteCount") or 0,
+        "metascore": (((t.get("metacritic") or {}).get("metascore") or {}).get("score")),
+        "meter_rank": mr.get("currentRank"),
+        "meter_change": ((mr.get("rankChange") or {}).get("changeDirection") or "").upper() or None,
+        "meter_change_by": (mr.get("rankChange") or {}).get("difference"),
+        "reviews_total": (t.get("reviews") or {}).get("total") or 0,
+        "review_avg": round(sum(stars) / len(stars), 1) if stars else None,
+        "review_lines": [((r.get("summary") or {}).get("originalText") or "")[:120] for r in revs[:3]],
+        "has_trailer": "Trailer" in kinds,
+        "page": f"https://www.imdb.com/title/{tid}/",
+    }
+
+
 def mp4_url(video_id: str) -> str:
     """Best direct MP4 (1080p, then 720p, then any non-HLS)."""
     vid = _safe_id(video_id, "vi")
