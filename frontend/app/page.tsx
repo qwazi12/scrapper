@@ -315,7 +315,10 @@ export default function Page() {
       </aside>
 
       {/* ─── MAIN CONTENT VIEWPORT ───────────────────────────────── */}
-      <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "0 10px 60px" : "0 24px 60px", overflowY: "auto" }}>
+      <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "0 10px 60px" : "0 24px 60px",
+                     // Phones scroll the whole page, not <main>; a scroll box here made the
+                     // sticky header stick to a box that never scrolls, so it scrolled away.
+                     overflowY: isMobile ? "visible" : "auto" }}>
         <StatusBar stats={stats} connected={connected} clips={clips} comps={comps}
                    compact={isMobile} onMenu={() => setNavOpen(true)} />
         {/* Everything running on the server, with Stop — on every tab */}

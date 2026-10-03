@@ -90,17 +90,10 @@ export function StudioPanel() {
       </div>
       {err && <div style={{ ...card, color: "var(--red)", fontSize: 12 }}>{err}</div>}
 
-      <NewVideo
-        status={status}
-        onCreated={(p) => {
-          setOpenId(p.id);
-        }}
-      />
-
       <div style={card}>
         <h2 style={h2}>Your videos ({projects.length})</h2>
         {projects.length === 0 ? (
-          <div style={muted}>Nothing yet. Pick a title above to start one.</div>
+          <div style={muted}>Nothing yet. Pick a title below to start one.</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
             {projects.map((p) => (
@@ -127,6 +120,13 @@ export function StudioPanel() {
           </div>
         )}
       </div>
+
+      <NewVideo
+        status={status}
+        onCreated={(p) => {
+          setOpenId(p.id);
+        }}
+      />
     </div>
   );
 }
@@ -508,6 +508,7 @@ function FactsSection({ p }: { p: StudioProject }) {
 
 function FootageSection({ p, onChange, running }: { p: StudioProject; onChange: (p: StudioProject) => void; running: boolean }) {
   const [upErr, setUpErr] = useState("");
+  const [view, setView] = useState<string | null>(null);
   const t = p.trailer;
   const shots = p.shots || [];
   const usable = shots.filter((s) => s.usable).length;
@@ -552,15 +553,115 @@ function FootageSection({ p, onChange, running }: { p: StudioProject; onChange: 
       </label>
       {upErr && <div style={{ fontSize: 11, color: "var(--red)" }}>{upErr}</div>}
       {shots.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6, marginTop: 10, maxHeight: 420, overflowY: "auto" }}>
-          {shots.map((s) => <ShotThumb key={s.id} p={p} s={s} />)}
-        </div>
+        <>
+          <div style={{ ...muted, marginTop: 10 }}>Tap a shot to see it large and choose whether the video may use it, including ones marked unusable.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6, marginTop: 6, maxHeight: 420, overflowY: "auto" }}>
+            {shots.map((s) => <ShotThumb key={s.id} p={p} s={s} onClick={() => setView(s.id)} />)}
+          </div>
+        </>
+      )}
+      {view && (
+        <ShotLightbox p={p} shotId={view} running={running} onClose={() => setView(null)} onChange={onChange}
+          onStep={(d) => {
+            const i = shots.findIndex((x) => x.id === view);
+            const n = shots[(i + d + shots.length) % shots.length];
+            if (n) setView(n.id);
+          }} />
       )}
     </Section>
   );
 }
 
-function ShotThumb({ p, s, selected, onClick }: { p: StudioProject; s: StudioShot; selected?: boolean; onClick?: () => void }) {
+/** Why the tagger left a shot out, in words. */
+function whyUnusable(s: StudioShot): string {
+  if (s.card) return "title or credits card";
+  if (s.text) return "on-screen text";
+  if (s.quality) return s.quality;
+  if (s.tag_error) return "couldn't be tagged";
+  return "untagged";
+}
+
+/** Big view of one shot: the still, the moving clip, its tags, and the use / leave-out switch. */
+function ShotLightbox({ p, shotId, running, onClose, onChange, onStep }: {
+  p: StudioProject; shotId: string; running: boolean; onClose: () => void;
+  onChange: (p: StudioProject) => void; onStep: (d: number) => void;
+}) {
+  const s = (p.shots || []).find((x) => x.id === shotId);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [mode, setMode] = useState<"still" | "clip">("still");
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") onStep(1);
+      if (e.key === "ArrowLeft") onStep(-1);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose, onStep]);
+  if (!s) return null;
+  const clipPath = s.file ? `footage/${s.file.split("/").pop()}` : null;
+
+  async function toggle() {
+    setBusy(true);
+    setErr("");
+    try {
+      onChange(await api.studioSetShot(p.id, s!.id, !s!.usable));
+    } catch (e: any) {
+      setErr(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 120, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...card, maxWidth: 1000, width: "100%", maxHeight: "92vh", overflowY: "auto", padding: 12 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+          <b>{s.id}</b>
+          <span style={muted}>{fmtTime(s.start)}–{fmtTime(s.end)} of {s.source_type || "trailer"}</span>
+          <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => setMode(mode === "still" ? "clip" : "still")} disabled={!clipPath}>
+              {mode === "still" ? "▶ Play clip" : "🖼 Still"}
+            </button>
+            <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => onStep(-1)}>‹ Prev</button>
+            <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => onStep(1)}>Next ›</button>
+            <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={onClose}>✕</button>
+          </span>
+        </div>
+        {mode === "clip" && clipPath ? (
+          <video key={s.id} controls autoPlay playsInline
+            src={`${api.studioFileUrl(p.id, clipPath)}#t=${s.start.toFixed(2)},${s.end.toFixed(2)}`}
+            style={{ width: "100%", borderRadius: 6, background: "black" }} />
+        ) : (
+          <img src={api.studioFileUrl(p.id, s.still)} alt="" style={{ width: "100%", borderRadius: 6, display: "block" }} />
+        )}
+        <div style={{ fontSize: 12, marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+          {s.description && <div>{s.description}</div>}
+          <div style={muted}>
+            {s.people?.length ? `On screen: ${s.people.join(", ")}` : "No one recognised"}
+            {s.setting ? ` · ${s.setting}` : ""}{s.mood ? ` · ${s.mood}` : ""}{s.size ? ` · ${s.size} shot` : ""}
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+            <span style={{ color: s.usable ? "var(--accent)" : "var(--yellow)" }}>
+              {s.usable ? "✓ The video may use this shot" : `✕ Left out (${whyUnusable(s)})`}
+              {s.owner_set ? " · your choice" : ""}
+            </span>
+            <button className={s.usable ? "" : "primary"} disabled={busy || running} onClick={toggle} style={{ fontSize: 12 }}>
+              {busy ? "Saving…" : s.usable ? "Leave this shot out" : "Use this shot"}
+            </button>
+            {running && <span style={muted}>wait for the running step to finish</span>}
+          </div>
+          {!s.usable && <div style={muted}>Using it makes it available to step 5 (Voice + shots) and to the swap picker; re-run step 5 or swap it in by hand.</div>}
+          {err && <div style={{ color: "var(--red)" }}>{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShotThumb({ p, s, selected, onClick, note }: { p: StudioProject; s: StudioShot; selected?: boolean; onClick?: () => void; note?: string }) {
   return (
     <div
       onClick={onClick}
@@ -578,6 +679,7 @@ function ShotThumb({ p, s, selected, onClick }: { p: StudioProject; s: StudioSho
       <div style={{ fontSize: 9, padding: "2px 4px", lineHeight: 1.3 }}>
         <b>{s.id}</b> {s.people?.join(", ")}
         {!s.usable && <span style={{ color: "var(--red)" }}> {s.card ? "card" : s.text ? "text" : s.quality || "untagged"}</span>}
+        {note && <div style={{ color: "var(--yellow)" }}>{note}</div>}
       </div>
     </div>
   );
@@ -683,9 +785,36 @@ function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p:
   }
 
   const total = plan.length ? plan[plan.length - 1].end : 0;
+  // QA: the same picture (or a look-alike) within 6 visuals, or used again at all.
+  const issues = useMemo(() => {
+    const out: Record<number, string> = {};
+    const seen: Record<string, number> = {};
+    plan.forEach((it, idx) => {
+      if (!it.shot || it.kind === "poster") return;
+      const look = shots[it.shot]?.look || it.shot;
+      if (look in seen) {
+        const gap = idx - seen[look];
+        const at = fmtTime(plan[seen[look]].start);
+        out[idx] = gap === 1 ? "⚠ Same picture as the one before" : gap <= 6 ? `⚠ Same picture shown at ${at}` : `Repeat of ${at}`;
+      }
+      seen[look] = idx;
+    });
+    return out;
+  }, [plan, shots]);
+  const nIssues = Object.keys(issues).length;
+  const usedAt = useMemo(() => {
+    const m: Record<string, string> = {};
+    plan.forEach((it) => { if (it.shot) m[shots[it.shot]?.look || it.shot] = fmtTime(it.start); });
+    return m;
+  }, [plan, shots]);
   return (
     <Section title={`Voice + shot plan — ${plan.length} visuals, ${fmtTime(total)} of narration`}>
-      <div style={{ ...muted, marginBottom: 6 }}>Click a picture to swap it. Re-render after changes.</div>
+      <div style={{ ...muted, marginBottom: 6 }}>
+        Click a picture to swap it. Re-render after changes.{" "}
+        <span style={{ color: nIssues ? "var(--yellow)" : "var(--accent)" }}>
+          {nIssues ? `QA: ${nIssues} repeated picture${nIssues === 1 ? "" : "s"} — swap the flagged ones` : "QA: no repeated pictures"}
+        </span>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 520, overflowY: "auto" }}>
         {plan.map((it, idx) => {
           const sh = it.shot ? shots[it.shot] : undefined;
@@ -711,7 +840,10 @@ function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p:
                 <option value="clip">clip</option>
                 <option value="poster">poster</option>
               </select>
-              <span style={{ fontSize: 11, flex: 1 }}>{it.text}</span>
+              <span style={{ fontSize: 11, flex: 1 }}>
+                {it.text}
+                {issues[idx] && <div style={{ color: issues[idx].startsWith("⚠") ? "var(--yellow)" : "var(--muted)", marginTop: 2 }}>{issues[idx]}</div>}
+              </span>
             </div>
           );
         })}
@@ -721,8 +853,9 @@ function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p:
           <div style={{ ...card, maxWidth: 900, width: "100%", maxHeight: "85vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
             <h2 style={h2}>Pick a shot for: “{plan[pick].text}”</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 6 }}>
-              {(p.shots || []).filter((s) => s.usable).map((s) => (
+              {[...(p.shots || [])].sort((a, b) => Number(!!b.usable) - Number(!!a.usable)).map((s) => (
                 <ShotThumb key={s.id} p={p} s={s} selected={s.id === plan[pick].shot}
+                  note={s.id !== plan[pick].shot && usedAt[s.look || s.id] ? `used at ${usedAt[s.look || s.id]}` : undefined}
                   onClick={async () => {
                     await setSlot(pick, { shot: s.id, kind: plan[pick].kind === "poster" ? "still" : plan[pick].kind, clip_start: s.start });
                     setPick(null);

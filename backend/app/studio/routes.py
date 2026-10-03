@@ -261,6 +261,34 @@ async def upload_trailer(project_id: int, file: UploadFile = File(...),
     return _out(p)
 
 
+class ShotUse(BaseModel):
+    usable: bool
+
+
+@router.put("/projects/{project_id}/shots/{shot_id}")
+def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """The owner's call overrides the automatic one: any shot (title card, dark,
+    text, untagged) can be used, and any shot can be left out. Undoable."""
+    p = _get(s, project_id)
+    if p.stage_status == "running":
+        raise HTTPException(409, "A step is running; wait for it to finish")
+    shots = [dict(x) for x in (p.shots or [])]
+    sh = next((x for x in shots if x.get("id") == shot_id), None)
+    if not sh:
+        raise HTTPException(404, "shot not found")
+    undo.record(s, f"studio:{p.id}", f"{'Use' if req.usable else 'Leave out'} shot {shot_id}", rows=[p],
+                model="studio_projects", fields=["shots"])
+    if "auto_usable" not in sh:
+        sh["auto_usable"] = bool(sh.get("usable"))     # what the tagger decided, kept for reference
+    sh["usable"] = req.usable
+    sh["owner_set"] = True
+    p.shots = shots
+    s.commit()
+    logbus.log("info", "studio_shot", f"Studio #{p.id}: shot {shot_id} {'in' if req.usable else 'out'} (owner)",
+               project=p.id)
+    return _out(p)
+
+
 @router.post("/projects/{project_id}/publish")
 def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Send the rendered video to the Posting Queue (status Review, pipeline

@@ -306,6 +306,10 @@ export type StudioShot = {
   text?: boolean;
   quality?: string;
   usable?: boolean;
+  auto_usable?: boolean;   // what the tagger decided, when the owner overrode it
+  owner_set?: boolean;
+  look?: string;           // look-alike group (shots that show the same picture share one)
+  file?: string;           // absolute path of the source video on the server
   tag_error?: string;
 };
 
@@ -715,6 +719,9 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return res.json() as Promise<StudioProject>;
   },
+  studioSetShot: (id: number, shotId: string, usable: boolean) =>
+    req<StudioProject>(`/api/studio/projects/${id}/shots/${encodeURIComponent(shotId)}`, {
+      method: "PUT", headers: headers(), body: JSON.stringify({ usable }) }),
   studioMotion: () => req<StudioMotion>("/api/studio/motion", { headers: headers(false) }),
   setStudioMotion: (patch: Partial<Pick<StudioMotion, "mode" | "cast_cards">>) =>
     req<StudioMotion>("/api/studio/motion", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),

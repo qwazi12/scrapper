@@ -688,3 +688,52 @@ def test_restart_marks_interrupted_steps_stopped():
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         assert p.stage_status == "stopped" and "restart" in p.stage_message
+
+
+def test_owner_can_use_an_unusable_shot_and_undo_it(client):
+    pid = _new_project(shots=[{"id": "s001", "usable": False, "card": True, "thumb": "t.jpg", "still": "s.jpg"},
+                              {"id": "s002", "usable": True, "thumb": "t2.jpg", "still": "s2.jpg"}])
+    r = client.put(f"/api/studio/projects/{pid}/shots/s001", json={"usable": True})
+    assert r.status_code == 200
+    sh = next(x for x in r.json()["shots"] if x["id"] == "s001")
+    assert sh["usable"] is True and sh["auto_usable"] is False and sh["owner_set"] is True
+    assert client.post("/api/undo", json={"scope": f"studio:{pid}"}).status_code == 200
+    with SessionLocal() as s:
+        assert next(x for x in s.get(StudioProject, pid).shots if x["id"] == "s001")["usable"] is False
+
+
+# --- plan QA: no repeats, no look-alikes back to back ---------------------------------
+def test_lookalike_shots_are_grouped(tmp_path):
+    from PIL import Image, ImageDraw
+    def frame(name, x):
+        im = Image.new("RGB", (320, 180), (40, 40, 40))
+        ImageDraw.Draw(im).rectangle((x, 40, x + 80, 140), fill=(230, 200, 160))
+        im.save(tmp_path / name)
+    frame("a.jpg", 100); frame("b.jpg", 102)          # same interview framing, a hair apart
+    frame("c.jpg", 230)                                # a different picture
+    shots = [{"id": "s1", "still": "a.jpg"}, {"id": "s2", "still": "b.jpg"}, {"id": "s3", "still": "c.jpg"}]
+    g = stage_plan.look_groups(shots, tmp_path)
+    assert g["s1"] == g["s2"] == "s1" and g["s3"] == "s3"
+
+
+def test_validate_refuses_repeats_and_lookalikes_while_fresh_shots_remain():
+    catalog = [{"id": f"s{i}", "people": (["Lead"] if i in (2, 5) else [])} for i in range(1, 9)]
+    groups = {c["id"]: c["id"] for c in catalog}
+    groups["s4"] = "s3"                                # s3 and s4 look identical
+    slots = [{"slot": n} for n in range(1, 7)]
+    picks = [{"slot": 1, "shot": "s3"}, {"slot": 2, "shot": "s4"},      # look-alike back to back
+             {"slot": 3, "shot": "s2"}, {"slot": 4, "shot": "s2"},      # true repeat
+             {"slot": 5, "shot": "s1"}, {"slot": 6, "shot": "s3"}]      # repeat within 6 slots
+    out, repaired = stage_plan._validate(picks, slots, catalog, groups)
+    looks = [groups[o["shot"]] for o in out]
+    assert len(set(looks)) == 6 and repaired == 4     # slot 2 (look-alike) takes s1, so slot 5's s1 is a repeat too
+    assert out[3]["shot"] == "s5"                      # replacement keeps the same person on screen
+    assert stage_plan.plan_issues([{"slot": o["slot"], "shot": o["shot"], "kind": "still"} for o in out], groups) == []
+
+
+def test_plan_issues_flags_back_to_back_and_near_repeats():
+    groups = {"a": "a", "b": "a", "c": "c"}
+    items = [{"slot": 1, "shot": "a", "kind": "still"}, {"slot": 2, "shot": "b", "kind": "still"},
+             {"slot": 3, "shot": "c", "kind": "clip"}, {"slot": 4, "shot": "c", "kind": "still"}]
+    kinds = [(i["slot"], i["kind"]) for i in stage_plan.plan_issues(items, groups)]
+    assert kinds == [(2, "back_to_back"), (4, "back_to_back")]
