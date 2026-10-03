@@ -716,6 +716,15 @@ def test_lookalike_shots_are_grouped(tmp_path):
     shots = [{"id": "s1", "still": "a.jpg"}, {"id": "s2", "still": "b.jpg"}, {"id": "s3", "still": "c.jpg"}]
     g = stage_plan.look_groups(shots, tmp_path)
     assert g["s1"] == g["s2"] == "s1" and g["s3"] == "s3"
+    # Same interview set-up a few seconds apart, the person moved: grouped only as the same set-up.
+    frame("d.jpg", 120)
+    near = [{"id": "s7", "still": "a.jpg", "source": "v1", "start": 43.7, "people": ["Lead"]},
+            {"id": "s8", "still": "d.jpg", "source": "v1", "start": 51.8, "people": ["Lead"]},
+            {"id": "s9", "still": "d.jpg", "source": "v2", "start": 51.8, "people": ["Lead"]}]
+    bits = bin(stage_plan.dhash(tmp_path / "a.jpg") ^ stage_plan.dhash(tmp_path / "d.jpg")).count("1")
+    assert stage_plan.LOOK_ALIKE < bits <= stage_plan.SAME_SETUP
+    assert stage_plan.look_groups(near[:2], tmp_path)["s8"] == "s7"            # same set-up -> one look
+    assert stage_plan.look_groups([near[0], near[2]], tmp_path)["s9"] == "s9"  # same distance, other video -> separate
 
 
 def test_validate_refuses_repeats_and_lookalikes_while_fresh_shots_remain():

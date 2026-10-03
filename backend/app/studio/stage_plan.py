@@ -33,6 +33,8 @@ from .runner import project_dir, stage
 
 GAP, PARA_GAP = 0.35, 0.6
 LOOK_ALIKE = 10       # max differing bits (of 64) for two stills to count as the same picture
+SAME_SETUP = 24       # looser match for the same set-up: same video, same people, within SETUP_SECONDS
+SETUP_SECONDS = 12.0  # (By Any Means: one interview, 8 s apart, 20 bits apart — read as "the same shot")
 NEAR_WINDOW = 6       # the same look never returns within this many slots
 TARGET_VISUAL = 4.2
 CLIP_MAX = 5.0
@@ -59,20 +61,43 @@ def dhash(path) -> int | None:
 
 
 def look_groups(shots: list[dict], root) -> dict[str, str]:
-    """shot id -> look group id (the first shot of that look, in trailer order)."""
-    reps: list[tuple[str, int]] = []
-    out: dict[str, str] = {}
-    for sh in shots:
-        h = dhash(root / sh["still"]) if sh.get("still") else None
-        if h is None:
-            out[sh["id"]] = sh["id"]
+    """shot id -> look group id (the first shot of that look, in trailer order).
+
+    Two shots are the same look if their pictures are near-identical (any
+    trailer: trailers reuse footage), or if they're the same set-up: same
+    source video, within SETUP_SECONDS, the same people on screen, and a
+    moderately similar picture."""
+    ids = [sh["id"] for sh in shots]
+    parent = {i: i for i in ids}
+
+    def find(i: str) -> str:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:   # the earlier shot (trailer order) names the group
+            first, second = (ra, rb) if ids.index(ra) < ids.index(rb) else (rb, ra)
+            parent[second] = first
+
+    hashes = {sh["id"]: (dhash(root / sh["still"]) if sh.get("still") else None) for sh in shots}
+    for i, a in enumerate(shots):
+        ha = hashes[a["id"]]
+        if ha is None:
             continue
-        match = next((gid for gid, rh in reps if bin(h ^ rh).count("1") <= LOOK_ALIKE), None)
-        if match is None:
-            reps.append((sh["id"], h))
-            match = sh["id"]
-        out[sh["id"]] = match
-    return out
+        for b in shots[i + 1:]:
+            hb = hashes[b["id"]]
+            if hb is None:
+                continue
+            bits = bin(ha ^ hb).count("1")
+            same_setup = (a.get("source") and a.get("source") == b.get("source")
+                          and abs(float(a.get("start", 0)) - float(b.get("start", 0))) <= SETUP_SECONDS
+                          and a.get("people") and set(a["people"]) == set(b.get("people") or []))
+            if bits <= LOOK_ALIKE or (same_setup and bits <= SAME_SETUP):
+                union(a["id"], b["id"])
+    return {i: find(i) for i in ids}
 
 
 def plan_issues(items: list[dict], groups: dict[str, str]) -> list[dict]:
