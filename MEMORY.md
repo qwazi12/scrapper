@@ -475,3 +475,11 @@ Each step: tests, commit, push, frontend deploy (manual until the VERCEL_API_TOK
 Both stay under the $6/day cap (which counts Gemini/TTS/search only, not subscriptions or Railway).
 
 **Where to save, biggest first**: (1) shot tagging = 64% of each breakdown — tag with Gemini Flash-Lite ($0.30/$2.50) and skip look-alike shots before tagging → est. −$0.15 to −$0.20 per breakdown (~$25–30/month); (2) the 2027 price rise doubles Gemini, so do (1) before January; (3) Railway memory is the largest Railway line — check the plan's container size; (4) Upload-Post plan only if the posting volume needs it.
+
+## Log — 2026-10-03 (late) — live restart tests, dark-trailer shots, Render selected, deploy-safe resume
+- **Live restart tests** (my deploys landed mid-run): cut-off jobs now wait in line and resume from their step. Two more bugs found and fixed:
+  - A day of deploys used up the 2-resume limit (Verity, a render batch). Shutdown now flags running jobs `cut_by_shutdown`, so their resume doesn't count (b213f3b).
+  - **Render selected** polled for a free Studio, so queued jobs always got in first and the card showed nothing. It now joins the waiting line (385dd49); the card shows "render waiting…". Verified live: East of Eden (#6) is in the line behind Verity → Resident Evil.
+- **Resident Evil: 13 shots / 3 usable** came from the fixed scene threshold 0.3 on dark footage (4 cuts in a 152 s trailer; 35 at 0.12, 62 at 0.08; Digger 111 at 0.3). Now an adaptive threshold from one ffmpeg pass (fa49b97), and a failed ffmpeg raises instead of yielding "one long shot". RE's shots + script are being redone. Its first script (from 3 shots) is replaced.
+- Owner asked to raise today's cap to finish RE + Verity: not needed — $1.21 of $6 spent. The block was the 5/day breakdown limit, which only gates NEW breakdowns.
+- Pending for the owner: add GitHub secret VERCEL_API_TOKEN (steps in the chat); button suggestions given in the chat (not built).
