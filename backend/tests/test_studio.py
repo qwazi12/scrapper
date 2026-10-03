@@ -670,6 +670,8 @@ def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_vide
     def stop_midway(*a, **kw):
         raise control.Cancelled()
 
+    import shutil as _sh
+    _sh.rmtree(root / "segcache")                                  # force real work (no cache hits)
     monkeypatch.setattr(stage_render, "seg_clip", stop_midway)   # the re-render is stopped partway
     with pytest.raises(control.Cancelled):
         runner.run_one(pid, "render")
@@ -737,3 +739,18 @@ def test_plan_issues_flags_back_to_back_and_near_repeats():
              {"slot": 3, "shot": "c", "kind": "clip"}, {"slot": 4, "shot": "c", "kind": "still"}]
     kinds = [(i["slot"], i["kind"]) for i in stage_plan.plan_issues(items, groups)]
     assert kinds == [(2, "back_to_back"), (4, "back_to_back")]
+
+
+def test_rerender_reuses_unchanged_segments(monkeypatch, three_scene_video):
+    pid, root = _render_project(three_scene_video)
+    monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    monkeypatch.setattr(stage_render, "motion_mode", lambda: "off")
+    first = runner.run_one(pid, "render")
+    assert "0 reused" in first
+    calls = []
+    real = stage_render.seg_still
+    monkeypatch.setattr(stage_render, "seg_still", lambda *a, **k: (calls.append(a), real(*a, **k)))
+    second = runner.run_one(pid, "render")
+    assert "0 rendered" in second and calls == []                 # nothing changed -> nothing re-encoded
+    with SessionLocal() as s:
+        assert (root / s.get(StudioProject, pid).render["file"]).exists()
