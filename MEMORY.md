@@ -483,3 +483,17 @@ Both stay under the $6/day cap (which counts Gemini/TTS/search only, not subscri
 - **Resident Evil: 13 shots / 3 usable** came from the fixed scene threshold 0.3 on dark footage (4 cuts in a 152 s trailer; 35 at 0.12, 62 at 0.08; Digger 111 at 0.3). Now an adaptive threshold from one ffmpeg pass (fa49b97), and a failed ffmpeg raises instead of yielding "one long shot". RE's shots + script are being redone. Its first script (from 3 shots) is replaced.
 - Owner asked to raise today's cap to finish RE + Verity: not needed — $1.21 of $6 spent. The block was the 5/day breakdown limit, which only gates NEW breakdowns.
 - Pending for the owner: add GitHub secret VERCEL_API_TOKEN (steps in the chat); button suggestions given in the chat (not built).
+
+## PLAN — 2026-10-03 (evening, owner request) — action buttons, Refresh Options, cheaper AI
+Already existed (not duplicated): Posting Queue "↩ Undo" (top of queue) and "✓ Approve" (= next free slot, i.e. "post at best time").
+1. **Refresh Options fix**: it re-picked the same shots, so the images never changed. Each refresh now rotates to the next-best shots not yet shown (wraps around) and poster ↔ backdrops; button shows "Refreshing…".
+2. **Project page**: "▶ Continue to step 5" (runs whatever is missing up to Voice + shots) and "↻ from here" on each finished step (redo it and the following steps up to 5).
+3. **Your videos cards**: "▶ Resume" on stopped / error / paused cards (continues from the step it was on), "⏫ Move up" on waiting cards (goes to the front of Studio's line).
+4. **Automation card**: "⏭ Skip next pick" (marks it skipped, shows the new next pick) and "⏸ Pause for today" (switches back on at midnight, shown on the card).
+5. **Trending list**: "👁 Preview trailer" (plays the official YouTube trailer in-page) and "+ Add to line" (starts steps 1–5 in Studio's line without leaving the list; same limits/never-repeat rules).
+6. **Spending card**: "+$2 today only" (raises today's cap; resets at midnight) and a cost-per-breakdown bar list.
+7. **Cheaper AI (shot tagging = 64% of each breakdown)**:
+   a. **Gemini Batch Mode (50% off, async)** for shot tagging on *automation* runs (nobody is waiting). Wait up to 30 min, then fall back to normal calls. Manual runs stay instant. Cost recorded at the batch price.
+   b. **Look-alike shots tagged once**: shots whose frames are near-identical (dHash) share one tag result instead of a Gemini call each.
+   Expected: −50% on automation tagging plus fewer frames sent → roughly $0.39 → ~$0.20–0.25 per automated breakdown. Measure on the next runs.
+Tests for each; commit + push; manual frontend deploy until the VERCEL_API_TOKEN secret exists.
