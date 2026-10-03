@@ -190,6 +190,17 @@ def resume_interrupted(stale: int = STALE) -> int:
                 # it starts next, from the step it was cut off at (2026-10-03: a
                 # restart's resume lost the race to a new automation pick and failed).
                 finish(rid, "queued")
+                try:
+                    from .models import StudioProject
+                    with SessionLocal() as s:
+                        proj = s.get(StudioProject, int(params.get("project_id", -1)))
+                        if proj:
+                            proj.stage_status = "queued"
+                            proj.stage_message = (f"{cp.get('stage') or params.get('stage')} cut off by a restart — "
+                                                  "waiting in line, resumes from this step")
+                            s.commit()
+                except Exception as e2:  # noqa: BLE001 — the label is cosmetic; the line still works
+                    logger.warning("could not relabel queued project: %s", e2)
                 logbus.log("warning", "job_resumed", f"{label}: cut off by a restart — waiting in line, "
                            f"starts next from its step ({exc})", job=rid, kind=kind)
             else:

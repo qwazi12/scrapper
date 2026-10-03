@@ -1004,3 +1004,13 @@ def test_ask_json_gives_up_with_the_reason(monkeypatch):
         "candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "not json"}]}}]})
     with pytest.raises(gemini.GeminiError, match="finish reason STOP, attempt 3 of 3"):
         gemini.ask_json("x")
+
+
+def test_scene_cuts_fails_loudly_when_ffmpeg_fails(monkeypatch, tmp_path):
+    import subprocess
+    from backend.app import control
+    from backend.app.studio import media
+    monkeypatch.setattr(control, "run", lambda cmd, timeout=0, text=True:
+                        subprocess.CompletedProcess(cmd, -9, "", "Killed"))
+    with pytest.raises(RuntimeError, match="scene detection failed"):
+        media.scene_cuts(tmp_path / "x.mp4")

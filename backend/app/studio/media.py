@@ -41,6 +41,11 @@ def scene_cuts(path: str | pathlib.Path, threshold: float = 0.3) -> list[float]:
     proc = control.run(
         ["ffmpeg", "-hide_banner", "-i", str(path), "-vf", f"select='gt(scene,{threshold})',showinfo",
          "-an", "-f", "null", "-"], timeout=1800)
+    if proc.returncode != 0:
+        # A killed/failed ffmpeg prints no cuts: treating that as "one long shot"
+        # silently gave Resident Evil 13 shots from 5 videos (2026-10-03).
+        raise RuntimeError(f"scene detection failed on {pathlib.Path(path).name} "
+                           f"(ffmpeg exit {proc.returncode}): {proc.stderr[-300:]}")
     return sorted(float(t) for t in re.findall(r"pts_time:([0-9.]+)", proc.stderr))
 
 
