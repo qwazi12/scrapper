@@ -504,3 +504,8 @@ Tests for each; commit + push; manual frontend deploy until the VERCEL_API_TOKEN
 - **Gemini Batch Mode verified in production** (`railway ssh` → `gemini.ask_json_batch`): 2/2 answers in **109 s**. Automation shot tagging now uses it (half price, recorded as service `gemini-batch`); after 30 min it falls back to normal calls. Look-alike neighbours (dHash ≤5 bits AND mean RGB within 12) share one tag call. The colour check was needed: dHash alone merged flat red/blue/green frames.
 - **Not yet measured**: savings on a full automated breakdown (the next automation run — today's limits are full). Expected ~$0.39 → ~$0.20–0.25.
 - Today: $1.94 of $6. Breakdown costs: Verity $0.44, RE $0.48 (shots run twice), Lanterns $0.39, East of Eden $0.33, Love Hypothesis $0.31.
+
+## Log — 2026-10-03 (night) — Frontend auto-deploy fixed
+- Owner added the GitHub secret `VERCEL_API_TOKEN`. Run 37149883106 (commit 1b7712a) passed every step and produced a new Ready production deploy. **Pushes to `frontend/**` now deploy the site by themselves**; no more manual deploys.
+- The workflow now also runs when `.github/workflows/deploy-frontend.yml` changes.
+- The owner also put the token in Railway as `github_deploy`. The backend never reads it; suggested removing it there (least privilege). Railway also still has `VERCEL_API_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` from before, also unused by the backend.
