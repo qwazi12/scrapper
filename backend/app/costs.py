@@ -15,6 +15,14 @@ app_settings "costs"):
 
 Budget: a monthly budget (variable + fixed costs). With hard stop on, paid
 calls are refused once it is reached (BudgetExceeded) instead of overspending.
+
+Daily cap (`daily_usd`, default $6; 0 = off): once today's tracked spend
+(the day in the posting schedule's timezone) reaches it, every paid call on
+the site raises DailyCapReached. It is deliberately NOT a BudgetExceeded and
+not wrapped into GeminiError/TTSError: steps that fall back on AI errors must
+not quietly carry on with degraded output — the job pauses instead
+(ResumableJob status "budget_paused") and resumes first when the day resets.
+Flat subscriptions (Upload-Post plan) don't count toward the daily cap.
 """
 
 from __future__ import annotations
@@ -36,6 +44,7 @@ UTC = datetime.timezone.utc
 
 DEFAULTS: dict[str, Any] = {
     "budget_usd": 0.0,             # 0 = no budget set
+    "daily_usd": 6.0,              # site-wide daily cap on tracked spend; 0 = off
     "hard_stop": False,
     "upload_post_plan": "Basic",   # Free | Basic | Professional | Advanced | Business
     "fixed_costs": [],             # [{"name": "Railway", "usd": 5}]
@@ -58,6 +67,10 @@ _op: contextvars.ContextVar[tuple[str, str | None]] = contextvars.ContextVar("co
 
 class BudgetExceeded(Exception):
     pass
+
+
+class DailyCapReached(Exception):
+    """Today's spend hit the daily cap. Jobs pause on it and resume tomorrow."""
 
 
 @contextlib.contextmanager
@@ -102,18 +115,66 @@ def month_spend(s, month: str | None = None) -> float:
     return float(s.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).filter(UsageEvent.month == month).scalar() or 0)
 
 
+def day_tz():
+    """The operator's day: the posting schedule's timezone."""
+    from zoneinfo import ZoneInfo
+    try:
+        from .social import queue_manager
+        return ZoneInfo(queue_manager.schedule_config().get("timezone") or "America/New_York")
+    except Exception:  # noqa: BLE001
+        return ZoneInfo("America/New_York")
+
+
+def day_bounds(now: datetime.datetime | None = None) -> tuple[datetime.datetime, datetime.datetime]:
+    """Start of today and of tomorrow (operator timezone), as UTC."""
+    tz = day_tz()
+    local = (now or datetime.datetime.now(UTC)).astimezone(tz)
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    nxt = (start + datetime.timedelta(days=1, hours=2)).replace(hour=0)  # DST-safe
+    return start.astimezone(UTC), nxt.astimezone(UTC)
+
+
+def today_spend(s, now: datetime.datetime | None = None) -> float:
+    start, end = day_bounds(now)
+    return float(s.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).filter(
+        UsageEvent.created_at >= start, UsageEvent.created_at < end).scalar() or 0)
+
+
+def daily_status(s=None) -> dict[str, Any]:
+    own = s is None
+    s = s or SessionLocal()
+    try:
+        cfg = settings_dict(s)
+        cap = float(cfg.get("daily_usd") or 0)
+        spent = today_spend(s)
+        _, resets = day_bounds()
+        return {"cap_usd": cap, "spent_usd": round(spent, 4),
+                "remaining_usd": round(max(0.0, cap - spent), 4) if cap else None,
+                "reached": bool(cap) and spent >= cap, "resets_at": resets.isoformat(),
+                "timezone": str(day_tz())}
+    finally:
+        if own:
+            s.close()
+
+
 def check_budget() -> None:
-    """Call before a paid request. Raises BudgetExceeded when the hard stop is on
-    and this month's spend (variable + fixed) has reached the budget."""
+    """Call before a paid request. Raises DailyCapReached once today's spend hits
+    the daily cap, and BudgetExceeded when the hard stop is on and this month's
+    spend (variable + fixed) has reached the budget."""
     with SessionLocal() as s:
         cfg = settings_dict(s)
-        if not cfg.get("hard_stop") or not cfg.get("budget_usd"):
-            return
-        total = month_spend(s) + fixed_monthly(cfg)
-        if total >= float(cfg["budget_usd"]):
+        total = month_spend(s) + fixed_monthly(cfg) if cfg.get("hard_stop") and cfg.get("budget_usd") else 0.0
+        if cfg.get("hard_stop") and cfg.get("budget_usd") and total >= float(cfg["budget_usd"]):
             raise BudgetExceeded(
                 f"Monthly budget reached (${total:.2f} of ${float(cfg['budget_usd']):.2f}). "
                 "Raise the budget or turn off the hard stop in Settings → Spending.")
+        cap = float(cfg.get("daily_usd") or 0)
+        if cap:
+            spent = today_spend(s)
+            if spent >= cap:
+                raise DailyCapReached(
+                    f"Daily spend cap reached (${spent:.2f} of ${cap:.2f} today). Paused work resumes "
+                    "automatically after midnight; raise the cap in Settings → Spending to continue now.")
 
 
 def _record(service: str, cost: float, **fields) -> None:
@@ -219,8 +280,16 @@ def summary(month: str | None = None) -> dict[str, Any]:
                 "uploads": {"used": uploads, "plan": cfg["upload_post_plan"], "limit": plan_uploads,
                             "plan_usd": plan_fee},
             },
+            "today": {**daily_status(s), "paused_jobs": _paused_jobs(s)},
             "settings": cfg,
         }
+
+
+def _paused_jobs(s) -> list[dict[str, Any]]:
+    """Jobs the daily cap paused (they resume first when the day resets)."""
+    from . import resume
+    return [{"id": r.id, "label": r.label, "since": r.updated_at.isoformat() if r.updated_at else None,
+             "step": (r.checkpoint or {}).get("stage")} for r in resume.budget_paused(s)]
 
 
 def ref_cost(ref: str) -> float:

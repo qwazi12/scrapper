@@ -11,7 +11,7 @@ import logging
 import threading
 from typing import Any
 
-from .. import control, logbus
+from .. import control, costs, logbus
 from ..db import SessionLocal
 from ..models import Clip, Compilation, QueueItem
 from . import metadata
@@ -78,7 +78,6 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 status["failed"] += 1
                 return
             try:
-                from .. import costs
                 with costs.operation("queue:bulk_ai", ref=f"queue:{item_id}"):
                     res, research = await ai_for(item, s, _cache)
                 apply_ai(item, res, research)
@@ -86,6 +85,10 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 status["done"] += 1
                 from .. import resume
                 resume.add_done(_rid, item_id)        # a resume after a restart skips it
+            except costs.DailyCapReached as exc:
+                # Not a failure: this item and the rest wait for tomorrow's budget.
+                status["aborted"] = f"paused — {exc}"
+                status["budget_paused"] = True
             except metadata.MetadataError as exc:
                 status["failed"] += 1
                 if len(status["errors"]) < 5:
@@ -110,7 +113,7 @@ def start(ids: list[int], rid: int | None = None, already_done: list[int] | None
     with _lock:
         if status["running"]:
             raise RuntimeError("A bulk AI rewrite is already running")
-        status.update(running=True, total=len(todo), done=0, failed=0, errors=[], aborted=None,
+        status.update(running=True, total=len(todo), done=0, failed=0, errors=[], aborted=None, budget_paused=False,
                       started_at=datetime.datetime.now(datetime.timezone.utc).isoformat(), finished_at=None)
     if rid:
         resume.reopen(rid)
@@ -124,7 +127,9 @@ def start(ids: list[int], rid: int | None = None, already_done: list[int] | None
         try:
             with control.job("ai", label, scope="socialpilot"):
                 asyncio.run(_run(todo))
-            if status["aborted"]:
+            if status.get("budget_paused"):
+                outcome = "budget_paused"  # resume.py continues it when the day resets
+            elif status["aborted"]:
                 outcome = "stopped" if "stopped" in status["aborted"] else "failed"
         except control.Cancelled:
             status["aborted"] = "stopped by user"

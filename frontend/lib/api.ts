@@ -365,7 +365,7 @@ export type StudioProject = {
   title: string;
   target_minutes: number;
   stage: string;
-  stage_status: "idle" | "running" | "done" | "error" | "stopped";
+  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused";
   stage_message: string | null;
   queue_item_id: number | null;
   created_at: string;
@@ -455,6 +455,7 @@ function headers(json = true): HeadersInit {
 
 export type CostSettings = {
   budget_usd: number;
+  daily_usd: number;
   hard_stop: boolean;
   upload_post_plan: string;
   fixed_costs: { name: string; usd: number }[];
@@ -477,6 +478,15 @@ export type CostSummary = {
   by_operation: { operation: string; cost: number; requests: number }[];
   by_day: { day: string; cost: number }[];
   by_ref: Record<string, number>;
+  today: {
+    cap_usd: number;
+    spent_usd: number;
+    remaining_usd: number | null;
+    reached: boolean;
+    resets_at: string;
+    timezone: string;
+    paused_jobs: { id: number; label: string; since: string | null; step?: string | null }[];
+  };
   free_tiers: {
     search_requests: { used: number; free: number };
     tts_chars: { used: number; free: number };

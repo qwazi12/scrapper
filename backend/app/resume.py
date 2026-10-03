@@ -20,6 +20,11 @@ Kinds and how they resume:
   channel_ingest  re-runs; videos already in the queue are skipped
   bulk_ai         continues with the videos it hadn't finished
   drive_save      the upload starts again
+
+Budget pauses: a job that hit the daily spend cap is closed as "budget_paused"
+(not failed) with its checkpoint. When the day resets, resume_budget_paused()
+relaunches those first, oldest first, before anything new is started
+(the Studio automation waits while any remain). They don't count as resumes.
 """
 
 from __future__ import annotations
@@ -189,3 +194,41 @@ def _aware(t: datetime.datetime | None) -> datetime.datetime:
     if t is None:
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
     return t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)
+
+
+def budget_paused(s=None) -> list[ResumableJob]:
+    own = s is None
+    s = s or SessionLocal()
+    try:
+        return s.query(ResumableJob).filter(ResumableJob.status == "budget_paused").order_by(ResumableJob.id).all()
+    finally:
+        if own:
+            s.close()
+
+
+def resume_budget_paused() -> int:
+    """Once there's budget again, relaunch jobs the daily cap paused, oldest
+    first. A launcher that's busy (one Studio job at a time) raises
+    RuntimeError before reopening the row, so that job waits for the next tick."""
+    from . import costs
+    if costs.daily_status()["reached"]:
+        return 0
+    with SessionLocal() as s:
+        todo = [(r.id, r.kind, dict(r.params or {}), dict(r.checkpoint or {}), r.label) for r in budget_paused(s)]
+    resumed = 0
+    for rid, kind, params, cp, label in todo:
+        if kind not in _launchers:
+            finish(rid, "failed", f"no way to resume '{kind}'")
+            continue
+        try:
+            _launchers[kind](params, cp, rid)
+        except RuntimeError as exc:  # busy: try again next tick, keep the order
+            logger.info("budget-paused job %s waits: %s", rid, exc)
+            break
+        except Exception as exc:  # noqa: BLE001
+            finish(rid, "failed", f"could not resume: {exc}")
+            logbus.log("error", "job_resume_failed", f"{label}: could not resume after the daily cap — {exc}", job=rid)
+            continue
+        resumed += 1
+        logbus.log("info", "job_budget_resumed", f"{label}: resumed — new day's budget", job=rid, kind=kind)
+    return resumed

@@ -385,8 +385,8 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
               {[2, 2.5, 3, 3.5, 4].map((m) => <option key={m} value={m}>{m} min</option>)}
             </select>
           </div>
-          <div style={{ marginTop: 6, fontSize: 12, color: p.stage_status === "error" ? "var(--red)" : running ? "var(--yellow)" : p.stage_status === "stopped" ? "#f59e0b" : "var(--text)" }}>
-            {running ? "⏳ " : p.stage_status === "error" ? "✕ " : p.stage_status === "stopped" ? "■ " : p.stage_status === "done" ? "✓ " : ""}
+          <div style={{ marginTop: 6, fontSize: 12, color: p.stage_status === "error" ? "var(--red)" : running ? "var(--yellow)" : p.stage_status === "stopped" || p.stage_status === "paused" ? "#f59e0b" : "var(--text)" }}>
+            {running ? "⏳ " : p.stage_status === "error" ? "✕ " : p.stage_status === "stopped" ? "■ " : p.stage_status === "paused" ? "⏸ " : p.stage_status === "done" ? "✓ " : ""}
             {p.stage_message || "Not started"}
           </div>
           {err && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{err}</div>}

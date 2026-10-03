@@ -173,6 +173,16 @@ class TTSError(Exception):
     """Raised when Gemini TTS fails to synthesize speech."""
 
 
+def _check_budget() -> None:
+    """Gemini voice-overs are paid calls: refused once the daily cap or the
+    monthly hard-stop budget is reached (same rule as every other paid call)."""
+    from .. import costs
+    try:
+        costs.check_budget()
+    except (costs.BudgetExceeded, costs.DailyCapReached) as exc:
+        raise TTSError(str(exc)) from exc
+
+
 async def synthesize_speech(
     text: str,
     voice: str = "Puck",
@@ -194,6 +204,7 @@ async def synthesize_speech(
     """
     if not settings.gemini_api_key:
         raise TTSError("GEMINI_API_KEY is not configured on the server")
+    _check_budget()
 
     clean_text = text.strip()
     if not clean_text:
@@ -299,6 +310,7 @@ async def synthesize_dialogue(
     """
     if not settings.gemini_api_key:
         raise TTSError("GEMINI_API_KEY is not configured on the server")
+    _check_budget()
 
     if not turns:
         raise TTSError("Turns cannot be empty")
@@ -397,6 +409,7 @@ async def generate_hook_voiceover(
     """
     if not settings.gemini_api_key:
         raise TTSError("GEMINI_API_KEY is not configured")
+    _check_budget()
 
     prompt = (
         "You are an elite short-form video creator. Write a punchy, viral 1-sentence spoken hook "

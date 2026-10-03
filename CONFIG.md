@@ -76,3 +76,10 @@ This document defines all configuration options, environment variables, default 
 | Resumable jobs | on | Studio steps, Drive sync, Channel Ingest, bulk AI, Drive saves, footage restores are recorded in `resumable_jobs`; a job whose server has been silent 75 s is resumed from its checkpoint (max 2 tries). Heartbeat every 20 s. |
 | `app_settings.studio_archive` | `{"enabled": true, "days": 14}` | Breakdowns posted ≥ N days ago with a confirmed, current Drive copy lose footage/stills/render/segcache (uploaded footage kept). Restore footage re-downloads from IMDb. Daily, from the scheduler. |
 | `RENDER_WORKERS` | 8 | Parallel segment renders (Railway box: 32 vCPU). Segments cached in `studio/<id>/segcache` (`SEG_VERSION`). |
+
+## Daily spend cap (2026-10-03)
+| Setting | Where | Default | Meaning |
+|---|---|---|---|
+| `daily_usd` | `app_settings.costs` (Settings → Spending) | 6.0 | Site-wide cap on today's tracked spend; 0 = off |
+| day boundary | posting schedule `timezone` | America/New_York | When "today" resets |
+| `resumable_jobs.status = budget_paused` | DB | — | Paused by the cap; resumed first by the scheduler tick |

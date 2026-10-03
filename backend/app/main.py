@@ -975,6 +975,7 @@ def put_seo(req: SeoIn, s: Session = Depends(get_session)) -> dict:
 
 class CostSettingsIn(BaseModel):
     budget_usd: float | None = None
+    daily_usd: float | None = None
     hard_stop: bool | None = None
     upload_post_plan: str | None = None
     fixed_costs: list[dict] | None = None
@@ -996,6 +997,8 @@ def put_cost_settings(req: CostSettingsIn, s: Session = Depends(get_session)) ->
     patch = {k: v for k, v in req.model_dump().items() if v is not None}
     if "budget_usd" in patch and patch["budget_usd"] < 0:
         raise HTTPException(400, "budget must be 0 or more")
+    if "daily_usd" in patch and patch["daily_usd"] < 0:
+        raise HTTPException(400, "daily cap must be 0 or more")
     if "upload_post_plan" in patch and patch["upload_post_plan"] not in costs.UPLOAD_POST_PLANS:
         raise HTTPException(400, f"plan must be one of {', '.join(costs.UPLOAD_POST_PLANS)}")
     for fc in patch.get("fixed_costs", []):

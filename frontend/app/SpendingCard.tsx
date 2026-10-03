@@ -123,6 +123,8 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
         </div>
       </div>
 
+      <DailyCap data={data} saving={saving} onSave={(v) => save({ daily_usd: v }, "daily cap")} />
+
       {data.budget_usd > 0 ? (
         <div style={{ marginBottom: 14 }}>
           <Meter label={`Monthly budget${data.hard_stop ? " (hard stop on)" : ""}`} used={data.total_usd} limit={data.budget_usd} fmt={usd} />
@@ -238,6 +240,51 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
         tokens in/out (thinking counts as out; doubles in 2027) · search grounding {num(cfg.grounding_free_per_month)} free/mo then
         ${cfg.grounding_usd_per_1000}/1,000 · voice {num(cfg.tts_free_chars_per_month)} chars free/mo then
         ${cfg.tts_usd_per_million_chars}/1M · TMDB, IMDb, Drive free. Check your Google Cloud billing for the exact bill.
+      </div>
+    </div>
+  );
+}
+
+function DailyCap({ data, saving, onSave }: { data: CostSummary; saving: boolean; onSave: (v: number) => void }) {
+  const t = data.today;
+  const [val, setVal] = useState(String(t.cap_usd || ""));
+  useEffect(() => setVal(String(t.cap_usd || "")), [t.cap_usd]);
+  const resets = new Date(t.resets_at).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+  return (
+    <div style={{ marginBottom: 14, padding: 10, background: "var(--row)", borderRadius: 8, fontSize: 11 }}>
+      {t.cap_usd > 0 ? (
+        <Meter label={`Today (daily cap, ${t.timezone})`} used={t.spent_usd} limit={t.cap_usd} fmt={usd} />
+      ) : (
+        <div style={{ color: "var(--yellow)" }}>No daily cap — today so far {usd(t.spent_usd)}.</div>
+      )}
+      {t.reached && (
+        <div style={{ color: "var(--red)", marginTop: 4 }}>
+          ⚠ Daily cap reached — every AI, voice-over and research call on the site is paused until {resets}.
+          Paused work resumes first, from where it stopped.
+        </div>
+      )}
+      {t.paused_jobs.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <b>Paused by the cap ({t.paused_jobs.length}) — resume first, oldest first:</b>
+          {t.paused_jobs.map((j) => (
+            <div key={j.id} style={{ color: "var(--muted)" }}>
+              ⏸ {j.label}{j.step ? ` — at step “${j.step}”` : ""}{j.since ? ` · since ${new Date(j.since).toLocaleString()}` : ""}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "var(--muted)" }}>Daily cap $</span>
+        <input style={{ width: 70, fontSize: 11 }} inputMode="decimal" value={val} onChange={(e) => setVal(e.target.value)} placeholder="0 = off" />
+        <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={saving || Number(val || 0) === t.cap_usd}
+                onClick={() => {
+                  const v = val.trim() === "" ? 0 : Number(val);
+                  if (!Number.isFinite(v) || v < 0) return notify("Daily cap must be a number, 0 or more (0 = off).");
+                  onSave(v);
+                }}>Save</button>
+        <span style={{ color: "var(--muted)" }}>
+          Resets {resets}. Counts pay-as-you-go spend only (not subscriptions).
+        </span>
       </div>
     </div>
   );

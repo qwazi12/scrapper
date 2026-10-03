@@ -102,8 +102,8 @@ def run_one(project_id: int, name: str, stop_event: threading.Event | None = Non
                 s.commit()
     _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
     logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)
+    from .. import costs
     try:
-        from .. import costs
         with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id), \
                 costs.operation(f"studio:{name}", ref=f"studio:{project_id}"):
             if ev and ev.is_set():
@@ -114,6 +114,12 @@ def run_one(project_id: int, name: str, stop_event: threading.Event | None = Non
     except control.Cancelled:
         _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
         logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
+                   project=project_id, stage=name)
+        raise
+    except costs.DailyCapReached as exc:
+        _set(project_id, stage_status="paused",
+             stage_message=f"{name} paused — daily spend cap reached; it resumes from this step after midnight")
+        logbus.log("warning", "studio_stage_budget_paused", f"Studio #{project_id}: {name} paused — {exc}",
                    project=project_id, stage=name)
         raise
     except Exception as exc:
@@ -176,6 +182,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
                            {"project_id": project_id, "stage": name, "auto": auto})
 
     def work() -> None:
+        from .. import costs
         outcome, err = "done", None
         try:
             names = [name]
@@ -195,6 +202,9 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
                     run_one(project_id, n, stop_event=stop_event)
                 except control.Cancelled:
                     outcome = "stopped"
+                    return
+                except costs.DailyCapReached as exc:
+                    outcome, err = "budget_paused", str(exc)  # resumed from this step when the day resets
                     return
                 except Exception as exc:
                     if stop_event.is_set():

@@ -213,7 +213,7 @@ class ResumableJob(Base):
     label: Mapped[str] = mapped_column(String(255), default="")
     params: Mapped[dict] = mapped_column(JSON, default=dict)        # what to run again
     checkpoint: Mapped[dict] = mapped_column(JSON, default=dict)    # how far it got
-    status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running|done|stopped|failed
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running|done|stopped|failed|budget_paused
     attempts: Mapped[int] = mapped_column(Integer, default=0)       # resumes so far
     owner: Mapped[str | None] = mapped_column(String(40), nullable=True)  # server process running it (heartbeat via updated_at)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

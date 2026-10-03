@@ -47,7 +47,8 @@ def test_grounded_search_free_then_charged(monkeypatch):
 
 
 def test_budget_hard_stop_blocks_paid_calls(client):
-    client.put("/api/costs/settings", json={"budget_usd": 10, "hard_stop": True, "upload_post_plan": "Free"})
+    client.put("/api/costs/settings", json={"budget_usd": 10, "hard_stop": True, "upload_post_plan": "Free",
+                                            "daily_usd": 0})
     costs.record_gemini("gemini-3.8-flash", {"promptTokenCount": 14_000_000})  # $10.50
     with pytest.raises(costs.BudgetExceeded, match="Monthly budget reached"):
         costs.check_budget()

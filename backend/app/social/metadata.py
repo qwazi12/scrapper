@@ -72,6 +72,10 @@ async def generate_social_metadata(
         costs.check_budget()
     except costs.BudgetExceeded as exc:
         return fail(str(exc))
+    except costs.DailyCapReached as exc:
+        if strict:
+            raise  # bulk jobs pause on it and resume when the day resets
+        return fail(str(exc))
 
     prompt = (
         "You are an elite short-form social media editor and growth strategist. "

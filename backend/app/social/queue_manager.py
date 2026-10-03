@@ -765,6 +765,13 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error checking nightly backup in scheduler: %s", exc)
 
+        # Jobs the daily spend cap paused go first once there's budget again.
+        try:
+            from .. import resume
+            resume.resume_budget_paused()
+        except Exception as exc:
+            logger.error("Error resuming budget-paused jobs: %s", exc)
+
 
 _scheduler_running = False
 

@@ -101,6 +101,7 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
 ## 6. Deployments & CI/CD
 - **Frontend to Vercel**: Automatically deployed via GitHub Actions (`.github/workflows/deploy-frontend.yml`) on git push to `main`.
   - Requires `VERCEL_API_TOKEN` (or `VERCEL_TOKEN`) in GitHub repository secrets.
+  - This is the **only** frontend deploy path. Vercel's own Git integration was disconnected 2026-10-03: it built from the repo root (no `package.json` → "npm install exited with 254" emails on every push). Don't reconnect it unless the project's Root Directory is set to `frontend` and this Action is removed.
 - **Manual Local Frontend Deploy**:
   ```bash
   ./scripts/deploy_frontend.sh
@@ -112,3 +113,9 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
 - **A deploy/restart cut a job off:** nothing to do. The new server resumes it once the old one has been silent for 75 s (logs: `job_resumed`). After 2 interruptions it stops (`job_not_resumed`) — re-run it by hand. Rows: table `resumable_jobs`.
 - **Archived breakdown needs editing:** open it in LongForm Studio → **Restore footage** (re-downloads the IMDb trailers, rebuilds stills, no AI cost), then re-render. Preview / switch / days: the 📦 line at the top of LongForm Studio, or `GET/PUT /api/studio/archive`; run now: `POST /api/studio/archive/run`.
 - **Images/videos 401 "media link expired":** reload the page (the media pass is refreshed every 6 h and lasts 12 h). Never put the access token in a URL — it is refused.
+
+## Daily spend cap (2026-10-03)
+- **Where**: Settings → 💰 Spending → "Today" box. Default **$6/day**, editable; 0 = off. Day = posting schedule timezone (America/New_York). Counts pay-as-you-go spend only (Gemini, search grounding, TTS), not subscriptions.
+- **What happens at the cap**: every paid call on the site is refused (`costs.DailyCapReached`). Running jobs **pause**, not fail: Studio steps show ⏸ "paused — daily spend cap reached"; bulk AI rewrites stop with the finished videos checkpointed. Their job rows get status `budget_paused` and are listed under "Paused by the cap".
+- **Resume**: automatic. The scheduler (every 5 min) relaunches `budget_paused` jobs **first, oldest first**, as soon as there's budget (new day, or you raise the cap). A Studio step restarts from the beginning of the step it was on; finished steps are kept. Single-click AI actions (one caption, one voice-over) are just refused with the reason — press again later.
+- **Not tracked → not capped**: Railway CPU (renders), Gemini voice-overs in SocialPilot (refused at the cap, but their cost isn't recorded).
