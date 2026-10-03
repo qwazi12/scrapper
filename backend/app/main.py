@@ -425,17 +425,27 @@ def get_logs(limit: int = 200, since: int = 0, s: Session = Depends(get_session)
 
 @app.get("/api/events", dependencies=_AUTH)
 def events():
-    """Server-Sent Events stream of live log lines for the Logs panel."""
-    def gen():
+    """Server-Sent Events stream of live log lines for the Logs panel.
+
+    Async generator: the old sync one blocked a worker thread per open Logs
+    panel (q.get waits up to 15 s), starving request handlers (2026-10-03)."""
+    async def gen():
+        import asyncio
         q = logbus.subscribe()
         try:
             yield "event: ping\ndata: {}\n\n"
+            idle = 0.0
             while True:
                 try:
-                    payload = q.get(timeout=15)
+                    payload = q.get_nowait()
+                    idle = 0.0
                     yield f"data: {json.dumps(payload)}\n\n"
                 except queue.Empty:
-                    yield "event: ping\ndata: {}\n\n"
+                    await asyncio.sleep(0.5)
+                    idle += 0.5
+                    if idle >= 15:
+                        idle = 0.0
+                        yield "event: ping\ndata: {}\n\n"
         finally:
             logbus.unsubscribe(q)
 

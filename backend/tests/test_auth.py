@@ -159,25 +159,42 @@ def test_media_pass_opens_media_only_and_token_never_works_in_a_url():
     assert auth.verify_media_pass(g) and not auth.verify_media_pass("nonsense")
 
 
-def test_session_dependency_closes_on_the_event_loop():
-    """Regression (2026-10-03 outage): a sync generator dependency's clean-up
-    needs a worker thread; with every worker waiting for a DB connection the
-    sessions holding those connections could never close. Must stay async."""
-    import asyncio
+def test_db_never_runs_out_of_connections():
+    """Regression (2026-10-03 outage): a bounded pool deadlocked the site —
+    requests held connections while waiting for a worker thread, and every
+    worker thread waited for a connection. SQLite uses NullPool (no limit) and
+    the session dependency closes on the event loop."""
     import inspect
+    import threading
+
+    from sqlalchemy import text
+    from sqlalchemy.pool import NullPool
 
     from backend.app import db
 
     assert inspect.isasyncgenfunction(db.get_session)
+    assert isinstance(db.engine.pool, NullPool)
 
-    async def run():
-        gen = db.get_session()
-        s = await gen.__anext__()
-        s.execute(db.text("SELECT 1")) if hasattr(db, "text") else s.connection()
-        assert db.engine.pool.checkedout() >= 1
-        await gen.aclose()
-        return s
+    # 60 sessions holding a connection at once (more than any thread pool) — none may block.
+    held, release, errors = [], threading.Event(), []
 
-    before = db.engine.pool.checkedout()
-    asyncio.run(run())
-    assert db.engine.pool.checkedout() == before
+    def hold():
+        try:
+            with db.SessionLocal() as s:
+                s.execute(text("SELECT 1"))
+                held.append(1)
+                release.wait(10)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    ts = [threading.Thread(target=hold) for _ in range(60)]
+    for t in ts:
+        t.start()
+    for _ in range(200):
+        if len(held) == 60:
+            break
+        threading.Event().wait(0.05)
+    release.set()
+    for t in ts:
+        t.join(10)
+    assert len(held) == 60 and not errors

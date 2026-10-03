@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -15,12 +16,16 @@ class Base(DeclarativeBase):
 
 
 _url = settings.resolved_database_url
-_connect_args = {"check_same_thread": False} if _url.startswith("sqlite") else {}
-# Headroom over the default 5 + 10: the scheduler, job threads, heartbeats and
-# request handlers all share it. A short timeout fails a stuck request fast
-# instead of piling up behind it.
-engine = create_engine(_url, connect_args=_connect_args, pool_pre_ping=True,
-                       pool_size=10, max_overflow=20, pool_timeout=15)
+if _url.startswith("sqlite"):
+    # No pool limit for SQLite (2026-10-03 outage). With a bounded pool the
+    # site deadlocked: sync endpoints hold their connection while they wait for
+    # a worker thread (to serialize the response), and the worker threads were
+    # all waiting for a connection. A SQLite "connection" is a file handle, so
+    # NullPool opens one per checkout and closes it on return — nothing to run
+    # out of. timeout = SQLite busy wait for a write lock, instead of failing.
+    engine = create_engine(_url, connect_args={"check_same_thread": False, "timeout": 30}, poolclass=NullPool)
+else:
+    engine = create_engine(_url, pool_pre_ping=True, pool_size=10, max_overflow=20, pool_timeout=15)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
