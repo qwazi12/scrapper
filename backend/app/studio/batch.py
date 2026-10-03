@@ -49,7 +49,7 @@ def _wait_done(pid: int, job_check) -> StudioProject:
         job_check()
         with SessionLocal() as s:
             p = s.get(StudioProject, pid)
-            if p.stage_status != "running" and runner.busy().get("project_id") != pid:
+            if p.stage_status not in ("running", "queued") and runner.busy().get("project_id") != pid:
                 s.expunge(p)
                 return p
         time.sleep(POLL)
@@ -71,12 +71,12 @@ def _run(ids: list[int], rid: int) -> None:
             resume.add_done(rid, pid)
             continue
         control.progress(f"Rendering {title} ({status['done'] + 1} of {status['total']})")
-        _wait_idle(control.check)
-        try:
-            runner.start(pid, first, auto=True, until="render")
-        except RuntimeError:          # someone else grabbed Studio: wait and retry once
-            _wait_idle(control.check)
-            runner.start(pid, first, auto=True, until="render")
+        # Join Studio's waiting line (like any other start) so the card shows
+        # "waiting in line" right away and nothing jumps ahead of it. It used to
+        # poll for a free Studio, so a queued job always got in first and the
+        # selected video showed no sign of the render (owner, 2026-10-03).
+        if runner.start_or_queue(pid, first, auto=True, until="render") == "queued":
+            control.progress(f"{title} is waiting in Studio's line to render ({status['done'] + 1} of {status['total']})")
         try:
             p = _wait_done(pid, control.check)
         except control.Cancelled:

@@ -189,15 +189,16 @@ def test_render_batch_runs_one_by_one_and_skips_unready(monkeypatch):
         ids = [ready.id, needs_plan.id, no_script.id]
     order = []
 
-    def fake_start(pid, name, auto=False, rid=None, until="script"):
+    def fake_start(pid, name, auto=False, until="script"):
         order.append((pid, name, until))
         with SessionLocal() as s:
             p = s.get(StudioProject, pid)
             p.stage, p.stage_status = "render", "done"
             p.render = {"rendered_at": f"t{pid}"}
             s.commit()
+        return "started"
 
-    monkeypatch.setattr(runner, "start", fake_start)
+    monkeypatch.setattr(runner, "start_or_queue", fake_start)
     batch.start(ids)
     for _ in range(300):
         if not batch.status["running"]:
