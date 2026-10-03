@@ -69,10 +69,7 @@ def shots(project_id: int) -> str:
     for src in sources:
         total = media.duration(src["file"])
         crop = media.active_area(src["file"])  # trailers often have bars baked in
-        cuts = media.scene_cuts(src["file"])
-        if total > 30 and not cuts:
-            raise RuntimeError(f"no cuts found in {pathlib.Path(src['file']).name} ({total:.0f}s) — "
-                               "scene detection looks broken; re-run shots")
+        cuts = media.scene_cuts(src["file"])   # adaptive threshold; raises if ffmpeg fails
         for a, b in media.shots_from_cuts(cuts, total):
             if len(shots) >= MAX_SHOTS:
                 break

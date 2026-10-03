@@ -1014,3 +1014,22 @@ def test_scene_cuts_fails_loudly_when_ffmpeg_fails(monkeypatch, tmp_path):
                         subprocess.CompletedProcess(cmd, -9, "", "Killed"))
     with pytest.raises(RuntimeError, match="scene detection failed"):
         media.scene_cuts(tmp_path / "x.mp4")
+
+
+def test_scene_cuts_lowers_the_threshold_for_dark_footage(monkeypatch, tmp_path):
+    import subprocess
+    from backend.app import control
+    from backend.app.studio import media
+
+    def log(pairs):
+        return "\n".join(f"[Parsed_metadata_1] frame:{i} pts:{int(t*1000)} pts_time:{t}\n"
+                         f"[Parsed_metadata_1] lavfi.scene_score={sc}" for i, (t, sc) in enumerate(pairs))
+
+    # bright trailer: plenty of strong cuts -> 0.3 is kept (weak changes ignored)
+    bright = [(i * 2.0, 0.5) for i in range(1, 60)] + [(i * 2.0 + 1, 0.1) for i in range(1, 60)]
+    monkeypatch.setattr(control, "run", lambda cmd, timeout=0, text=True: subprocess.CompletedProcess(cmd, 0, "", log(bright)))
+    assert len(media.scene_cuts(tmp_path / "b.mp4")) == 59
+    # dark trailer: 2 strong cuts in 2 min, many 0.15 ones -> steps down to 0.12
+    dark = [(10.0, 0.4), (70.0, 0.4)] + [(i * 3.0 + 0.5, 0.15) for i in range(1, 40)]
+    monkeypatch.setattr(control, "run", lambda cmd, timeout=0, text=True: subprocess.CompletedProcess(cmd, 0, "", log(dark)))
+    assert len(media.scene_cuts(tmp_path / "d.mp4")) == 41

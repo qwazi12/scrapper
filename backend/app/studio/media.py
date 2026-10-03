@@ -35,18 +35,51 @@ def duration(path: str | pathlib.Path) -> float:
     return float(out.stdout.strip())
 
 
-def scene_cuts(path: str | pathlib.Path, threshold: float = 0.3) -> list[float]:
-    """Times (seconds) where the picture changes hard, i.e. editor's cuts."""
+SCENE_STEPS = (0.3, 0.12, 0.08)   # tried in order until the cut rate looks like a trailer
+MIN_CUTS_PER_MIN = 12              # real trailers: ~30–60 cuts a minute
+
+
+def scene_cuts(path: str | pathlib.Path, threshold: float | None = None) -> list[float]:
+    """Times (seconds) where the picture changes hard, i.e. editor's cuts.
+
+    One ffmpeg pass records every frame's scene score >= the lowest step; the
+    threshold is then picked adaptively: 0.3 normally, lower for dark footage
+    where cuts between dark shots score low (Resident Evil, 2026-10-03: 4 cuts
+    in a 152 s trailer at 0.3, 35 at 0.12, 62 at 0.08; Digger 111 at 0.3)."""
     from .. import control
+    floor = threshold if threshold is not None else min(SCENE_STEPS)
     proc = control.run(
-        ["ffmpeg", "-hide_banner", "-i", str(path), "-vf", f"select='gt(scene,{threshold})',showinfo",
+        ["ffmpeg", "-hide_banner", "-i", str(path), "-vf",
+         f"select='gt(scene,{floor})',metadata=print:key=lavfi.scene_score",
          "-an", "-f", "null", "-"], timeout=1800)
     if proc.returncode != 0:
-        # A killed/failed ffmpeg prints no cuts: treating that as "one long shot"
-        # silently gave Resident Evil 13 shots from 5 videos (2026-10-03).
+        # A killed/failed ffmpeg prints no cuts — never treat that as "one long shot".
         raise RuntimeError(f"scene detection failed on {pathlib.Path(path).name} "
                            f"(ffmpeg exit {proc.returncode}): {proc.stderr[-300:]}")
-    return sorted(float(t) for t in re.findall(r"pts_time:([0-9.]+)", proc.stderr))
+    scored = parse_scene_scores(proc.stderr)
+    if threshold is not None:
+        return [t for t, sc in scored if sc > threshold]
+    minutes = max((max((t for t, _ in scored), default=0.0)) / 60, 0.5)
+    for step in SCENE_STEPS:
+        cuts = [t for t, sc in scored if sc > step]
+        if len(cuts) / minutes >= MIN_CUTS_PER_MIN:
+            return cuts
+    return [t for t, sc in scored if sc > SCENE_STEPS[-1]]
+
+
+def parse_scene_scores(log: str) -> list[tuple[float, float]]:
+    """(time, score) pairs from ffmpeg's metadata=print output."""
+    out, t = [], None
+    for line in log.splitlines():
+        m = re.search(r"pts_time:([0-9.]+)", line)
+        if m:
+            t = float(m.group(1))
+            continue
+        m = re.search(r"lavfi\.scene_score=([0-9.]+)", line)
+        if m and t is not None:
+            out.append((t, float(m.group(1))))
+            t = None
+    return sorted(out)
 
 
 def shots_from_cuts(cuts: list[float], total: float, min_len: float = 0.7) -> list[tuple[float, float]]:
