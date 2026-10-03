@@ -350,3 +350,50 @@ Env needed on Railway: `TMDB_API_KEY`, `TTS_API_KEY` (same Google key manhwa use
 - **Missing still → black thumbnail**: `thumbnail()` now uses the first of still/poster that exists on disk.
 - **Drive guard**: the other session (fe6647d) restored the My Drive check with a more exact message; kept theirs, added a Shared Drive upload test.
 - Verified: backend tests 169 pass / 1 skipped (new: Shared Drive upload, My Drive refusal, render-info merge + running refusal, poster fallback); `tsc --noEmit` clean. Not verified in the browser or on prod.
+
+## PLAN FOR REVIEW — 2026-10-03 — Auto-production of trailer breakdowns (NOT BUILT; awaiting owner approval)
+
+### Findings that shaped it (verified 2026-10-03)
+- **Vercel failure emails**: every push triggers TWO deploys. (1) The GitHub Action (`deploy-frontend.yml`) deploys from `frontend/` with the CLI and **succeeds** (prod `scrapper.nodepilot.dev` is on the 07:07 build). (2) Vercel's own Git integration also builds each push from the **repo root** (project Root Directory is unset), finds no `package.json` (`ENOENT /vercel/path0/package.json`) → "npm install exited with 254" → email. 15 of the last 19 deploys are these. The site isn't broken; the second deploy path is. **Fix (needs owner OK, it's a Vercel setting): disconnect the Git integration** (Vercel → scrapper → Settings → Git → Disconnect, or `vercel git disconnect`) so the Action is the only deploy path. (Setting Root Directory = `frontend` instead would break the Action, which runs the CLI from inside `frontend/`.)
+- **YouTube API on Railway**: `YOUTUBE_API_KEY` is set and works with **YouTube Data API v3** (test call OK). **No code uses it.** Default quota 10,000 units/day; `videos.list` = 1 unit, `search.list` = 100.
+- **Real cost per breakdown** (Spending data, Oct 2026): #2 $0.37, #3 $0.57; most of it is shot analysis (`studio:shots`). Render is CPU only (tracked $0). So 5/day ≈ $2–3/day, inside $6. Not in the tracker: Railway CPU; TTS beyond the 1M free chars/month (5/day × 30 days could approach it — measure chars per script); search grounding beyond 5k/month.
+- Pipeline today: gather → trailer → shots → script → plan → render (`runner.ORDER`); "Make breakdown" already auto-runs to script and stops for review. Only one Studio job runs at a time (`runner._lock`), which suits a one-by-one list. Every paid call already goes through `costs.check_budget()` (gemini.py, tts.py, metadata.py), so one daily cap there covers the whole site.
+
+### A. Checked & ranked "Start a new breakdown" list
+- New `studio/candidates.py` + table `studio_candidates` (tmdb_id, media_type, checks JSON, score, rank, status: listed / skipped / started / done / failed, reason, timestamps). Refreshed daily (and by a ↻ button) from the 3 calendar lists, deduped.
+- Checks per title (each shown on the card as ✓/✕ with the reason; a ✕ is never auto-picked):
+  1. Not already made (no StudioProject with this tmdb_id).
+  2. Trailer actually available: IMDb official trailer (what step 2 downloads), else a TMDB `/videos` YouTube trailer confirmed live via `videos.list`.
+  3. Enough facts: imdb_id, poster, overview, ≥3 cast.
+  4. Release window: movie opens in ≤90 days or opened ≤30 days ago (US date); TV currently airing.
+  5. Minimum interest: TMDB popularity / vote floor.
+- Score (shown, sortable): YouTube trailer views and views/day since upload (gives the unused key a job; ~1 unit per 50 titles), TMDB popularity, days to release, trending flag. Owner can ⭐ pin or ✕ skip any title; pins go first.
+- All free calls (TMDB, IMDb, YouTube quota). No AI cost.
+
+### B. Auto-production switch
+- Setting `app_settings.studio_auto {enabled, per_day: 5}`; card shows (rule 40): ON/OFF, next title it will take, last run + result, today "2 of 5 made", how to undo (switch off; running step finishes or press Stop).
+- Every scheduler tick (5 min): if ON, Studio idle, today's count < 5, and today's spend + estimated cost of one breakdown (avg of last 5, ~$0.50) ≤ daily cap → take the top-ranked passing title → create project → run steps 1–5 (stops before render, as today). One at a time.
+- A failed title is marked failed with its reason, then the next one starts (max 1 retry). Deploy restarts are already covered by auto-resume.
+- "Day" = America/New_York (the posting schedule's timezone), stated in the UI.
+
+### C. Review → mass render (step 6)
+- "Your videos" gets checkboxes, filters (Ready for review / Reviewed / Rendered / In queue) and a per-project "✓ Reviewed" mark so "select all reviewed" is one click.
+- `POST /api/studio/render-batch {ids}` → a resumable batch (same pattern as bulk AI: checkpoint = finished ids) that renders one by one, skipping anything not at script-done or archived. Progress "3 of 7", per-item result, Stop stops the batch.
+
+### D. Mass send to queue
+- `POST /api/studio/publish-batch {ids}` → runs the existing publish for each rendered, not-yet-queued project; per-item result. "Select all rendered" + "Send N to queue".
+- (Drive copy is still blocked until the LongForm folder is in a Shared Drive.)
+
+### E. $6/day site-wide spend cap
+- `costs` settings gain `daily_usd` (default 6). `check_budget()` also refuses paid calls once today's variable spend ≥ $6 (America/New_York day), for everything on the site: Studio, queue AI, TTS.
+- Flat subscriptions (Upload-Post $24/month) aren't counted against the daily cap; the monthly budget still covers them.
+- Spending card: "Today $1.84 of $6.00", resets at midnight ET.
+- If the cap is hit mid-breakdown, the step stops with "daily cap reached", and the automation resumes it the next day instead of failing it.
+
+### Open questions for the owner
+1. Should manual "Make breakdown" clicks count toward the 5/day, or is the 5 for the automation only? (Suggest: both count; a manual click past 5 asks to confirm.)
+2. Should the cap stop *all* AI (queue captions too), or reserve e.g. $1 for the queue?
+3. OK to disconnect Vercel's Git integration?
+
+### Build order (each its own commit + push)
+E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Tests for each; RUNBOOK/CONFIG updated.
