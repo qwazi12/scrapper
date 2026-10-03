@@ -326,10 +326,12 @@ def render(project_id: int) -> str:
         composites.append(lambda: media.run(motion.overlay_cmd(video, sub_movs, audio, total, ENC, static_final)))
 
     motion_info = None
+    control.check()
     if want_motion:
         control.progress("rendering motion graphics (HyperFrames)")
         motion_info, overlays, end_motion = _motion_pieces(facts, plan, shots_by_id, poster_slots, windows,
                                                             rel_line, backdrop or poster, channel, sub_movs, out_dir)
+        control.check()
         if end_motion:
             end_seg_m = segs_dir / "seg_end_motion.mp4"
             media.run(["ffmpeg", "-v", "error", "-y", "-i", str(end_motion), "-t", f"{END_CARD:.3f}", "-an",
@@ -341,8 +343,10 @@ def render(project_id: int) -> str:
         motion_final = out_dir / ("final.mp4" if mode == "on" else "final_motion.mp4")
         composites.append(lambda: media.run(motion.overlay_cmd(base_m, sorted(overlays, key=lambda x: x[1]),
                                                                 audio, total, ENC, motion_final)))
+    control.check()
     control.progress("compositing the final video" + (" (both looks at once)" if len(composites) > 1 else ""))
     _parallel(composites, workers=2)
+    control.check()
     if want_motion:
         motion_info["file"] = str(motion_final.relative_to(root))
         motion_info["overlays"] = [{"piece": f.stem.split("-")[0], "start": round(t, 2),
@@ -401,6 +405,7 @@ def _parallel(tasks: list, workers: int = RENDER_WORKERS, progress: str | None =
     """Run zero-arg callables on a thread pool. Each runs in a copy of this
     thread's context, so control.check()/Stop and cost labels still apply; the
     first error (or Stop) cancels everything not started and is re-raised."""
+    import contextlib
     import contextvars
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -408,8 +413,16 @@ def _parallel(tasks: list, workers: int = RENDER_WORKERS, progress: str | None =
         return []
     results: list = [None] * len(tasks)
     done = 0
+    parent_job = control.current()
+
+    def _run_task(task_fn):
+        if parent_job:
+            control.adopt(parent_job)
+            control.check()
+        return task_fn()
+
     with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as ex:
-        futs = {ex.submit(contextvars.copy_context().run, t): i for i, t in enumerate(tasks)}
+        futs = {ex.submit(_run_task, t): i for i, t in enumerate(tasks)}
         try:
             for f in as_completed(futs):
                 results[futs[f]] = f.result()
@@ -419,6 +432,10 @@ def _parallel(tasks: list, workers: int = RENDER_WORKERS, progress: str | None =
         except BaseException:
             for f in futs:
                 f.cancel()
+            if parent_job:
+                for p in list(parent_job.procs):
+                    with contextlib.suppress(Exception):
+                        p.kill()
             raise
     return results
 

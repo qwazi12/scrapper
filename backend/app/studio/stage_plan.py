@@ -205,6 +205,7 @@ def plan(project_id: int) -> str:
     t, timeline, prev_para = 0.0, [], None
     sentences = script["sentences"]
     for k, sen in enumerate(sentences):
+        control.check()
         control.progress(f"voicing sentence {k + 1} of {len(sentences)}")
         mp3 = tts.synth(sen["text"], tts_dir / f"sent_{k + 1:03d}.mp3")
         d = media.duration(mp3)
@@ -235,6 +236,7 @@ def plan(project_id: int) -> str:
     open_slots = [s for s in slots if s["slot"] not in special]
 
     # 3. Gemini picks shots (one per look-alike group); validate and repair.
+    control.check()
     control.progress("checking shots for look-alikes")
     groups = look_groups(shots, root)
     seen_looks: set[str] = set()
@@ -244,7 +246,9 @@ def plan(project_id: int) -> str:
             seen_looks.add(groups[c["id"]])
             distinct_catalog.append(c)
     try:
+        control.check()
         picks = gemini.ask_json(assign_prompt(open_slots, distinct_catalog), temperature=0.3)
+        control.check()
         assigned, repaired = _validate(picks if isinstance(picks, list) else [], open_slots, catalog, groups)
         how = f"Gemini picks ({repaired} repaired)"
     except gemini.GeminiError as exc:

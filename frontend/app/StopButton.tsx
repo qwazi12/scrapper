@@ -10,10 +10,12 @@ export function StopButton({
   onStop,
   what,
   style,
+  immediate = false,
 }: {
   onStop: () => Promise<unknown> | unknown;
   what?: string; // shown on hover, e.g. "Finished steps are kept"
   style?: React.CSSProperties;
+  immediate?: boolean;
 }) {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,7 +29,7 @@ export function StopButton({
 
   async function click() {
     setErr("");
-    if (!armed) {
+    if (!immediate && !armed) {
       setArmed(true);
       return;
     }

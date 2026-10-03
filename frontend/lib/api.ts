@@ -761,6 +761,9 @@ export const api = {
   studioRun: (id: number, stage: string, auto = false) =>
     req<{ ok: boolean }>(`/api/studio/projects/${id}/run`, {
       method: "POST", headers: headers(), body: JSON.stringify({ stage, auto }) }),
+  studioStop: (id: number) =>
+    req<StudioProject>(`/api/studio/projects/${id}/stop`, {
+      method: "POST", headers: headers() }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),

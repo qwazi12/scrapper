@@ -6,6 +6,7 @@ import pathlib
 
 import httpx
 
+from .. import control
 from ..db import SessionLocal
 from ..models import StudioProject
 from . import gemini, sources, tmdb
@@ -19,6 +20,7 @@ GUIDE_SOURCES = (
 
 
 def _download(url: str | None, dest: pathlib.Path) -> str | None:
+    control.check()
     if not url:
         return None
     if dest.exists() and dest.stat().st_size > 0:
@@ -26,9 +28,12 @@ def _download(url: str | None, dest: pathlib.Path) -> str | None:
     try:
         r = httpx.get(url, timeout=60, follow_redirects=True)
         r.raise_for_status()
+        control.check()
         dest.write_bytes(r.content)
         return str(dest)
     except Exception:
+        if control.stopped():
+            raise control.Cancelled("stopped by user")
         return None
 
 
@@ -75,7 +80,9 @@ def gather(project_id: int) -> str:
             local["cast"][c["actor"]] = path
     facts["local"] = local
 
+    control.check()
     research = sources.annotate(gemini.research(research_prompt(facts)))
+    control.check()
 
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)

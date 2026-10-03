@@ -1160,6 +1160,11 @@ def stop_job(job_id: str, s: Session = Depends(get_session)) -> dict:
         return {"id": job_id, "status": "cancelled"}
     try:
         j = control.request_stop(job_id)
+        if j.scope == "studio" and j.ref is not None:
+            import contextlib
+            with contextlib.suppress(Exception):
+                from .studio import runner
+                runner.stop(int(j.ref))
     except KeyError:
         raise HTTPException(404, "job not found")
     logbus.log("warning", "job_stopped", f"Stop pressed: {j.label}", job=job_id, kind=j.kind)

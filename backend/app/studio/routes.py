@@ -241,6 +241,15 @@ def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session))
     return {"ok": True, "stage": req.stage, "auto": req.auto}
 
 
+@router.post("/projects/{project_id}/stop")
+def stop_project(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Stop all running work on a studio project immediately."""
+    p = _get(s, project_id)
+    runner.stop(project_id)
+    s.refresh(p)
+    return _out(p)
+
+
 @router.post("/projects/{project_id}/trailer-upload")
 async def upload_trailer(project_id: int, file: UploadFile = File(...),
                          s: Session = Depends(get_session)) -> dict[str, Any]:

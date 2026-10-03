@@ -92,6 +92,7 @@ def shots(project_id: int) -> str:
                              root / "assets" / "cast_sheet.jpg")
     tagged = 0
     for i in range(0, len(shots), BATCH):
+        control.check()
         batch = shots[i:i + BATCH]
         control.progress(f"tagging shots {i + 1}–{i + len(batch)} of {len(shots)}")
         try:

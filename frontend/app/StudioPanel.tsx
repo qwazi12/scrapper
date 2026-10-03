@@ -337,10 +337,19 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
   const [undoV, setUndoV] = useState(0);
 
   async function stopStage() {
-    const j = (await api.jobs()).find((x) => x.scope === "studio" && Number(x.ref) === Number(id) && ["running", "stopping"].includes(x.status));
-    if (!j) throw new Error("no running step found — it may have just finished");
-    await api.stopJob(j.id);
-    await load();
+    setErr("");
+    try {
+      await api.studioStop(id);
+      try {
+        const jobs = await api.jobs();
+        const j = jobs.find((x) => x.scope === "studio" && Number(x.ref) === Number(id) && ["running", "stopping"].includes(x.status));
+        if (j) await api.stopJob(j.id);
+      } catch {}
+    } catch (e: any) {
+      setErr(e.message || String(e));
+    } finally {
+      await load();
+    }
   }
 
   async function run(stage: string, auto = false) {
@@ -375,14 +384,14 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
               {[2, 2.5, 3, 3.5, 4].map((m) => <option key={m} value={m}>{m} min</option>)}
             </select>
           </div>
-          <div style={{ marginTop: 6, fontSize: 12, color: p.stage_status === "error" ? "var(--red)" : running ? "var(--yellow)" : "var(--text)" }}>
+          <div style={{ marginTop: 6, fontSize: 12, color: p.stage_status === "error" ? "var(--red)" : running ? "var(--yellow)" : p.stage_status === "stopped" ? "#f59e0b" : "var(--text)" }}>
             {running ? "⏳ " : p.stage_status === "error" ? "✕ " : p.stage_status === "stopped" ? "■ " : p.stage_status === "done" ? "✓ " : ""}
             {p.stage_message || "Not started"}
           </div>
           {err && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 4 }}>{err}</div>}
         </div>
         {running && (
-          <StopButton style={{ fontSize: 12 }} what="Finished steps are kept; you can re-run this one any time" onStop={stopStage} />
+          <StopButton immediate style={{ fontSize: 12 }} what="Stop all activity immediately; finished steps are kept" onStop={stopStage} />
         )}
         <UndoButton
           scope={`studio:${id}`}

@@ -104,7 +104,10 @@ def job(kind: str, label: str, scope: str, ref: Any = None) -> Iterator[Job]:
     _local.job = j
     try:
         yield j
-        j.status = "cancelled" if j.stop.is_set() else "done"
+        if j.stop.is_set():
+            j.status, j.message = "cancelled", "stopped by user"
+            raise Cancelled(f"{label} stopped")
+        j.status = "done"
     except Cancelled:
         j.status, j.message = "cancelled", "stopped by user"
         raise
@@ -209,7 +212,20 @@ def list_jobs() -> list[dict[str, Any]]:
 
 def running(scope: str | None = None, ref: Any = None) -> list[Job]:
     return [j for j in _jobs.values() if not j.finished_at and (scope is None or j.scope == scope)
-            and (ref is None or j.ref == ref)]
+            and (ref is None or str(j.ref) == str(ref))]
+
+
+def stop_jobs_for(scope: str, ref: Any = None) -> list[Job]:
+    """Request stop on all running jobs matching scope and optional ref."""
+    stopped = []
+    with _lock:
+        targets = [j for j in _jobs.values() if not j.finished_at and (scope is None or j.scope == scope)
+                   and (ref is None or str(j.ref) == str(ref))]
+    for j in targets:
+        with contextlib.suppress(Exception):
+            request_stop(j.id)
+            stopped.append(j)
+    return stopped
 
 
 def start_thread(kind: str, label: str, scope: str, fn, *args, ref: Any = None, **kwargs) -> str:

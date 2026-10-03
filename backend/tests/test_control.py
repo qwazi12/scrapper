@@ -143,10 +143,13 @@ def test_job_lookup_by_registry_id_and_by_ingest_number():
     started = threading.Event()
 
     def work():
-        with control.job("test", "lookup test", "studio", 99):
-            started.set()
-            while not control.stopped():
-                time.sleep(0.05)
+        try:
+            with control.job("test", "lookup test", "studio", 99):
+                started.set()
+                while not control.stopped():
+                    time.sleep(0.05)
+        except control.Cancelled:
+            pass
 
     threading.Thread(target=work, daemon=True).start()
     started.wait(2)
@@ -155,3 +158,105 @@ def test_job_lookup_by_registry_id_and_by_ingest_number():
     assert r.status_code == 200 and r.json()["status"] == "running"     # was a 422 from the int-only route
     assert c.post(f"/api/jobs/{jid}/stop", headers=hdr).json()["status"] == "stopping"
     assert c.get("/api/jobs/999999", headers=hdr).status_code == 404     # numeric ids still mean ingest jobs
+
+
+def test_job_context_raises_cancelled_if_stopped_during_execution():
+    with pytest.raises(control.Cancelled):
+        with control.job("test", "test stop on exit", scope="test") as j:
+            j.stop.set()
+            # Even if the inner block doesn't call control.check(), exiting raises Cancelled
+    assert j.status == "cancelled"
+
+
+def test_runner_stop_cancels_auto_chain(monkeypatch):
+    from backend.app.studio import runner
+    from backend.app.models import ResumableJob
+
+    stages_executed = []
+
+    def stage_a(pid):
+        stages_executed.append("gather")
+        for _ in range(50):
+            control.check()
+            time.sleep(0.05)
+        return "gather done"
+
+    def stage_b(pid):
+        stages_executed.append("trailer")
+        return "trailer done"
+
+    monkeypatch.setitem(runner.STAGES, "gather", stage_a)
+    monkeypatch.setitem(runner.STAGES, "trailer", stage_b)
+
+    with SessionLocal() as s:
+        p = StudioProject(tmdb_id=10, title="Auto Chain Test")
+        s.add(p)
+        s.commit()
+        pid = p.id
+
+    # Start auto chain: gather -> trailer
+    runner.start(pid, "gather", auto=True)
+
+    # Wait until gather starts
+    for _ in range(50):
+        with SessionLocal() as s:
+            p = s.get(StudioProject, pid)
+            if p.stage_status == "running":
+                break
+        time.sleep(0.05)
+
+    # Now call runner.stop(pid)
+    assert runner.stop(pid) is True
+
+    # Wait for the background thread to finish
+    time.sleep(0.5)
+
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        assert p.stage_status == "stopped"
+        assert "stopped by user" in p.stage_message.lower()
+        # Verify ResumableJob is marked stopped
+        r = s.query(ResumableJob).filter(ResumableJob.kind == "studio").order_by(ResumableJob.id.desc()).first()
+        if r and (r.params or {}).get("project_id") == pid:
+            assert r.status == "stopped"
+
+    # trailer must NEVER have run!
+    assert "trailer" not in stages_executed
+
+
+def test_studio_project_stop_api_endpoint(client, monkeypatch):
+    from backend.app.studio import runner
+
+    def slow_stage(pid):
+        while not control.stopped():
+            time.sleep(0.05)
+            control.check()
+        return "done"
+
+    monkeypatch.setitem(runner.STAGES, "gather", slow_stage)
+
+    with SessionLocal() as s:
+        p = StudioProject(tmdb_id=11, title="API Stop Test")
+        s.add(p)
+        s.commit()
+        pid = p.id
+
+    # Start stage via API
+    r_run = client.post(f"/api/studio/projects/{pid}/run", json={"stage": "gather", "auto": True})
+    assert r_run.status_code == 200
+
+    # Wait for stage to be running
+    for _ in range(50):
+        if client.get(f"/api/studio/projects/{pid}").json()["stage_status"] == "running":
+            break
+        time.sleep(0.02)
+
+    # Call stop API endpoint
+    r_stop = client.post(f"/api/studio/projects/{pid}/stop")
+    assert r_stop.status_code == 200
+    assert r_stop.json()["stage_status"] == "stopped"
+
+    # Verify project in DB is stopped
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        assert p.stage_status == "stopped"

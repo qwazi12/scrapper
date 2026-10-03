@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from .. import control
 from ..config import settings
 from ..db import SessionLocal
 from ..models import StudioProject
@@ -164,14 +165,18 @@ def script(project_id: int) -> str:
     board_txt = _board_text(board)
     channel = settings.studio_channel_name
 
+    control.check()
     draft = gemini.ask_json(draft_prompt(board_txt, facts["title"], minutes, channel), temperature=0.7)
+    control.check()
     sentences = [{"paragraph": int(x.get("paragraph") or 1), "text": str(x.get("text") or "").strip(),
                   "refs": [str(r) for r in (x.get("refs") or [])]}
                  for x in (draft.get("sentences") or []) if str(x.get("text") or "").strip()]
     if not sentences:
         raise gemini.GeminiError("draft came back empty")
 
+    control.check()
     verdicts = gemini.ask_json(check_prompt(board_txt, sentences), temperature=0.1)
+    control.check()
     by_i = {int(v.get("i", 0)): v for v in verdicts if isinstance(v, dict)} if isinstance(verdicts, list) else {}
     final, changes = [], []
     for i, sen in enumerate(sentences):

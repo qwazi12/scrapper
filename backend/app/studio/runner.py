@@ -29,6 +29,7 @@ STAGES: dict[str, Callable[[int], str]] = {}
 
 _lock = threading.Lock()
 _current: dict[str, object] = {"project_id": None, "stage": None}
+_stop_events: dict[int, threading.Event] = {}
 
 
 def stage(name: str):
@@ -58,10 +59,38 @@ def busy() -> dict[str, object]:
     return dict(_current)
 
 
-def run_one(project_id: int, name: str) -> str:
+def is_stopped(project_id: int) -> bool:
+    ev = _stop_events.get(project_id)
+    return bool(ev and ev.is_set())
+
+
+def stop(project_id: int) -> bool:
+    """Stop all activity on a studio project immediately, killing child processes."""
+    ev = _stop_events.get(project_id)
+    if ev:
+        ev.set()
+    from .. import control
+    control.stop_jobs_for("studio", project_id)
+    with SessionLocal() as s:
+        from ..models import ResumableJob
+        for r in s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "running").all():
+            if int((r.params or {}).get("project_id", -1)) == project_id:
+                r.status = "stopped"
+                r.last_error = "Stopped by user"
+        s.commit()
+    _set(project_id, stage_status="stopped", stage_message="Stopped by user — re-run it when ready")
+    logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: stopped by user", project=project_id)
+    return True
+
+
+def run_one(project_id: int, name: str, stop_event: threading.Event | None = None) -> str:
     """Run a single stage synchronously (used by the thread and by tests)."""
     if name not in STAGES:
         raise ValueError(f"Unknown stage '{name}'. Stages: {', '.join(STAGES)}")
+    ev = stop_event or _stop_events.get(project_id)
+    if ev and ev.is_set():
+        _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
+        raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
     if name in ("script", "plan"):
         # Re-running these replaces text/plan the owner may have edited: keep an undo point.
         from .. import undo
@@ -77,13 +106,22 @@ def run_one(project_id: int, name: str) -> str:
         from .. import costs
         with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id), \
                 costs.operation(f"studio:{name}", ref=f"studio:{project_id}"):
+            if ev and ev.is_set():
+                raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
             summary = STAGES[name](project_id) or "done"
+            if ev and ev.is_set():
+                raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
     except control.Cancelled:
         _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
         logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
                    project=project_id, stage=name)
         raise
     except Exception as exc:
+        if ev and ev.is_set():
+            _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
+            logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
+                       project=project_id, stage=name)
+            raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user") from exc
         msg = f"{type(exc).__name__}: {exc}"[:1000]
         logger.error("Studio #%s %s failed:\n%s", project_id, name, traceback.format_exc())
         _set(project_id, stage_status="error", stage_message=msg)
@@ -127,6 +165,8 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
         raise ValueError(f"Unknown stage '{name}'")
     if not _lock.acquire(blocking=False):
         raise RuntimeError(f"Studio is busy with #{_current['project_id']} ({_current['stage']}); try again shortly")
+    stop_event = threading.Event()
+    _stop_events[project_id] = stop_event
     _set(project_id, stage=name, stage_status="running",
          stage_message=f"{name} resumed after a server restart…" if rid else f"{name} queued…")
     if rid:
@@ -141,22 +181,38 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
             names = [name]
             if auto:
                 i = ORDER.index(name) if name in ORDER else len(ORDER)
-                stop = ORDER.index("script")
-                names = ORDER[i:stop + 1] if i <= stop else [name]
+                stop_idx = ORDER.index("script")
+                names = ORDER[i:stop_idx + 1] if i <= stop_idx else [name]
             for n in names:
+                if stop_event.is_set():
+                    outcome = "stopped"
+                    _set(project_id, stage_status="stopped",
+                         stage_message=f"{n} stopped by user — re-run it when ready")
+                    return
                 _current.update(project_id=project_id, stage=n)
                 resume.checkpoint(rid, stage=n)
                 try:
-                    run_one(project_id, n)
+                    run_one(project_id, n, stop_event=stop_event)
                 except control.Cancelled:
                     outcome = "stopped"
                     return
                 except Exception as exc:
+                    if stop_event.is_set():
+                        outcome = "stopped"
+                        _set(project_id, stage_status="stopped",
+                             stage_message=f"{n} stopped by user — re-run it when ready")
+                        return
                     outcome, err = "failed", str(exc)
+                    return
+                if stop_event.is_set():
+                    outcome = "stopped"
+                    _set(project_id, stage_status="stopped",
+                         stage_message=f"{n} stopped by user — re-run it when ready")
                     return
         finally:
             resume.finish(rid, outcome, err)
             _current.update(project_id=None, stage=None)
+            _stop_events.pop(project_id, None)
             _lock.release()
 
     threading.Thread(target=work, daemon=True, name=f"studio-{project_id}-{name}").start()
