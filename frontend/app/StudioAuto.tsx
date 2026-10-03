@@ -26,6 +26,32 @@ const muted: React.CSSProperties = { color: "var(--muted)", fontSize: 11 };
 const ago = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : "never");
 const short = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
 
+// --- delete / archive (shared by Your videos and the project page) ----------------------
+/** Confirm, delete, and handle "still in the Posting Queue". Returns true if deleted. */
+export async function deleteProject(p: StudioProject): Promise<boolean> {
+  if (!(await askConfirm(`Delete "${p.title}" now?\n\nRemoves the project and all its files on the server. ` +
+    `The copy in Google Drive stays. This can't be undone — use 🗄 Archive instead for a 5-day grace period.`))) return false;
+  try {
+    await api.studioDelete(p.id);
+    return true;
+  } catch (e: any) {
+    const msg = String(e.message || e);
+    const m = msg.match(/in_queue: ([^"]*)/);
+    if (!m) { notify(`Could not delete "${p.title}": ${msg}`); return false; }
+    if (!(await askConfirm(`"${p.title}": ${m[1]}\n\nDelete anyway?`))) return false;
+    try { await api.studioDelete(p.id, true); return true; }
+    catch (e2: any) { notify(`Could not delete "${p.title}": ${e2.message || e2}`); return false; }
+  }
+}
+
+export async function setArchived(p: StudioProject, on: boolean): Promise<boolean> {
+  try { await api.studioArchiveProject(p.id, on); return true; }
+  catch (e: any) { notify(`Could not ${on ? "archive" : "un-archive"} "${p.title}": ${e.message || e}`); return false; }
+}
+
+const fmtDay = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "";
+
 // --- automation switch ------------------------------------------------------------
 export function AutomationCard({ onChange }: { onChange?: () => void }) {
   const [a, setA] = useState<StudioAuto | null>(null);
@@ -213,8 +239,8 @@ export function RankedTrending({ busy, onCreate }: { busy: boolean; onCreate: (c
     <div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
         <span style={muted}>
-          Top trending this week, checked &amp; ranked (trailer heat, IMDb/Metacritic/trailer reactions, popularity, release timing).
-          Updated {d.built_at ? new Date(d.built_at).toLocaleString() : "never"}{d.refreshing ? " — refreshing…" : ""}.
+          Top 25 trending movies + 25 TV this week, checked &amp; ranked (trailer heat, IMDb/Metacritic/trailer reactions, popularity, release timing).
+          Titles already made never come back. Refreshes every 3 days (free) — updated {d.built_at ? new Date(d.built_at).toLocaleString() : "never"}{d.refreshing ? " — refreshing…" : ""}.
         </span>
         <button style={{ fontSize: 11, padding: "2px 8px" }} disabled={d.refreshing}
                 onClick={async () => {
@@ -247,7 +273,7 @@ export function RankedTrending({ busy, onCreate }: { busy: boolean; onCreate: (c
                 <div key={c.key} style={{ background: "var(--row)", borderRadius: 6, padding: 6, fontSize: 11 }}>
                   <b>{c.title}</b> <span style={muted}>({c.media_type === "tv" ? "TV" : "movie"}, score {c.score.total})</span>
                   <div style={muted}>
-                    {c.mark === "skip" ? "✕ skipped by you" : c.beyond_top ? "passes, but below the top 10" :
+                    {c.mark === "skip" ? "✕ skipped by you" : c.beyond_top ? "passes, but below the top 25" :
                       Object.values(c.checks).filter((x) => x.status === "fail").map((x) => x.why).join(" · ")}
                   </div>
                   {(c.mark === "skip") && <button style={{ fontSize: 10, padding: "1px 6px", marginTop: 3 }} onClick={() => mark(c, null)}>Un-skip</button>}
@@ -262,9 +288,10 @@ export function RankedTrending({ busy, onCreate }: { busy: boolean; onCreate: (c
 }
 
 // --- your videos: review, batch render, batch queue -----------------------------------------
-type Filter = "all" | "review" | "reviewed" | "rendered" | "queued";
+type Filter = "all" | "review" | "reviewed" | "rendered" | "queued" | "archived";
 
 function stateOf(p: StudioProject): Filter {
+  if (p.review?.delete_after) return "archived";
   if (p.queue_item_id) return "queued";
   if (p.has?.render) return "rendered";
   if (p.review?.reviewed_at) return "reviewed";
@@ -292,7 +319,7 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
   }, [batch?.running]);
 
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: projects.length, review: 0, reviewed: 0, rendered: 0, queued: 0 };
+    const c: Record<Filter, number> = { all: projects.length, review: 0, reviewed: 0, rendered: 0, queued: 0, archived: 0 };
     projects.forEach((p) => { const s = stateOf(p); if (s !== "all") c[s] += 1; });
     return c;
   }, [projects]);
@@ -314,6 +341,40 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
     finally { setWorking(false); }
   }
 
+  async function deleteSelected() {
+    if (!chosen.length) return;
+    if (!(await askConfirm(`Delete ${chosen.length} breakdown(s) now?\n\n${chosen.map((p) => "• " + p.title).join("\n")}\n\n` +
+      `Removes them and their files from the server (Drive copies stay). Can't be undone — 🗄 Archive gives 5 days to change your mind.`))) return;
+    setWorking(true);
+    const failed: string[] = [];
+    for (const p of chosen) {
+      try { await api.studioDelete(p.id); }
+      catch (e: any) {
+        const msg = String(e.message || e);
+        const m = msg.match(/in_queue: ([^"]*)/);
+        if (m && (await askConfirm(`"${p.title}": ${m[1]}\n\nDelete it anyway?`))) {
+          try { await api.studioDelete(p.id, true); continue; } catch (e2: any) { failed.push(`${p.title} (${e2.message || e2})`); continue; }
+        }
+        failed.push(`${p.title} (${m ? "kept — still in the queue" : msg})`);
+      }
+    }
+    setWorking(false);
+    setSel(new Set());
+    onReload();
+    if (failed.length) notify(`Not deleted: ${failed.join("; ")}`);
+  }
+
+  async function archiveSelected(on: boolean) {
+    if (!chosen.length) return;
+    if (on && !(await askConfirm(`Archive ${chosen.length} breakdown(s)?\n\nThey'll be deleted automatically in 5 days. ` +
+      `Un-archive any time before then to keep them.`))) return;
+    setWorking(true);
+    for (const p of chosen) await setArchived(p, on);
+    setWorking(false);
+    setSel(new Set());
+    onReload();
+  }
+
   async function queueSelected() {
     const ids = chosen.filter((p) => p.has?.render).map((p) => p.id);
     if (!ids.length) return notify("Pick rendered breakdowns to send to the queue.");
@@ -329,7 +390,7 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
     finally { setWorking(false); }
   }
 
-  const pills: [Filter, string][] = [["all", "All"], ["review", "Needs review"], ["reviewed", "Reviewed"], ["rendered", "Rendered"], ["queued", "In queue"]];
+  const pills: [Filter, string][] = [["all", "All"], ["review", "Needs review"], ["reviewed", "Reviewed"], ["rendered", "Rendered"], ["queued", "In queue"], ["archived", "🗄 Archived"]];
   return (
     <div style={card}>
       <h2 style={h2}>Your videos ({projects.length})</h2>
@@ -352,6 +413,16 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
         </button>
         <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={working || !chosen.length} onClick={queueSelected}>
           📤 Send to queue ({chosen.filter((p) => p.has?.render).length})
+        </button>
+        <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={working || !chosen.length} onClick={() => archiveSelected(true)}
+                title="Deleted automatically 5 days from now; un-archive any time before">
+          🗄 Archive ({chosen.length})
+        </button>
+        {chosen.some((p) => p.review?.delete_after) && (
+          <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={working} onClick={() => archiveSelected(false)}>↩ Un-archive</button>
+        )}
+        <button className="danger" style={{ fontSize: 11, padding: "3px 10px" }} disabled={working || !chosen.length} onClick={deleteSelected}>
+          🗑 Delete ({chosen.length})
         </button>
         {sel.size > 0 && <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => setSel(new Set())}>Clear</button>}
       </div>
@@ -378,6 +449,22 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
                 </button>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "0 6px 6px", flexWrap: "wrap" }}>
                   {p.review?.auto && <span style={{ ...muted, fontSize: 10 }}>🤖 auto</span>}
+                  {p.review?.delete_after && (
+                    <span style={{ ...muted, fontSize: 10, color: "#f59e0b" }}>🗄 deletes {fmtDay(p.review.delete_after)}</span>
+                  )}
+                  <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                    <button title={p.review?.delete_after ? "Keep it (cancel the automatic delete)" : "Archive: delete automatically in 5 days"}
+                            style={{ fontSize: 10, padding: "1px 6px" }}
+                            disabled={working || p.stage_status === "running" || p.stage_status === "queued"}
+                            onClick={async () => { if (await setArchived(p, !p.review?.delete_after)) onReload(); }}>
+                      {p.review?.delete_after ? "↩ Keep" : "🗄 Archive"}
+                    </button>
+                    <button className="danger" title="Delete now" style={{ fontSize: 10, padding: "1px 6px" }}
+                            disabled={working || p.stage_status === "running"}
+                            onClick={async () => { if (await deleteProject(p)) { setSel((s) => { const n = new Set(s); n.delete(p.id); return n; }); onReload(); } }}>
+                      🗑
+                    </button>
+                  </span>
                   {p.has?.script && (
                     <label style={{ fontSize: 10, display: "flex", gap: 3, alignItems: "center" }}>
                       <input type="checkbox" checked={!!p.review?.reviewed_at} onChange={(e) => markReviewed(p, e.target.checked)} />

@@ -20,6 +20,10 @@ Score 0–100 (components kept on each row so the UI can show why):
   popularity 15, trending position 15, trailer views 10, release timing 10,
   +3 if IMDb popularity is rising.
 
+Never repeated: every title ever started (manual or automatic) goes into a
+permanent ledger (app_settings "studio_made"), so it stays "already made"
+even after its project is deleted.
+
 The list shows the top TOP_N passing titles per type (pins first), plus the
 ones that didn't pass with their reasons. Owner marks (⭐ pin / ✕ skip) are
 kept per title across refreshes. Stored in app_settings ("studio_candidates",
@@ -43,14 +47,14 @@ from . import imdb, tmdb, youtube
 logger = logging.getLogger("scrapper.studio.candidates")
 UTC = datetime.timezone.utc
 
-TOP_N = 10                 # shown per type
-POOL_PAGES = 2             # TMDB trending pages per type (20 a page)
+TOP_N = 25                 # shown per type (owner, 2026-10-03)
+POOL_PAGES = 4             # TMDB trending pages per type (20 a page) — room for 25 to pass
 RELEASE_AHEAD = 90         # days
 RELEASE_BEHIND = 30        # days
 MIN_POPULARITY = 20.0      # TMDB popularity floor …
 MIN_TRAILER_VIEWS = 100_000  # … or trailer views …
 MAX_METER_RANK = 1000      # … or IMDb meter rank
-STALE_HOURS = 24           # auto-refresh after this
+STALE_HOURS = 72           # auto-refresh every 3 days (owner); ↻ refreshes any time
 
 _lock = threading.Lock()
 state: dict[str, Any] = {"refreshing": False, "last_error": None}
@@ -242,7 +246,19 @@ def score(row: dict[str, Any], today: datetime.date, now: datetime.datetime) -> 
 
 # --- build / read ---------------------------------------------------------------
 def made_keys(s) -> set[str]:
-    return {_key(p.media_type, p.tmdb_id) for p in s.query(StudioProject.media_type, StudioProject.tmdb_id).all()}
+    """Every title ever made: the permanent ledger + current projects."""
+    ledger = set(_get_setting(s, "studio_made").get("keys", []))
+    return ledger | {_key(p.media_type, p.tmdb_id) for p in s.query(StudioProject.media_type, StudioProject.tmdb_id).all()}
+
+
+def remember_made(s, media_type: str, tmdb_id: int) -> None:
+    """Add a title to the never-repeat ledger (caller commits)."""
+    row = _get_setting(s, "studio_made")
+    keys = set(row.get("keys", []))
+    k = _key(media_type, tmdb_id)
+    if k not in keys:
+        keys.add(k)
+        _put_setting(s, "studio_made", {"keys": sorted(keys)})
 
 
 def build(now: datetime.datetime | None = None) -> dict[str, Any]:

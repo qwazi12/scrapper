@@ -32,6 +32,13 @@ def client():
     from backend.app.main import app
     from backend.app.studio import auto
     auto.save_settings({"movies_per_day": 20, "tv_per_day": 20})  # these tests make many projects a day
+    from backend.app.db import SessionLocal as _S
+    from backend.app.models import AppSetting as _A
+    with _S() as s:                       # and reuse tmdb ids: clear the never-repeat ledger
+        row = s.get(_A, "studio_made")
+        if row:
+            s.delete(row)
+            s.commit()
     return TestClient(app, headers={"x-access-token": "test-token"})
 
 

@@ -114,6 +114,10 @@ def _wait_reason(s, cfg: dict[str, Any]) -> tuple[str | None, list[str]]:
         return "jobs paused by the daily cap resume first", []
     if runner.queued_jobs(s):
         return "breakdowns you started are waiting in line first", []
+    from ..models import ResumableJob
+    if s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "running",
+                                    ResumableJob.owner != resume.BOOT).first():
+        return "a breakdown cut off by a restart resumes first", []
     if runner.busy().get("project_id"):
         return f"Studio is busy with #{runner.busy()['project_id']}", []
     today = made_today(s)
@@ -151,8 +155,12 @@ def tick() -> dict[str, Any] | None:
         state["last_result"] = "waiting: no candidate passes every check (refresh the list or pin one)"
         return None
     with SessionLocal() as s:
+        if candidates._key(pick["media_type"], pick["tmdb_id"]) in candidates.made_keys(s):
+            state["last_result"] = f"skipped {pick['title']}: already made"   # belt and braces: never repeat
+            return None
         p = StudioProject(tmdb_id=pick["tmdb_id"], media_type=pick["media_type"], title=pick["title"],
                           review={"auto": True, "reviewed_at": None, "score": pick["score"]["total"]})
+        candidates.remember_made(s, pick["media_type"], pick["tmdb_id"])
         s.add(p)
         s.commit()
         pid = p.id

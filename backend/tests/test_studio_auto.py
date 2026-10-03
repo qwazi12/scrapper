@@ -24,7 +24,7 @@ def clean():
     with SessionLocal() as s:
         for m in (StudioProject, UsageEvent, ResumableJob):
             s.query(m).delete()
-        for k in ("studio_candidates", "studio_candidate_marks", "studio_auto", "costs"):
+        for k in ("studio_candidates", "studio_candidate_marks", "studio_auto", "costs", "studio_made"):
             row = s.get(AppSetting, k)
             if row:
                 s.delete(row)
@@ -271,3 +271,74 @@ def test_stop_removes_a_queued_start(monkeypatch):
     resume.finish(rid, "queued")
     runner.stop(pid)
     assert runner.queued_jobs() == []
+
+
+def _proj(**kw):
+    with SessionLocal() as s:
+        p = StudioProject(**{"tmdb_id": 900, "title": "T", **kw})
+        s.add(p)
+        s.commit()
+        return p.id
+
+
+def test_delete_refuses_unposted_queue_item_unless_forced(client):
+    with SessionLocal() as s:
+        qi = QueueItem(video_name="x", status="ready", pipeline="LongForm")
+        s.add(qi)
+        s.commit()
+        qid = qi.id
+    pid = _proj(tmdb_id=901, queue_item_id=qid)
+    r = client.delete(f"/api/studio/projects/{pid}")
+    assert r.status_code == 409 and "in_queue" in r.json()["detail"]
+    assert client.delete(f"/api/studio/projects/{pid}?force=true").status_code == 200
+    with SessionLocal() as s:
+        assert s.get(StudioProject, pid) is None and s.get(QueueItem, qid) is None
+
+
+def test_deleted_title_is_never_made_again(client, world, monkeypatch):
+    calls = _started(monkeypatch)
+    pid = _proj(tmdb_id=1, media_type="movie", title="Hit Movie")
+    from backend.app.studio import routes
+    with SessionLocal() as s:
+        routes.delete_project_now(s, s.get(StudioProject, pid), "test")
+    assert all(r["key"] != "movie:1" for r in candidates.listing()["movie"])       # still "already made"
+    r = client.post("/api/studio/projects", json={"tmdb_id": 1, "media_type": "movie", "title": "Hit Movie"})
+    assert r.status_code == 409 and "already_made" in r.json()["detail"]
+    auto.save_settings({"enabled": True, "movies_per_day": 5, "tv_per_day": 0})
+    assert auto.tick() is None and calls == []                                     # nothing else passes for movies
+
+
+def test_archive_then_sweep_deletes_after_5_days(client):
+    from backend.app.studio import routes
+    pid = _proj(tmdb_id=902)
+    keep = _proj(tmdb_id=903)
+    d = client.put(f"/api/studio/projects/{pid}/archive", json={"archived": True}).json()
+    assert d["review"]["delete_after"]
+    client.put(f"/api/studio/projects/{keep}/archive", json={"archived": True})
+    client.put(f"/api/studio/projects/{keep}/archive", json={"archived": False})   # changed my mind
+    assert routes.sweep_archived() == []                                            # not due yet
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=5, minutes=1)
+    assert routes.sweep_archived(now=later) == [pid]
+    with SessionLocal() as s:
+        assert s.get(StudioProject, pid) is None and s.get(StudioProject, keep) is not None
+
+
+def test_cut_off_job_waits_in_line_when_studio_is_busy(monkeypatch):
+    rid = resume.begin("studio", "Studio #77: gather + following steps", {"project_id": 77, "stage": "gather", "auto": True})
+    resume.checkpoint(rid, stage="shots")
+    with SessionLocal() as s:
+        r = s.get(ResumableJob, rid)
+        r.owner = "dead-server"
+        r.updated_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
+        s.commit()
+
+    def busy(p, cp, rid):
+        raise RuntimeError("Studio is busy with #78")
+
+    monkeypatch.setitem(resume._launchers, "studio", busy)
+    resume.resume_interrupted()
+    with SessionLocal() as s:
+        assert s.get(ResumableJob, rid).status == "queued"
+    started = []
+    monkeypatch.setattr(runner, "start", lambda pid, name, auto=False, rid=None, until="script", message=None: started.append((pid, name)))
+    assert runner.start_next_waiting() and started == [(77, "shots")]               # resumes from its step

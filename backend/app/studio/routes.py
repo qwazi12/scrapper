@@ -166,12 +166,15 @@ def create_project(req: ProjectCreate, s: Session = Depends(get_session)) -> dic
         raise HTTPException(400, "media_type must be movie or tv")
     if not 1 <= req.target_minutes <= 10:
         raise HTTPException(400, "target_minutes must be 1–10")
-    from . import auto
+    from . import auto, candidates
+    if not req.force and f"{req.media_type}:{req.tmdb_id}" in candidates.made_keys(s):
+        raise HTTPException(409, "already_made: A breakdown of this title was already made. Make another one anyway?")
     over = auto.over_limit(s, req.media_type)
     if over and not req.force:
         raise HTTPException(409, f"daily_limit: {over} Start it anyway?")
     p = StudioProject(tmdb_id=req.tmdb_id, media_type=req.media_type, title=req.title,
                       target_minutes=req.target_minutes)
+    candidates.remember_made(s, req.media_type, req.tmdb_id)
     s.add(p)
     s.commit()
     s.refresh(p)
@@ -222,17 +225,95 @@ def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_s
     return _out(p)
 
 
-@router.delete("/projects/{project_id}")
-def delete_project(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
-    p = _get(s, project_id)
-    if p.stage_status == "running":
-        raise HTTPException(409, "a stage is running on this project")
+ACTIVE_QUEUE = ("review", "ready", "retry", "error", "posting")
+ARCHIVE_DAYS = 5   # owner: an archived breakdown is deleted 5 days later
+
+
+def _queue_block(s: Session, p: StudioProject) -> str | None:
+    """Why deleting would break a post that hasn't gone out yet, or None."""
+    from ..models import QueueItem
+    item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
+    if item and item.status in ACTIVE_QUEUE:
+        return f"it is in the Posting Queue as #{item.id} (status {item.status}) and hasn't posted"
+    return None
+
+
+def delete_project_now(s: Session, p: StudioProject, reason: str) -> None:
+    """Remove the project, its files and (if it never posted) its queue row.
+    The Drive copy stays in Drive. The title stays in the never-repeat ledger."""
     import shutil
-    shutil.rmtree(runner.project_dir(project_id), ignore_errors=True)
+    from ..models import QueueItem
+    from . import candidates
+    pid = p.id
+    candidates.remember_made(s, p.media_type, p.tmdb_id)   # deleted ≠ eligible again
+    if p.stage_status == "queued":
+        runner.stop(pid)                       # take it out of the waiting line
+    item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
+    if item and item.status in ACTIVE_QUEUE:
+        s.delete(item)
+    shutil.rmtree(runner.project_dir(pid), ignore_errors=True)
     s.delete(p)
     s.commit()
-    logbus.log("info", "studio_deleted", f"Studio #{project_id} deleted (files removed)", project=project_id)
+    logbus.log("info", "studio_deleted", f"Studio #{pid} deleted ({reason}; files removed, Drive copy kept)",
+               project=pid)
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(project_id: int, force: bool = False, s: Session = Depends(get_session)) -> dict[str, Any]:
+    p = _get(s, project_id)
+    if p.stage_status == "running":
+        raise HTTPException(409, "a step is running on this project — Stop it first")
+    block = _queue_block(s, p)
+    if block and not force:
+        raise HTTPException(409, f"in_queue: {block}. Deleting also removes it from the queue.")
+    delete_project_now(s, p, "deleted by owner")
     return {"deleted": project_id}
+
+
+class ProjectArchiveIn(BaseModel):
+    archived: bool
+
+
+@router.put("/projects/{project_id}/archive")
+def archive_project(project_id: int, req: ProjectArchiveIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Archive = delete automatically ARCHIVE_DAYS days later (undo any time before)."""
+    import datetime
+    p = _get(s, project_id)
+    rv = dict(p.review or {})
+    if req.archived:
+        if p.stage_status in ("running", "queued"):
+            raise HTTPException(409, f"this project is {p.stage_status} — Stop it first")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        rv["archived_at"] = now.isoformat()
+        rv["delete_after"] = (now + datetime.timedelta(days=ARCHIVE_DAYS)).isoformat()
+    else:
+        rv.pop("archived_at", None)
+        rv.pop("delete_after", None)
+    p.review = rv
+    s.commit()
+    logbus.log("info", "studio_archived" if req.archived else "studio_unarchived",
+               f"Studio #{p.id}: " + (f"archived — deleted automatically after {rv['delete_after'][:10]}"
+                                       if req.archived else "un-archived (won't be deleted)"), project=p.id)
+    return _out(p, full=False)
+
+
+def sweep_archived(now=None) -> list[int]:
+    """Scheduler: delete archived projects whose 5 days are up. A project whose
+    post hasn't gone out yet, or that is busy, waits (and says why)."""
+    import datetime
+    from ..db import SessionLocal
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    done = []
+    with SessionLocal() as s:
+        for p in s.query(StudioProject).filter(StudioProject.review.isnot(None)).all():
+            due = (p.review or {}).get("delete_after")
+            if not due or datetime.datetime.fromisoformat(due) > now:
+                continue
+            if p.stage_status in ("running", "queued") or _queue_block(s, p):
+                continue
+            delete_project_now(s, p, "archived 5 days ago")
+            done.append(p.id)
+    return done
 
 
 @router.post("/projects/{project_id}/run")

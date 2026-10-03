@@ -433,7 +433,8 @@ export type StudioProject = {
   poster: string | null;
   cost_usd?: number;
   archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
-  review?: { auto?: boolean; reviewed_at?: string | null; score?: number } | null;
+  review?: { auto?: boolean; reviewed_at?: string | null; score?: number;
+             archived_at?: string | null; delete_after?: string | null } | null;
   drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
             thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
@@ -848,8 +849,11 @@ export const api = {
     req<StudioProject>("/api/studio/projects", { method: "POST", headers: headers(), body: JSON.stringify(t) }),
   studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any }) =>
     req<StudioProject>(`/api/studio/projects/${id}`, { method: "PATCH", headers: headers(), body: JSON.stringify(data) }),
-  studioDelete: (id: number) =>
-    req<{ deleted: number }>(`/api/studio/projects/${id}`, { method: "DELETE", headers: headers(false) }),
+  studioDelete: (id: number, force = false) =>
+    req<{ deleted: number }>(`/api/studio/projects/${id}${force ? "?force=true" : ""}`, { method: "DELETE", headers: headers(false) }),
+  studioArchiveProject: (id: number, archived: boolean) =>
+    req<StudioProject>(`/api/studio/projects/${id}/archive`, {
+      method: "PUT", headers: headers(), body: JSON.stringify({ archived }) }),
   studioRun: (id: number, stage: string, auto = false) =>
     req<{ ok: boolean }>(`/api/studio/projects/${id}/run`, {
       method: "POST", headers: headers(), body: JSON.stringify({ stage, auto }) }),

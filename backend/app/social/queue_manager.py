@@ -772,6 +772,13 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error resuming budget-paused jobs: %s", exc)
 
+        # Archived breakdowns: deleted 5 days after the owner archived them.
+        try:
+            from ..studio import routes as studio_routes
+            studio_routes.sweep_archived()
+        except Exception as exc:
+            logger.error("Error deleting archived breakdowns: %s", exc)
+
         # Studio's waiting line (manual starts that arrived while it was busy).
         try:
             from ..studio import runner as studio_runner

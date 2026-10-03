@@ -15,7 +15,7 @@ import {
 } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
-import { AutomationCard, RankedTrending, VideosList } from "./StudioAuto";
+import { AutomationCard, deleteProject, RankedTrending, VideosList } from "./StudioAuto";
 
 // LongForm Studio: trailer breakdowns from research to rendered video.
 // Every stage runs on the server and saves its own output, so any step can be
@@ -200,9 +200,9 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
         p = await api.studioCreate({ tmdb_id: t.tmdb_id, media_type: t.media_type, title: t.title });
       } catch (e: any) {
         const msg = String(e.message || e);
-        if (!msg.includes("daily_limit")) throw e;
-        const why = (msg.match(/daily_limit: ([^"]*)/) || [])[1] || "Today's limit is reached.";
-        if (!(await askConfirm(why))) return;
+        const m = msg.match(/(daily_limit|already_made): ([^"]*)/);
+        if (!m) throw e;
+        if (!(await askConfirm(m[2]))) return;
         p = await api.studioCreate({ tmdb_id: t.tmdb_id, media_type: t.media_type, title: t.title, force: true });
       }
       await api.studioRun(p.id, "gather", true); // research through script, then the owner reviews
@@ -415,9 +415,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
           style={{ fontSize: 11 }}
           disabled={running}
           onClick={async () => {
-            if (!await askConfirm(`Delete "${p.title}" and all its files? This cannot be undone.`)) return;
-            await api.studioDelete(id);
-            onBack();
+            if (await deleteProject(p)) onBack();
           }}
         >
           Delete

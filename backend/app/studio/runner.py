@@ -288,9 +288,10 @@ def start_next_waiting() -> bool:
         return resume.resume_budget_paused() > 0
     for r in queued_jobs():
         p = dict(r.params or {})
+        step = (r.checkpoint or {}).get("stage") or p["stage"]   # a cut-off job resumes from its step
         try:
-            start(int(p["project_id"]), p["stage"], bool(p.get("auto")), r.id, p.get("until") or "script",
-                  message=f"{p['stage']} starting (was waiting in line)…")
+            start(int(p["project_id"]), step, bool(p.get("auto")), r.id, p.get("until") or "script",
+                  message=f"{step} starting (was waiting in line)…")
             return True
         except RuntimeError:
             return False

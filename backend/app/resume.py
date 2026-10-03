@@ -184,6 +184,17 @@ def resume_interrupted(stale: int = STALE) -> int:
             resumed += 1
             logbus.log("warning", "job_resumed", f"{label}: resumed after a server restart (attempt {n} of {MAX_RESUMES})",
                        job=rid, kind=kind)
+        except RuntimeError as exc:
+            if kind == "studio":
+                # Studio is busy (one job at a time): wait in line instead of failing —
+                # it starts next, from the step it was cut off at (2026-10-03: a
+                # restart's resume lost the race to a new automation pick and failed).
+                finish(rid, "queued")
+                logbus.log("warning", "job_resumed", f"{label}: cut off by a restart — waiting in line, "
+                           f"starts next from its step ({exc})", job=rid, kind=kind)
+            else:
+                finish(rid, "failed", f"could not resume: {exc}")
+                logbus.log("error", "job_resume_failed", f"{label}: could not resume — {exc}", job=rid, kind=kind)
         except Exception as exc:  # noqa: BLE001 — record why, keep going with the others
             finish(rid, "failed", f"could not resume: {exc}")
             logbus.log("error", "job_resume_failed", f"{label}: could not resume — {exc}", job=rid, kind=kind)
