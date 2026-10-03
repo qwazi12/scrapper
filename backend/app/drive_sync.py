@@ -404,7 +404,18 @@ def ingest_channel_to_drive(
         if control.stopped():
             raise yt_dlp.utils.DownloadCancelled("stopped by user")
 
+    # Skip videos already in the queue (re-runs and resumes after a restart
+    # must not download and upload duplicates). File names end in _<video id>.
+    known = {name.rsplit(".", 1)[0].rsplit("_", 1)[-1]
+             for (name,) in db_session.query(QueueItem.video_name).filter(QueueItem.video_name.isnot(None)).all()
+             if name and "_" in name}
+
+    def _skip_known(info_dict, *, incomplete=False):
+        vid = info_dict.get("id")
+        return f"{vid} is already in the queue" if vid and vid in known else None
+
     ydl_opts = {
+        "match_filter": _skip_known,
         "progress_hooks": [_stop_hook],
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "merge_output_format": "mp4",

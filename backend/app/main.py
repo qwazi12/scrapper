@@ -20,7 +20,7 @@ from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from ..core import engine
-from . import backup, cleanup, control, logbus, rescan, undo, worker
+from . import backup, cleanup, control, logbus, rescan, resume, undo, worker
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal, get_session, init_db
@@ -69,6 +69,16 @@ from .studio import runner as studio_runner, stage_gather, stage_plan, stage_ren
 app.include_router(studio_routes.router)
 
 
+@app.middleware("http")
+async def _wake_poster_on_queue_change(request, call_next):
+    """Any change to the queue or schedule wakes the auto-poster now (it otherwise
+    checks every 5 minutes), so approvals get their time slot immediately."""
+    response = await call_next(request)
+    if request.method != "GET" and request.url.path.startswith(("/api/queue", "/api/schedule", "/api/autopost")):
+        queue_manager.wake()
+    return response
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
@@ -83,6 +93,14 @@ def _startup() -> None:
         studio_runner.recover_interrupted()
     except Exception as exc:  # never block startup on recovery
         logbus.log("error", "startup_studio_recover_failed", str(exc))
+    if settings.worker_mode != "web_only":
+        try:  # relaunch jobs a restart/deploy cut off (Studio, Drive sync/ingest/save, bulk AI)
+            from .social import ai_bulk  # noqa: F401  (each module registers its resume launcher)
+            from .studio import drive_store  # noqa: F401
+            from .studio import archive as _studio_archive  # noqa: F401
+            resume.start_background()   # resumes only jobs whose old server has gone quiet
+        except Exception as exc:  # never block startup on recovery
+            logbus.log("error", "startup_resume_failed", str(exc))
     try:
         with SessionLocal() as s:
             worker.recover_interrupted_worker(s)
@@ -212,7 +230,10 @@ def blocked_clips(s: Session = Depends(get_session)) -> list[dict]:
     """URLs this server could not fetch, for a local worker to pick up."""
     rows = (
         s.query(Clip)
-        .filter(Clip.status == Status.failed, Clip.file_path.is_(None))
+        # Only links the server was blocked from (marked when handed over); a post
+        # that is suspended/deleted/private fails the same way at home too.
+        .filter(Clip.status == Status.failed, Clip.file_path.is_(None),
+                Clip.error.like("Transferred to Mac worker%"))
         .order_by(Clip.id)
         .all()
     )
@@ -1247,7 +1268,14 @@ async def generate_speech(req: TTSGenerateRequest) -> TTSGenerateResponse:
         raise HTTPException(500, f"Speech generation error: {exc}")
 
 
-@app.get("/api/tts/audio/{filename}")
+@app.get("/api/media-pass", dependencies=_AUTH)
+def get_media_pass() -> dict:
+    """A 12-hour pass for <img>/<video>/download/EventSource URLs (see auth.py)."""
+    from .auth import media_pass
+    return media_pass()
+
+
+@app.get("/api/tts/audio/{filename}", dependencies=_AUTH)
 def get_tts_audio(filename: str):
     """Serve synthesized WAV audio file for in-browser playback and downloads."""
     safe_name = pathlib.Path(filename).name
@@ -1394,27 +1422,36 @@ def ingest_channel(req: ChannelIngestRequest, s: Session = Depends(get_session))
     except cleanup.DiskFullError as exc:
         raise HTTPException(507, str(exc))
 
+    job_id = _start_channel_ingest(req.model_dump())
+    return {"job_id": job_id, "status": "running"}
+
+
+def _start_channel_ingest(p: dict, rid: int | None = None) -> str:
+    """Stoppable background job (it can take many minutes); the UI polls
+    GET /api/jobs/{job_id}. Recorded so a restart resumes it (videos already
+    in the queue are skipped)."""
     from .drive_sync import ingest_channel_to_drive
 
-    # Runs as a stoppable background job (it can take many minutes); the UI
-    # polls GET /api/jobs/{job_id} for the result.
     def work():
         with SessionLocal() as js:
             try:
                 return ingest_channel_to_drive(
-                    url=req.url, parent_folder_id=req.parent_folder_id,
-                    parent_folder_name=req.parent_folder_name, channel_name=req.channel_name,
-                    max_videos=req.max_videos, auto_approve=req.auto_approve, db_session=js,
+                    url=p["url"], parent_folder_id=p.get("parent_folder_id"),
+                    parent_folder_name=p.get("parent_folder_name"), channel_name=p.get("channel_name"),
+                    max_videos=p.get("max_videos", 25), auto_approve=p.get("auto_approve", False), db_session=js,
                 )
             except control.Cancelled:
-                logbus.log("warning", "channel_ingest_stopped", f"Channel ingest stopped by user: {req.url}")
+                logbus.log("warning", "channel_ingest_stopped", f"Channel ingest stopped by user: {p['url']}")
                 raise
             except Exception as exc:
-                logbus.log("error", "channel_ingest_failed", f"Channel ingest failed for {req.url}: {exc}")
+                logbus.log("error", "channel_ingest_failed", f"Channel ingest failed for {p['url']}: {exc}")
                 raise
 
-    job_id = control.start_thread("channel_ingest", f"Channel ingest: {req.url[:60]}", "socialpilot", work)
-    return {"job_id": job_id, "status": "running"}
+    label = f"Channel ingest: {p['url'][:60]}" + (" (resumed after a restart)" if rid else "")
+    return resume.tracked_thread("channel_ingest", label, "socialpilot", p, work, rid=rid)
+
+
+resume.launcher("channel_ingest")(lambda p, cp, rid: _start_channel_ingest(p, rid))
 
 
 @app.post("/api/drive/sync", dependencies=_AUTH)
@@ -1423,21 +1460,30 @@ def sync_drive_folder(req: DriveSyncRequest, s: Session = Depends(get_session)):
     Sync video files from a Google Drive folder into the channel's posting queue.
     Automatically handles channel subfolders (e.g. @VynixAE, @PixelDrift-f3c).
     """
+    job_id = _start_drive_sync(req.model_dump())
+    return {"job_id": job_id, "status": "running"}
+
+
+def _start_drive_sync(p: dict, rid: int | None = None) -> str:
+    """Recorded so a restart resumes it; files already in the queue are skipped."""
     from .drive_sync import sync_drive_to_queue
 
-    folder_target = req.folder_url or req.folder_id
+    folder_target = p.get("folder_url") or p.get("folder_id")
 
     def work():
         with SessionLocal() as js:
             try:
-                return sync_drive_to_queue(folder_url_or_id=folder_target, default_pipeline=req.pipeline,
-                                           auto_approve=req.auto_approve, db_session=js)
+                return sync_drive_to_queue(folder_url_or_id=folder_target, default_pipeline=p.get("pipeline"),
+                                           auto_approve=p.get("auto_approve", False), db_session=js)
             except control.Cancelled:
-                logbus.log("warning", "drive_sync_stopped", f"Drive sync stopped by user ({req.folder_id})")
+                logbus.log("warning", "drive_sync_stopped", f"Drive sync stopped by user ({p.get('folder_id')})")
                 raise
             except Exception as exc:
-                logbus.log("error", "drive_sync_failed", f"Drive sync failed for {req.folder_id}: {exc}")
+                logbus.log("error", "drive_sync_failed", f"Drive sync failed for {p.get('folder_id')}: {exc}")
                 raise
 
-    job_id = control.start_thread("drive_sync", f"Drive sync: {req.pipeline or folder_target}", "socialpilot", work)
-    return {"job_id": job_id, "status": "running"}
+    label = f"Drive sync: {p.get('pipeline') or folder_target}" + (" (resumed after a restart)" if rid else "")
+    return resume.tracked_thread("drive_sync", label, "socialpilot", p, work, rid=rid)
+
+
+resume.launcher("drive_sync")(lambda p, cp, rid: _start_drive_sync(p, rid))

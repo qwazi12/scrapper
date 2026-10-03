@@ -57,6 +57,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
         d.update(facts=p.facts, research=p.research, trailer=p.trailer, shots=p.shots,
                  script=p.script, plan=p.plan, render=p.render)
     d["drive"] = p.drive
+    d["archive"] = p.archive
     return d
 
 
@@ -257,6 +258,83 @@ async def upload_trailer(project_id: int, file: UploadFile = File(...),
     p.shots = None  # shots belong to the old trailer
     s.commit()
     logbus.log("info", "studio_trailer_upload", f"Studio #{p.id}: trailer uploaded ({round(size / 1e6)} MB)",
+               project=p.id)
+    return _out(p)
+
+
+class ArchiveIn(BaseModel):
+    enabled: bool | None = None
+    days: int | None = None
+
+
+@router.get("/archive")
+def archive_status() -> dict[str, Any]:
+    """The 14-day rule's settings and a dry run: which breakdowns would be archived and why not."""
+    from . import archive
+    return archive.preview()
+
+
+@router.put("/archive")
+def archive_settings(req: ArchiveIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    from ..models import AppSetting
+    from . import archive
+    if req.days is not None and not 1 <= req.days <= 365:
+        raise HTTPException(400, "days must be 1–365")
+    row = s.get(AppSetting, "studio_archive")
+    if row:
+        undo.record(s, "settings", "Change breakdown archiving", rows=[row], model="app_settings")
+    else:
+        undo.add_created(s, "settings", "Change breakdown archiving", ["studio_archive"], model="app_settings")
+    value = {**((row.value or {}) if row else {}), **{k: v for k, v in req.model_dump().items() if v is not None}}
+    if row:
+        row.value = value
+    else:
+        s.add(AppSetting(key="studio_archive", value=value))
+    s.commit()
+    logbus.log("info", "studio_archive_settings", f"Breakdown archiving: {value}")
+    return archive.preview()
+
+
+@router.post("/archive/run")
+def archive_now() -> dict[str, Any]:
+    from . import archive
+    done = archive.sweep()
+    return {"archived": done, **archive.preview()}
+
+
+@router.post("/projects/{project_id}/restore")
+def restore_footage(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    from . import archive
+    p = _get(s, project_id)
+    if not (p.archive or {}).get("archived_at"):
+        raise HTTPException(400, "This breakdown isn't archived")
+    return {"job_id": archive.start_restore(p.id, p.title)}
+
+
+class ShotUse(BaseModel):
+    usable: bool
+
+
+@router.put("/projects/{project_id}/shots/{shot_id}")
+def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """The owner's call overrides the automatic one: any shot (title card, dark,
+    text, untagged) can be used, and any shot can be left out. Undoable."""
+    p = _get(s, project_id)
+    if p.stage_status == "running":
+        raise HTTPException(409, "A step is running; wait for it to finish")
+    shots = [dict(x) for x in (p.shots or [])]
+    sh = next((x for x in shots if x.get("id") == shot_id), None)
+    if not sh:
+        raise HTTPException(404, "shot not found")
+    undo.record(s, f"studio:{p.id}", f"{'Use' if req.usable else 'Leave out'} shot {shot_id}", rows=[p],
+                model="studio_projects", fields=["shots"])
+    if "auto_usable" not in sh:
+        sh["auto_usable"] = bool(sh.get("usable"))     # what the tagger decided, kept for reference
+    sh["usable"] = req.usable
+    sh["owner_set"] = True
+    p.shots = shots
+    s.commit()
+    logbus.log("info", "studio_shot", f"Studio #{p.id}: shot {shot_id} {'in' if req.usable else 'out'} (owner)",
                project=p.id)
     return _out(p)
 

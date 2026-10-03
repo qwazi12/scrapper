@@ -9,6 +9,7 @@ import {
   fmtBytes,
   fmtDuration,
   LogLine,
+  refreshMediaPass,
   Stats,
 } from "@/lib/api";
 import { PublishModal } from "./PublishModal";
@@ -28,6 +29,19 @@ export default function Page() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
+  // Media links (thumbnails, videos, downloads, the log stream) need a media pass
+  // from the server first; render once it's in so no link goes out without one.
+  const [mediaReady, setMediaReady] = useState(false);
+  const [passVersion, setPassVersion] = useState(0);
+  useEffect(() => {
+    const get = () => refreshMediaPass().catch(() => {}).finally(() => {
+      setMediaReady(true);
+      setPassVersion((v) => v + 1);
+    });
+    get();
+    const t = setInterval(get, 6 * 3600 * 1000);   // passes last 12 h
+    return () => clearInterval(t);
+  }, []);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
   const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "scheduler" | "ingest" | "drive">("queue");
@@ -98,6 +112,7 @@ export default function Page() {
 
   // Live log stream via SSE
   useEffect(() => {
+    if (!mediaReady) return;
     const es = new EventSource(api.eventsUrl());
     es.onmessage = (e) => {
       try {
@@ -107,10 +122,14 @@ export default function Page() {
     };
     es.onerror = () => es.close();
     return () => es.close();
-  }, []);
+  }, [mediaReady, passVersion]);
 
   const readyQueueCount = queueCount;
   const doneClipsCount = clips.filter((c) => c.status === "done").length;
+
+  if (!mediaReady) {
+    return <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--muted)", padding: 24 }}>Connecting…</div>;
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg)" }}>
@@ -316,7 +335,10 @@ export default function Page() {
       </aside>
 
       {/* ─── MAIN CONTENT VIEWPORT ───────────────────────────────── */}
-      <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "0 10px 60px" : "0 24px 60px", overflowY: "auto" }}>
+      <main style={{ flex: 1, minWidth: 0, padding: isMobile ? "0 10px 60px" : "0 24px 60px",
+                     // Phones scroll the whole page, not <main>; a scroll box here made the
+                     // sticky header stick to a box that never scrolls, so it scrolled away.
+                     overflowY: isMobile ? "visible" : "auto" }}>
         <StatusBar stats={stats} connected={connected} clips={clips} comps={comps}
                    compact={isMobile} onMenu={() => setNavOpen(true)} />
         {/* Everything running on the server, with Stop — on every tab */}
@@ -744,7 +766,7 @@ function SettingsBar({ onSaved }: { onSaved: () => void }) {
     if (tok) window.localStorage.setItem("scrapper_token", tok);
     else window.localStorage.removeItem("scrapper_token");
     setOpen(false);
-    onSaved();
+    refreshMediaPass().catch(() => {}).finally(onSaved);   // new token -> new media pass
   }
 
   async function onCookieFile(e: React.ChangeEvent<HTMLInputElement>) {

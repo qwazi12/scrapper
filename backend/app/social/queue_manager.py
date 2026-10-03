@@ -43,7 +43,17 @@ ARCHIVE_SWEEP_EVERY = datetime.timedelta(minutes=10)
 ARCHIVE_SWEEP_BATCH = 50  # scope limit per sweep
 
 UTC = datetime.timezone.utc
-TICK_SECONDS = 30
+# Owner's choice 2026-10-03: a quiet check every 5 minutes (was 30 s). Any queue
+# change (approve, edit, schedule, pause…) wakes the poster at once via wake(),
+# so a newly approved video still gets its time slot immediately; posts go out
+# within 5 minutes of their slot (DUE_GRACE covers 30).
+TICK_SECONDS = 300
+_wake = threading.Event()
+
+
+def wake() -> None:
+    """Run the scheduler now instead of at the next 5-minute check."""
+    _wake.set()
 
 
 def pipeline_group(item: QueueItem) -> str:
@@ -693,6 +703,9 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
             + (" — Drive file moved to trash" if trashed else ""),
             drive_link=item.drive_link, published_at=str(item.published_at),
         )
+        if item.pipeline == "LongForm":   # the studio archive rule needs to know when it posted
+            from ..studio import archive as studio_archive
+            studio_archive.note_posted(s, item)
         s.delete(item)
         s.commit()
         removed += 1
@@ -747,6 +760,8 @@ def run_scheduler_tick():
         # Trigger 3:00 AM nightly database snapshot (safe lock-free SQLite online backup)
         try:
             backup.maybe_run_nightly_backup()
+            from ..studio import archive as studio_archive
+            studio_archive.maybe_sweep()      # once a day: archive breakdowns 14 days after posting
         except Exception as exc:
             logger.error("Error checking nightly backup in scheduler: %s", exc)
 
@@ -772,7 +787,8 @@ def start_scheduler_thread():
                 scheduler_status["last_error_at"] = datetime.datetime.now(UTC).isoformat()
             scheduler_status["last_tick_at"] = datetime.datetime.now(UTC).isoformat()
             scheduler_status["ticks"] += 1
-            time.sleep(TICK_SECONDS)
+            _wake.wait(TICK_SECONDS)
+            _wake.clear()
 
     t = threading.Thread(target=loop, daemon=True, name="posting_queue_scheduler")
     t.start()

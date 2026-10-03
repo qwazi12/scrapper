@@ -43,6 +43,11 @@ _PERMANENT: tuple[tuple[str, str], ...] = (
     ("requested format is not available", "No downloadable format offered."),
     ("unsupported url", "Unsupported link for this site."),
     ("account is suspended", "The uploader's account is suspended."),
+    # X/Twitter: yt-dlp reports "[twitter] <id>: Suspended" / protected / no video.
+    (": suspended", "X has suspended this account, so its posts can't be downloaded."),
+    ("protected", "This X account is protected (private), so its posts can't be downloaded."),
+    ("no video could be found in this tweet", "This post has no video."),
+    ("tweet is unavailable", "This post was deleted or is unavailable."),
     ("removed by the uploader", "Removed by the uploader."),
     # YouTube datacenter IP block — HTTP 403 with no useful error body
     ("http error 403",

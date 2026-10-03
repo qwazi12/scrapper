@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.db import SessionLocal
 from backend.app.models import QueueItem
 from backend.app.social import metadata, queue_manager as qm, upload_post
 
@@ -378,7 +379,7 @@ def test_ai_check_reports_missing_key(client):
 
 def test_schedule_reports_scheduler_heartbeat(client):
     sc = client.get("/api/schedule").json()["scheduler"]
-    assert sc["tick_seconds"] == 30 and "last_tick_at" in sc and sc["enabled"] is False  # web_only in tests
+    assert sc["tick_seconds"] == 300 and "last_tick_at" in sc and sc["enabled"] is False  # web_only in tests
 
 
 # --- catch-up slot & UTC serialization ----------------------------------------
@@ -703,3 +704,25 @@ def test_pacing_validation_rejects_invalid_values():
             "interval_hours": 2,
             "pipelines": {"test": {"posts_per_day": 0}}
         })
+
+
+def test_x_unavailable_posts_are_permanent_and_readable():
+    from backend.core.scraper import classify_error
+    assert classify_error("ERROR: [twitter] 2080008291460030561: Suspended") == (
+        True, "X has suspended this account, so its posts can't be downloaded.")
+    assert classify_error("ERROR: [twitter] 1: No video could be found in this tweet")[0] is True
+
+
+def test_queue_change_wakes_the_poster(client):
+    from backend.app.social import queue_manager as qmod
+    assert qmod.TICK_SECONDS == 300
+    qmod._wake.clear()
+    with SessionLocal() as s:
+        it = QueueItem(title="t", status="review", accounts=[])
+        s.add(it); s.commit(); iid = it.id
+    client.post(f"/api/queue/{iid}/approve")
+    assert qmod._wake.is_set()          # no 5-minute wait for a time slot
+    qmod._wake.clear()
+    client.get("/api/queue")
+    assert not qmod._wake.is_set()      # reads don't wake it
+

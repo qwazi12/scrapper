@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, apiBase, BackupStatus, DiskSystemStatus, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, token, TTSVoice } from "../lib/api";
+import { api, apiBase, BackupStatus, DiskSystemStatus, mediaUrl, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 import { PacingThrottle } from "./PacingThrottle";
@@ -166,8 +166,6 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
     }
   }
 
-  const tok = token();
-
   return (
     <div style={card}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
@@ -291,7 +289,7 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
                     {new Date(c.created_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Eastern
                   </span>
                   <a
-                    href={`${apiBase()}${c.download_url}${tok ? `?token=${encodeURIComponent(tok)}` : ""}`}
+                    href={mediaUrl(c.download_url)}
                     download={c.filename}
                     style={{ color: "var(--accent)", textDecoration: "underline", fontSize: 11 }}
                   >
@@ -597,7 +595,7 @@ export function SettingsOverview() {
           {!sc.enabled
             ? "is OFF on this server (WORKER_MODE=web_only)"
             : alive
-            ? `running — last check ${tickAgo}s ago (every ${sc.tick_seconds}s)`
+            ? `running — last check ${tickAgo < 120 ? `${tickAgo}s` : `${Math.round(tickAgo / 60)} min`} ago (checks every ${Math.round(sc.tick_seconds / 60)} min, and at once when the queue changes)`
             : sc.last_tick_at
             ? `NOT running — last check ${tickAgo}s ago`
             : "has not run since the server started"}
@@ -613,7 +611,7 @@ export function SettingsOverview() {
           )}
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10 }}>
-          How it works: set a video to <b>Ready to Post</b> (and pick where it posts) — within 30s it gets the next
+          How it works: set a video to <b>Ready to Post</b> (and pick where it posts) — within a few seconds it gets the next
           free slot for its pipeline and posts at that time. Set it back to Review to take it out.
         </div>
         <div style={{ fontSize: 13, marginBottom: 10 }}>
@@ -909,9 +907,9 @@ export function SettingsOverview() {
 
           {ttsAudioUrl && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
-              <audio controls src={`${apiBase()}${ttsAudioUrl}`} autoPlay style={{ height: 32 }} />
+              <audio controls src={mediaUrl(ttsAudioUrl)} autoPlay style={{ height: 32 }} />
               <a
-                href={`${apiBase()}${ttsAudioUrl}`}
+                href={mediaUrl(ttsAudioUrl)}
                 download="gemini_tts.wav"
                 style={{ fontSize: 11, color: "var(--accent)", textDecoration: "underline" }}
               >

@@ -670,6 +670,8 @@ def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_vide
     def stop_midway(*a, **kw):
         raise control.Cancelled()
 
+    import shutil as _sh
+    _sh.rmtree(root / "segcache")                                  # force real work (no cache hits)
     monkeypatch.setattr(stage_render, "seg_clip", stop_midway)   # the re-render is stopped partway
     with pytest.raises(control.Cancelled):
         runner.run_one(pid, "render")
@@ -688,3 +690,164 @@ def test_restart_marks_interrupted_steps_stopped():
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         assert p.stage_status == "stopped" and "restart" in p.stage_message
+
+
+def test_owner_can_use_an_unusable_shot_and_undo_it(client):
+    pid = _new_project(shots=[{"id": "s001", "usable": False, "card": True, "thumb": "t.jpg", "still": "s.jpg"},
+                              {"id": "s002", "usable": True, "thumb": "t2.jpg", "still": "s2.jpg"}])
+    r = client.put(f"/api/studio/projects/{pid}/shots/s001", json={"usable": True})
+    assert r.status_code == 200
+    sh = next(x for x in r.json()["shots"] if x["id"] == "s001")
+    assert sh["usable"] is True and sh["auto_usable"] is False and sh["owner_set"] is True
+    assert client.post("/api/undo", json={"scope": f"studio:{pid}"}).status_code == 200
+    with SessionLocal() as s:
+        assert next(x for x in s.get(StudioProject, pid).shots if x["id"] == "s001")["usable"] is False
+
+
+# --- plan QA: no repeats, no look-alikes back to back ---------------------------------
+def test_lookalike_shots_are_grouped(tmp_path):
+    from PIL import Image, ImageDraw
+    def frame(name, x):
+        im = Image.new("RGB", (320, 180), (40, 40, 40))
+        ImageDraw.Draw(im).rectangle((x, 40, x + 80, 140), fill=(230, 200, 160))
+        im.save(tmp_path / name)
+    frame("a.jpg", 100); frame("b.jpg", 102)          # same interview framing, a hair apart
+    frame("c.jpg", 230)                                # a different picture
+    shots = [{"id": "s1", "still": "a.jpg"}, {"id": "s2", "still": "b.jpg"}, {"id": "s3", "still": "c.jpg"}]
+    g = stage_plan.look_groups(shots, tmp_path)
+    assert g["s1"] == g["s2"] == "s1" and g["s3"] == "s3"
+    # Same interview set-up a few seconds apart, the person moved: grouped only as the same set-up.
+    frame("d.jpg", 120)
+    near = [{"id": "s7", "still": "a.jpg", "source": "v1", "start": 43.7, "people": ["Lead"]},
+            {"id": "s8", "still": "d.jpg", "source": "v1", "start": 51.8, "people": ["Lead"]},
+            {"id": "s9", "still": "d.jpg", "source": "v2", "start": 51.8, "people": ["Lead"]}]
+    bits = bin(stage_plan.dhash(tmp_path / "a.jpg") ^ stage_plan.dhash(tmp_path / "d.jpg")).count("1")
+    assert stage_plan.LOOK_ALIKE < bits <= stage_plan.SAME_SETUP
+    assert stage_plan.look_groups(near[:2], tmp_path)["s8"] == "s7"            # same set-up -> one look
+    assert stage_plan.look_groups([near[0], near[2]], tmp_path)["s9"] == "s9"  # same distance, other video -> separate
+
+
+def test_validate_refuses_repeats_and_lookalikes_while_fresh_shots_remain():
+    catalog = [{"id": f"s{i}", "people": (["Lead"] if i in (2, 5) else [])} for i in range(1, 9)]
+    groups = {c["id"]: c["id"] for c in catalog}
+    groups["s4"] = "s3"                                # s3 and s4 look identical
+    slots = [{"slot": n} for n in range(1, 7)]
+    picks = [{"slot": 1, "shot": "s3"}, {"slot": 2, "shot": "s4"},      # look-alike back to back
+             {"slot": 3, "shot": "s2"}, {"slot": 4, "shot": "s2"},      # true repeat
+             {"slot": 5, "shot": "s1"}, {"slot": 6, "shot": "s3"}]      # repeat within 6 slots
+    out, repaired = stage_plan._validate(picks, slots, catalog, groups)
+    looks = [groups[o["shot"]] for o in out]
+    assert len(set(looks)) == 6 and repaired == 4     # slot 2 (look-alike) takes s1, so slot 5's s1 is a repeat too
+    assert out[3]["shot"] == "s5"                      # replacement keeps the same person on screen
+    assert stage_plan.plan_issues([{"slot": o["slot"], "shot": o["shot"], "kind": "still"} for o in out], groups) == []
+
+
+def test_plan_issues_flags_back_to_back_and_near_repeats():
+    groups = {"a": "a", "b": "a", "c": "c"}
+    items = [{"slot": 1, "shot": "a", "kind": "still"}, {"slot": 2, "shot": "b", "kind": "still"},
+             {"slot": 3, "shot": "c", "kind": "clip"}, {"slot": 4, "shot": "c", "kind": "still"}]
+    kinds = [(i["slot"], i["kind"]) for i in stage_plan.plan_issues(items, groups)]
+    assert kinds == [(2, "back_to_back"), (4, "back_to_back")]
+
+
+def test_rerender_reuses_unchanged_segments(monkeypatch, three_scene_video):
+    pid, root = _render_project(three_scene_video)
+    monkeypatch.setattr(stage_render, "END_CARD", 1.0)
+    monkeypatch.setattr(stage_render, "motion_mode", lambda: "off")
+    first = runner.run_one(pid, "render")
+    assert "0 reused" in first
+    calls = []
+    real = stage_render.seg_still
+    monkeypatch.setattr(stage_render, "seg_still", lambda *a, **k: (calls.append(a), real(*a, **k)))
+    second = runner.run_one(pid, "render")
+    assert "0 rendered" in second and calls == []                 # nothing changed -> nothing re-encoded
+    with SessionLocal() as s:
+        assert (root / s.get(StudioProject, pid).render["file"]).exists()
+
+
+# --- 14-day archive -------------------------------------------------------------------
+def _archivable(posted_days_ago: float, drive_ok: bool = True, origin: str = "imdb"):
+    import datetime as dt
+    from backend.app.models import QueueItem
+    now = dt.datetime.now(dt.timezone.utc)
+    with SessionLocal() as s:
+        it = QueueItem(title="t", status="posted", pipeline="LongForm", accounts=[],
+                       published_at=now - dt.timedelta(days=posted_days_ago))
+        s.add(it); s.commit(); qid = it.id
+    pid = _new_project()
+    root = runner.project_dir(pid)
+    for d in ("footage", "stills", "render", "segcache", "thumbs"):
+        (root / d).mkdir(exist_ok=True)
+        (root / d / "x.bin").write_bytes(b"0" * 300_000)
+    (root / "render" / "thumbnail.jpg").write_bytes(b"jpg")
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.queue_item_id = qid
+        p.render = {"file": "render/final.mp4", "thumbnail": "render/thumbnail.jpg", "rendered_at": "r1"}
+        p.drive = {"status": "saved", "rendered_at": "r1" if drive_ok else "r0", "link": "https://drive/x"}
+        p.trailer = {"origin": origin, "sources": [{"id": "vi1", "origin": origin, "file": str(root / "footage" / "x.bin")}]}
+        p.plan = [{"slot": 1}]
+        s.commit()
+    return pid, root
+
+
+def test_archive_only_after_14_days_with_a_current_drive_copy():
+    from backend.app.studio import archive
+    young, _ = _archivable(3)
+    stale_drive, _ = _archivable(30, drive_ok=False)
+    old, root = _archivable(15)
+    rows = {r["id"]: r for r in archive.preview()["projects"]}
+    assert not rows[young]["eligible"] and "3 day" in rows[young]["reason"]
+    assert not rows[stale_drive]["eligible"] and "older render" in rows[stale_drive]["reason"]
+    assert rows[old]["eligible"] and rows[old]["frees_mb"] > 0
+    out = archive.archive_project(old)
+    assert out["archived"] is True
+    assert not (root / "footage").exists() and not (root / "stills").exists() and not (root / "render").exists()
+    assert (root / "thumbs").exists() and (root / "thumbnail.jpg").exists()     # kept
+    with SessionLocal() as s:
+        p = s.get(StudioProject, old)
+        assert p.archive["archived_at"] and p.plan == [{"slot": 1}]            # script/plan/metadata kept
+    import pytest as _pt
+    with _pt.raises(RuntimeError, match="archived"):
+        runner.run_one(old, "render")                                          # must restore first
+
+
+def test_uploaded_footage_is_never_deleted():
+    from backend.app.studio import archive
+    pid, root = _archivable(20, origin="upload")
+    assert archive.archive_project(pid)["archived"]
+    assert (root / "footage" / "x.bin").exists() and not (root / "stills").exists()
+
+
+def test_posted_date_survives_the_4_day_queue_cleanup(monkeypatch):
+    import datetime as dt
+    from backend.app.models import QueueItem
+    from backend.app.social import queue_manager as qmm
+    from backend.app.studio import archive
+    pid, root = _archivable(5)
+    monkeypatch.setattr(qmm.settings, "archive_delete_days", 4)
+    with SessionLocal() as s:
+        qmm.sweep_archive(s, dt.datetime.now(dt.timezone.utc))
+        p = s.get(StudioProject, pid)
+        assert s.get(QueueItem, p.queue_item_id) is None                         # the row is gone…
+        assert p.archive["posted_at"]                                            # …but the project remembers
+
+
+def test_restore_rebuilds_stills_without_ai(monkeypatch, three_scene_video):
+    import shutil as _sh
+    from backend.app.studio import archive, imdb
+    pid = _new_project(shots=[{**sh, "still": f"stills/{sh['id']}.jpg"} for sh in _shots(three_scene_video, 2)])
+    root = runner.project_dir(pid)
+    dest = root / "footage" / "vi9.mp4"
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        p.trailer = {"origin": "imdb", "sources": [{"id": "vi9", "origin": "imdb", "file": str(dest)}]}
+        p.shots = [{**sh, "file": str(dest)} for sh in p.shots]
+        p.archive = {"archived_at": "2026-10-01T00:00:00+00:00"}
+        s.commit()
+    monkeypatch.setattr(imdb, "download", lambda vid, d: (pathlib.Path(d).parent.mkdir(exist_ok=True), _sh.copy(three_scene_video, d)))
+    archive.restore(pid)
+    assert dest.exists() and all((root / f"stills/s00{i}.jpg").exists() for i in (1, 2))
+    with SessionLocal() as s:
+        a = s.get(StudioProject, pid).archive
+        assert a["archived_at"] is None and a["restored_at"]

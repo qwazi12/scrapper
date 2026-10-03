@@ -10,6 +10,14 @@ Timeline rules (from the Screen Central example: a new picture every ~4 s):
   in the sentence are on screen, with no repeats until the pool runs out and
   roughly one moving clip for every two stills. If Gemini fails, shots are
   laid in trailer order (the narration follows the trailer, so it still fits).
+
+QA (added 2026-10-02 after "By Any Means" showed two different shots of the
+same interview framing back to back): every still gets a perceptual
+fingerprint; shots that look alike (Hamming distance <= LOOK_ALIKE) form one
+"look" group. Gemini sees one shot per group, and _validate refuses a pick
+whose look was used in the last NEAR_WINDOW slots, or used at all while
+unused looks remain. Groups are saved on the shots (`look`) so the Studio can
+flag repeats after manual swaps too.
 """
 
 from __future__ import annotations
@@ -24,6 +32,10 @@ from . import gemini, media, tts
 from .runner import project_dir, stage
 
 GAP, PARA_GAP = 0.35, 0.6
+LOOK_ALIKE = 10       # max differing bits (of 64) for two stills to count as the same picture
+SAME_SETUP = 24       # looser match for the same set-up: same video, same people, within SETUP_SECONDS
+SETUP_SECONDS = 12.0  # (By Any Means: one interview, 8 s apart, 20 bits apart — read as "the same shot")
+NEAR_WINDOW = 6       # the same look never returns within this many slots
 TARGET_VISUAL = 4.2
 CLIP_MAX = 5.0
 
@@ -32,10 +44,83 @@ _DATE_WORDS = re.compile(r"\b(release|releases|premiere|premieres|arrives|hits|i
                          r"november|december)\b", re.I)
 
 
+def dhash(path) -> int | None:
+    """64-bit difference hash of an image: near-identical frames differ by a few bits."""
+    from PIL import Image
+    try:
+        with Image.open(path) as im:
+            g = im.convert("L").resize((9, 8))
+            px = list(g.getdata())
+    except Exception:  # noqa: BLE001 — a missing/broken still just gets no fingerprint
+        return None
+    bits = 0
+    for row in range(8):
+        for col in range(8):
+            bits = (bits << 1) | (px[row * 9 + col] > px[row * 9 + col + 1])
+    return bits
+
+
+def look_groups(shots: list[dict], root) -> dict[str, str]:
+    """shot id -> look group id (the first shot of that look, in trailer order).
+
+    Two shots are the same look if their pictures are near-identical (any
+    trailer: trailers reuse footage), or if they're the same set-up: same
+    source video, within SETUP_SECONDS, the same people on screen, and a
+    moderately similar picture."""
+    ids = [sh["id"] for sh in shots]
+    parent = {i: i for i in ids}
+
+    def find(i: str) -> str:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:   # the earlier shot (trailer order) names the group
+            first, second = (ra, rb) if ids.index(ra) < ids.index(rb) else (rb, ra)
+            parent[second] = first
+
+    hashes = {sh["id"]: (dhash(root / sh["still"]) if sh.get("still") else None) for sh in shots}
+    for i, a in enumerate(shots):
+        ha = hashes[a["id"]]
+        if ha is None:
+            continue
+        for b in shots[i + 1:]:
+            hb = hashes[b["id"]]
+            if hb is None:
+                continue
+            bits = bin(ha ^ hb).count("1")
+            same_setup = (a.get("source") and a.get("source") == b.get("source")
+                          and abs(float(a.get("start", 0)) - float(b.get("start", 0))) <= SETUP_SECONDS
+                          and a.get("people") and set(a["people"]) == set(b.get("people") or []))
+            if bits <= LOOK_ALIKE or (same_setup and bits <= SAME_SETUP):
+                union(a["id"], b["id"])
+    return {i: find(i) for i in ids}
+
+
+def plan_issues(items: list[dict], groups: dict[str, str]) -> list[dict]:
+    """Repeats a viewer would notice: the same picture (or a look-alike) within
+    NEAR_WINDOW slots, or again later while it's a repeat at all."""
+    issues, seen = [], {}
+    for idx, it in enumerate(items):
+        sid = it.get("shot")
+        if not sid or it.get("kind") == "poster":
+            continue
+        g = groups.get(sid, sid)
+        if g in seen:
+            gap = idx - seen[g]
+            issues.append({"slot": it.get("slot"), "with_slot": items[seen[g]].get("slot"),
+                           "kind": "back_to_back" if gap == 1 else ("near" if gap <= NEAR_WINDOW else "repeat")})
+        seen[g] = idx
+    return issues
+
+
 def assign_prompt(slots: list[dict], catalog: list[dict]) -> str:
     lines = "\n".join(f"{s['slot']}: [sentence {s['sentence']}] {s['text']}" for s in slots)
-    shots = "\n".join(f"{c['id']}: {c['description']} | people: {', '.join(c['people']) or '-'} | "
-                      f"{c['setting']} | {c['mood']} | {c['size']}" for c in catalog)
+    shots = "\n".join(f"{c['id']}: {c.get('description') or '-'} | people: {', '.join(c.get('people') or []) or '-'} | "
+                      f"{c.get('setting') or '-'} | {c.get('mood') or '-'} | {c.get('size') or '-'}" for c in catalog)
     return f"""You are a video editor placing trailer shots under narration.
 Each numbered slot below is one on-screen visual (about 4 seconds) under the given sentence.
 
@@ -62,21 +147,40 @@ def _fallback(slots: list[dict], catalog: list[dict]) -> list[dict]:
              "mode": "clip" if i % 3 == 1 else "still"} for i, s in enumerate(slots)]
 
 
-def _validate(picks: list, slots: list[dict], catalog: list[dict]) -> tuple[list[dict], int]:
-    """Keep valid picks; repair missing/unknown/back-to-back ones in trailer order."""
+def _validate(picks: list, slots: list[dict], catalog: list[dict],
+              groups: dict[str, str] | None = None) -> tuple[list[dict], int]:
+    """Keep good picks; repair the rest. A pick is refused if it's unknown, if its
+    look was used in the last NEAR_WINDOW slots, or if its look was used at all
+    while unused looks remain. The replacement prefers a shot of the same people
+    as the refused pick (so the sentence still matches), then trailer order."""
+    groups = groups or {c["id"]: c["id"] for c in catalog}
     ids = [c["id"] for c in catalog]
+    people = {c["id"]: set(c.get("people") or []) for c in catalog}
+    all_looks = {groups.get(i, i) for i in ids}
     by_slot = {int(p.get("slot", 0)): p for p in picks if isinstance(p, dict)}
-    out, used, repaired, prev = [], set(), 0, None
+    out, used, recent, repaired = [], set(), [], 0
+
+    def ok(i: str, strict: bool) -> bool:
+        g = groups.get(i, i)
+        if g in recent[-NEAR_WINDOW:]:
+            return False
+        return not (strict and g in used)
+
     for s in slots:
         p = by_slot.get(s["slot"], {})
         sid = p.get("shot")
-        if sid not in ids or sid == prev:
-            sid = next((i for i in ids if i not in used and i != prev), None) or \
-                next(i for i in ids if i != prev) if len(ids) > 1 else ids[0]
+        fresh_left = len(all_looks - used) > 0
+        if sid not in ids or not ok(sid, strict=fresh_left):
+            want = people.get(sid, set())
+            order = sorted(ids, key=lambda i: (not (want & people[i]), ids.index(i)))
+            sid = (next((i for i in order if ok(i, strict=True)), None)
+                   or next((i for i in order if ok(i, strict=False)), None)
+                   or next((i for i in order if groups.get(i, i) != (recent[-1] if recent else None)), ids[0]))
             repaired += 1
-        used.add(sid)
+        g = groups.get(sid, sid)
+        used.add(g)
+        recent.append(g)
         out.append({"slot": s["slot"], "shot": sid, "mode": "clip" if p.get("mode") == "clip" else "still"})
-        prev = sid
     return out, repaired
 
 
@@ -130,13 +234,21 @@ def plan(project_id: int) -> str:
         special[first_date_slot] = {"kind": "poster"}
     open_slots = [s for s in slots if s["slot"] not in special]
 
-    # 3. Gemini picks shots; validate and repair.
+    # 3. Gemini picks shots (one per look-alike group); validate and repair.
+    control.progress("checking shots for look-alikes")
+    groups = look_groups(shots, root)
+    seen_looks: set[str] = set()
+    distinct_catalog = []
+    for c in catalog:
+        if groups[c["id"]] not in seen_looks:
+            seen_looks.add(groups[c["id"]])
+            distinct_catalog.append(c)
     try:
-        picks = gemini.ask_json(assign_prompt(open_slots, catalog), temperature=0.3)
-        assigned, repaired = _validate(picks if isinstance(picks, list) else [], open_slots, catalog)
+        picks = gemini.ask_json(assign_prompt(open_slots, distinct_catalog), temperature=0.3)
+        assigned, repaired = _validate(picks if isinstance(picks, list) else [], open_slots, catalog, groups)
         how = f"Gemini picks ({repaired} repaired)"
     except gemini.GeminiError as exc:
-        assigned, repaired = _validate(_fallback(open_slots, catalog), open_slots, catalog)
+        assigned, repaired = _validate(_fallback(open_slots, distinct_catalog), open_slots, catalog, groups)
         how = f"trailer order (Gemini failed: {str(exc)[:80]})"
     by_slot = {a["slot"]: a for a in assigned}
     shots_by_id = {sh["id"]: sh for sh in shots}
@@ -154,8 +266,10 @@ def plan(project_id: int) -> str:
                     "clip_start": sh["start"], "clip_len": round(min(dur, CLIP_MAX), 3)}
         plan_items.append(item)
 
+    issues = plan_issues(plan_items, groups)
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
+        p.shots = [{**sh, "look": groups.get(sh["id"], sh["id"])} for sh in (p.shots or [])]
         p.plan = plan_items
         sc = dict(p.script)
         sc["timeline"] = timeline
@@ -166,4 +280,5 @@ def plan(project_id: int) -> str:
     clips = sum(1 for i in plan_items if i["kind"] == "clip")
     distinct = len({i["shot"] for i in plan_items if i.get("shot")})
     return (f"{len(timeline)} sentences voiced ({t:.0f}s); {len(plan_items)} visuals, {clips} clips, "
-            f"{distinct} distinct shots — {how}")
+            f"{distinct} distinct shots — {how}; QA: {len(issues)} repeat(s) left "
+            f"({sum(1 for i in issues if i['kind'] != 'repeat')} within {NEAR_WINDOW} slots)")

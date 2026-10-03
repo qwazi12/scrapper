@@ -13,6 +13,7 @@ times and loudness-normalised to YouTube's -14 LUFS.
 from __future__ import annotations
 
 import datetime
+import os
 import pathlib
 import shutil
 
@@ -218,6 +219,11 @@ def render(project_id: int) -> str:
         facts, script, plan, shots = p.facts or {}, p.script or {}, p.plan, p.shots or []
     if not plan:
         raise RuntimeError("Run 'plan' first")
+    with SessionLocal() as s:
+        archived = ((s.get(StudioProject, project_id).archive) or {}).get("archived_at")
+    if archived:
+        raise RuntimeError("This breakdown is archived (footage deleted to save space; the video is in Drive). "
+                           "Press Restore footage first, then render.")
     root = project_dir(project_id)
     # Build in render_new/ and swap it in only when finished: a stopped or failed
     # re-render must never delete the last good video (it did until 2026-10-02).
@@ -237,35 +243,46 @@ def render(project_id: int) -> str:
     mode = motion_mode()
     want_motion = mode in ("on", "compare")
     clean_poster = poster_frame(poster, backdrop, "", out_dir / "poster_clean.jpg", card_room=True) if want_motion else None
-    seg_files, motion_segs, poster_slots = [], [], []
+    cache = root / "segcache"
+    cache.mkdir(exist_ok=True)
+    seg_files, motion_segs, poster_slots, jobs, keys = [], [], [], [], set()
+
+    def job(kind: str, src: pathlib.Path, params: tuple, dest: pathlib.Path, make) -> None:
+        key = _seg_key(kind, src, *params)
+        keys.add(key)
+        jobs.append(lambda: _cached_segment(cache, key, dest, make))
+
     for k, item in enumerate(plan):
-        control.check()
-        control.progress(f"rendering segment {k + 1} of {len(plan)}")
         dest = segs_dir / f"seg_{k:03d}.mp4"
         dur = float(item["duration"])
         kind = item["kind"]
         sh = shots_by_id.get(item.get("shot") or "")
         if kind == "poster" or (kind in ("still", "card", "clip") and sh is None):
-            seg_image(poster_img, dur, dest)
+            job("image", poster_img, (dur,), dest, lambda t, d=dur: seg_image(poster_img, d, t))
             if want_motion:   # the motion version animates the release card over a clean poster
                 clean = segs_dir / f"seg_{k:03d}_clean.mp4"
-                seg_image(clean_poster, dur, clean)
+                job("image", clean_poster, (dur,), clean, lambda t, d=dur: seg_image(clean_poster, d, t))
                 motion_segs.append(clean)
             poster_slots.append((float(item["start"]), dur))
             seg_files.append(dest)
             continue
         elif kind == "clip":
-            seg_clip(sh["file"], float(item.get("clip_start", sh["start"])), dur, dest, sh.get("crop"))
+            cs = float(item.get("clip_start", sh["start"]))
+            job("clip", pathlib.Path(sh["file"]), (cs, dur, sh.get("crop")), dest,
+                lambda t, f=sh["file"], c=cs, d=dur, cr=sh.get("crop"): seg_clip(f, c, d, t, cr))
         else:
-            seg_still(root / sh["still"], dur, k, dest)
+            job("still", root / sh["still"], (dur, k % len(_MOVES)), dest,
+                lambda t, st=root / sh["still"], d=dur, kk=k: seg_still(st, d, kk, t))
         seg_files.append(dest)
         if want_motion:
             motion_segs.append(dest)
     end_img = end_card(backdrop or poster, channel, out_dir / "end_card.jpg")
     end_seg = segs_dir / "seg_end.mp4"
-    seg_image(end_img, END_CARD, end_seg)
+    job("image", end_img, (END_CARD,), end_seg, lambda t: seg_image(end_img, END_CARD, t))
     seg_files.append(end_seg)
 
+    hits = sum(bool(x) for x in _parallel(jobs, progress="rendering segments:"))
+    seg_note = f"{len(jobs) - hits} rendered, {hits} reused"
     video = _concat(seg_files, out_dir / "segments.txt", out_dir / "video.mp4")
 
     # Narration: every sentence at its planned start; pad through the end card.
@@ -304,9 +321,9 @@ def render(project_id: int) -> str:
     static_final = out_dir / ("final.mp4" if mode != "on" else "final_static.mp4")
     sub = subscribe_png(out_dir / "subscribe.png", channel)
     sub_movs = [(_png_overlay(sub, b - a, out_dir / f"subscribe_{i}.mov"), a) for i, (a, b) in enumerate(windows)]
+    composites = []
     if mode != "on":
-        control.progress("compositing the video")
-        media.run(motion.overlay_cmd(video, sub_movs, audio, total, ENC, static_final))
+        composites.append(lambda: media.run(motion.overlay_cmd(video, sub_movs, audio, total, ENC, static_final)))
 
     motion_info = None
     if want_motion:
@@ -322,8 +339,11 @@ def render(project_id: int) -> str:
             motion_segs.append(end_seg)
         base_m = _concat(motion_segs, out_dir / "segments_motion.txt", out_dir / "video_motion.mp4")
         motion_final = out_dir / ("final.mp4" if mode == "on" else "final_motion.mp4")
-        control.progress("compositing the motion version")
-        media.run(motion.overlay_cmd(base_m, sorted(overlays, key=lambda x: x[1]), audio, total, ENC, motion_final))
+        composites.append(lambda: media.run(motion.overlay_cmd(base_m, sorted(overlays, key=lambda x: x[1]),
+                                                                audio, total, ENC, motion_final)))
+    control.progress("compositing the final video" + (" (both looks at once)" if len(composites) > 1 else ""))
+    _parallel(composites, workers=2)
+    if want_motion:
         motion_info["file"] = str(motion_final.relative_to(root))
         motion_info["overlays"] = [{"piece": f.stem.split("-")[0], "start": round(t, 2),
                                     "seconds": round(media.duration(f), 2)} for f, t in sorted(overlays, key=lambda x: x[1])]
@@ -342,6 +362,9 @@ def render(project_id: int) -> str:
             "motion_mode": mode, "motion": motion_info}
     if mode == "on":
         static_final.unlink(missing_ok=True)
+    for f in cache.glob("*.mp4"):              # keep only this render's segments
+        if f.stem not in keys:
+            f.unlink(missing_ok=True)
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
     video.unlink(missing_ok=True)
     cleanup.cleanup_render_intermediates(out_dir)
@@ -361,10 +384,77 @@ def render(project_id: int) -> str:
     if motion_info:
         note = f", motion graphics: {motion_info['pieces']} pieces" + (
             f" ({len(motion_info['failures'])} fell back to static)" if motion_info["failures"] else "")
-    return f"{secs:.0f}s video, {round(info['size'] / 1e6)} MB, {len(seg_files)} segments{note}"
+    return f"{secs:.0f}s video, {round(info['size'] / 1e6)} MB, {len(seg_files)} segments ({seg_note}){note}"
 
 
 # --- helpers -------------------------------------------------------------------------
+# Speed (lessons from manhwa's renderer, measured on Railway 2026-10-02: a 4 s
+# segment took 4.1 s alone but 1.1 s each with 8 in parallel on the 32-CPU box):
+# segments and motion pieces render in parallel, every segment is cached by
+# what it's made of, so a re-render after one swap rebuilds one segment, and
+# the two final versions are composited at the same time.
+RENDER_WORKERS = max(1, int(os.environ.get("RENDER_WORKERS", "8")))
+SEG_VERSION = "1"          # bump when the segment look changes (ENC, NORM, FIT, Ken Burns moves)
+
+
+def _parallel(tasks: list, workers: int = RENDER_WORKERS, progress: str | None = None) -> list:
+    """Run zero-arg callables on a thread pool. Each runs in a copy of this
+    thread's context, so control.check()/Stop and cost labels still apply; the
+    first error (or Stop) cancels everything not started and is re-raised."""
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if not tasks:
+        return []
+    results: list = [None] * len(tasks)
+    done = 0
+    with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as ex:
+        futs = {ex.submit(contextvars.copy_context().run, t): i for i, t in enumerate(tasks)}
+        try:
+            for f in as_completed(futs):
+                results[futs[f]] = f.result()
+                done += 1
+                if progress:
+                    control.progress(f"{progress} {done} of {len(tasks)}")
+        except BaseException:
+            for f in futs:
+                f.cancel()
+            raise
+    return results
+
+
+def _file_sig(path: pathlib.Path) -> str:
+    """Identity of an input file: content hash for small files (stills, posters
+    rebuilt every render), size + mtime for big footage."""
+    import hashlib
+    st = path.stat()
+    if st.st_size < 20_000_000:
+        return hashlib.sha1(path.read_bytes()).hexdigest()
+    return f"{st.st_size}:{st.st_mtime_ns}"
+
+
+def _seg_key(kind: str, src: pathlib.Path, *params) -> str:
+    import hashlib
+    raw = "|".join(map(str, (SEG_VERSION, " ".join(ENC), NORM, FIT, W, H, FPS, kind, _file_sig(src), *params)))
+    return hashlib.sha1(raw.encode()).hexdigest()[:24]
+
+
+def _cached_segment(cache: pathlib.Path, key: str, dest: pathlib.Path, make) -> bool:
+    """dest from the segment cache, or make(tmp) and add it. Returns True on a cache hit."""
+    hit = cache / f"{key}.mp4"
+    if not (hit.exists() and hit.stat().st_size > 0):
+        control.check()
+        tmp = cache / f"{key}.part.mp4"
+        make(tmp)
+        tmp.replace(hit)
+        result = False
+    else:
+        result = True
+    try:
+        os.link(hit, dest)
+    except OSError:
+        shutil.copy(hit, dest)
+    return result
 def motion_mode() -> str:
     """off | compare | on — app_settings "studio_motion". Default "compare" until
     the owner has watched both versions and picked one (plan step 6)."""
@@ -409,6 +499,32 @@ def _png_overlay(png: pathlib.Path, dur: float, dest: pathlib.Path) -> pathlib.P
     return dest
 
 
+def _prewarm_motion(facts, plan, shots_by_id, poster_slots, windows, rel_line, backdrop, channel) -> None:
+    """Render every motion piece this video needs at once (4 Chrome renders in
+    parallel) so the assembly below only reads the cache. Same specs as
+    _motion_pieces; a failure here is ignored and retried (and reported) there."""
+    specs = []
+    first = next((it for it in plan if it.get("kind") in ("clip", "still") and shots_by_id.get(it.get("shot") or "")), None)
+    busy = []
+    if first:
+        specs.append(("intro", {"title": facts.get("title", ""), "meta": motion.intro_meta(facts), "duration": 3.8}, None))
+        busy.append((float(first["start"]), float(first["start"]) + 3.8))
+    where, _, date = rel_line.partition(" · ")
+    for start, dur in poster_slots if rel_line else []:
+        d = round(min(dur, 6.0), 2)
+        specs.append(("release", {"where": where, "date": date, "duration": d}, None))
+        busy.append((start, start + d))
+    for a, b in windows:
+        specs.append(("subscribe", {"channel": channel, "duration": round(b - a, 2)}, None))
+        busy.append((a, b))
+    for c in motion.cast_cards(plan, shots_by_id, facts.get("cast", []), motion_cast_cards(), busy):
+        specs.append(("cast", {"actor": c["actor"], "character": c["character"], "duration": c["duration"]}, None))
+    specs.append(("endscreen", {"channel": channel, "duration": END_CARD}, {"backdrop.jpg": backdrop} if backdrop else None))
+    unique = {(k, repr(sorted(v.items()))): (k, v, a) for k, v, a in specs}
+    _parallel([lambda k=k, v=v, a=a: motion.try_piece(k, v, a, []) for k, v, a in unique.values()],
+              workers=4, progress="motion graphics:")
+
+
 def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, backdrop, channel, sub_movs, out_dir):
     """Render every motion piece; each failure falls back to its static version
     (release card → the banner baked into the poster is gone, so the static
@@ -418,6 +534,7 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
     overlays: list[tuple[pathlib.Path, float]] = []
     busy: list[tuple[float, float]] = []
     pieces = 0
+    _prewarm_motion(facts, plan, shots_by_id, poster_slots, windows, rel_line, backdrop, channel)
 
     first = next((it for it in plan if it.get("kind") in ("clip", "still") and shots_by_id.get(it.get("shot") or "")), None)
     if first:

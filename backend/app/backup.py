@@ -401,6 +401,9 @@ def get_backup_status() -> dict[str, Any]:
     }
 
 
+_last_stale_warning: str | None = None
+
+
 def maybe_run_nightly_backup() -> None:
     """Called every scheduler tick. Triggers backup at 3:00 am Eastern once daily."""
     global _last_nightly_date
@@ -421,5 +424,7 @@ def maybe_run_nightly_backup() -> None:
 
     # Periodic staleness warning logging (once per day)
     status = get_backup_status()
-    if status["is_stale"] and now_eastern.minute == 0 and now_eastern.second < 30:
+    global _last_stale_warning
+    if status["is_stale"] and _last_stale_warning != today_str:   # once a day, whatever the tick length
+        _last_stale_warning = today_str
         logger.warning("DATABASE BACKUP STALENESS WARNING: %s", status["warning"])

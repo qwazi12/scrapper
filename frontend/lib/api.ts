@@ -319,6 +319,10 @@ export type StudioShot = {
   text?: boolean;
   quality?: string;
   usable?: boolean;
+  auto_usable?: boolean;   // what the tagger decided, when the owner overrode it
+  owner_set?: boolean;
+  look?: string;           // look-alike group (shots that show the same picture share one)
+  file?: string;           // absolute path of the source video on the server
   tag_error?: string;
 };
 
@@ -346,6 +350,12 @@ export type StudioPlanItem = {
   clip_len?: number;
 };
 
+export type StudioArchive = {
+  settings: { enabled: boolean; days: number };
+  projects: { id: number; title: string; eligible: boolean; reason: string; frees_mb: number; archived_at: string | null }[];
+  would_free_mb: number;
+};
+
 export type StudioMotion = { mode: "off" | "compare" | "on"; cast_cards: number; available: boolean; reason: string | null };
 
 export type StudioProject = {
@@ -362,6 +372,7 @@ export type StudioProject = {
   updated_at: string;
   poster: string | null;
   cost_usd?: number;
+  archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
   drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
             thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
@@ -480,12 +491,47 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// Browser-native GETs (<img src>, <a href> download, EventSource) can't set
-// headers, so the token rides as a query param on those URLs.
-function withToken(url: string): string {
-  const t = token();
-  return t ? `${url}?token=${encodeURIComponent(t)}` : url;
+// Browser-native GETs (<img src>, <video>, <a href> download, EventSource) can't
+// set headers. They used to carry the access token as ?token=… — visible in
+// history, logs and anything a link was pasted into. Now they carry a media
+// pass (?g=…): signed by the server, valid 12 h, and only good for viewing
+// files on the read-only media routes. The token itself only travels in headers.
+let _pass: { pass: string; expires_at: number } | null = null;
+
+export async function refreshMediaPass(): Promise<void> {
+  if (!token()) {
+    _pass = null;
+    return;
+  }
+  const r = await req<{ pass: string; expires_at: number }>("/api/media-pass", { headers: headers(false) });
+  _pass = r;
+  try {
+    window.sessionStorage.setItem("scrapper_media_pass", JSON.stringify(r));
+  } catch {
+    /* private mode: memory only */
+  }
 }
+
+function currentPass(): string | null {
+  if (!_pass && typeof window !== "undefined") {
+    try {
+      const s = window.sessionStorage.getItem("scrapper_media_pass");
+      if (s) _pass = JSON.parse(s);
+    } catch {
+      /* ignore */
+    }
+  }
+  return _pass && _pass.expires_at * 1000 > Date.now() + 60_000 ? _pass.pass : null;
+}
+
+/** A media URL (absolute, or an /api/... path) with the media pass added. */
+export function mediaUrl(url: string): string {
+  const full = url.startsWith("http") ? url : `${apiBase()}${url}`;
+  const g = currentPass();
+  if (!g) return full;
+  return `${full}${full.includes("?") ? "&" : "?"}g=${encodeURIComponent(g)}`;
+}
+const withToken = mediaUrl;
 
 export const api = {
   base: apiBase,
@@ -728,15 +774,23 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
     return res.json() as Promise<StudioProject>;
   },
+  studioSetShot: (id: number, shotId: string, usable: boolean) =>
+    req<StudioProject>(`/api/studio/projects/${id}/shots/${encodeURIComponent(shotId)}`, {
+      method: "PUT", headers: headers(), body: JSON.stringify({ usable }) }),
+  studioArchive: () => req<StudioArchive>("/api/studio/archive", { headers: headers(false) }),
+  setStudioArchive: (patch: { enabled?: boolean; days?: number }) =>
+    req<StudioArchive>("/api/studio/archive", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  studioArchiveNow: () =>
+    req<StudioArchive & { archived: { id: number; freed_mb: number }[] }>("/api/studio/archive/run", { method: "POST", headers: headers() }),
+  studioRestore: (id: number) =>
+    req<{ job_id: string }>(`/api/studio/projects/${id}/restore`, { method: "POST", headers: headers() }),
   studioMotion: () => req<StudioMotion>("/api/studio/motion", { headers: headers(false) }),
   setStudioMotion: (patch: Partial<Pick<StudioMotion, "mode" | "cast_cards">>) =>
     req<StudioMotion>("/api/studio/motion", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   studioFileUrl: (id: number, path: string, bust?: string) => {
     const q = new URLSearchParams({ path });
-    const t = token();
-    if (t) q.set("token", t);
     if (bust) q.set("v", bust);
-    return `${apiBase()}/api/studio/projects/${id}/file?${q.toString()}`;
+    return mediaUrl(`/api/studio/projects/${id}/file?${q.toString()}`);
   },
 
   aiCheck: () =>

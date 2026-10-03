@@ -17,7 +17,7 @@ This document defines all configuration options, environment variables, default 
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ACCESS_TOKEN` | `""` (open in local dev) | Shared master token required on all API requests. **Mandatory in production** (fails closed if missing). |
+| `ACCESS_TOKEN` | `""` (open in local dev) | Shared master token required on all API requests. **Mandatory in production** (fails closed if missing). Sent **only in headers** (`x-access-token` / `Authorization: Bearer`); never accepted in a URL. Media links use a 12 h media pass from `GET /api/media-pass` (`?g=…`, read-only media routes only). |
 | `VERCEL_API_TOKEN` / `VERCEL_TOKEN` | `""` | Personal Vercel API token used in CI/CD (GitHub Actions) and CLI deployments. |
 
 ---
@@ -67,3 +67,12 @@ This document defines all configuration options, environment variables, default 
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Text and multimodal model for titles, descriptions, and tags. |
 | `GEMINI_TTS_MODEL` | `gemini-3.8-flash-tts`| Gemini model for voiceover and studio narration synthesis. |
 | `GEMINI_TTS_VOICE` | `Puck` | Default voice preset (`Puck`, `Charon`, `Kore`, `Fenrir`, `Aoede`). |
+
+## Scheduler, jobs and archive (2026-10-03)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Auto-poster check | every 5 min (`TICK_SECONDS=300`) | Any queue/schedule change wakes it at once, so approvals get a slot immediately; posts go out within 5 min of their slot. |
+| Resumable jobs | on | Studio steps, Drive sync, Channel Ingest, bulk AI, Drive saves, footage restores are recorded in `resumable_jobs`; a job whose server has been silent 75 s is resumed from its checkpoint (max 2 tries). Heartbeat every 20 s. |
+| `app_settings.studio_archive` | `{"enabled": true, "days": 14}` | Breakdowns posted ≥ N days ago with a confirmed, current Drive copy lose footage/stills/render/segcache (uploaded footage kept). Restore footage re-downloads from IMDb. Daily, from the scheduler. |
+| `RENDER_WORKERS` | 8 | Parallel segment renders (Railway box: 32 vCPU). Segments cached in `studio/<id>/segcache` (`SEG_VERSION`). |

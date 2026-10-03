@@ -123,3 +123,37 @@ class TestAuth(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_wrong_tokens_lock_out_that_address_only():
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import auth
+    auth._bad_tokens.clear()
+    c = TestClient(app)
+    bad = {"Authorization": "Bearer nope", "X-Forwarded-For": "203.0.113.9"}
+    codes = [c.get("/api/jobs", headers=bad).status_code for _ in range(21)]
+    assert codes[:20] == [401] * 20 and codes[20] == 429
+    ok = {"Authorization": "Bearer test-token", "X-Forwarded-For": "198.51.100.7"}
+    assert c.get("/api/jobs", headers=ok).status_code == 200       # other visitors unaffected
+    auth._bad_tokens.clear()
+
+
+def test_media_pass_opens_media_only_and_token_never_works_in_a_url():
+    import time
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import auth
+    c = TestClient(app)
+    hdr = {"Authorization": "Bearer test-token"}
+    g = c.get("/api/media-pass", headers=hdr).json()["pass"]
+    assert c.get(f"/api/tts/audio/missing.wav?g={g}").status_code == 404        # pass accepted (file just isn't there)
+    assert c.get("/api/tts/audio/missing.wav").status_code == 401               # no pass, no token: refused
+    assert c.get(f"/api/jobs?g={g}").status_code == 401                          # not a media route
+    assert c.post(f"/api/clips/1/select?g={g}", json={"selected": True}).status_code == 401  # never writes
+    assert c.get("/api/jobs?token=test-token").status_code == 401               # token in a URL: refused
+    bad = g[:-1] + ("1" if g[-1] != "1" else "2")
+    assert c.get(f"/api/tts/audio/x.wav?g={bad}").status_code == 401           # tampered
+    old = f"{int(time.time()) - 5}.{g.split('.', 1)[1]}"
+    assert c.get(f"/api/tts/audio/x.wav?g={old}").status_code == 401           # expired
+    assert auth.verify_media_pass(g) and not auth.verify_media_pass("nonsense")
