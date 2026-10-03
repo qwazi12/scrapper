@@ -1158,10 +1158,15 @@ def set_autopost(req: AutopostIn, s: Session = Depends(get_session)) -> dict:
 
 @app.put("/api/schedule/config", dependencies=_AUTH)
 def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_session)) -> dict:
-    """Change posting times from the Settings page; Ready items re-plan now."""
-    _snapshot_setting(s, "schedule", "Reset posting times" if req.reset else "Change posting times")
+    """Change posting times and pacing from Settings / SocialPilot Scheduler; Ready items re-plan now."""
+    _snapshot_setting(s, "schedule", "Reset posting times" if req.reset else "Change posting schedule & pacing")
     try:
-        queue_manager.save_schedule(s, None if req.reset else req.model_dump(exclude={"reset"}))
+        dumped = req.model_dump(exclude={"reset"})
+        if req.pipeline_overrides and not dumped.get("pipelines"):
+            dumped["pipelines"] = req.pipeline_overrides
+        if req.account_overrides and not dumped.get("accounts"):
+            dumped["accounts"] = req.account_overrides
+        queue_manager.save_schedule(s, None if req.reset else dumped)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return get_schedule(s)
@@ -1348,11 +1353,19 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
                               "scheduled_at": queue_manager._aware(it.scheduled_at)})
     cfg = queue_manager.load_schedule(s)
     per_day = queue_manager.slots_per_day()
+    pacing_summary = {
+        name: queue_manager.slots_per_day(pipeline=name)
+        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm"]
+    }
     return {
         "timezone": cfg["timezone"],
         "start_hour": cfg["start_hour"],
         "end_hour": cfg["end_hour"],
         "interval_hours": cfg["interval_hours"],
+        "posts_per_day": cfg.get("posts_per_day"),
+        "pipeline_overrides": cfg.get("pipelines", {}),
+        "account_overrides": cfg.get("accounts", {}),
+        "pipeline_slots_per_day": pacing_summary,
         "defaults": queue_manager.default_schedule(),
         "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,

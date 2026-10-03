@@ -296,3 +296,18 @@ Env needed on Railway: `TMDB_API_KEY`, `TTS_API_KEY` (same Google key manhwa use
   - Live restore dry-run verified against live database snapshot (2,548 total rows: 689 queue items, 31 ingest jobs, 1,387 logs, 435 events).
   - Unit tests in `backend/tests/test_backup.py` passed 4/4 in 0.016s.
 
+## Log — 2026-10-02 (night) — Pacing Throttle & Scheduler Built & Verified
+- **Pacing Throttle Suite**:
+  - Global 1-click presets: `[ 1 / day ]` (Daily Highlight), `[ 3 / day ]`, `[ 4 / day ]`, `[ 8 / day (Standard) ]`, `[ 12 / day ]`, `[ 20 / day (Blitz) ]`, plus custom inputs (1 to 48 posts/day).
+  - Mathematical slot distribution across active hours (`round(i * window / (N - 1))`) eliminating minute drift and ensuring exact first/last slot alignment.
+  - Per-Pipeline overrides: configure distinct velocity for `Movie Clips`, `LongForm`, `Abyss Declassified`, `The ICK Room`, `default`, or individual creator channel handles.
+  - Per-Account overrides: configure velocity for Upload-Post profiles (`default` -> Screen Central, `mk` -> Flamingo Remix).
+  - Resolution precedence: Account override > Pipeline override > Global default.
+- **UI Integration in Settings & SocialPilot AI**:
+  - `PacingThrottle.tsx`: interactive speed gauge, content runway meter (e.g. 688 items = 34.4 days at 20/day), 1-click override buttons, pause/resume, and undo integration.
+  - Embedded in **Settings & Channels** tab (`SettingsOverview.tsx`) inside the Posting Schedule card.
+  - Dedicated sub-tab in **SocialPilot AI Studio** (`page.tsx`): `⏱️ Pacing & Scheduler` alongside Posting Queue, LongForm Breakdowns, Channel Ingest, and Drive Sync.
+- **Verification**:
+  - 60/60 unit tests passed in `backend/tests/test_queue.py`.
+  - TypeScript compilation `npx tsc --noEmit -p frontend/tsconfig.json` passed with 0 errors.
+

@@ -111,11 +111,23 @@ export type QueueItem = {
   created_at: string;
 };
 
+export type PacingOverride = {
+  posts_per_day?: number | null;
+  start_hour?: number | null;
+  end_hour?: number | null;
+  interval_hours?: number | null;
+};
+
 export type ScheduleConfig = {
   timezone: string;
   start_hour: number;
   end_hour: number;
   interval_hours: number;
+  posts_per_day?: number | null;
+  pipeline_overrides?: Record<string, PacingOverride>;
+  account_overrides?: Record<string, PacingOverride>;
+  pipelines?: Record<string, PacingOverride>;
+  accounts?: Record<string, PacingOverride>;
 };
 
 export type TTSVoice = {
@@ -248,6 +260,7 @@ export type ScheduleInfo = ScheduleConfig & {
   defaults: ScheduleConfig;
   customized: boolean;
   slots_per_day: number;
+  pipeline_slots_per_day?: Record<string, number>;
   next_slots: string[];
   archive_delete_days: number;
   ready_without_accounts: number;

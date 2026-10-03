@@ -18,6 +18,7 @@ import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
 import { JobsBar } from "./JobsBar";
+import { SchedulerView } from "./PacingThrottle";
 
 type NavTab = "scraper" | "socialpilot" | "longform" | "comps" | "logs" | "settings";
 
@@ -29,7 +30,7 @@ export default function Page() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
-  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "ingest" | "drive">("queue");
+  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "scheduler" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   // Phones: the sidebar becomes a slide-out drawer so pages get the full width.
   const [isMobile, setIsMobile] = useState(false);
@@ -403,6 +404,19 @@ export default function Page() {
                   🎬 LongForm Breakdowns
                 </button>
                 <button
+                  onClick={() => setSocialPilotTab("scheduler")}
+                  style={{
+                    background: socialPilotTab === "scheduler" ? "#0f766e" : "transparent",
+                    color: socialPilotTab === "scheduler" ? "#2dd4bf" : "var(--text)",
+                    border: socialPilotTab === "scheduler" ? "1px solid #14b8a6" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  ⏱️ Pacing &amp; Scheduler
+                </button>
+                <button
                   onClick={() => setSocialPilotTab("ingest")}
                   style={{
                     background: socialPilotTab === "ingest" ? "#1e3a8a" : "transparent",
@@ -433,6 +447,7 @@ export default function Page() {
 
             {socialPilotTab === "queue" && <QueuePanel key="clips" onChange={refresh} />}
             {socialPilotTab === "longform" && <QueuePanel key="longform" mode="longform" onChange={refresh} />}
+            {socialPilotTab === "scheduler" && <SchedulerView onSaved={refresh} />}
             {socialPilotTab === "ingest" && <ChannelIngestPanel onIngested={refresh} />}
             {socialPilotTab === "drive" && <DrivePanel onIngested={refresh} />}
           </div>

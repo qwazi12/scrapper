@@ -73,6 +73,9 @@ def default_schedule() -> dict[str, Any]:
         "start_hour": settings.post_start_hour,
         "end_hour": settings.post_end_hour,
         "interval_hours": settings.post_interval_hours,
+        "posts_per_day": None,
+        "pipelines": {},
+        "accounts": {},
     }
 
 
@@ -93,7 +96,64 @@ def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("First slot must be at or before the last slot")
     if not (1 <= step <= 24):
         raise ValueError("Interval must be 1-24 hours")
-    return {"timezone": tz, "start_hour": start, "end_hour": end, "interval_hours": step}
+
+    posts_per_day = cfg.get("posts_per_day")
+    if posts_per_day is not None and posts_per_day != "":
+        try:
+            posts_per_day = int(posts_per_day)
+            if not (1 <= posts_per_day <= 48):
+                raise ValueError("posts_per_day must be between 1 and 48")
+        except (TypeError, ValueError):
+            raise ValueError("posts_per_day must be an integer between 1 and 48")
+    else:
+        posts_per_day = None
+
+    def _clean_overrides(raw_dict: Any) -> dict[str, dict[str, Any]]:
+        if not isinstance(raw_dict, dict):
+            return {}
+        cleaned: dict[str, dict[str, Any]] = {}
+        for k, v in raw_dict.items():
+            if not isinstance(v, dict):
+                continue
+            entry: dict[str, Any] = {}
+            if v.get("posts_per_day") is not None and v.get("posts_per_day") != "":
+                ppd = int(v["posts_per_day"])
+                if not (1 <= ppd <= 48):
+                    raise ValueError(f"Override for {k}: posts_per_day must be 1-48")
+                entry["posts_per_day"] = ppd
+            if v.get("start_hour") is not None and v.get("start_hour") != "":
+                sh = int(v["start_hour"])
+                if not (0 <= sh <= 23):
+                    raise ValueError(f"Override for {k}: start_hour must be 0-23")
+                entry["start_hour"] = sh
+            if v.get("end_hour") is not None and v.get("end_hour") != "":
+                eh = int(v["end_hour"])
+                if not (0 <= eh <= 23):
+                    raise ValueError(f"Override for {k}: end_hour must be 0-23")
+                entry["end_hour"] = eh
+            if "start_hour" in entry and "end_hour" in entry and entry["start_hour"] > entry["end_hour"]:
+                raise ValueError(f"Override for {k}: first slot must be <= last slot")
+            if v.get("interval_hours") is not None and v.get("interval_hours") != "":
+                ih = int(v["interval_hours"])
+                if not (1 <= ih <= 24):
+                    raise ValueError(f"Override for {k}: interval must be 1-24 hours")
+                entry["interval_hours"] = ih
+            if entry:
+                cleaned[str(k)] = entry
+        return cleaned
+
+    raw_pipes = cfg.get("pipeline_overrides") or cfg.get("pipelines") or {}
+    raw_accs = cfg.get("account_overrides") or cfg.get("accounts") or {}
+
+    return {
+        "timezone": tz,
+        "start_hour": start,
+        "end_hour": end,
+        "interval_hours": step,
+        "posts_per_day": posts_per_day,
+        "pipelines": _clean_overrides(raw_pipes),
+        "accounts": _clean_overrides(raw_accs),
+    }
 
 
 _schedule_cfg: dict[str, Any] = default_schedule()
@@ -133,7 +193,8 @@ def save_schedule(s: Session, cfg: dict[str, Any] | None) -> dict[str, Any]:
     logbus.log("info", "schedule_changed",
                f"Posting schedule {before['start_hour']}-{before['end_hour']}h every {before['interval_hours']}h "
                f"{before['timezone']} -> {after['start_hour']}-{after['end_hour']}h every "
-               f"{after['interval_hours']}h {after['timezone']}", before=before, after=after)
+               f"{after['interval_hours']}h {after['timezone']} (pacing: {after.get('posts_per_day') or 'interval'} posts/day)",
+               before=before, after=after)
     return after
 
 
@@ -153,21 +214,115 @@ def set_autopost_paused(s: Session, paused: bool) -> None:
                "Auto-posting PAUSED — nothing new will be submitted" if paused else "Auto-posting resumed")
 
 
-def slots_per_day() -> int:
-    c = _schedule_cfg
-    return len(range(c["start_hour"], c["end_hour"] + 1, c["interval_hours"]))
-
-
-def slots_after(t: datetime.datetime, n: int) -> list[datetime.datetime]:
-    """The next n posting slots strictly after t, as UTC datetimes."""
+def resolve_pacing(
+    pipeline: str | None = None,
+    accounts: list[str] | str | None = None,
+) -> dict[str, Any]:
+    """Resolve effective pacing rules for a specific pipeline or target accounts.
+    Priority:
+      1. Account override (e.g. "default", "mk", "default:*")
+      2. Pipeline override (e.g. "Movie Clips", "LongForm", "@VynixAE")
+      3. Global schedule setting
+    """
     cfg = _schedule_cfg
-    tz = ZoneInfo(cfg["timezone"])
+    tz = cfg["timezone"]
+    start = cfg["start_hour"]
+    end = cfg["end_hour"]
+    step = cfg["interval_hours"]
+    ppd = cfg.get("posts_per_day")
+
+    override = None
+    # 1. Check account override
+    if accounts and cfg.get("accounts"):
+        acc_list = [accounts] if isinstance(accounts, str) else accounts
+        for acc in acc_list:
+            if not acc:
+                continue
+            clean_profile = acc.split(":")[0].strip()
+            if acc in cfg["accounts"]:
+                override = cfg["accounts"][acc]
+                break
+            elif clean_profile in cfg["accounts"]:
+                override = cfg["accounts"][clean_profile]
+                break
+
+    # 2. Check pipeline override if no account override matched
+    if not override and pipeline and cfg.get("pipelines"):
+        if pipeline in cfg["pipelines"]:
+            override = cfg["pipelines"][pipeline]
+
+    if override:
+        if override.get("posts_per_day") is not None:
+            ppd = int(override["posts_per_day"])
+        if override.get("start_hour") is not None:
+            start = int(override["start_hour"])
+        if override.get("end_hour") is not None:
+            end = int(override["end_hour"])
+        if override.get("interval_hours") is not None:
+            step = int(override["interval_hours"])
+
+    return {
+        "timezone": tz,
+        "start_hour": start,
+        "end_hour": end,
+        "interval_hours": step,
+        "posts_per_day": ppd,
+    }
+
+
+def day_slots_for_pacing(
+    day: datetime.date,
+    tz: ZoneInfo,
+    start_hour: int,
+    end_hour: int,
+    interval_hours: int,
+    posts_per_day: int | None,
+) -> list[datetime.datetime]:
+    """Calculate the list of slot datetimes for a single day based on pacing rules."""
+    if posts_per_day is not None and posts_per_day > 0:
+        if posts_per_day == 1:
+            return [datetime.datetime.combine(day, datetime.time(start_hour), tzinfo=tz)]
+        window_minutes = (end_hour - start_hour) * 60 if end_hour > start_hour else 1440
+        slots = []
+        for i in range(posts_per_day):
+            mins = round(i * window_minutes / (posts_per_day - 1))
+            total_mins = start_hour * 60 + mins
+            h = min(23, total_mins // 60)
+            m = total_mins % 60
+            slots.append(datetime.datetime.combine(day, datetime.time(h, m), tzinfo=tz))
+        return slots
+    return [
+        datetime.datetime.combine(day, datetime.time(h), tzinfo=tz)
+        for h in range(start_hour, end_hour + 1, interval_hours)
+    ]
+
+
+def slots_per_day(pipeline: str | None = None, accounts: list[str] | str | None = None) -> int:
+    p = resolve_pacing(pipeline=pipeline, accounts=accounts)
+    if p["posts_per_day"] is not None:
+        return p["posts_per_day"]
+    return len(range(p["start_hour"], p["end_hour"] + 1, p["interval_hours"]))
+
+
+def slots_after(
+    t: datetime.datetime,
+    n: int,
+    pipeline: str | None = None,
+    accounts: list[str] | str | None = None,
+) -> list[datetime.datetime]:
+    """The next n posting slots strictly after t, as UTC datetimes,
+    using effective pacing for the specified pipeline/account."""
+    pacing = resolve_pacing(pipeline=pipeline, accounts=accounts)
+    tz = ZoneInfo(pacing["timezone"])
     local = t.astimezone(tz)
     day = local.date()
     out: list[datetime.datetime] = []
     while len(out) < n:
-        for h in range(cfg["start_hour"], cfg["end_hour"] + 1, cfg["interval_hours"]):
-            slot = datetime.datetime.combine(day, datetime.time(h), tzinfo=tz)
+        for slot in day_slots_for_pacing(
+            day, tz,
+            pacing["start_hour"], pacing["end_hour"],
+            pacing["interval_hours"], pacing["posts_per_day"],
+        ):
             if slot > local:
                 out.append(slot.astimezone(UTC))
                 if len(out) == n:
@@ -176,9 +331,16 @@ def slots_after(t: datetime.datetime, n: int) -> list[datetime.datetime]:
     return out
 
 
-def current_slot(now: datetime.datetime) -> datetime.datetime | None:
+def current_slot(
+    now: datetime.datetime,
+    pipeline: str | None = None,
+    accounts: list[str] | str | None = None,
+) -> datetime.datetime | None:
     """The slot that started within DUE_GRACE before now, if any."""
-    slot = slots_after(now - DUE_GRACE, 1)[0]
+    s = slots_after(now - DUE_GRACE, 1, pipeline=pipeline, accounts=accounts)
+    if not s:
+        return None
+    slot = s[0]
     return slot if slot <= now else None
 
 
@@ -212,20 +374,19 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         else:
             groups.setdefault(pipeline_group(it), []).append(it)
 
-    # Catch-up: a slot that opened < DUE_GRACE ago is still usable by a
-    # pipeline that has nothing in it yet (e.g. made Ready at 6:02 -> posts
-    # in the 6:00 slot instead of waiting for 8:00).
-    cur = current_slot(now)
+    cur_global = current_slot(now)
     used: set[str] = set()
-    if cur is not None:
+    if cur_global is not None:
         for it in (s.query(QueueItem)
-                   .filter(QueueItem.scheduled_at == cur)
+                   .filter(QueueItem.scheduled_at == cur_global)
                    .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived"]))
                    .all()):
             used.add(pipeline_group(it))
 
     for group, items in groups.items():
-        slots = slots_after(now, len(items))
+        primary_accs = items[0].accounts if items else None
+        cur = current_slot(now, pipeline=group, accounts=primary_accs)
+        slots = slots_after(now, len(items), pipeline=group, accounts=primary_accs)
         if cur is not None and group not in used and group not in due_groups:
             slots = [cur] + slots[:-1] if slots else [cur]
         for it, slot in zip(items, slots):

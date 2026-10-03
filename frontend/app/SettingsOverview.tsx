@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { api, apiBase, BackupStatus, DiskSystemStatus, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, token, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
+import { PacingThrottle } from "./PacingThrottle";
 
 function fmtHour(h: number): string {
   const ampm = h < 12 ? "am" : "pm";
@@ -648,22 +649,8 @@ export function SettingsOverview() {
             ))}
           </div>
         )}
-        <ScheduleEditor sched={sched} onSaved={setSched} />
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-          <button
-            style={{ fontSize: 11, padding: "4px 10px", fontWeight: 700,
-                     background: sc.paused ? "#78350f" : "transparent", color: sc.paused ? "#fde68a" : "var(--text)" }}
-            onClick={async () => {
-              const next = !sc.paused;
-              if (!confirm(next ? "Pause auto-posting? Nothing new is submitted until you resume." : "Resume auto-posting?")) return;
-              await api.setAutopost(next);
-              setSched(await api.schedule());
-            }}
-          >
-            {sc.paused ? "▶ Resume auto-posting" : "⏸ Pause auto-posting"}
-          </button>
-          <UndoButton scope="settings" version={JSON.stringify([sched.start_hour, sched.end_hour, sched.interval_hours, sched.timezone, sc.paused])}
-            onUndone={async () => setSched(await api.schedule())} />
+        <div style={{ marginTop: 14 }}>
+          <PacingThrottle sched={sched} onSaved={setSched} />
         </div>
       </div>
 

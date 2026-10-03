@@ -6,7 +6,7 @@ import datetime
 
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, BaseModel, Field
 
 
 def _as_utc(v: datetime.datetime | None) -> datetime.datetime | None:
@@ -186,11 +186,23 @@ class QueueBulkAction(BaseModel):
     tags: str | None = None
 
 
+class PacingRuleIn(BaseModel):
+    posts_per_day: int | None = None
+    start_hour: int | None = None
+    end_hour: int | None = None
+    interval_hours: int | None = None
+
+
 class ScheduleConfigIn(BaseModel):
     timezone: str = "America/New_York"
     start_hour: int = 8
     end_hour: int = 22
     interval_hours: int = 2
+    posts_per_day: int | None = None
+    pipelines: dict[str, PacingRuleIn] = Field(default_factory=dict)
+    accounts: dict[str, PacingRuleIn] = Field(default_factory=dict)
+    pipeline_overrides: dict[str, PacingRuleIn] = Field(default_factory=dict)
+    account_overrides: dict[str, PacingRuleIn] = Field(default_factory=dict)
     reset: bool = False  # true = drop the override, back to env defaults
 
 

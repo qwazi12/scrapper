@@ -608,3 +608,98 @@ def test_longform_tags_include_basics_and_keywords():
                                                      "keywords": ["island", "survival", "send help"]})
     assert tags[:4] == ["Send Help", "Send Help trailer", "Send Help trailer breakdown", "Send Help release date"]
     assert "Rachel McAdams" in tags and "island" in tags and tags.count("Send Help") == 1
+
+
+# --- Pacing Throttle & Presets -----------------------------------------------
+def test_pacing_presets_single_post_per_day():
+    cfg = qm.validate_schedule({
+        "timezone": "America/New_York",
+        "start_hour": 18,
+        "end_hour": 18,
+        "interval_hours": 2,
+        "posts_per_day": 1,
+    })
+    assert cfg["posts_per_day"] == 1
+    # Save config and test slots
+    qm._schedule_cfg = cfg
+    slots = qm.slots_after(et(2026, 10, 1, 12, 0), 2)
+    assert len(slots) == 2
+    assert [s.astimezone(ET).hour for s in slots] == [18, 18]
+    assert slots[0].astimezone(ET).day == 1
+    assert slots[1].astimezone(ET).day == 2
+    assert qm.slots_per_day() == 1
+
+
+def test_pacing_presets_20_posts_per_day():
+    cfg = qm.validate_schedule({
+        "timezone": "America/New_York",
+        "start_hour": 8,
+        "end_hour": 22,
+        "interval_hours": 2,
+        "posts_per_day": 20,
+    })
+    qm._schedule_cfg = cfg
+    slots = qm.slots_after(et(2026, 10, 1, 7, 30), 20)
+    assert len(slots) == 20
+    # First slot at 8:00, last slot at 22:00
+    assert slots[0].astimezone(ET).hour == 8
+    assert slots[0].astimezone(ET).minute == 0
+    assert slots[-1].astimezone(ET).hour == 22
+    assert slots[-1].astimezone(ET).minute == 0
+    assert qm.slots_per_day() == 20
+
+
+def test_pacing_pipeline_and_account_overrides():
+    cfg = qm.validate_schedule({
+        "timezone": "America/New_York",
+        "start_hour": 8,
+        "end_hour": 22,
+        "interval_hours": 2,
+        "posts_per_day": 8,
+        "pipelines": {
+            "LongForm": {"posts_per_day": 1, "start_hour": 19, "end_hour": 19},
+            "Movie Clips": {"posts_per_day": 20, "start_hour": 8, "end_hour": 22},
+        },
+        "accounts": {
+            "mk": {"posts_per_day": 3, "start_hour": 10, "end_hour": 20},
+        }
+    })
+    qm._schedule_cfg = cfg
+
+    # 1. Global default
+    assert qm.slots_per_day() == 8
+
+    # 2. Pipeline LongForm override
+    assert qm.slots_per_day(pipeline="LongForm") == 1
+    lf_slots = qm.slots_after(et(2026, 10, 1, 10, 0), 1, pipeline="LongForm")
+    assert lf_slots[0].astimezone(ET).hour == 19
+
+    # 3. Pipeline Movie Clips override
+    assert qm.slots_per_day(pipeline="Movie Clips") == 20
+
+    # 4. Account override takes precedence
+    # Item with pipeline Movie Clips but targeting account mk gets mk's pacing (3/day)
+    assert qm.slots_per_day(pipeline="Movie Clips", accounts=["mk:*"]) == 3
+    mk_slots = qm.slots_after(et(2026, 10, 1, 8, 0), 3, pipeline="Movie Clips", accounts=["mk:youtube"])
+    assert len(mk_slots) == 3
+    assert mk_slots[0].astimezone(ET).hour == 10
+    assert mk_slots[-1].astimezone(ET).hour == 20
+
+
+def test_pacing_validation_rejects_invalid_values():
+    with pytest.raises(ValueError, match="posts_per_day must be an integer between 1 and 48"):
+        qm.validate_schedule({
+            "timezone": "America/New_York",
+            "start_hour": 8,
+            "end_hour": 22,
+            "interval_hours": 2,
+            "posts_per_day": 99,
+        })
+    with pytest.raises(ValueError, match="Override for test: posts_per_day must be 1-48"):
+        qm.validate_schedule({
+            "timezone": "America/New_York",
+            "start_hour": 8,
+            "end_hour": 22,
+            "interval_hours": 2,
+            "pipelines": {"test": {"posts_per_day": 0}}
+        })
