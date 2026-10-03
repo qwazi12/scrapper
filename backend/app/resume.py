@@ -3,8 +3,16 @@
 Jobs live in memory (control.py), so a restart used to kill them silently.
 Now each long job also gets a ResumableJob row: written when it starts, closed
 when it finishes / is stopped / fails, with a checkpoint of how far it got.
-A row still "running" at startup was cut off, so it is launched again from its
-checkpoint — at most MAX_RESUMES times, then it's marked failed with the reason.
+A row still "running" whose server has gone quiet was cut off, so it is
+launched again from its checkpoint — at most MAX_RESUMES times, then it's
+marked failed with the reason.
+
+Deploys overlap: Railway starts the new server while the old one is still
+running (and finishing) its jobs. So each server stamps the rows it runs
+(`owner` = this process) and refreshes `updated_at` every HEARTBEAT seconds;
+a new server only resumes rows whose owner has been silent for STALE seconds,
+and keeps checking for WATCH seconds after it starts (an old server can take
+a while to be shut down). Never two copies of one job.
 
 Kinds and how they resume:
   studio          the interrupted step re-runs; an auto-chain carries on
@@ -16,8 +24,10 @@ Kinds and how they resume:
 
 from __future__ import annotations
 
+import datetime
 import logging
 import threading
+import uuid
 from typing import Any, Callable
 
 from . import control, logbus
@@ -26,6 +36,8 @@ from .models import ResumableJob
 
 logger = logging.getLogger("scrapper.resume")
 MAX_RESUMES = 2
+BOOT = uuid.uuid4().hex[:16]          # this server process
+HEARTBEAT, STALE, WATCH = 20, 75, 600
 _launchers: dict[str, Callable[[dict, dict, int], Any]] = {}
 _lock = threading.Lock()
 
@@ -40,14 +52,14 @@ def launcher(kind: str):
 
 def begin(kind: str, label: str, params: dict) -> int:
     with SessionLocal() as s:
-        row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running")
+        row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT)
         s.add(row)
         s.commit()
         return row.id
 
 
 def reopen(rid: int) -> None:
-    _update(rid, status="running")
+    _update(rid, status="running", owner=BOOT)
 
 
 def checkpoint(rid: int | None, **data) -> None:
@@ -108,10 +120,46 @@ def tracked_thread(kind: str, label: str, scope: str, params: dict, fn: Callable
     return control.start_thread(kind, label, scope, work, ref=ref)
 
 
-def resume_interrupted() -> int:
-    """Startup: relaunch jobs a restart cut off. Returns how many were resumed."""
+def _heartbeat_once() -> None:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    with _lock, SessionLocal() as s:
+        for row in s.query(ResumableJob).filter(ResumableJob.status == "running", ResumableJob.owner == BOOT).all():
+            row.updated_at = now
+        s.commit()
+
+
+def start_background(watch: int = WATCH) -> None:
+    """Startup: keep this server's jobs alive, and resume dead servers' jobs as
+    soon as they've been silent STALE seconds (checked for `watch` seconds)."""
+    import time
+
+    def beat():
+        while True:
+            try:
+                _heartbeat_once()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("job heartbeat failed: %s", exc)
+            time.sleep(HEARTBEAT)
+
+    def watcher():
+        end = time.time() + watch
+        while time.time() < end:
+            try:
+                resume_interrupted()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("resume check failed: %s", exc)
+            time.sleep(30)
+
+    threading.Thread(target=beat, daemon=True, name="job-heartbeat").start()
+    threading.Thread(target=watcher, daemon=True, name="job-resume-watch").start()
+
+
+def resume_interrupted(stale: int = STALE) -> int:
+    """Relaunch jobs whose server died. Returns how many were resumed."""
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=stale)
     with SessionLocal() as s:
-        rows = s.query(ResumableJob).filter(ResumableJob.status == "running").order_by(ResumableJob.id).all()
+        rows = [r for r in s.query(ResumableJob).filter(ResumableJob.status == "running").order_by(ResumableJob.id).all()
+                if r.owner != BOOT and _aware(r.updated_at) < cutoff]
         todo = []
         for row in rows:
             if row.attempts >= MAX_RESUMES or row.kind not in _launchers:
@@ -121,6 +169,7 @@ def resume_interrupted() -> int:
                 logbus.log("error", "job_not_resumed", f"{row.label}: {row.last_error}")
                 continue
             row.attempts += 1
+            row.owner = BOOT
             todo.append((row.id, row.kind, dict(row.params or {}), dict(row.checkpoint or {}), row.label, row.attempts))
         s.commit()
     resumed = 0
@@ -134,3 +183,9 @@ def resume_interrupted() -> int:
             finish(rid, "failed", f"could not resume: {exc}")
             logbus.log("error", "job_resume_failed", f"{label}: could not resume — {exc}", job=rid, kind=kind)
     return resumed
+
+
+def _aware(t: datetime.datetime | None) -> datetime.datetime:
+    if t is None:
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    return t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)

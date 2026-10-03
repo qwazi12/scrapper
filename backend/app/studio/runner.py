@@ -101,8 +101,14 @@ def recover_interrupted() -> int:
     still marked running/queued was cut off by a restart or deploy. Mark it
     stopped so it can be re-run — otherwise it looked busy forever, Stop found no
     job to stop, and edits were refused (seen 2026-10-02)."""
+    from ..models import ResumableJob
     with SessionLocal() as s:
-        stuck = s.query(StudioProject).filter(StudioProject.stage_status == "running").all()
+        # Steps with a job record are handled by resume.py (resumed once their
+        # old server is gone — deploys overlap, so it may still be running them).
+        tracked = {int((r.params or {}).get("project_id", -1)) for r in
+                   s.query(ResumableJob).filter(ResumableJob.kind == "studio", ResumableJob.status == "running").all()}
+        stuck = [p for p in s.query(StudioProject).filter(StudioProject.stage_status == "running").all()
+                 if p.id not in tracked]
         for p in stuck:
             p.stage_status = "stopped"
             p.stage_message = f"{p.stage} was interrupted by a server restart — re-run it"

@@ -98,7 +98,7 @@ def _startup() -> None:
             from .social import ai_bulk  # noqa: F401  (each module registers its resume launcher)
             from .studio import drive_store  # noqa: F401
             from .studio import archive as _studio_archive  # noqa: F401
-            resume.resume_interrupted()
+            resume.start_background()   # resumes only jobs whose old server has gone quiet
         except Exception as exc:  # never block startup on recovery
             logbus.log("error", "startup_resume_failed", str(exc))
     try:

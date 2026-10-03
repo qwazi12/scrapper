@@ -12,6 +12,16 @@ def _status(rid):
         return r.status, r.attempts, r.checkpoint, r.last_error
 
 
+def _cut_off(rid):
+    """Make a row look like its server died a while ago."""
+    import datetime as dt
+    with SessionLocal() as s:
+        r = s.get(ResumableJob, rid)
+        r.owner = "old-server"
+        r.updated_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
+        s.commit()
+
+
 def _clear():
     with SessionLocal() as s:
         s.query(ResumableJob).delete()
@@ -24,6 +34,8 @@ def test_cut_off_job_is_resumed_from_its_checkpoint(monkeypatch):
     monkeypatch.setitem(resume._launchers, "studio", lambda p, cp, rid: calls.append((p, cp, rid)))
     rid = resume.begin("studio", "Studio #7: gather + following steps", {"project_id": 7, "stage": "gather", "auto": True})
     resume.checkpoint(rid, stage="shots")                       # the chain had reached "shots" when the server died
+    assert resume.resume_interrupted() == 0                     # its server could still be alive (deploy overlap)
+    _cut_off(rid)
     assert resume.resume_interrupted() == 1
     assert calls == [({"project_id": 7, "stage": "gather", "auto": True}, {"stage": "shots"}, rid)]
     assert _status(rid)[1] == 1
@@ -43,8 +55,11 @@ def test_gives_up_after_two_resumes(monkeypatch):
     _clear()
     monkeypatch.setitem(resume._launchers, "drive_save", lambda p, cp, rid: None)
     rid = resume.begin("drive_save", "Save to Drive", {"project_id": 1})
+    _cut_off(rid)
     assert resume.resume_interrupted() == 1                     # 1st restart
+    _cut_off(rid)
     assert resume.resume_interrupted() == 1                     # 2nd restart (still "running")
+    _cut_off(rid)
     assert resume.resume_interrupted() == 0                     # 3rd: stop trying
     st, attempts, _, err = _status(rid)
     assert st == "failed" and attempts == 2 and "3 times" in err
@@ -84,9 +99,24 @@ def test_bulk_ai_resume_skips_finished_videos(monkeypatch):
     rid = resume.begin("bulk_ai", "AI rewrite of 4 video(s)", {"ids": [1, 2, 3, 4]})
     resume.add_done(rid, 1)
     resume.add_done(rid, 3)
+    _cut_off(rid)
     assert resume.resume_interrupted() == 1
     for _ in range(50):
         if not ai_bulk.status["running"]:
             break
         time.sleep(0.05)
     assert seen == [2, 4] and _status(rid)[0] == "done"
+
+
+def test_a_live_servers_jobs_are_never_taken_over():
+    _clear()
+    import datetime as dt
+    rid = resume.begin("drive_sync", "busy elsewhere", {})
+    with SessionLocal() as s:
+        r = s.get(ResumableJob, rid)
+        r.owner = "other-live-server"
+        r.updated_at = dt.datetime.now(dt.timezone.utc)          # its heartbeat is fresh
+        s.commit()
+    assert resume.resume_interrupted() == 0
+    resume._heartbeat_once()                                      # our heartbeat leaves others' rows alone
+    assert _status(rid)[0] == "running"
