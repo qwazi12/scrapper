@@ -1245,7 +1245,14 @@ async def generate_speech(req: TTSGenerateRequest) -> TTSGenerateResponse:
         raise HTTPException(500, f"Speech generation error: {exc}")
 
 
-@app.get("/api/tts/audio/{filename}")
+@app.get("/api/media-pass", dependencies=_AUTH)
+def get_media_pass() -> dict:
+    """A 12-hour pass for <img>/<video>/download/EventSource URLs (see auth.py)."""
+    from .auth import media_pass
+    return media_pass()
+
+
+@app.get("/api/tts/audio/{filename}", dependencies=_AUTH)
 def get_tts_audio(filename: str):
     """Serve synthesized WAV audio file for in-browser playback and downloads."""
     safe_name = pathlib.Path(filename).name

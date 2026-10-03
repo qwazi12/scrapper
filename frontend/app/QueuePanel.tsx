@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { StopButton } from "./StopButton";
-import { api, apiBase, BulkAiStatus, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
+import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 import { UndoButton } from "./UndoButton";
 
@@ -1110,7 +1110,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           <span style={{ fontSize: 10, color: "#34d399", fontWeight: 700 }}>🎙️ Hook:</span>
                           <audio
                             controls
-                            src={item.media_url.startsWith("http") ? item.media_url : `${apiBase()}${item.media_url}`}
+                            src={mediaUrl(item.media_url)}
                             style={{ height: 26, width: "100%", maxWidth: 240 }}
                           />
                         </div>

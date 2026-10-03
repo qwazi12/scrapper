@@ -88,6 +88,45 @@ def _note_bad_token(ip: str) -> None:
         _bad_tokens.setdefault(ip, []).append(time.time())
 
 
+# --- media passes -------------------------------------------------------------------
+# <img>, <video>, download links and EventSource can't send headers, so they used
+# to carry the master token as ?token=… (browser history, logs, shared links).
+# Now the site trades its token (in a header) for a media pass: signed, expires
+# in 12 h, and accepted ONLY for GETs on the read-only media routes below — it
+# can't post, edit, delete or spend. The master token is never accepted in a URL.
+import re as _re
+
+MEDIA_PASS_TTL = 12 * 3600
+MEDIA_ROUTES = _re.compile(
+    r"^/api/(clips/\d+/(thumb|download)|compilations/\d+/download|events|"
+    r"studio/projects/\d+/file|tts/audio/[^/]+|backup/download/[^/]+)$")
+
+
+def media_pass(ttl: int = MEDIA_PASS_TTL) -> dict[str, Any]:
+    exp = int(time.time()) + ttl
+    sig = hmac.new(_secret(), f"media-pass:{exp}".encode(), hashlib.sha256).hexdigest()[:40]
+    return {"pass": f"{exp}.{sig}", "expires_at": exp}
+
+
+def verify_media_pass(value: Any) -> bool:
+    if not isinstance(value, str) or "." not in value:
+        return False
+    exp_s, sig = value.split(".", 1)
+    try:
+        exp = int(exp_s)
+    except ValueError:
+        return False
+    if exp < int(time.time()) or exp > int(time.time()) + MEDIA_PASS_TTL + 60:
+        return False
+    want = hmac.new(_secret(), f"media-pass:{exp}".encode(), hashlib.sha256).hexdigest()[:40]
+    return hmac.compare_digest(sig.encode(), want.encode())
+
+
+def _secret() -> bytes:
+    # Derived, so the pass key is never the token itself.
+    return hashlib.sha256(f"scrapper-media|{settings.access_token or 'dev-secret-scrapper'}".encode()).digest()
+
+
 def check_rate_limit(request: Request, max_per_minute: int = 600) -> None:
     """Sliding-window in-memory rate limiter per client IP. 600/min: the site's
     own polling (jobs 3 s, queue 4 s, Studio 3 s) plus bulk actions stay far below."""
@@ -110,7 +149,7 @@ def require_token(
     request: Request,
     authorization: str | None = Header(default=None),
     x_access_token: str | None = Header(default=None),
-    token: str | None = Query(default=None),
+    g: str | None = Query(default=None),
     exp: int | None = Query(default=None),
     sig: str | None = Query(default=None),
 ) -> None:
@@ -133,10 +172,16 @@ def require_token(
             check_rate_limit(request)
             return
 
-    # 4. Check token from header or query string
-    tok_val = token if isinstance(token, str) else None
+    # 4. A media pass: only GETs of the read-only media routes.
+    if isinstance(g, str) and request.method == "GET" and MEDIA_ROUTES.match(request.url.path):
+        if verify_media_pass(g):
+            check_rate_limit(request)
+            return
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "media link expired — reload the page")
+
+    # 5. The token itself: headers only (never accepted in a URL).
     hdr_val = x_access_token if isinstance(x_access_token, str) else None
-    supplied = hdr_val or tok_val
+    supplied = hdr_val
     if authorization and isinstance(authorization, str) and authorization.lower().startswith("bearer "):
         supplied = authorization[7:]
 

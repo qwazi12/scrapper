@@ -471,12 +471,47 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// Browser-native GETs (<img src>, <a href> download, EventSource) can't set
-// headers, so the token rides as a query param on those URLs.
-function withToken(url: string): string {
-  const t = token();
-  return t ? `${url}?token=${encodeURIComponent(t)}` : url;
+// Browser-native GETs (<img src>, <video>, <a href> download, EventSource) can't
+// set headers. They used to carry the access token as ?token=… — visible in
+// history, logs and anything a link was pasted into. Now they carry a media
+// pass (?g=…): signed by the server, valid 12 h, and only good for viewing
+// files on the read-only media routes. The token itself only travels in headers.
+let _pass: { pass: string; expires_at: number } | null = null;
+
+export async function refreshMediaPass(): Promise<void> {
+  if (!token()) {
+    _pass = null;
+    return;
+  }
+  const r = await req<{ pass: string; expires_at: number }>("/api/media-pass", { headers: headers(false) });
+  _pass = r;
+  try {
+    window.sessionStorage.setItem("scrapper_media_pass", JSON.stringify(r));
+  } catch {
+    /* private mode: memory only */
+  }
 }
+
+function currentPass(): string | null {
+  if (!_pass && typeof window !== "undefined") {
+    try {
+      const s = window.sessionStorage.getItem("scrapper_media_pass");
+      if (s) _pass = JSON.parse(s);
+    } catch {
+      /* ignore */
+    }
+  }
+  return _pass && _pass.expires_at * 1000 > Date.now() + 60_000 ? _pass.pass : null;
+}
+
+/** A media URL (absolute, or an /api/... path) with the media pass added. */
+export function mediaUrl(url: string): string {
+  const full = url.startsWith("http") ? url : `${apiBase()}${url}`;
+  const g = currentPass();
+  if (!g) return full;
+  return `${full}${full.includes("?") ? "&" : "?"}g=${encodeURIComponent(g)}`;
+}
+const withToken = mediaUrl;
 
 export const api = {
   base: apiBase,
@@ -727,10 +762,8 @@ export const api = {
     req<StudioMotion>("/api/studio/motion", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   studioFileUrl: (id: number, path: string, bust?: string) => {
     const q = new URLSearchParams({ path });
-    const t = token();
-    if (t) q.set("token", t);
     if (bust) q.set("v", bust);
-    return `${apiBase()}/api/studio/projects/${id}/file?${q.toString()}`;
+    return mediaUrl(`/api/studio/projects/${id}/file?${q.toString()}`);
   },
 
   aiCheck: () =>

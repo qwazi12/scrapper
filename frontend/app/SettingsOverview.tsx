@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, apiBase, BackupStatus, DiskSystemStatus, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, token, TTSVoice } from "../lib/api";
+import { api, apiBase, BackupStatus, DiskSystemStatus, mediaUrl, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 
@@ -165,8 +165,6 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
     }
   }
 
-  const tok = token();
-
   return (
     <div style={card}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
@@ -290,7 +288,7 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
                     {new Date(c.created_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Eastern
                   </span>
                   <a
-                    href={`${apiBase()}${c.download_url}${tok ? `?token=${encodeURIComponent(tok)}` : ""}`}
+                    href={mediaUrl(c.download_url)}
                     download={c.filename}
                     style={{ color: "var(--accent)", textDecoration: "underline", fontSize: 11 }}
                   >
@@ -922,9 +920,9 @@ export function SettingsOverview() {
 
           {ttsAudioUrl && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
-              <audio controls src={`${apiBase()}${ttsAudioUrl}`} autoPlay style={{ height: 32 }} />
+              <audio controls src={mediaUrl(ttsAudioUrl)} autoPlay style={{ height: 32 }} />
               <a
-                href={`${apiBase()}${ttsAudioUrl}`}
+                href={mediaUrl(ttsAudioUrl)}
                 download="gemini_tts.wav"
                 style={{ fontSize: 11, color: "var(--accent)", textDecoration: "underline" }}
               >
