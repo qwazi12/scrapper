@@ -41,7 +41,8 @@ class ProjectPatch(BaseModel):
 
 class RunStage(BaseModel):
     stage: str
-    auto: bool = False             # also run the following stages up to the script
+    auto: bool = False             # also run the following stages up to `until`
+    until: str = "script"          # "plan" = steps up to 5 (what the automation runs)
 
 
 def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
@@ -322,7 +323,7 @@ def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session))
     if p.stage_status in ("running", "queued"):
         raise HTTPException(409, f"this project is already {p.stage_status}")
     try:
-        state = runner.start_or_queue(p.id, req.stage, auto=req.auto)
+        state = runner.start_or_queue(p.id, req.stage, auto=req.auto, until=req.until)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return {"ok": True, "stage": req.stage, "auto": req.auto, "state": state}

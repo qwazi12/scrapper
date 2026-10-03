@@ -80,6 +80,18 @@ async def _wake_poster_on_queue_change(request, call_next):
     return response
 
 
+@app.on_event("shutdown")
+def _mark_jobs_cut_by_shutdown() -> None:
+    """Deploy/restart: running jobs resume on the next server without using up a retry."""
+    from . import resume
+    try:
+        n = resume.mark_shutdown()
+        if n:
+            logbus.log("info", "jobs_flagged_at_shutdown", f"Shutdown: {n} running job(s) will resume on the next server")
+    except Exception as exc:  # noqa: BLE001
+        logbus.log("error", "jobs_flag_failed", f"Could not flag running jobs at shutdown: {exc}")
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()

@@ -159,6 +159,20 @@ def start_background(watch: int = WATCH) -> None:
     threading.Thread(target=watcher, daemon=True, name="job-resume-watch").start()
 
 
+def mark_shutdown() -> int:
+    """Server shutting down normally (a deploy/restart sends SIGTERM): flag this
+    server's running jobs so their resume doesn't count toward MAX_RESUMES —
+    that limit is for crash loops, not deploys (2026-10-03: a day of deploys
+    made Verity and a render batch give up after 3 cut-offs)."""
+    n = 0
+    with _lock, SessionLocal() as s:
+        for row in s.query(ResumableJob).filter(ResumableJob.status == "running", ResumableJob.owner == BOOT).all():
+            row.checkpoint = {**(row.checkpoint or {}), "cut_by_shutdown": True}
+            n += 1
+        s.commit()
+    return n
+
+
 def resume_interrupted(stale: int = STALE) -> int:
     """Relaunch jobs whose server died. Returns how many were resumed."""
     cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=stale)
@@ -167,6 +181,12 @@ def resume_interrupted(stale: int = STALE) -> int:
                 if r.owner != BOOT and _aware(r.updated_at) < cutoff]
         todo = []
         for row in rows:
+            cp = dict(row.checkpoint or {})
+            if cp.pop("cut_by_shutdown", False) and row.kind in _launchers:
+                row.checkpoint = cp           # a deploy, not a crash: doesn't use up a resume
+                row.owner = BOOT
+                todo.append((row.id, row.kind, dict(row.params or {}), cp, row.label, row.attempts))
+                continue
             if row.attempts >= MAX_RESUMES or row.kind not in _launchers:
                 row.status = "failed"
                 row.last_error = (f"interrupted by server restarts {row.attempts + 1} times — not resumed again"

@@ -120,3 +120,18 @@ def test_a_live_servers_jobs_are_never_taken_over():
     assert resume.resume_interrupted() == 0
     resume._heartbeat_once()                                      # our heartbeat leaves others' rows alone
     assert _status(rid)[0] == "running"
+
+
+def test_a_deploy_cut_off_does_not_use_up_a_resume(monkeypatch):
+    _clear()
+    calls = []
+    monkeypatch.setitem(resume._launchers, "studio", lambda p, cp, rid: calls.append(cp))
+    rid = resume.begin("studio", "Studio #9: shots", {"project_id": 9, "stage": "gather", "auto": True})
+    resume.checkpoint(rid, stage="shots")
+    with SessionLocal() as s:
+        s.get(ResumableJob, rid).attempts = resume.MAX_RESUMES     # already used them all
+        s.commit()
+    assert resume.mark_shutdown() == 1                              # SIGTERM from a deploy
+    _cut_off(rid)
+    assert resume.resume_interrupted() == 1
+    assert calls == [{"stage": "shots"}] and _status(rid)[1] == resume.MAX_RESUMES
