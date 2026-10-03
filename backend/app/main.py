@@ -212,7 +212,10 @@ def blocked_clips(s: Session = Depends(get_session)) -> list[dict]:
     """URLs this server could not fetch, for a local worker to pick up."""
     rows = (
         s.query(Clip)
-        .filter(Clip.status == Status.failed, Clip.file_path.is_(None))
+        # Only links the server was blocked from (marked when handed over); a post
+        # that is suspended/deleted/private fails the same way at home too.
+        .filter(Clip.status == Status.failed, Clip.file_path.is_(None),
+                Clip.error.like("Transferred to Mac worker%"))
         .order_by(Clip.id)
         .all()
     )

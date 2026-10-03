@@ -123,3 +123,17 @@ class TestAuth(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_wrong_tokens_lock_out_that_address_only():
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import auth
+    auth._bad_tokens.clear()
+    c = TestClient(app)
+    bad = {"Authorization": "Bearer nope", "X-Forwarded-For": "203.0.113.9"}
+    codes = [c.get("/api/jobs", headers=bad).status_code for _ in range(21)]
+    assert codes[:20] == [401] * 20 and codes[20] == 429
+    ok = {"Authorization": "Bearer test-token", "X-Forwarded-For": "198.51.100.7"}
+    assert c.get("/api/jobs", headers=ok).status_code == 200       # other visitors unaffected
+    auth._bad_tokens.clear()

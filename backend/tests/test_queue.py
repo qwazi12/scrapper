@@ -608,3 +608,10 @@ def test_longform_tags_include_basics_and_keywords():
                                                      "keywords": ["island", "survival", "send help"]})
     assert tags[:4] == ["Send Help", "Send Help trailer", "Send Help trailer breakdown", "Send Help release date"]
     assert "Rachel McAdams" in tags and "island" in tags and tags.count("Send Help") == 1
+
+
+def test_x_unavailable_posts_are_permanent_and_readable():
+    from backend.core.scraper import classify_error
+    assert classify_error("ERROR: [twitter] 2080008291460030561: Suspended") == (
+        True, "X has suspended this account, so its posts can't be downloaded.")
+    assert classify_error("ERROR: [twitter] 1: No video could be found in this tweet")[0] is True

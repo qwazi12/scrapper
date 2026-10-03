@@ -58,9 +58,40 @@ def verify_signature(path: str, exp: Any, sig: Any) -> bool:
     return hmac.compare_digest(sig, expected)
 
 
-def check_rate_limit(request: Request, max_per_minute: int = 120) -> None:
-    """Sliding-window in-memory rate limiter per client IP."""
-    ip = request.client.host if request.client else "unknown"
+def client_ip(request: Request) -> str:
+    """The real visitor. Behind Railway's proxy request.client is the proxy, so
+    every visitor shared one bucket; the first X-Forwarded-For hop is the client."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+_bad_tokens: dict[str, list[float]] = {}
+BAD_TOKEN_LIMIT, BAD_TOKEN_WINDOW, BAD_TOKEN_BLOCK = 20, 600.0, 900.0
+
+
+def _check_lockout(ip: str) -> None:
+    now = time.time()
+    with _rl_lock:
+        hits = [t for t in _bad_tokens.get(ip, []) if t > now - BAD_TOKEN_BLOCK]
+        _bad_tokens[ip] = hits
+        recent = [t for t in hits if t > now - BAD_TOKEN_WINDOW]
+        if len(recent) >= BAD_TOKEN_LIMIT:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                                "Too many wrong access tokens from this address; try again in 15 minutes.",
+                                headers={"Retry-After": "900"})
+
+
+def _note_bad_token(ip: str) -> None:
+    with _rl_lock:
+        _bad_tokens.setdefault(ip, []).append(time.time())
+
+
+def check_rate_limit(request: Request, max_per_minute: int = 600) -> None:
+    """Sliding-window in-memory rate limiter per client IP. 600/min: the site's
+    own polling (jobs 3 s, queue 4 s, Studio 3 s) plus bulk actions stay far below."""
+    ip = client_ip(request)
     now = time.time()
     cutoff = now - 60.0
     with _rl_lock:
@@ -109,7 +140,10 @@ def require_token(
     if authorization and isinstance(authorization, str) and authorization.lower().startswith("bearer "):
         supplied = authorization[7:]
 
-    if not supplied or not hmac.compare_digest(supplied, settings.access_token):
+    ip = client_ip(request)
+    _check_lockout(ip)
+    if not supplied or not hmac.compare_digest(supplied.encode(), settings.access_token.encode()):
+        _note_bad_token(ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing access token")
 
     check_rate_limit(request)

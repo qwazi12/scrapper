@@ -79,8 +79,8 @@ class TestCleanup(unittest.TestCase):
         self.assertTrue(f3.exists())
 
     def test_cleanup_leftover_renders(self):
-        projects_root = self.temp_path / "studio" / "projects"
-        p1 = projects_root / "p_1"
+        projects_root = self.temp_path / "studio"      # real layout: studio/<project id>/
+        p1 = projects_root / "1"
         p1.mkdir(parents=True)
         rn = p1 / "render_new"
         rn.mkdir()

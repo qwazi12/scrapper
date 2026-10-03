@@ -263,13 +263,13 @@ def cleanup_leftover_renders(max_age_seconds: int = 3600) -> dict:
     """Delete abandoned render_new/ scratch directories older than max_age_seconds."""
     import shutil
     import time
-    projects_dir = settings.data_path / "studio" / "projects"
+    projects_dir = settings.data_path / "studio"   # projects live in studio/<id>/ (runner.project_dir)
     if not projects_dir.exists():
         return {"folders_removed": 0}
     now = time.time()
     removed = 0
     for p in projects_dir.iterdir():
-        if p.is_dir():
+        if p.is_dir() and p.name.isdigit():
             rn = p / "render_new"
             if rn.exists():
                 try:
