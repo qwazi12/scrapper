@@ -510,3 +510,10 @@ Tests for each; commit + push; manual frontend deploy until the VERCEL_API_TOKEN
 - The workflow now also runs when `.github/workflows/deploy-frontend.yml` changes.
 - The owner also put the token in Railway as `github_deploy`. The backend never reads it; suggested removing it there (least privilege). Railway also still has `VERCEL_API_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` from before, also unused by the backend.
 - Handbook republished as v3 (same link https://claude.ai/artifact/SF2MvUyAwnXo6rcEnXikwP): automation, checked trending list, Studio's line, project/card buttons, batch render/queue, Archive/Delete, plain thumbnails, $6 daily cap, costs, new troubleshooting rows, daily review checklist.
+
+## PLAN — 2026-10-04 — Disk full (97.6%), footage freeing, shot usability
+Cause: 13 Studio projects at ~210–400 MB each (≈70% trailer footage) on the 5 GB volume; nothing freed them until 14 days after posting. The Scraper 5-day retention is irrelevant (72 KB of clips).
+1. Free footage + segment cache of every project that is rendered AND has a Drive copy of the current render (#1–#8 now, ~2.3 GB). Keep the render (the queue posts it), stills, script, plan, thumbnails. Uploaded footage is never deleted.
+2. Rendering re-downloads freed footage from IMDb first, automatically (same video ids → same shots; no AI cost).
+3. Automatic: right after a Drive save of the current render succeeds, that project's footage + segcache are freed; also a sweep for any that were missed.
+4. Shot usability (owner): only title/logo **cards** are unusable. Dark, blurry or burned-in-text shots (e.g. MobLand's corner watermark flagged every shot as "text") are usable. Owner overrides stay. Recompute existing projects' shots from their saved tags (no AI cost), then re-run MobLand (#10) from step 5.
