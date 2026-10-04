@@ -517,3 +517,8 @@ Cause: 13 Studio projects at ~210–400 MB each (≈70% trailer footage) on the 
 2. Rendering re-downloads freed footage from IMDb first, automatically (same video ids → same shots; no AI cost).
 3. Automatic: right after a Drive save of the current render succeeds, that project's footage + segcache are freed; also a sweep for any that were missed.
 4. Shot usability (owner): only title/logo **cards** are unusable. Dark, blurry or burned-in-text shots (e.g. MobLand's corner watermark flagged every shot as "text") are usable. Owner overrides stay. Recompute existing projects' shots from their saved tags (no AI cost), then re-run MobLand (#10) from step 5.
+
+## Log — 2026-10-04 — Disk fixed (97.6% → 49%), card-only usability (d804530)
+- Startup sweep freed footage + segcache of #1–5, 7, 8 (2.08 GB). East of Eden (#6) had a newer render than its Drive copy (re-rendered 2 min after the save), so its footage was rightly kept. Re-saved #6 to Drive → the hook freed 314 MB by itself. **Volume now 2.2 GB used / 2.4 GB free (49%)**; new jobs accepted again.
+- Usability now = tagged and not a card. Recompute on saved tags (no AI): MobLand 2 → 85, Lanterns 14 → 112, RE 19 → 75, East of Eden 36 → 84, UNABOMBER 23 → 78 (all 13 projects changed). MobLand (#10) step 5 re-run: 67 visuals, 65 distinct shots → ready for review.
+- Still pending / for the owner: #9, #11, #12, #13 plans were built from the smaller shot pools; re-running step 5 would give more variety (~$0.05 each). Unreviewed projects keep ~200–300 MB of footage each until rendered + Drive-saved; 5 GB fits ~6–8 of those, so review/render within ~2 days, or get a bigger volume. Freed footage also means the shot lightbox's ▶ clip preview won't play for those projects until a re-render brings it back.
