@@ -529,3 +529,15 @@ Cause: 13 Studio projects at ~210–400 MB each (≈70% trailer footage) on the 
 - **Fix**: per-pipeline slot check + a hard limit in the tick (never more scheduled posts per pipeline per day than its posts/day). Default posts/day = **1** for every pipeline (`POST_POSTS_PER_DAY`, owner rule). Regression test replays the incident and fails on the old code.
 - **Live after fix**: 1/day at 10:00 ET for Movie Clips and LongForm, no overrides (owner set this Sun 11:22). Next Movie Clips post Mon 5 Oct 10:00 ET.
 - **Pending for the owner**: the 7 Retry rows (#211, #410, #10, #654, #16, #564, #111) — set them back to Ready (they'd take the next daily slots) or leave them.
+
+## PLAN — 2026-10-04 (pm, owner request) — Retry rows, block "mk", unused pipelines, shot-plan rhythm + real QA
+1. ✅ Done: the 7 Retry rows (#211, #410, #10, #654, #16, #564, #111) moved to Needs Review (bulk change_status; undoable).
+2. **Never post Posting Queue or LongForm videos to profile "mk"**: enforced in the backend at every point a destination is set (single change, bulk Set Target Accounts, edit) and again at posting time (an "mk" destination is refused and noted, never sent). The "mk" choices are removed from the queue's destination pickers. Any existing queue rows that target mk get it removed; rows left with no destination stay unscheduled until a destination is picked.
+3. **Remove Abyss Declassified, The ICK Room and Default Pipeline** from the Pacing card (and the queue's pipeline choices) — only Movie Clips and LongForm remain. Any leftover pacing overrides for them are dropped.
+4. **Voice + shots plan rhythm (stage_plan)** — hard rules, not just flags:
+   a. Slot 1 at 0:00 is a moving clip, not a still.
+   b. After every clip, at least 2 stills before the next clip (never two clips back to back).
+   c. Never more than 3 stills in a row: the 4th visual after a clip is a clip.
+   d. **Repeats are replaced, not just flagged**: a picture/look already used is swapped for an unused one (same people first, then any unused usable shot) whenever one exists; a repeat is allowed only when the pool is truly exhausted. Applies to Gemini's picks and to the fallback order. The QA line then reports the few repeats left and why.
+   Existing plans (MobLand, Coven Academy, UNABOMBER) aren't re-run automatically; re-running step 5 on them applies the new rules (~$0.05 each).
+Tests for each; commit + push per part (the frontend deploys itself).
