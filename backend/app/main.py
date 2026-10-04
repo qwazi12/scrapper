@@ -108,6 +108,7 @@ def _startup() -> None:
         logbus.log("error", "startup_studio_recover_failed", str(exc))
     try:
         with SessionLocal() as s:
+            queue_manager.archive_posted_rows(s)      # posted rows live in the Posted Archive now
             queue_manager.strip_blocked_accounts(s)   # owner rule: profile "mk" never posts queue videos
     except Exception as exc:  # noqa: BLE001
         logbus.log("error", "startup_blocked_profile_cleanup_failed", str(exc))

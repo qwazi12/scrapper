@@ -138,7 +138,7 @@ def save(project_id: int) -> dict[str, Any]:
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         p.drive = info
-        if p.queue_item_id and (item := s.get(QueueItem, p.queue_item_id)) and item.status != "posted":
+        if p.queue_item_id and (item := s.get(QueueItem, p.queue_item_id)) and item.status not in ("posted", "archived"):
             item.drive_link = info["link"]
         s.commit()
     # Replace, not pile up: the previous upload of this project goes to trash.

@@ -8,6 +8,8 @@ import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 // Owner rule (2026-10-04): Posting Queue and LongForm videos never post to profile "mk"
 // (the server refuses it too).
 const QUEUE_BLOCKED_PROFILES = ["mk"];
+// Posted videos: shown together in "✓ Posted Archive", never in "All Items".
+const DONE = ["posted", "archived"];
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
 
@@ -180,10 +182,12 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   // Filter items in memory based on statusFilter so switching tabs is instant
   const items = React.useMemo(() => {
-    if (statusFilter === "all") return allItems;
+    // "All Items" = everything still in play; posted videos live in the Posted Archive (owner, 2026-10-04).
+    if (statusFilter === "all") return allItems.filter((i) => !DONE.includes(i.status));
     if (statusFilter === "error") {
       return allItems.filter((i) => i.status === "error" || i.status === "retry");
     }
+    if (statusFilter === "posted") return allItems.filter((i) => DONE.includes(i.status));
     return allItems.filter((i) => i.status === statusFilter);
   }, [allItems, statusFilter]);
 
@@ -527,10 +531,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     }
   }
 
-  const allCount = allItems.length;
+  const allCount = allItems.filter((i) => !DONE.includes(i.status)).length;
   const reviewCount = allItems.filter((i) => i.status === "review").length;
   const readyCount = allItems.filter((i) => i.status === "ready").length;
-  const postedCount = allItems.filter((i) => i.status === "posted").length;
+  const postedCount = allItems.filter((i) => DONE.includes(i.status)).length;
   const errorCount = allItems.filter((i) => i.status === "error" || i.status === "retry").length;
 
   return (
@@ -1148,8 +1152,8 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                   {item.status === "ready" && item.scheduled_at && (
                     <div style={{ fontSize: 11, color: "#34d399" }}>⏰ {fmtET(item.scheduled_at)}</div>
                   )}
-                  {item.notes && (item.status === "retry" || item.status === "error" || item.status === "posted") && (
-                    <div style={{ fontSize: 10, color: item.status === "posted" ? "var(--muted)" : "#f87171",
+                  {item.notes && (item.status === "retry" || item.status === "error" || DONE.includes(item.status)) && (
+                    <div style={{ fontSize: 10, color: DONE.includes(item.status) ? "var(--muted)" : "#f87171",
                                   wordBreak: "break-word" }}>{item.notes}</div>
                   )}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>

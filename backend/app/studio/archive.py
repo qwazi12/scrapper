@@ -64,7 +64,7 @@ def posted_at(s, p: StudioProject) -> datetime.datetime | None:
     a = p.archive or {}
     if not a.get("posted_at") and p.queue_item_id:
         item = s.get(QueueItem, p.queue_item_id)
-        if item and item.status == "posted" and item.published_at:
+        if item and item.status in ("posted", "archived") and item.published_at:
             note_posted(s, item, p)
             a = p.archive or {}
     if not a.get("posted_at"):

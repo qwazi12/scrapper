@@ -1245,7 +1245,7 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
                 setMsg("");
                 try {
                   const res = await api.studioPublish(p.id);
-                  setMsg(`✓ In SocialPilot → LongForm Breakdowns as #${res.queue_item_id} (Needs Review). Pick where it posts and approve it there.`
+                  setMsg(`✓ Ready to Post in SocialPilot → LongForm Breakdowns as #${res.queue_item_id}, going to Screen Central (profile "default") at the next LongForm slot.`
                     + (res.drive_job_id ? " Saving a copy to Drive…" : ""));
                   onChange();
                   if (res.drive_job_id) api.waitJob(res.drive_job_id).catch(() => {}).finally(onChange);

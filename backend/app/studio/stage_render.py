@@ -379,6 +379,7 @@ def render(project_id: int) -> str:
     secs = media.duration(final)
     info = {"file": str(final.relative_to(root)), "thumbnail": str(active_thumb.relative_to(root)),
             "selected_thumbnail": "shot1" if best_shot1 else "poster",
+            "thumb_round": 0,
             "thumbnails": [
                 {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": str(thumb_poster.relative_to(root))},
                 {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": str(thumb_shot1.relative_to(root))},
@@ -682,7 +683,9 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
 
     # Each refresh shows the NEXT-best shots, not the same ones again (owner:
     # "Refresh Options doesn't really work" — it redrew identical picks).
-    rnd = int(render_info.get("thumb_round", -1)) + 1
+    # The render's own picks are round 0, so the FIRST refresh already shows new
+    # shots (it used to redraw round 0 = the same pictures: "click twice").
+    rnd = int(render_info.get("thumb_round", 0 if render_info.get("thumbnails") else -1)) + 1
     close_ranked, scene_ranked = thumbnail_candidates(shots, lead)
     best_shot1 = close_ranked[rnd % len(close_ranked)] if close_ranked else None
     s1_id = best_shot1.get("id") if best_shot1 else None

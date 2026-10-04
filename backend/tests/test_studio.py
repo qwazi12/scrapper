@@ -368,10 +368,11 @@ def test_publish_sends_render_to_queue_once(client, monkeypatch):
         s.commit()
     a = client.post(f"/api/studio/projects/{pid}/publish").json()
     b = client.post(f"/api/studio/projects/{pid}/publish").json()
-    assert a["queue_item_id"] == b["queue_item_id"] and a["status"] == "review"
+    assert a["queue_item_id"] == b["queue_item_id"] and a["status"] == "ready"   # owner: straight to Ready
     with SessionLocal() as s:
         it = s.get(QueueItem, a["queue_item_id"])
-        assert it.pipeline == "LongForm" and it.tags == "#sendhelp #samraimi" and it.accounts == []
+        assert it.pipeline == "LongForm" and it.tags == "#sendhelp #samraimi"
+        assert it.accounts == ["default:*"]                                    # Screen Central, never "mk"
     assert a["drive_job_id"] == "job1" and started == [pid, pid]  # not saved yet, so each publish retries Drive
 
 
@@ -1249,3 +1250,23 @@ def test_few_pictures_are_held_longer_instead_of_repeated(monkeypatch, three_sce
     # holding each longer keeps it to the pictures there are.
     assert len(visuals) <= 5, summary
     assert stage_plan.plan_issues(plan, {i["shot"]: i["shot"] for i in visuals}) == [], summary
+
+
+def test_first_refresh_after_render_shows_new_shots(session, tmp_path, monkeypatch):
+    """Owner: "why do I have to click Refresh Options twice?" — the first refresh
+    redrew the render's own picks."""
+    from PIL import Image
+    from backend.app.models import StudioProject
+    from backend.app.studio import stage_render
+    monkeypatch.setattr(stage_render, "project_dir", lambda pid: tmp_path)
+    shots = []
+    for i in range(3):
+        f = tmp_path / f"r{i}.jpg"
+        Image.new("RGB", (64, 36), (i * 80, 10, 10)).save(f)
+        shots.append({"id": f"s{i}", "usable": True, "still": f.name, "size": "close", "people": ["Lead"]})
+    # what render() leaves behind: its picks (s0) as round 0
+    p = StudioProject(tmdb_id=4, title="Twice", facts={"cast": [{"actor": "Lead"}]}, shots=shots,
+                      render={"file": "render/final.mp4", "thumb_round": 0, "thumbnails": [{"id": "shot1"}]})
+    session.add(p)
+    session.commit()
+    assert stage_render.generate_thumbnails_for_project(p.id)["thumb_shots"]["shot1"] == "s1"

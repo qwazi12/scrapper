@@ -365,7 +365,7 @@ def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
         .replace(hour=0).astimezone(UTC)
     rows = (s.query(QueueItem)
             .filter(QueueItem.scheduled_at >= start, QueueItem.scheduled_at < end)
-            .filter(QueueItem.status.in_(["posting", "posted", "retry", "error"]))
+            .filter(QueueItem.status.in_(["posting", "posted", "archived", "retry", "error"]))
             .all())
     return sum(1 for it in rows if pipeline_group(it) == group)
 
@@ -507,6 +507,18 @@ BLOCKED_PROFILES = {"mk"}
 def blocked_accounts(accounts: list[str] | None) -> list[str]:
     """The destinations in this list that belong to a blocked profile."""
     return [a for a in (accounts or []) if str(a).split(":", 1)[0].strip() in BLOCKED_PROFILES]
+
+
+def archive_posted_rows(s: Session) -> int:
+    """Startup: rows confirmed posted before 2026-10-04 move to the Posted Archive
+    too (posting now archives directly). published_at — the clean-up clock — stays."""
+    rows = s.query(QueueItem).filter(QueueItem.status == "posted").all()
+    for it in rows:
+        it.status = "archived"
+    if rows:
+        s.commit()
+        logbus.log("info", "queue_posted_archived", f"Moved {len(rows)} posted item(s) to the Posted Archive")
+    return len(rows)
 
 
 def strip_blocked_accounts(s: Session) -> int:
@@ -673,7 +685,8 @@ def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -
     parts = [f"✓ {a} {url}".strip() for a, url in res["ok"]]
     parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
     if not res["failed"]:
-        item.status = "posted"
+        # Confirmed on every platform: straight to the Posted Archive (owner, 2026-10-04).
+        item.status = "archived"
         item.published_at = now
     else:
         # Retry only what failed, so a retry never double-posts.
@@ -699,8 +712,9 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
         apply_result(item, res, now)
         s.commit()
         settled += 1
-        logbus.log("info" if item.status == "posted" else "error",
-                   "queue_posted" if item.status == "posted" else "queue_post_failed",
+        done = item.status in ("posted", "archived")
+        logbus.log("info" if done else "error",
+                   "queue_posted" if done else "queue_post_failed",
                    f"Item #{item.id}: {item.notes}")
 
     for post in s.query(SocialPost).filter(SocialPost.status == "submitted").all():

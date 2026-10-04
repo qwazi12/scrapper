@@ -372,6 +372,15 @@ function stateOf(p: StudioProject): Filter {
   return "all";
 }
 
+/** What a card needs from the owner, if anything (drives the highlight + sort). */
+function attention(p: StudioProject): { kind: "review" | "send"; label: string; color: string } | null {
+  if (p.review?.delete_after || p.queue_item_id || p.archive?.archived_at) return null;
+  if (p.stage_status === "running" || p.stage_status === "queued") return null;
+  if (p.has?.render) return { kind: "send", label: "📤 Rendered — not in the queue yet", color: "#3b82f6" };
+  if (p.has?.plan && !p.review?.reviewed_at) return { kind: "review", label: "👀 Ready for your review", color: "#f59e0b" };
+  return null;
+}
+
 export function VideosList({ projects, onOpen, onReload, renderItem }: {
   projects: StudioProject[];
   onOpen: (id: number) => void;
@@ -396,7 +405,11 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
     projects.forEach((p) => { const s = stateOf(p); if (s !== "all") c[s] += 1; });
     return c;
   }, [projects]);
-  const shown = projects.filter((p) => filter === "all" || stateOf(p) === filter);
+  const rank = (p: StudioProject) => { const a = attention(p); return a ? (a.kind === "review" ? 0 : 1) : 2; };
+  const shown = projects.filter((p) => filter === "all" || stateOf(p) === filter)
+    .sort((a, b) => rank(a) - rank(b));          // what needs you first; the rest keep their order
+  const needs = projects.filter((p) => attention(p)?.kind === "review").length;
+  const toSend = projects.filter((p) => attention(p)?.kind === "send").length;
   const chosen = projects.filter((p) => sel.has(p.id));
   const toggle = (id: number) => setSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -467,6 +480,12 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
   return (
     <div style={card}>
       <h2 style={h2}>Your videos ({projects.length})</h2>
+      {(needs > 0 || toSend > 0) && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, fontSize: 12, fontWeight: 700 }}>
+          {needs > 0 && <span style={{ color: "#f59e0b" }}>👀 {needs} ready for your review</span>}
+          {toSend > 0 && <span style={{ color: "#3b82f6" }}>📤 {toSend} rendered, not in the queue yet</span>}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
         {pills.map(([k, label]) => (
           <button key={k} onClick={() => setFilter(k)}
@@ -512,14 +531,18 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
         <div style={muted}>{projects.length ? "Nothing in this filter." : "Nothing yet. Pick a title below to start one."}</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
-          {shown.map((p) => (
+          {shown.map((p) => { const att = attention(p); return (
             <div key={p.id} style={{ display: "flex", gap: 6, alignItems: "stretch", background: "var(--row)", borderRadius: 8,
-                                     border: sel.has(p.id) ? "1px solid var(--accent)" : "1px solid transparent" }}>
+                                     border: sel.has(p.id) ? "1px solid var(--accent)" : att ? `2px solid ${att.color}` : "1px solid transparent",
+                                     boxShadow: att ? `0 0 0 3px ${att.color}22` : undefined }}>
               <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggle(p.id)} style={{ marginLeft: 6 }} />
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <button onClick={() => onOpen(p.id)} style={{ textAlign: "left", padding: 6, background: "transparent", border: "none" }}>
                   {renderItem(p)}
                 </button>
+                {att && (
+                  <div style={{ margin: "0 6px 4px", fontSize: 10, fontWeight: 700, color: att.color }}>{att.label}</div>
+                )}
                 <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "0 6px 6px", flexWrap: "wrap" }}>
                   {p.review?.auto && <span style={{ ...muted, fontSize: 10 }}>🤖 auto</span>}
                   {p.review?.delete_after && (
@@ -562,7 +585,7 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
                 </div>
               </div>
             </div>
-          ))}
+          ); })}
         </div>
       )}
     </div>

@@ -504,10 +504,13 @@ def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = De
     return _out(p)
 
 
+LONGFORM_DESTINATION = ["default:*"]   # Upload-Post profile "default" — all channels (Screen Central)
+
+
 @router.post("/projects/{project_id}/publish")
 def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
-    """Send the rendered video to the Posting Queue (status Review, pipeline
-    LongForm). The owner picks where it posts and approves it there."""
+    """Send the rendered video to the Posting Queue as Ready to Post (pipeline
+    LongForm, profile "default" = Screen Central); it takes the next LongForm slot."""
     from sqlalchemy import func
     from ..models import QueueItem
 
@@ -529,16 +532,23 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
         undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
         for k, v in fields.items():          # re-publishing a re-render updates the same row
             setattr(item, k, v)
+        if not item.accounts:
+            item.accounts = list(LONGFORM_DESTINATION)
+        item.status = "ready"
     else:
-        item = QueueItem(**fields, status="review", accounts=[],
+        # Owner (2026-10-04): a sent breakdown is approved by sending it — straight to
+        # Ready to Post on profile "default" (Screen Central), next LongForm slot.
+        item = QueueItem(**fields, status="ready", accounts=list(LONGFORM_DESTINATION),
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
         s.add(item)
         s.flush()
         undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
         p.queue_item_id = item.id
     s.commit()
-    logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id}",
+    logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id} (ready, default)",
                project=p.id, queue_item=item.id)
+    from ..social import queue_manager
+    queue_manager.wake()                      # give it its slot now, not at the next 5-min tick
     # Every breakdown sent to the queue is also kept in Drive (unless this render is already there).
     drive_job = None
     if (p.drive or {}).get("rendered_at") != p.render.get("rendered_at") or (p.drive or {}).get("status") != "saved":

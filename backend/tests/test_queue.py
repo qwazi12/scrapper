@@ -315,7 +315,7 @@ def test_all_success_marks_posted_and_starts_clock(session):
     res = qm.resolve_results([_entry("mk", "r1")], {"r1": {"status": "completed", "results": [
         {"profile_username": "mk", "platform": "youtube", "success": True, "post_url": "u"}]}}, now)
     qm.apply_result(it, res, now)
-    assert it.status == "posted" and it.published_at == now
+    assert it.status == "archived" and it.published_at == now      # confirmed → Posted Archive
 
 
 def test_rejected_profile_upload_is_a_failure_not_silence():
@@ -342,7 +342,7 @@ def test_reconcile_polls_upload_post(session, monkeypatch):
 
     monkeypatch.setattr(upload_post, "get_status", status)
     assert qm.reconcile_posting(session, datetime.datetime.now(UTC)) == 1
-    assert it.status == "posted"
+    assert it.status == "archived"
 
 
 def test_accounts_endpoint_blocks_when_key_missing(client):
@@ -806,3 +806,16 @@ def test_startup_strips_mk_and_posting_never_sends_it(session, monkeypatch):
     session.commit()
     with pytest.raises(upload_post.UploadPostError, match="never used"):
         asyncio.run(qm.publish_queue_item(b.id, session))
+
+
+def test_posted_rows_move_to_the_archive_and_still_count_toward_the_day(session, reset_schedule):
+    (old,) = add(session, 1, status="posted")
+    old.published_at = et(2026, 10, 3, 10)
+    old.scheduled_at = et(2026, 10, 3, 10)
+    session.commit()
+    assert qm.archive_posted_rows(session) >= 1
+    session.refresh(old)
+    assert old.status == "archived" and old.published_at is not None   # clean-up clock kept
+    qm.save_schedule(session, {"timezone": "America/New_York", "start_hour": 10, "end_hour": 22,
+                               "interval_hours": 2, "posts_per_day": 1})
+    assert qm.posted_today(session, "Movie Clips", et(2026, 10, 3, 16)) == 1  # archived still counts
