@@ -548,3 +548,9 @@ Tests for each; commit + push per part (the frontend deploys itself).
 3. Abyss Declassified / The ICK Room / Default removed from the Pacing card and the queue's pipeline choices (50ce4fd).
 4. **Shot plan** (this commit): clip at 0:00; rhythm clip → 2–3 stills → clip (`apply_rhythm`); scarce pictures → longer visuals (≤7 s) instead of repeats. Not re-run on existing plans (MobLand, Coven Academy, UNABOMBER): ↻ step 5 applies it (~$0.05 each).
 - Tests: 218 pass.
+
+## PLAN — 2026-10-04 (evening) — Owner locked out (429 on sign-in)
+Cause: auth lockout (20 wrong tokens / 10 min → 15-min block per IP) counts EVERY request with a missing or wrong token. The page polls several endpoints every few seconds, so one wrong paste (likely Railway's `API_Read_Access_Token` = the TMDB key, not `ACCESS_TOKEN`) or a tab with no token locks the home IP within seconds, and keeps re-locking it while the tab stays open.
+1. Backend: a missing token is not a guess (not counted); a wrong token counts once per distinct value (polling with the same wrong value ≠ brute force). Lock after 20 distinct wrong values in 10 min (brute-force protection kept).
+2. Frontend: after a 401 the page stops background polling and shows "wrong access token" in the Connection panel until a new token is saved.
+3. Deploy (restart clears the in-memory lockout). Then the owner signs in with the value of Railway's `ACCESS_TOKEN`.
