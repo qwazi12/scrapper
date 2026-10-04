@@ -541,3 +541,10 @@ Cause: 13 Studio projects at ~210–400 MB each (≈70% trailer footage) on the 
    d. **Repeats are replaced, not just flagged**: a picture/look already used is swapped for an unused one (same people first, then any unused usable shot) whenever one exists; a repeat is allowed only when the pool is truly exhausted. Applies to Gemini's picks and to the fallback order. The QA line then reports the few repeats left and why.
    Existing plans (MobLand, Coven Academy, UNABOMBER) aren't re-run automatically; re-running step 5 on them applies the new rules (~$0.05 each).
 Tests for each; commit + push per part (the frontend deploys itself).
+
+## Log — 2026-10-04 (pm) — Plan done: retry rows, block mk, unused pipelines, shot-plan rhythm
+1. 7 Retry rows → Needs Review (live, verified).
+2. **Profile "mk" blocked for queue/LongForm** (50ce4fd): `queue_manager.BLOCKED_PROFILES`; refused on edit/bulk (400), dropped on create, stripped at startup, stripped/refused at posting; the queue picker hides it (Compilations dialog unaffected).
+3. Abyss Declassified / The ICK Room / Default removed from the Pacing card and the queue's pipeline choices (50ce4fd).
+4. **Shot plan** (this commit): clip at 0:00; rhythm clip → 2–3 stills → clip (`apply_rhythm`); scarce pictures → longer visuals (≤7 s) instead of repeats. Not re-run on existing plans (MobLand, Coven Academy, UNABOMBER): ↻ step 5 applies it (~$0.05 each).
+- Tests: 218 pass.
