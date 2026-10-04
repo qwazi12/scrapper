@@ -554,3 +554,8 @@ Cause: auth lockout (20 wrong tokens / 10 min → 15-min block per IP) counts EV
 1. Backend: a missing token is not a guess (not counted); a wrong token counts once per distinct value (polling with the same wrong value ≠ brute force). Lock after 20 distinct wrong values in 10 min (brute-force protection kept).
 2. Frontend: after a 401 the page stops background polling and shows "wrong access token" in the Connection panel until a new token is saved.
 3. Deploy (restart clears the in-memory lockout). Then the owner signs in with the value of Railway's `ACCESS_TOKEN`.
+
+## Log — 2026-10-04 (evening) — Owner lockout fixed (6811b23)
+- Confirmed live: even the correct token got 429 from the owner's home address. Railway `ACCESS_TOKEN` matches `data/access_token.txt`, so the token itself was fine; the address was locked.
+- Fix shipped: a missing token is never counted; a wrong token counts once per distinct value; the page stops sending after a 401 until a new token is saved; the Connection panel names `ACCESS_TOKEN`. The restart cleared the lockout: the home address gets 200 again. The website deployed by itself via the Action.
+- Tests: 219 pass (the old lockout test now uses 20 different guesses; a new test covers repeated same-wrong and missing tokens).
