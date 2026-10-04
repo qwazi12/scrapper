@@ -11,6 +11,7 @@ import {
   LogLine,
   refreshMediaPass,
   Stats,
+  tokenRejected,
 } from "@/lib/api";
 import { PublishModal } from "./PublishModal";
 import { QueuePanel } from "./QueuePanel";
@@ -820,6 +821,10 @@ function SettingsBar({ onSaved }: { onSaved: () => void }) {
           <input value={base} onChange={(e) => setBase(e.target.value)} placeholder="http://127.0.0.1:8000" />
           <label style={{ color: "var(--muted)", fontSize: 11 }}>Access token</label>
           <input value={tok} onChange={(e) => setTok(e.target.value)} placeholder="(blank for local dev)" />
+          <div style={{ color: tokenRejected() ? "var(--red)" : "var(--muted)", fontSize: 11 }}>
+            {tokenRejected() ? "✕ The server refused this token. " : ""}
+            Paste the value of the Railway variable named exactly <b>ACCESS_TOKEN</b> (not API_Read_Access_Token, which is the TMDB key).
+          </div>
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
             <label style={{ color: "var(--muted)", fontSize: 11 }}>
               cookies.txt (Layer 2 — helps X succeed). Current: {cookieState}

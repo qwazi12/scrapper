@@ -67,25 +67,31 @@ def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-_bad_tokens: dict[str, list[float]] = {}
+# Brute-force protection: 20 DIFFERENT wrong tokens from one address within
+# 10 minutes blocks it for 15. Only distinct wrong values count (2026-10-04: the
+# page's own polling repeated one wrong token — or none at all — several times a
+# second and locked the owner out within seconds, then kept re-locking).
+_bad_tokens: dict[str, dict[str, float]] = {}       # ip -> {hash of wrong token: last seen}
 BAD_TOKEN_LIMIT, BAD_TOKEN_WINDOW, BAD_TOKEN_BLOCK = 20, 600.0, 900.0
 
 
 def _check_lockout(ip: str) -> None:
     now = time.time()
     with _rl_lock:
-        hits = [t for t in _bad_tokens.get(ip, []) if t > now - BAD_TOKEN_BLOCK]
+        hits = {h: t for h, t in _bad_tokens.get(ip, {}).items() if t > now - BAD_TOKEN_BLOCK}
         _bad_tokens[ip] = hits
-        recent = [t for t in hits if t > now - BAD_TOKEN_WINDOW]
+        recent = [t for t in hits.values() if t > now - BAD_TOKEN_WINDOW]
         if len(recent) >= BAD_TOKEN_LIMIT:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
-                                "Too many wrong access tokens from this address; try again in 15 minutes.",
+                                "Too many different wrong access tokens from this address; try again in 15 minutes.",
                                 headers={"Retry-After": "900"})
 
 
-def _note_bad_token(ip: str) -> None:
+def _note_bad_token(ip: str, supplied: str) -> None:
+    """Remember a wrong token by its hash (never the value itself)."""
+    h = hashlib.sha256(supplied.encode()).hexdigest()[:16]
     with _rl_lock:
-        _bad_tokens.setdefault(ip, []).append(time.time())
+        _bad_tokens.setdefault(ip, {})[h] = time.time()
 
 
 # --- media passes -------------------------------------------------------------------
@@ -187,8 +193,11 @@ def require_token(
 
     ip = client_ip(request)
     _check_lockout(ip)
-    if not supplied or not hmac.compare_digest(supplied.encode(), settings.access_token.encode()):
-        _note_bad_token(ip)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing access token")
+    if not supplied:
+        # No token at all isn't a guess (a fresh browser, a cleared tab): never counted.
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing access token — enter it under Connection")
+    if not hmac.compare_digest(supplied.encode(), settings.access_token.encode()):
+        _note_bad_token(ip, supplied)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "wrong access token — use the value of ACCESS_TOKEN in Railway")
 
     check_rate_limit(request)

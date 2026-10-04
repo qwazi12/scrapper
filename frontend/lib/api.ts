@@ -561,12 +561,26 @@ export type CostSummary = {
   settings: CostSettings;
 };
 
+// The token value the server last refused. Until a different one is saved, the
+// page sends nothing: its panels refresh every few seconds, and a wrong or
+// missing token used to fire dozens of failed sign-ins a minute (2026-10-04).
+let rejectedToken: string | null = null;
+export function tokenRejected(): boolean {
+  return rejectedToken !== null && rejectedToken === token();
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  if (tokenRejected()) {
+    throw new Error("401: the access token was refused — enter the value of ACCESS_TOKEN (Railway) under ⚙ Connection");
+  }
+  const sent = token();
   const res = await fetch(`${apiBase()}${path}`, init);
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 401 && !body.includes("media link")) rejectedToken = sent;
     throw new Error(`${res.status}: ${body}`);
   }
+  if (rejectedToken === sent) rejectedToken = null;
   return res.json() as Promise<T>;
 }
 

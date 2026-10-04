@@ -131,9 +131,9 @@ def test_wrong_tokens_lock_out_that_address_only():
     from backend.app import auth
     auth._bad_tokens.clear()
     c = TestClient(app)
-    bad = {"Authorization": "Bearer nope", "X-Forwarded-For": "203.0.113.9"}
-    codes = [c.get("/api/jobs", headers=bad).status_code for _ in range(21)]
-    assert codes[:20] == [401] * 20 and codes[20] == 429
+    codes = [c.get("/api/jobs", headers={"Authorization": f"Bearer guess-{k}",
+                                         "X-Forwarded-For": "203.0.113.9"}).status_code for k in range(21)]
+    assert codes[:20] == [401] * 20 and codes[20] == 429                 # 20 different guesses → blocked
     ok = {"Authorization": "Bearer test-token", "X-Forwarded-For": "198.51.100.7"}
     assert c.get("/api/jobs", headers=ok).status_code == 200       # other visitors unaffected
     auth._bad_tokens.clear()
@@ -198,3 +198,19 @@ def test_db_never_runs_out_of_connections():
     for t in ts:
         t.join(10)
     assert len(held) == 60 and not errors
+
+
+def test_polling_with_one_wrong_or_no_token_never_locks_the_owner_out():
+    """2026-10-04: the page's own polling with one wrong (or no) token locked the
+    owner's home address out within seconds, and kept it locked."""
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+    from backend.app import auth
+    auth._bad_tokens.clear()
+    c = TestClient(app)
+    ip = {"X-Forwarded-For": "192.0.2.44"}
+    same_wrong = [c.get("/api/jobs", headers={**ip, "x-access-token": "the-tmdb-key"}).status_code for _ in range(60)]
+    missing = [c.get("/api/jobs", headers=ip).status_code for _ in range(60)]
+    assert set(same_wrong) == {401} and set(missing) == {401}
+    assert c.get("/api/jobs", headers={**ip, "x-access-token": "test-token"}).status_code == 200
+    auth._bad_tokens.clear()
