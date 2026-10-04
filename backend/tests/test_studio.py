@@ -306,11 +306,12 @@ def test_plan_voices_sentences_and_places_poster_on_release_line(monkeypatch, th
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         plan, tl = p.plan, p.script["timeline"]
-    assert plan[0]["kind"] == "poster"                       # no title card in the shots -> poster opens
+    assert plan[0]["kind"] == "clip" and plan[0]["start"] == 0  # owner rule: a moving clip at 0:00
     date_slot = next(i for i in plan if i["sentence"] == 2)
     assert date_slot["kind"] == "poster"                     # release-date line shows the poster card
     assert all(i.get("shot") for i in plan if i["kind"] in ("still", "clip"))
     assert tl[1]["start"] > tl[0]["start"] and abs(plan[-1]["end"] - tl[-1]["end"]) < 1e-6
+    assert _rhythm_ok(["still" if i["kind"] == "poster" else i["kind"] for i in plan])
 
 
 def test_tts_requires_key_and_caches(monkeypatch, tmp_path):
@@ -1194,3 +1195,57 @@ def test_free_footage_only_after_drive_has_the_current_render(session, tmp_path,
     calls = []
     monkeypatch.setattr(archive, "restore", lambda pid: calls.append(pid) or "ok")
     assert archive.ensure_footage(p.id) and calls == [p.id]        # a re-render brings it back first
+
+
+def _rhythm_ok(seq: list[str]) -> bool:
+    """clip first; between clips 2-3 stills; never 4 stills in a row."""
+    if not seq or seq[0] != "clip":
+        return False
+    run = 0
+    for k, m in enumerate(seq[1:], 1):
+        if m == "clip":
+            if run < 2:
+                return False
+            run = 0
+        else:
+            run += 1
+            if run > 3:
+                return False
+    return True
+
+
+def test_rhythm_clip_first_two_to_three_stills_between_clips():
+    from backend.app.studio import stage_plan
+    slots = [{"slot": n} for n in range(1, 41)]
+    for prefer in ({}, {n: True for n in range(1, 41)}, {n: n % 5 == 0 for n in range(1, 41)}):
+        modes = stage_plan.apply_rhythm(slots, set(), prefer)
+        assert _rhythm_ok([modes[n] for n in range(1, 41)]), prefer
+    # Gemini wants every slot as a clip: still no two clips in a row
+    modes = stage_plan.apply_rhythm(slots, set(), {n: True for n in range(1, 41)})
+    seq = [modes[n] for n in range(1, 41)]
+    assert "clip,clip" not in ",".join(seq)
+
+
+def test_rhythm_respects_the_fixed_release_poster():
+    from backend.app.studio import stage_plan
+    slots = [{"slot": n} for n in range(1, 31)]
+    for poster in (3, 4, 5, 6, 7, 12):
+        modes = stage_plan.apply_rhythm(slots, {poster}, {})
+        seq = [modes[n] for n in range(1, 31)]
+        assert modes[poster] == "still" and _rhythm_ok(seq), (poster, seq)
+
+
+def test_few_pictures_are_held_longer_instead_of_repeated(monkeypatch, three_scene_video):
+    from backend.app.studio import stage_plan
+    monkeypatch.setattr(tts, "synth", lambda text, dest: _tone(dest, 6.0))
+    monkeypatch.setattr(gemini, "ask_json", lambda prompt, **kw: [])
+    sentences = [{"paragraph": 1, "text": f"Line number {k}."} for k in range(4)]
+    pid = _new_project(facts=_facts(), shots=_shots(three_scene_video, 5), script={"sentences": sentences})
+    summary = runner.run_one(pid, "plan")
+    with SessionLocal() as s:
+        plan = s.get(StudioProject, pid).plan
+    visuals = [i for i in plan if i.get("shot")]
+    # ~25 s of narration at 4.2 s each would be 8 visuals for 5 pictures (3 repeats);
+    # holding each longer keeps it to the pictures there are.
+    assert len(visuals) <= 5, summary
+    assert stage_plan.plan_issues(plan, {i["shot"]: i["shot"] for i in visuals}) == [], summary

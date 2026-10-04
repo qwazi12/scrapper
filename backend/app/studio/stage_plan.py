@@ -37,7 +37,12 @@ SAME_SETUP = 24       # looser match for the same set-up: same video, same peopl
 SETUP_SECONDS = 12.0  # (By Any Means: one interview, 8 s apart, 20 bits apart — read as "the same shot")
 NEAR_WINDOW = 6       # the same look never returns within this many slots
 TARGET_VISUAL = 4.2
+MAX_VISUAL = 7.0      # with few distinct shots, hold each visual longer (up to this) instead of repeating
 CLIP_MAX = 5.0
+# Rhythm (owner, 2026-10-04): a clip at 0:00; after every clip at least MIN_STILLS
+# stills before the next clip (never two clips in a row); never more than
+# MAX_STILLS stills in a row — the next visual is a clip.
+MIN_STILLS, MAX_STILLS = 2, 3
 
 _DATE_WORDS = re.compile(r"\b(release|releases|premiere|premieres|arrives|hits|in theaters|streaming|"
                          r"january|february|march|april|may|june|july|august|september|october|"
@@ -129,8 +134,9 @@ Pick ONE shot id per slot:
 - Match setting and mood to what the sentence describes.
 - Do not reuse a shot until every shot has been used; avoid using the same shot twice in a row.
 - Vary close / medium / wide.
-- Mark about one slot in three as "clip" (plays as motion) — choose shots with action for clips;
-  the rest are "still" (slow zoom on the frame).
+- Never reuse a shot while unused shots remain.
+- Set "mode" to "clip" when the shot has strong action that should play as motion, else "still".
+  (The editor decides the final clip/still rhythm; your "clip" marks are preferences.)
 
 Slots:
 {lines}
@@ -139,6 +145,35 @@ Shots:
 {shots}
 
 Return a JSON array: [{{"slot": 1, "shot": "s012", "mode": "still"}}, ...] covering every slot."""
+
+
+def apply_rhythm(slots: list[dict], fixed_still: set[int], prefer_clip: dict[int, bool]) -> dict[int, str]:
+    """Slot number -> "clip" | "still", following the owner's rhythm:
+    clip first; then MIN_STILLS..MAX_STILLS stills between clips. Inside that
+    window a slot becomes a clip if Gemini preferred one there (action shot);
+    after MAX_STILLS stills it is a clip regardless. Fixed stills (the release
+    poster) count as stills; a clip is placed just before one when the poster
+    would otherwise make the run too long."""
+    modes: dict[int, str] = {}
+    since = None                      # stills since the last clip (None = no clip yet)
+    nums = [s["slot"] for s in slots]
+    for k, n in enumerate(nums):
+        if n in fixed_still:
+            modes[n] = "still"
+            since = (since or 0) + 1
+            continue
+        nxt_fixed = k + 1 < len(nums) and nums[k + 1] in fixed_still
+        if since is None:
+            clip = True                                   # the opening visual moves
+        elif since < MIN_STILLS:
+            clip = False
+        elif since >= MAX_STILLS:
+            clip = True
+        else:                                             # MIN_STILLS <= since < MAX_STILLS
+            clip = prefer_clip.get(n, False) or (nxt_fixed and since + 1 >= MAX_STILLS)
+        modes[n] = "clip" if clip else "still"
+        since = 0 if clip else since + 1
+    return modes
 
 
 def _fallback(slots: list[dict], catalog: list[dict]) -> list[dict]:
@@ -196,7 +231,6 @@ def plan(project_id: int) -> str:
     catalog = [sh for sh in shots if sh.get("usable")]
     if len(catalog) < 5:
         raise RuntimeError(f"Only {len(catalog)} usable shots — add footage (upload or more trailers)")
-    cards = [sh for sh in shots if sh.get("card")]
     root = project_dir(project_id)
     tts_dir = root / "tts"
     tts_dir.mkdir(exist_ok=True)
@@ -220,16 +254,22 @@ def plan(project_id: int) -> str:
     slots: list[dict] = []
     date_sentence = next((x["sentence"] for x in timeline if x["paragraph"] == 2 and _DATE_WORDS.search(x["text"])),
                          None)
+    groups = look_groups(shots, root)
+    looks = len({groups[c["id"]] for c in catalog})
+    planned = sum(max(1, math.ceil((x["end"] - x["start"]) / TARGET_VISUAL)) for x in timeline)
+    # Fewer distinct pictures than visuals: hold each one longer instead of repeating.
+    scarce = looks < planned
+    target = min(MAX_VISUAL, t / max(1, looks)) if scarce else TARGET_VISUAL
     for x in timeline:
         span = x["end"] - x["start"]
-        n = max(1, math.ceil(span / TARGET_VISUAL))
+        # Scarce pictures: round (not ceil) so the visual count lands near the number of pictures.
+        n = max(1, round(span / target)) if scarce else max(1, math.ceil(span / target))
         for j in range(n):
             slots.append({"slot": len(slots) + 1, "sentence": x["sentence"], "text": x["text"],
                           "start": round(x["start"] + span * j / n, 3),
                           "end": round(x["start"] + span * (j + 1) / n, 3)})
 
-    special = {}
-    special[1] = {"kind": "card", "shot": cards[0]["id"]} if cards else {"kind": "poster"}
+    special = {}          # slot 1 is a clip now (owner, 2026-10-04), no longer the title card / poster
     if date_sentence:
         first_date_slot = next(s["slot"] for s in slots if s["sentence"] == date_sentence)
         special[first_date_slot] = {"kind": "poster"}
@@ -238,7 +278,6 @@ def plan(project_id: int) -> str:
     # 3. Gemini picks shots (one per look-alike group); validate and repair.
     control.check()
     control.progress("checking shots for look-alikes")
-    groups = look_groups(shots, root)
     seen_looks: set[str] = set()
     distinct_catalog = []
     for c in catalog:
@@ -256,6 +295,8 @@ def plan(project_id: int) -> str:
         how = f"trailer order (Gemini failed: {str(exc)[:80]})"
     by_slot = {a["slot"]: a for a in assigned}
     shots_by_id = {sh["id"]: sh for sh in shots}
+    modes = apply_rhythm(slots, {n for n, sp in special.items() if sp["kind"] == "poster"},
+                         {a["slot"]: a["mode"] == "clip" for a in assigned})
 
     plan_items = []
     for s in slots:
@@ -266,7 +307,7 @@ def plan(project_id: int) -> str:
         else:
             a = by_slot[s["slot"]]
             sh = shots_by_id[a["shot"]]
-            item = {**s, "kind": a["mode"], "shot": a["shot"], "duration": dur,
+            item = {**s, "kind": modes[s["slot"]], "shot": a["shot"], "duration": dur,
                     "clip_start": sh["start"], "clip_len": round(min(dur, CLIP_MAX), 3)}
         plan_items.append(item)
 
@@ -283,6 +324,9 @@ def plan(project_id: int) -> str:
         s.commit()
     clips = sum(1 for i in plan_items if i["kind"] == "clip")
     distinct = len({i["shot"] for i in plan_items if i.get("shot")})
-    return (f"{len(timeline)} sentences voiced ({t:.0f}s); {len(plan_items)} visuals, {clips} clips, "
-            f"{distinct} distinct shots — {how}; QA: {len(issues)} repeat(s) left "
-            f"({sum(1 for i in issues if i['kind'] != 'repeat')} within {NEAR_WINDOW} slots)")
+    visuals = sum(1 for i in plan_items if i.get("shot"))
+    why = (f" — only {looks} distinct pictures for {visuals} visuals even at {target:.1f}s each; "
+           "add footage for fewer" if issues else "")
+    return (f"{len(timeline)} sentences voiced ({t:.0f}s); {len(plan_items)} visuals ({target:.1f}s each), "
+            f"{clips} clips, {distinct} distinct shots — {how}; QA: {len(issues)} repeat(s) left "
+            f"({sum(1 for i in issues if i['kind'] != 'repeat')} within {NEAR_WINDOW} slots){why}")
