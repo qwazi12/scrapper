@@ -509,3 +509,4 @@ Tests for each; commit + push; manual frontend deploy until the VERCEL_API_TOKEN
 - Owner added the GitHub secret `VERCEL_API_TOKEN`. Run 37149883106 (commit 1b7712a) passed every step and produced a new Ready production deploy. **Pushes to `frontend/**` now deploy the site by themselves**; no more manual deploys.
 - The workflow now also runs when `.github/workflows/deploy-frontend.yml` changes.
 - The owner also put the token in Railway as `github_deploy`. The backend never reads it; suggested removing it there (least privilege). Railway also still has `VERCEL_API_TOKEN`/`VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` from before, also unused by the backend.
+- Handbook republished as v3 (same link https://claude.ai/artifact/SF2MvUyAwnXo6rcEnXikwP): automation, checked trending list, Studio's line, project/card buttons, batch render/queue, Archive/Delete, plain thumbnails, $6 daily cap, costs, new troubleshooting rows, daily review checklist.
