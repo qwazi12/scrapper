@@ -150,6 +150,11 @@ def save(project_id: int) -> dict[str, Any]:
                 logger.warning("could not trash old Drive copy %s: %s", fid, exc)
     logbus.log("info", "longform_drive_saved", f"Studio #{project_id}: saved to Drive '{FOLDER_NAME}'",
                project=project_id, link=info["link"])
+    try:
+        from .archive import free_footage
+        free_footage(project_id)        # the video is safe in Drive: free its ~300 MB of footage
+    except Exception as exc:  # noqa: BLE001 — freeing space must never fail the save
+        logger.warning("could not free footage of #%s: %s", project_id, exc)
     return info
 
 

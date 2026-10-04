@@ -619,9 +619,8 @@ function FootageSection({ p, onChange, running }: { p: StudioProject; onChange: 
 /** Why the tagger left a shot out, in words. */
 function whyUnusable(s: StudioShot): string {
   if (s.card) return "title or credits card";
-  if (s.text) return "on-screen text";
-  if (s.quality) return s.quality;
   if (s.tag_error) return "couldn't be tagged";
+  if ((s as any).owner_set) return "left out by you";
   return "untagged";
 }
 
@@ -722,7 +721,7 @@ function ShotThumb({ p, s, selected, onClick, note }: { p: StudioProject; s: Stu
       <img src={api.studioFileUrl(p.id, s.thumb)} alt="" style={{ width: "100%", display: "block" }} loading="lazy" />
       <div style={{ fontSize: 9, padding: "2px 4px", lineHeight: 1.3 }}>
         <b>{s.id}</b> {s.people?.join(", ")}
-        {!s.usable && <span style={{ color: "var(--red)" }}> {s.card ? "card" : s.text ? "text" : s.quality || "untagged"}</span>}
+        {!s.usable && <span style={{ color: "var(--red)" }}> {s.card ? "card" : (s as any).owner_set ? "left out" : s.tag_error ? "untagged" : "not usable"}</span>}
         {note && <div style={{ color: "var(--yellow)" }}>{note}</div>}
       </div>
     </div>

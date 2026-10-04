@@ -41,6 +41,28 @@ def _signature(path: pathlib.Path) -> tuple[int, tuple[float, float, float]] | N
     return h, mean
 
 
+def auto_usable(sh: dict) -> bool:
+    """Owner rule (2026-10-04): only title/logo/rating CARDS are kept out.
+    Dark, blurry and burned-in-text shots are usable — a network watermark in
+    the corner marked every MobLand shot as "text" and left 2 usable shots."""
+    return bool(sh.get("description")) and not sh.get("card")
+
+
+def recompute_usable(project_id: int) -> tuple[int, int]:
+    """Re-apply auto_usable to a project's saved tags (no AI); the owner's own
+    Use / Leave out choices stay. Returns (usable before, usable after)."""
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        shots = [dict(sh) for sh in (p.shots or [])]
+        before = sum(1 for sh in shots if sh.get("usable"))
+        for sh in shots:
+            if not sh.get("owner_set"):
+                sh["usable"] = auto_usable(sh)
+        p.shots = shots
+        s.commit()
+    return before, sum(1 for sh in shots if sh.get("usable"))
+
+
 def use_batch(project_id: int) -> bool:
     """Batch Mode (half price, async) only for automation runs — nobody waits."""
     with SessionLocal() as s:
@@ -184,8 +206,7 @@ def shots(project_id: int) -> str:
             by_id[sid]["tags_from"] = rep
             tagged += 1
     for sh in shots:
-        sh["usable"] = bool(sh.get("description")) and not sh.get("card") and not sh.get("text") \
-            and sh.get("quality") == "good"
+        sh["usable"] = auto_usable(sh)
 
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)

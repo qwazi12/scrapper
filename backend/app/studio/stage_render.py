@@ -218,6 +218,8 @@ def render(project_id: int) -> str:
     if archived:
         raise RuntimeError("This breakdown is archived (footage deleted to save space; the video is in Drive). "
                            "Press Restore footage first, then render.")
+    from .archive import ensure_footage
+    ensure_footage(project_id)      # footage freed after its Drive save comes back from IMDb (no AI cost)
     root = project_dir(project_id)
     # Build in render_new/ and swap it in only when finished: a stopped or failed
     # re-render must never delete the last good video (it did until 2026-10-02).

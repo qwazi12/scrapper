@@ -150,6 +150,60 @@ def sweep(now: datetime.datetime | None = None) -> list[dict]:
     return [r for r in (archive_project(i, now) for i in ids) if r.get("archived")]
 
 
+def free_footage(project_id: int) -> dict[str, Any] | None:
+    """Disk saver (owner, 2026-10-04 — volume hit 97.6%): once a project's
+    CURRENT render is safely in Drive, delete its downloaded trailer footage
+    and segment cache (~300 MB). The render (the queue posts it), stills,
+    script, plan and thumbnails stay. Rendering again re-downloads the footage
+    from IMDb first (render → ensure_footage). Uploaded footage is never deleted.
+    Returns what was freed, or None when the project doesn't qualify."""
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        if not p or p.stage_status in ("running", "queued"):
+            return None
+        r, d = p.render or {}, p.drive or {}
+        if not r or d.get("status") != "saved" or d.get("rendered_at") != r.get("rendered_at"):
+            return None
+        sources = (p.trailer or {}).get("sources", [])
+        if any(src.get("origin") != "imdb" for src in sources) or (p.trailer or {}).get("origin") == "upload":
+            return None          # only footage IMDb can give back is deleted
+        root = project_dir(project_id)
+        parts = [x for x in (root / "footage", root / "segcache") if x.exists()]
+        freed = sum(_dir_bytes(x) for x in parts)
+        if not freed:
+            return None
+        for x in parts:
+            shutil.rmtree(x, ignore_errors=True)
+        info = {"footage_freed_at": datetime.datetime.now(UTC).isoformat(), "footage_freed_mb": round(freed / 1e6)}
+        p.archive = {**(p.archive or {}), **info}
+        s.commit()
+        title = p.title
+    logbus.log("info", "studio_footage_freed",
+               f"Studio #{project_id} {title}: freed {info['footage_freed_mb']} MB of trailer footage "
+               "(video is in Drive; footage re-downloads from IMDb if you render again)", project=project_id)
+    return {"project_id": project_id, **info}
+
+
+def free_footage_sweep() -> list[dict[str, Any]]:
+    with SessionLocal() as s:
+        ids = [pid for (pid,) in s.query(StudioProject.id).all()]
+    return [r for r in (free_footage(pid) for pid in ids) if r]
+
+
+def ensure_footage(project_id: int) -> bool:
+    """Before a render: re-download freed footage from IMDb (no AI cost).
+    Returns True if anything was downloaded."""
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        sources = (p.trailer or {}).get("sources", []) if p else []
+    missing = [src for src in sources if src.get("file") and not pathlib.Path(src["file"]).exists()]
+    if not missing:
+        return False
+    control.progress(f"re-downloading {len(missing)} trailer file(s) freed to save disk space")
+    restore(project_id)
+    return True
+
+
 def maybe_sweep() -> None:
     """Called by the scheduler; runs once a day."""
     global _last_sweep_day
@@ -161,6 +215,10 @@ def maybe_sweep() -> None:
         sweep()
     except Exception as exc:  # noqa: BLE001 — never break the scheduler
         logbus.log("error", "studio_archive_failed", str(exc))
+    try:
+        free_footage_sweep()        # catches any project whose footage wasn't freed after its Drive save
+    except Exception as exc:  # noqa: BLE001
+        logbus.log("error", "studio_footage_free_failed", str(exc))
 
 
 def restore(project_id: int) -> str:

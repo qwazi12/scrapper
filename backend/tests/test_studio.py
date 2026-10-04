@@ -1150,3 +1150,47 @@ def test_lookalike_neighbours_are_tagged_once(monkeypatch, three_scene_video):
         shots = s.get(StudioProject, pid).shots
     assert len(shots) == 4 and "1 look-alikes reused" in summary
     assert shots[2]["tags_from"] == shots[1]["id"] and shots[2]["description"] == shots[1]["description"]
+
+
+def test_only_cards_are_unusable_and_recompute_keeps_owner_choices(session):
+    from backend.app.models import StudioProject
+    from backend.app.studio import stage_shots
+    shots = [
+        {"id": "a", "description": "x", "card": True},
+        {"id": "b", "description": "x", "text": True, "usable": False},          # watermark: now usable
+        {"id": "c", "description": "x", "quality": "dark", "usable": False},     # dark: now usable
+        {"id": "d", "description": "x", "usable": False, "owner_set": True},     # owner left it out
+        {"id": "e", "tag_error": "boom", "usable": False},                       # never tagged
+    ]
+    assert [stage_shots.auto_usable(sh) for sh in shots] == [False, True, True, True, False]
+    p = StudioProject(tmdb_id=77, title="Rule", shots=shots)
+    session.add(p)
+    session.commit()
+    assert stage_shots.recompute_usable(p.id) == (0, 2)
+    session.refresh(p)
+    assert [sh["usable"] for sh in p.shots] == [False, True, True, False, False]
+
+
+def test_free_footage_only_after_drive_has_the_current_render(session, tmp_path, monkeypatch):
+    from backend.app.models import StudioProject
+    from backend.app.studio import archive
+    monkeypatch.setattr(archive, "project_dir", lambda pid: tmp_path)
+    (tmp_path / "footage").mkdir()
+    (tmp_path / "footage" / "vi1.mp4").write_bytes(b"x" * 1000)
+    (tmp_path / "segcache").mkdir()
+    (tmp_path / "render").mkdir()
+    (tmp_path / "render" / "final.mp4").write_bytes(b"v")
+    p = StudioProject(tmdb_id=78, title="Free", render={"file": "render/final.mp4", "rendered_at": "r2"},
+                      drive={"status": "saved", "rendered_at": "r1"},
+                      trailer={"sources": [{"id": "vi1", "origin": "imdb", "file": str(tmp_path / "footage" / "vi1.mp4")}]})
+    session.add(p)
+    session.commit()
+    assert archive.free_footage(p.id) is None                     # Drive has an OLDER render: keep everything
+    p.drive = {"status": "saved", "rendered_at": "r2"}
+    session.commit()
+    out = archive.free_footage(p.id)
+    assert out and not (tmp_path / "footage").exists() and not (tmp_path / "segcache").exists()
+    assert (tmp_path / "render" / "final.mp4").exists()            # the queue still posts this
+    calls = []
+    monkeypatch.setattr(archive, "restore", lambda pid: calls.append(pid) or "ok")
+    assert archive.ensure_footage(p.id) and calls == [p.id]        # a re-render brings it back first

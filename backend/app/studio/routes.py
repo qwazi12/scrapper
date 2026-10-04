@@ -329,6 +329,19 @@ def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session))
     return {"ok": True, "stage": req.stage, "auto": req.auto, "state": state}
 
 
+@router.post("/recompute-usable")
+def recompute_usable_all(s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Apply the current usability rule to every project's saved shot tags (no AI cost)."""
+    from . import stage_shots
+    out = {}
+    for (pid,) in s.query(StudioProject.id).all():
+        b, a = stage_shots.recompute_usable(pid)
+        if b != a:
+            out[pid] = {"before": b, "after": a}
+    logbus.log("info", "studio_usable_recomputed", f"Shot usability re-applied (cards only): {out or 'no changes'}")
+    return {"changed": out}
+
+
 @router.post("/projects/{project_id}/resume")
 def resume_project(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
     """▶ Resume a stopped / failed / paused project from the step it was on,
