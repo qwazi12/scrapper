@@ -83,7 +83,7 @@ def default_schedule() -> dict[str, Any]:
         "start_hour": settings.post_start_hour,
         "end_hour": settings.post_end_hour,
         "interval_hours": settings.post_interval_hours,
-        "posts_per_day": None,
+        "posts_per_day": settings.post_posts_per_day or None,   # owner rule: 1/day unless changed by hand
         "pipelines": {},
         "accounts": {},
     }
@@ -354,6 +354,22 @@ def current_slot(
     return slot if slot <= now else None
 
 
+def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
+    """Scheduled posts of this pipeline already sent (or attempted) today, in
+    the posting schedule's timezone. Counts by slot time; Post now (no slot)
+    isn't counted — that's a deliberate manual action."""
+    tz = ZoneInfo(_schedule_cfg["timezone"])
+    local = now.astimezone(tz)
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    end = (local.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1, hours=2)) \
+        .replace(hour=0).astimezone(UTC)
+    rows = (s.query(QueueItem)
+            .filter(QueueItem.scheduled_at >= start, QueueItem.scheduled_at < end)
+            .filter(QueueItem.status.in_(["posting", "posted", "retry", "error"]))
+            .all())
+    return sum(1 for it in rows if pipeline_group(it) == group)
+
+
 def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
     at = _aware(item.scheduled_at)
     return at is not None and now - DUE_GRACE < at <= now
@@ -384,20 +400,23 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         else:
             groups.setdefault(pipeline_group(it), []).append(it)
 
-    cur_global = current_slot(now)
-    used: set[str] = set()
-    if cur_global is not None:
-        for it in (s.query(QueueItem)
-                   .filter(QueueItem.scheduled_at == cur_global)
-                   .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived"]))
-                   .all()):
-            used.add(pipeline_group(it))
+    def slot_used(group: str, cur: datetime.datetime) -> bool:
+        """Did this pipeline already post (or try to) in ITS OWN current slot?
+        Bug fixed 2026-10-04: this used the GLOBAL slot time, so a pipeline with
+        its own pacing (Movie Clips 3/day 10–22 → 16:00) never saw its slot as
+        used and every 5-min tick handed the same slot to the next video —
+        8 posts in one 16:00 slot, YouTube's daily upload limit hit at 22:00."""
+        return any(pipeline_group(it) == group for it in (
+            s.query(QueueItem)
+            .filter(QueueItem.scheduled_at == cur)
+            .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived"]))
+            .all()))
 
     for group, items in groups.items():
         primary_accs = items[0].accounts if items else None
         cur = current_slot(now, pipeline=group, accounts=primary_accs)
         slots = slots_after(now, len(items), pipeline=group, accounts=primary_accs)
-        if cur is not None and group not in used and group not in due_groups:
+        if cur is not None and group not in due_groups and not slot_used(group, cur):
             slots = [cur] + slots[:-1] if slots else [cur]
         for it, slot in zip(items, slots):
             if _aware(it.scheduled_at) != slot:
@@ -747,6 +766,16 @@ def run_scheduler_tick():
             if group in seen:
                 continue
             seen.add(group)
+            # Hard stop, whatever the planner did: never more scheduled posts in
+            # one day than this pipeline's posts/day setting.
+            limit = slots_per_day(pipeline=group, accounts=item.accounts)
+            done = posted_today(s, group, now)
+            if done >= limit:
+                if scheduler_status.get("limit_logged") != (group, now.date().isoformat()):
+                    scheduler_status["limit_logged"] = (group, now.date().isoformat())
+                    logbus.log("warning", "queue_daily_limit",
+                               f"{group}: today's {limit} post(s) already went out — #{item.id} waits for tomorrow's slot")
+                continue
             try:
                 asyncio.run(publish_queue_item(item.id, s))
                 scheduler_status["last_submitted"] = {"id": item.id, "at": now.isoformat()}

@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     post_start_hour: int = 8                # first slot (local hour, 0-23)
     post_end_hour: int = 22                 # last slot (inclusive)
     post_interval_hours: int = 2
+    # Default posts a day for every pipeline (owner rule 2026-10-04: 1 unless changed
+    # by hand on the Pacing card). 0 = the old "every interval_hours" mode.
+    post_posts_per_day: int = 1
     # Posted/archived queue items (and their Drive file, moved to trash) are
     # removed this many days after they were posted. 0 disables.
     archive_delete_days: int = 4

@@ -726,3 +726,57 @@ def test_queue_change_wakes_the_poster(client):
     client.get("/api/queue")
     assert not qmod._wake.is_set()      # reads don't wake it
 
+
+
+# --- 2026-10-04 incident: 8 posts in one slot ---------------------------------
+def test_pipeline_with_own_pacing_gets_one_post_per_slot(session, reset_schedule):
+    """Replay of Sat 3 Oct: global 3/day 10–20, Movie Clips 3/day 10–22 (16:00 slot).
+    The planner checked the GLOBAL slot (15:00), never saw 16:00 as used, and each
+    5-min tick gave the 16:00 slot to the next video."""
+    qm.save_schedule(session, {"timezone": "America/New_York", "start_hour": 10, "end_hour": 20,
+                               "interval_hours": 2, "posts_per_day": 3,
+                               "pipelines": {"Movie Clips": {"posts_per_day": 3, "start_hour": 10, "end_hour": 22}}})
+    items = add(session, 4, "Movie Clips / @VynixAE")
+    qm.plan_schedule(session, et(2026, 10, 3, 16, 0, ))
+    first = min(items, key=lambda it: it.scheduled_at)
+    assert qm._aware(first.scheduled_at) == et(2026, 10, 3, 16)
+    first.status = "posted"                      # it went out at 16:00
+    session.commit()
+    for minute in (5, 10, 15, 20, 25):           # the following ticks
+        qm.plan_schedule(session, et(2026, 10, 3, 16, minute))
+        rest = [qm._aware(it.scheduled_at) for it in items if it is not first]
+        assert et(2026, 10, 3, 16) not in rest, f"16:00 handed out again at 16:{minute:02d}"
+    assert sorted(qm._aware(it.scheduled_at) for it in items if it is not first)[0] == et(2026, 10, 3, 22)
+
+
+def test_tick_never_posts_more_than_the_daily_limit(session, reset_schedule, monkeypatch):
+    qm.save_schedule(session, {"timezone": "America/New_York", "start_hour": 10, "end_hour": 22,
+                               "interval_hours": 2, "posts_per_day": 1})
+    (done,) = add(session, 1, status="posted")
+    done.scheduled_at = et(2026, 10, 3, 10)
+    (extra,) = add(session, 1)
+    extra.scheduled_at = et(2026, 10, 3, 16)     # somehow due today too
+    session.commit()
+    posted = []
+
+    async def fake_publish(item_id, s):
+        posted.append(item_id)
+
+    monkeypatch.setattr(qm, "publish_queue_item", fake_publish)
+    monkeypatch.setattr(qm, "plan_schedule", lambda s, now: 0)
+    monkeypatch.setattr(qm, "reconcile_posting", lambda s, now: 0)
+    real_now = qm.datetime.datetime
+
+    class FakeDT(real_now):
+        @classmethod
+        def now(cls, tz=None):
+            return et(2026, 10, 3, 16, 5)
+
+    monkeypatch.setattr(qm.datetime, "datetime", FakeDT)
+    qm.run_scheduler_tick()
+    assert posted == []                          # 1/day and today's one already went out
+
+
+def test_production_default_is_one_post_a_day():
+    from backend.app.config import Settings
+    assert Settings.model_fields["post_posts_per_day"].default == 1
