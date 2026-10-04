@@ -4,6 +4,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
+
+// Owner rule (2026-10-04): Posting Queue and LongForm videos never post to profile "mk"
+// (the server refuses it too).
+const QUEUE_BLOCKED_PROFILES = ["mk"];
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
 
@@ -19,7 +23,9 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 
 // Top-level pipelines only; Drive subfolders (@channels) show on each row.
 // LongForm breakdowns live in their own SocialPilot section (mode="longform").
-const PIPELINES = ["Movie Clips", "Abyss Declassified", "The ICK Room", "default"];
+// Only Movie Clips is offered (owner, 2026-10-04: Abyss Declassified, The ICK Room and
+// Default were unused). Rows from elsewhere still show under "All Pipelines".
+const PIPELINES = ["Movie Clips"];
 const LONGFORM = "LongForm";
 
 type SortKey = "position" | "id" | "title" | "channel" | "status" | "scheduled";
@@ -1547,6 +1553,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 profiles={profiles}
                 value={selectedTargetAccountIds}
                 onChange={setSelectedTargetAccountIds}
+                blockedProfiles={QUEUE_BLOCKED_PROFILES}
               />
             </div>
             {selectedTargetAccountIds.length > 0 && (
@@ -1793,8 +1800,6 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                   style={{ width: "100%", padding: 6, fontSize: 12 }}
                 >
                   <option value="Movie Clips">Movie Clips</option>
-                  <option value="Abyss Declassified">Abyss Declassified</option>
-                  <option value="The ICK Room">The ICK Room</option>
                 </select>
               </div>
 

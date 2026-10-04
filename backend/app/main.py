@@ -106,6 +106,11 @@ def _startup() -> None:
         studio_runner.recover_interrupted()
     except Exception as exc:  # never block startup on recovery
         logbus.log("error", "startup_studio_recover_failed", str(exc))
+    try:
+        with SessionLocal() as s:
+            queue_manager.strip_blocked_accounts(s)   # owner rule: profile "mk" never posts queue videos
+    except Exception as exc:  # noqa: BLE001
+        logbus.log("error", "startup_blocked_profile_cleanup_failed", str(exc))
     if settings.worker_mode != "web_only":
         try:  # relaunch jobs a restart/deploy cut off (Studio, Drive sync/ingest/save, bulk AI)
             from .social import ai_bulk  # noqa: F401  (each module registers its resume launcher)
@@ -711,7 +716,7 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         title=req.title or video_name,
         description=req.description,
         tags=req.tags,
-        accounts=req.accounts,
+        accounts=[a for a in (req.accounts or []) if a not in queue_manager.blocked_accounts(req.accounts)] if req.accounts else req.accounts,
         status=req.status or "review",
         scheduled_at=sched_dt,
         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1,
@@ -723,6 +728,13 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
     s.refresh(item)
     logbus.log("info", "queue_created", f"Queue item #{item.id} ('{item.title[:40]}') [{item.status}]")
     return item
+
+
+def _refuse_blocked(accounts: list[str] | None) -> None:
+    bad = queue_manager.blocked_accounts(accounts)
+    if bad:
+        raise HTTPException(400, f"Profile {', '.join(sorted(queue_manager.BLOCKED_PROFILES))} is never used for "
+                                 f"Posting Queue or LongForm videos (refused: {', '.join(bad)}).")
 
 
 @app.patch("/api/queue/{item_id}", response_model=QueueItemOut, dependencies=_AUTH)
@@ -748,6 +760,7 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         item.status = req.status
         _mark_published(item, req.status)
     if req.accounts is not None:
+        _refuse_blocked(req.accounts)
         item.accounts = req.accounts
     if req.notes is not None:
         item.notes = req.notes
@@ -826,6 +839,8 @@ def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
 
 @app.post("/api/queue/bulk-action", dependencies=_AUTH)
 def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -> dict:
+    if req.action == "set_accounts":
+        _refuse_blocked(req.accounts)       # checked before anything (incl. the undo point) is written
     items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
     count = len(items)
     what = {"approve": "Approve", "review": "Set to Review", "archive": "Archive", "posted": "Mark posted",

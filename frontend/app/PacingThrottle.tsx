@@ -17,10 +17,7 @@ const PRESET_PACING = [
 const KNOWN_PIPELINES = [
   { id: "Movie Clips", name: "Movie Clips", icon: "🎬", desc: "14-Channel Shorts Pipeline (Parent)" },
   { id: "LongForm", name: "LongForm Studio", icon: "🎞️", desc: "Trailer Breakdown Videos (16:9)" },
-  { id: "Abyss Declassified", name: "Abyss Declassified", icon: "🌊", desc: "Documentary Pipeline" },
-  { id: "The ICK Room", name: "The ICK Room", icon: "🎙️", desc: "Curated Clips Pipeline" },
-  { id: "default", name: "Default Pipeline", icon: "📁", desc: "General Content Queue" },
-];
+];  // Abyss Declassified, The ICK Room and Default were removed (owner, 2026-10-04: unused)
 
 const KNOWN_ACCOUNTS = [
   { id: "default", name: "Screen Central (YouTube)", icon: "▶️", profile: "default" },

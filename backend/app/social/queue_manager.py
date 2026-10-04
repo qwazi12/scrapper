@@ -499,6 +499,32 @@ async def auto_seo(item: QueueItem, s: Session) -> bool:
     return True
 
 
+# Upload-Post profiles the Posting Queue and LongForm may NEVER post to
+# (owner rule 2026-10-04: profile "mk" = Flamingo Remix is not for these videos).
+BLOCKED_PROFILES = {"mk"}
+
+
+def blocked_accounts(accounts: list[str] | None) -> list[str]:
+    """The destinations in this list that belong to a blocked profile."""
+    return [a for a in (accounts or []) if str(a).split(":", 1)[0].strip() in BLOCKED_PROFILES]
+
+
+def strip_blocked_accounts(s: Session) -> int:
+    """Remove blocked-profile destinations from every queue row (startup clean-up).
+    A row left with no destination simply stays unscheduled until one is picked."""
+    changed = 0
+    for it in s.query(QueueItem).filter(QueueItem.status.notin_(["posted", "archived"])).all():
+        bad = blocked_accounts(it.accounts)
+        if bad:
+            it.accounts = [a for a in it.accounts if a not in bad]
+            changed += 1
+    if changed:
+        s.commit()
+        logbus.log("warning", "queue_blocked_profile_removed",
+                   f"Removed profile {', '.join(sorted(BLOCKED_PROFILES))} from {changed} queue item(s) — never used for the queue")
+    return changed
+
+
 async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
@@ -507,6 +533,14 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
     if not item.accounts:
         raise upload_post.UploadPostError(
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
+    if blocked_accounts(item.accounts):
+        # Last line of defence: never send to a blocked profile, even if a row slipped through.
+        item.accounts = [a for a in item.accounts if a not in blocked_accounts(item.accounts)]
+        s.commit()
+        if not item.accounts:
+            raise upload_post.UploadPostError(
+                f"Profile {', '.join(sorted(BLOCKED_PROFILES))} is never used for queue videos — pick another destination.",
+                status_code=400)
 
     # Locate video file
     video_path: pathlib.Path | None = None

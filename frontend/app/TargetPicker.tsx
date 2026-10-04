@@ -110,13 +110,17 @@ export function TargetPicker({
   profiles,
   value,
   onChange,
+  blockedProfiles = [],
 }: {
   accounts: SocialAccount[];
   profiles?: string[];
   value: string[];
   onChange: (next: string[]) => void;
+  /** Profiles that must never be offered here (the Posting Queue blocks "mk"). */
+  blockedProfiles?: string[];
 }) {
   const grouped = groupProfiles(accounts, profiles);
+  for (const b of blockedProfiles) delete grouped[b];
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   function toggle(id: string) {

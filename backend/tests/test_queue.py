@@ -18,7 +18,7 @@ def et(y, mo, d, h, mi=0):
 
 
 def add(s, n, source="Movie Clips / @VynixAE", status="ready", **kw):
-    kw.setdefault("accounts", ["mk:youtube"])
+    kw.setdefault("accounts", ["default:youtube"])   # profile "mk" is never used for queue videos
     items = []
     for _ in range(n):
         it = QueueItem(pipeline=source.split(" / ")[-1], source=source, title="t",
@@ -559,14 +559,14 @@ def test_research_cache_shares_lookups(session, monkeypatch):
 
 # --- auto-SEO before posting ---------------------------------------------------
 def test_raw_clip_gets_seo_before_posting(session, monkeypatch):
-    it = _clip(session, accounts=["mk:youtube"])
+    it = _clip(session, accounts=["default:youtube"])
     it.description = it.title  # raw Drive import
     session.commit()
     monkeypatch.setattr(clip_research, "generate", lambda item, cache=None: (
         {"title": "SEO title", "caption": "SEO caption", "hashtags": ["#shorts"]}, {"matched": True, "title": "Show"}))
 
     async def fake_submit(*a, **kw):
-        return [{"profile": "mk", "platforms": ["youtube"], "request_id": "r", "submitted_at": "2026-10-02T00:00:00+00:00"}]
+        return [{"profile": "default", "platforms": ["youtube"], "request_id": "r", "submitted_at": "2026-10-02T00:00:00+00:00"}]
 
     monkeypatch.setattr(qm, "submit_upload", fake_submit)
     it.video_path = __file__  # any existing file
@@ -584,7 +584,7 @@ def test_owner_edited_clip_is_not_rewritten(session):
 
 
 def test_auto_seo_failure_never_blocks_posting(session, monkeypatch):
-    it = _clip(session, accounts=["mk:youtube"])
+    it = _clip(session, accounts=["default:youtube"])
     it.description, it.video_path = it.title, __file__
     session.commit()
 
@@ -594,7 +594,7 @@ def test_auto_seo_failure_never_blocks_posting(session, monkeypatch):
     monkeypatch.setattr(clip_research, "generate", boom)
 
     async def fake_submit(*a, **kw):
-        return [{"profile": "mk", "platforms": ["youtube"], "request_id": "r", "submitted_at": "2026-10-02T00:00:00+00:00"}]
+        return [{"profile": "default", "platforms": ["youtube"], "request_id": "r", "submitted_at": "2026-10-02T00:00:00+00:00"}]
 
     monkeypatch.setattr(qm, "submit_upload", fake_submit)
     asyncio.run(qm.publish_queue_item(it.id, session))
@@ -780,3 +780,29 @@ def test_tick_never_posts_more_than_the_daily_limit(session, reset_schedule, mon
 def test_production_default_is_one_post_a_day():
     from backend.app.config import Settings
     assert Settings.model_fields["post_posts_per_day"].default == 1
+
+
+# --- profile "mk" is never used for queue videos (owner, 2026-10-04) ----------
+def test_mk_destination_is_refused_everywhere(session, client):
+    (it,) = add(session, 1, accounts=["default:*"])
+    r = client.patch(f"/api/queue/{it.id}", json={"accounts": ["mk:*"]})
+    assert r.status_code == 400 and "never used" in r.json()["detail"]
+    r = client.post("/api/queue/bulk-action", json={"ids": [it.id], "action": "set_accounts",
+                                                   "accounts": ["default:*", "mk:youtube"]})
+    assert r.status_code == 400
+    session.refresh(it)
+    assert it.accounts == ["default:*"]
+
+
+def test_startup_strips_mk_and_posting_never_sends_it(session, monkeypatch):
+    a, b = add(session, 2, accounts=["mk:youtube", "default:*"])
+    b.accounts = ["mk:*"]
+    session.commit()
+    assert qm.strip_blocked_accounts(session) == 2
+    session.refresh(a)
+    session.refresh(b)
+    assert a.accounts == ["default:*"] and b.accounts == []
+    b.accounts = ["mk:youtube"]                   # slipped in somehow
+    session.commit()
+    with pytest.raises(upload_post.UploadPostError, match="never used"):
+        asyncio.run(qm.publish_queue_item(b.id, session))
