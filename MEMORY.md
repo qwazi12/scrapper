@@ -565,3 +565,11 @@ Cause: auth lockout (20 wrong tokens / 10 min → 15-min block per IP) counts EV
 2. **Posted → Archive automatically**: when Upload-Post/YouTube confirms a post, the row goes to the Posted Archive (status `archived`, posted time kept) instead of staying `posted`; "All Items" no longer lists archived/posted rows. Fix Digger (#700) and By Any Means (#701), whose rows are wrong even though they posted. Check why first (likely a re-send after posting reset them, or a status never reconciled). Keep the 4-day Shorts clean-up and the LongForm archive rule working with the new status.
 3. **Highlight in Your videos**: cards that need attention stand out — script/plan done but not reviewed ("Needs review"), and rendered but not yet in the queue ("Ready to send") — with a coloured border, a badge, and sorted to the top.
 4. **Refresh Options needs 2 clicks**: the first refresh used rotation round 0 = the same picks the render already made. The render now records round 0, so the first click shows new shots.
+
+## Log — 2026-10-04 (night) — Plan done (f08b6d8)
+- Send to Posting Queue → Ready to Post, accounts `["default:*"]` (Screen Central); scheduler woken at once. Covered by the updated publish test.
+- Posting confirmed → status `archived` (published_at kept). Startup moved 25 posted rows to the archive, incl. Digger #700 and By Any Means #701 (live: posted 0, archived 25). Posted Archive tab = posted+archived; All Items = rows still in play. The daily limit, Drive-link update and LongForm archive rule count archived.
+- Your videos: amber "Ready for your review" / blue "Rendered — not in the queue yet" highlight + sort + count line.
+- Refresh Options: the render stores thumb_round 0 → the first refresh shows new shots.
+- Live check: Review 0 / Ready 678 came from the owner's own bulk changes 18:10–18:38 (7 Movie Clips rows + #709–712 set to Ready, destinations assigned), not from code.
+- Tests: 221 pass.
