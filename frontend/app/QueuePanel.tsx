@@ -1154,6 +1154,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                     <input type="checkbox" style={{ width: 20, height: 20, flex: "0 0 auto", marginTop: 2 }}
                            checked={sel.has(item.id)} onChange={() => toggleSel(item.id)} />
                     <div style={{ flex: 1, minWidth: 0 }}>
+                      <RowThumb item={item} onOpen={() => setEditItem(item)} wide />
                       <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{item.title || "Untitled Video"}</div>
                       <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>
                         #{item.id} · {item.source || item.pipeline}
@@ -1276,6 +1277,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
                     {/* Title & Description */}
                     <td style={{ padding: "10px", verticalAlign: "top", maxWidth: 360 }}>
+                      <RowThumb item={item} onOpen={() => setEditItem(item)} />
                       <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
                         {item.title || "Untitled Video"}
                       </div>
@@ -1673,7 +1675,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               />
             </div>
 
-            <QueueThumbEditor itemId={editItem.id} />
+            <QueueThumbEditor itemId={editItem.id} onChanged={() => loadQueue(true)} />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
@@ -1870,7 +1872,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
 
 /** Edit dialog: the row's thumbnail — breakdown options (LongForm) or an uploaded image. */
-function QueueThumbEditor({ itemId }: { itemId: number }) {
+function QueueThumbEditor({ itemId, onChanged }: { itemId: number; onChanged?: () => void }) {
   const [o, setO] = React.useState<QueueThumbOptions | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState("");
@@ -1879,7 +1881,7 @@ function QueueThumbEditor({ itemId }: { itemId: number }) {
   async function act(fn: () => Promise<QueueThumbOptions>, done: string) {
     setBusy(true);
     setMsg("");
-    try { setO(await fn()); setMsg(done); }
+    try { setO(await fn()); setMsg(done); onChanged?.(); }
     catch (e: any) { setMsg(`✕ ${e.message || e}`); }
     finally { setBusy(false); }
   }
@@ -1926,5 +1928,20 @@ function QueueThumbEditor({ itemId }: { itemId: number }) {
       )}
       {msg && <div style={{ fontSize: 11, marginTop: 4, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</div>}
     </div>
+  );
+}
+
+
+/** The thumbnail that will post with this row (tap → Edit, where it can be changed). */
+function RowThumb({ item, onOpen, wide = false }: { item: QueueItem; onOpen: () => void; wide?: boolean }) {
+  if (!item.thumb_path) return null;
+  return (
+    <button onClick={onOpen} title="Thumbnail that posts with this video — click to change it"
+            style={{ padding: 0, border: "1px solid var(--border)", borderRadius: 6, background: "var(--row)",
+                     display: "block", marginBottom: 6, width: wide ? "100%" : 168, maxWidth: "100%", overflow: "hidden" }}>
+      <img src={api.queueThumbUrl(item.id, item.thumb_version)} alt="thumbnail" loading="lazy"
+           style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block" }}
+           onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }} />
+    </button>
   );
 }

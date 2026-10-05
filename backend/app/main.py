@@ -603,7 +603,14 @@ def list_queue(
             q = q.filter(QueueItem.status == status)
 
     # Posting order (next to post first); the UI can re-sort either direction.
-    return q.order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
+    rows = q.order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
+    for it in rows:                       # lets the page show the CURRENT thumbnail (same file name, new picture)
+        if it.thumb_path and not it.thumb_path.startswith("http"):
+            try:
+                it.thumb_version = pathlib.Path(it.thumb_path).stat().st_mtime
+            except OSError:
+                it.thumb_version = None
+    return rows
 
 
 @app.get("/api/queue/counts", dependencies=_AUTH)

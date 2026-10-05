@@ -91,6 +91,7 @@ export type QueueItem = {
   video_name: string;
   video_path: string | null;
   thumb_path: string | null;
+  thumb_version?: number | null;
   drive_link: string | null;
   source: string | null;
   title: string;

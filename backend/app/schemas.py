@@ -154,6 +154,7 @@ class QueueItemOut(BaseModel):
     video_name: str
     video_path: str | None
     thumb_path: str | None
+    thumb_version: float | None = None      # file mtime: changes when the thumbnail does (cache-buster)
     drive_link: str | None
     source: str | None
     title: str
