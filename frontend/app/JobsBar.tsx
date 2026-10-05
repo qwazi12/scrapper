@@ -30,7 +30,7 @@ export function JobsBar({ scope }: { scope?: string }) {
       api.jobs().then((j) => alive && setJobs(j)).catch(() => {});
     };
     load();
-    const t = setInterval(load, 3000);
+    const t = setInterval(() => { if (!document.hidden) load(); }, 3000);   // paused while the tab is hidden
     document.addEventListener("visibilitychange", load); // show jobs at once when the tab comes back
     return () => {
       alive = false;

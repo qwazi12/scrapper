@@ -805,7 +805,7 @@ export function SchedulerView({ onSaved }: { onSaved?: () => void }) {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 15000);
+    const interval = setInterval(() => { if (!document.hidden) load(); }, 15000);
     return () => clearInterval(interval);
   }, []);
 

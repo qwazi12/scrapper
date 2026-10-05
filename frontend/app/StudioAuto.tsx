@@ -294,7 +294,7 @@ export function RankedTrending({ busy, onCreate }: { busy: boolean; onCreate: (c
   useEffect(() => { load(); }, []);
   useEffect(() => {
     if (!d?.refreshing) return;
-    const t = setInterval(load, 4000);
+    const t = setInterval(() => { if (!document.hidden) load(); }, 4000);
     return () => clearInterval(t);
   }, [d?.refreshing]);
 

@@ -336,7 +336,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
   // Poll while a stage runs so progress shows up without refreshing.
   useEffect(() => {
     if (p?.stage_status === "running" || p?.stage_status === "queued") {
-      timer.current = setInterval(load, 3000);
+      timer.current = setInterval(() => { if (!document.hidden) load(); }, 3000);
       return () => {
         if (timer.current) clearInterval(timer.current);
       };

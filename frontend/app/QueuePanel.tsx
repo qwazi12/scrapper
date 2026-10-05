@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
@@ -191,21 +191,28 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     return allItems.filter((i) => i.status === statusFilter);
   }, [allItems, statusFilter]);
 
+  // Signature of the last list drawn: a background refresh that brings back the
+  // same data changes nothing on screen (it used to redraw ~700 rows every 4 s).
+  const lastSig = useRef("");
+
   async function loadQueue(isBackground = false) {
     if (!isBackground) {
       setLoading(true);
       setUndoVersion((v) => v + 1); // a user action just happened: refresh the Undo label
     }
-    else setRefreshing(true);
     try {
       // Always load all items for the selected pipeline/channel so badge counts are 100% accurate across all tabs
       const data = await api.queue(pipelineFilter, "all");
-      setAllItems(longform ? data : data.filter((i) => i.pipeline !== LONGFORM));
+      const rows = longform ? data : data.filter((i) => i.pipeline !== LONGFORM);
+      const sig = JSON.stringify(rows);
+      if (sig !== lastSig.current) {
+        lastSig.current = sig;
+        setAllItems(rows);
+      }
     } catch {
       // silent
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!isBackground) setLoading(false);
     }
   }
 
@@ -218,12 +225,15 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       })
       .catch(() => {});
 
-    // Live background polling every 4s to reflect real-time database updates and live numbers
+    // Background refresh every 20 s, only while the page is visible (it was every 4 s,
+    // always: ~2.5 MB a minute on a phone). Your own actions refresh at once.
     const timer = setInterval(() => {
-      loadQueue(true);
-    }, 4000);
+      if (!document.hidden) loadQueue(true);
+    }, 20000);
+    const onShow = () => { if (!document.hidden) loadQueue(true); };
+    document.addEventListener("visibilitychange", onShow);
 
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onShow); };
   }, [pipelineFilter]);
 
   useEffect(() => {
@@ -282,6 +292,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       setPacingSaving(false);
     }
   }
+
+  // Draw 50 rows at a time (678 cards at once froze phones); "Show more" adds 50.
+  const [shownLimit, setShownLimit] = useState(50);
+  useEffect(() => setShownLimit(50), [statusFilter, pipelineFilter]);
 
   const sortedItems = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -803,17 +817,18 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             {showPacingMenu && (
               <div
                 style={{
-                  position: "absolute",
-                  top: "100%",
-                  ...(isNarrow ? { left: 0 } : { right: 0 }),
-                  marginTop: 6,
+                  // Phones: a sheet pinned to the bottom of the screen (it opened off the right edge).
+                  ...(isNarrow
+                    ? { position: "fixed" as const, left: 16, right: 16, bottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+                        maxHeight: "70vh", overflowY: "auto" as const }
+                    : { position: "absolute" as const, top: "100%", right: 0, marginTop: 6 }),
                   background: "#064e3b",
                   border: "1px solid #059669",
                   borderRadius: 8,
                   padding: 8,
                   boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
                   zIndex: 50,
-                  width: "min(280px, 85vw)",
+                  width: isNarrow ? "auto" : "min(280px, 85vw)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
@@ -1126,7 +1141,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                      onChange={(e) => toggleAll(e.target.checked)} />
               Select all {items.length}
             </label>
-            {sortedItems.map((item) => {
+            {sortedItems.slice(0, shownLimit).map((item) => {
               const st = STATUS_COLORS[item.status.toLowerCase()] || { bg: "var(--chip)", text: "var(--text)", label: item.status };
               return (
                 <div key={item.id} style={{ border: `1px solid ${sel.has(item.id) ? "var(--accent)" : "var(--border)"}`,
@@ -1178,6 +1193,12 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 </div>
               );
             })}
+            {sortedItems.length > shownLimit && (
+              <button style={{ margin: "8px auto", display: "block", fontSize: 12, padding: "6px 14px" }}
+                      onClick={() => setShownLimit((n) => n + 50)}>
+                Show 50 more ({sortedItems.length - shownLimit} not shown)
+              </button>
+            )}
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "left" }}>
@@ -1200,7 +1221,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               </tr>
             </thead>
             <tbody>
-              {sortedItems.map((item) => {
+              {sortedItems.slice(0, shownLimit).map((item) => {
                 const st = STATUS_COLORS[item.status.toLowerCase()] || {
                   bg: "var(--chip)",
                   text: "var(--text)",
@@ -1476,6 +1497,16 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               })}
             </tbody>
           </table>
+        )}
+        {!isNarrow && sortedItems.length > 0 && (
+          <>
+            {sortedItems.length > shownLimit && (
+              <button style={{ margin: "8px auto", display: "block", fontSize: 12, padding: "6px 14px" }}
+                      onClick={() => setShownLimit((n) => n + 50)}>
+                Show 50 more ({sortedItems.length - shownLimit} not shown)
+              </button>
+            )}
+          </>
         )}
       </div>
 

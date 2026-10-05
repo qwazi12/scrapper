@@ -85,8 +85,11 @@ export default function Page() {
   useEffect(() => {
     refresh();
     api.logs(100).then(setLogs).catch(() => {});
-    const id = setInterval(refresh, 2500);
-    return () => clearInterval(id);
+    // Every 10 s while the page is visible (was every 2.5 s, always); at once when you come back.
+    const id = setInterval(() => { if (!document.hidden) refresh(); }, 10000);
+    const onShow = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
   }, [refresh]);
 
   // Sync hash with active tab if set in URL
