@@ -584,3 +584,8 @@ Measured: the queue re-downloads all 703 rows every 4 s (688 KB raw, 166 KB gzip
 2. Queue: draw 50 rows at a time with "Show 50 more" (select-all still covers every row in the tab).
 3. Main page: poll every 10 s instead of 2.5 s, paused while hidden; jobs bar paused while hidden.
 4. Phone: posts/day menu anchored to the right edge and kept on screen.
+
+## Log — 2026-10-05 — Website performance fixed (ef4fe81, deployed by the Action)
+- Queue: 20 s visible-only refresh (was 4 s, always), no redraw when unchanged (it redrew ~700 rows twice per refresh), 50-row pages with "Show 50 more"; main page 10 s visible-only (was 2.5 s); jobs bar, pacing card and Studio timers pause while hidden; the phone posts/day menu is a bottom sheet.
+- Effect on a phone: queue traffic ~2.5 MB/min → ~0.5 MB/min while viewing (0 in the background); background redraws only when something actually changed.
+- Verified: tsc clean, the Action deployed (success), the live bundle contains the new "Show 50 more". Not verified on a real phone by me.
