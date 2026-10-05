@@ -842,6 +842,13 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error checking nightly backup in scheduler: %s", exc)
 
+        # Disk guard: at 80% full, back up first, then free rebuildable space (owner, 2026-10-05).
+        try:
+            from .. import space
+            space.maybe_free(now)
+        except Exception as exc:
+            logger.error("Error in disk guard: %s", exc)
+
         # Jobs the daily spend cap paused go first once there's budget again.
         try:
             from .. import resume

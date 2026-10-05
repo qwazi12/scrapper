@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     # --- Disk Space & Cache Management -----------------------------------
     # Refuse heavy operations (breakdowns, ingest) if disk usage exceeds max threshold.
     max_disk_usage_percent: float = 90.0
+    # Disk guard: at this % full, back up then free rebuildable space (space.py). 101 = off.
+    disk_free_at_percent: float = 80.0
     warn_disk_usage_percent: float = 75.0
     # Strict LRU cache caps for auto-eviction of oldest assets
     max_motion_cache_mb: int = 400

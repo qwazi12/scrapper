@@ -20,6 +20,7 @@ os.environ["POST_POSTS_PER_DAY"] = "0"  # scheduler tests assume the every-2h sl
 # blocked every render test). Tests of the guard set their own thresholds.
 os.environ["MAX_DISK_USAGE_PERCENT"] = "101"
 os.environ["WARN_DISK_USAGE_PERCENT"] = "100"
+os.environ["DISK_FREE_AT_PERCENT"] = "101"      # the disk guard reads the real disk too; tests switch it on themselves
 
 import pytest  # noqa: E402
 
