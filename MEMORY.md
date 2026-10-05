@@ -595,3 +595,9 @@ The performance fix (ef4fe81) was verified by measurement only; the site was nev
 1. Open scrapper.nodepilot.dev in Chrome at iPhone width (390 px), sign in, and go through every tab: Scraper, SocialPilot (Posting Queue, LongForm, Pacing, Channel Ingest, Drive Sync), LongForm Studio (list + one project), Compilations, Logs, Settings.
 2. Record every layout problem (overflow off screen, clipped text, unreadable or overlapping controls, oversized tabs) with a screenshot.
 3. Fix them, deploy, then re-check the same screens at phone width.
+
+## Log — 2026-10-05 — Mobile layout reviewed and fixed at 390 px (731c9ff)
+- Method: Chrome (owner's profile already signed in), the site loaded in 390-px same-origin iframes (the automation window counts as hidden, so the paused polling seen there is a test artefact).
+- Found: blank "Connecting…" while the app waited for the media pass; "offline" after one failed first check; SocialPilot's 5 buttons stacked a screen tall; queue status tabs wrapping ("Ready / to / Post") and running off the edge; Storyboard buttons off the right edge; bright white scrollbars; long backup names overflowing.
+- After: app shown 0.76 s after load; no page wider than the screen and nothing off-screen outside a scroll row on SocialPilot, Scraper or Settings; one-line tab rows that scroll; dark thin scrollbars.
+- Noticed, not fixed: repeated `archive_trash_failed` 403 "insufficient permissions" when the 4-day sweep trashes old Movie Clips Drive files (e.g. item #124): the robot account can't trash files it doesn't own. Current owner settings: posts/day 2, daily cap $2 (set by the owner).
