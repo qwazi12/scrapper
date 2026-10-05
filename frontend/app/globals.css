@@ -17,6 +17,20 @@
 
 * { box-sizing: border-box; }
 
+/* Dark native controls + thin dark scrollbars (horizontal scrollbars showed as
+   bright white bars on phones, 2026-10-05). */
+:root { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: #3a4150 transparent; }
+::-webkit-scrollbar { height: 6px; width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a4150; border-radius: 6px; }
+
+/* A row of buttons that scrolls sideways on phones instead of wrapping into
+   a tall stack; labels never break across lines. */
+.pill-row { display: flex; gap: 6px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+.pill-row > button { white-space: nowrap; flex: 0 0 auto; }
+@media (min-width: 760px) { .pill-row.wrap-wide { flex-wrap: wrap; overflow-x: visible; } }
+
 html, body {
   margin: 0;
   padding: 0;

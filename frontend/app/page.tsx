@@ -37,10 +37,17 @@ export default function Page() {
   const [mediaReady, setMediaReady] = useState(false);
   const [passVersion, setPassVersion] = useState(0);
   useEffect(() => {
-    const get = () => refreshMediaPass().catch(() => {}).finally(() => {
-      setMediaReady(true);
-      setPassVersion((v) => v + 1);
-    });
+    const get = () => {
+      // Never hold the whole app on this one request: on a slow phone connection it
+      // meant a long blank "Connecting…" (2026-10-05). Show the app after 2 s at most;
+      // pictures pick up the pass when it arrives (passVersion re-renders them).
+      const fallback = setTimeout(() => setMediaReady(true), 2000);
+      refreshMediaPass().catch(() => {}).finally(() => {
+        clearTimeout(fallback);
+        setMediaReady(true);
+        setPassVersion((v) => v + 1);
+      });
+    };
     get();
     const t = setInterval(get, 6 * 3600 * 1000);   // passes last 12 h
     return () => clearInterval(t);
@@ -60,6 +67,7 @@ export default function Page() {
   }, []);
   const collapsed = sidebarCollapsed && !isMobile;
 
+  const failures = useRef(0);
   const refresh = useCallback(async () => {
     try {
       const [c, cm, st, q] = await Promise.all([
@@ -76,10 +84,17 @@ export default function Page() {
       setStats(st);
       setQueueCount(typeof q === "number" ? q : 0);
       setConnected(true);
+      failures.current = 0;
     } catch {
-      setConnected(false);
+      // One blip (a phone switching networks) isn't "offline": retry in 3 s and only
+      // say offline after two failures in a row.
+      failures.current += 1;
+      if (failures.current >= 2) setConnected(false);
+      if (failures.current <= 3) setTimeout(() => refreshRef.current(), 3000);
     }
   }, []);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   // Poll for state; also seed the logs list.
   useEffect(() => {
@@ -405,9 +420,10 @@ export default function Page() {
               </div>
 
               {/* Sub-view switcher */}
-              <div style={{ display: "flex", gap: 8, background: "var(--bg)", padding: 4, borderRadius: 8, border: "1px solid var(--border)",
-                            // phones: wrap instead of running off the screen (it made the whole page wider than the viewport)
-                            flexWrap: "wrap", maxWidth: "100%", minWidth: 0 }}>
+              <div className="pill-row wrap-wide"
+                   style={{ gap: 8, background: "var(--bg)", padding: 4, borderRadius: 8, border: "1px solid var(--border)",
+                            // phones: one row that scrolls sideways (stacked, it pushed the queue a screen down)
+                            maxWidth: "100%", minWidth: 0 }}>
                 <button
                   onClick={() => setSocialPilotTab("queue")}
                   style={{
@@ -741,6 +757,8 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
         style={{
           display: "flex",
           alignItems: "center",
+          flexWrap: "wrap",          // phones: the buttons drop under the title instead of off the screen
+          gap: 8,
           padding: "10px 14px",
           background: "var(--panel2)",
           borderBottom: "1px solid var(--border)",
@@ -749,7 +767,7 @@ function Panel({ title, children, right }: { title: string; children: React.Reac
         <h2 style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.8, color: "var(--muted)" }}>
           {title}
         </h2>
-        <div style={{ marginLeft: "auto" }}>{right}</div>
+        <div style={{ marginLeft: "auto", minWidth: 0, maxWidth: "100%" }}>{right}</div>
       </div>
       <div style={{ padding: 14 }}>{children}</div>
     </section>
@@ -954,7 +972,7 @@ function Storyboard({ clips, onChange, retentionDays }: { clips: Clip[]; onChang
     <Panel
       title={`Storyboard — ${clips.length} clip(s)`}
       right={
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
             {["portrait", "landscape"].map((o) => (
               <button

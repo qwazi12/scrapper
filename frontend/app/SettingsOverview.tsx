@@ -280,7 +280,7 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="mono" style={{ color: "#38bdf8", fontWeight: 600 }}>{c.filename}</span>
+                  <span className="mono" style={{ color: "#38bdf8", fontWeight: 600, overflowWrap: "anywhere" }}>{c.filename}</span>
                   <span style={{ color: "var(--muted)", fontSize: 10 }}>
                     ({(c.size_bytes / 1024).toFixed(1)} KB)
                   </span>

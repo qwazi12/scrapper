@@ -1066,10 +1066,11 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
         style={{
           display: "flex",
           gap: 6,
-          padding: "8px 18px",
+          padding: isNarrow ? "8px 10px" : "8px 18px",
           background: "var(--row)",
           borderBottom: "1px solid var(--border)",
           overflowX: "auto",
+          flexWrap: "nowrap",
         }}
       >
         {[
@@ -1088,13 +1089,15 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 background: isActive ? tab.bg : "transparent",
                 border: isActive ? `1px solid ${tab.accent}` : "1px solid transparent",
                 color: isActive ? tab.accent : "var(--muted)",
-                padding: "5px 12px",
+                padding: isNarrow ? "5px 9px" : "5px 12px",
                 fontSize: 12,
                 borderRadius: 6,
                 fontWeight: isActive ? 700 : 500,
                 display: "flex",
                 alignItems: "center",
                 gap: 7,
+                whiteSpace: "nowrap",      // "Ready to Post" stayed on one line, not three
+                flex: "0 0 auto",
                 transition: "all 0.15s ease",
                 cursor: "pointer",
               }}
