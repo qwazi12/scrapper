@@ -613,3 +613,7 @@ Trigger: Railway emailed "Volume of scrapper is 80% full in production".
 - **Video section** above Research on the project page (157dc8f).
 - **Queue Edit → Thumbnail** (157dc8f): current image + LongForm options (pick / 🔄 new) + upload (≤ 5 MB, stored as a JPEG ≤ 2 MB = Upload-Post's limit; YouTube applies custom thumbnails only on verified channels). Verified live in Chrome on #703 Verity: dialog, 3 options and the current image load; closed without saving.
 - Tests: 226 pass.
+
+## Log — 2026-10-05 (night) — Selected thumbnail shown in SocialPilot rows (222d1c8)
+- Queue rows with a thumbnail (the 19 LongForm rows; Drive Shorts have none) show it above the title (table + phone cards); click → Edit to change it. `/api/queue` returns `thumb_version` (mtime) so a re-picked option shows at once.
+- Verified live at 390 px: 15 Ready LongForm rows show their thumbnails (200 image/jpeg; lazy-loaded, so they appear as you scroll).
