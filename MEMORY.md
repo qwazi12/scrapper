@@ -589,3 +589,9 @@ Measured: the queue re-downloads all 703 rows every 4 s (688 KB raw, 166 KB gzip
 - Queue: 20 s visible-only refresh (was 4 s, always), no redraw when unchanged (it redrew ~700 rows twice per refresh), 50-row pages with "Show 50 more"; main page 10 s visible-only (was 2.5 s); jobs bar, pacing card and Studio timers pause while hidden; the phone posts/day menu is a bottom sheet.
 - Effect on a phone: queue traffic ~2.5 MB/min → ~0.5 MB/min while viewing (0 in the background); background redraws only when something actually changed.
 - Verified: tsc clean, the Action deployed (success), the live bundle contains the new "Show 50 more". Not verified on a real phone by me.
+
+## PLAN — 2026-10-05 — Mobile layout review (owner: "why didn't you fix the mobile issue")
+The performance fix (ef4fe81) was verified by measurement only; the site was never looked at at phone width. Now:
+1. Open scrapper.nodepilot.dev in Chrome at iPhone width (390 px), sign in, and go through every tab: Scraper, SocialPilot (Posting Queue, LongForm, Pacing, Channel Ingest, Drive Sync), LongForm Studio (list + one project), Compilations, Logs, Settings.
+2. Record every layout problem (overflow off screen, clipped text, unreadable or overlapping controls, oversized tabs) with a screenshot.
+3. Fix them, deploy, then re-check the same screens at phone width.
