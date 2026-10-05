@@ -516,6 +516,14 @@ function headers(json = true): HeadersInit {
   return h;
 }
 
+export type QueueThumbOptions = {
+  has_thumbnail: boolean;
+  updated_at: number | null;
+  project_id: number | null;
+  selected: string | null;
+  options: { id: string; label: string; desc: string; file: string }[];
+};
+
 export type CostSettings = {
   budget_usd: number;
   daily_usd: number;
@@ -673,6 +681,22 @@ export const api = {
   deleteCompilation: (id: number) =>
     req<{ deleted: number }>(`/api/compilations/${id}`, { method: "DELETE", headers: headers(false) }),
 
+  queueThumbUrl: (id: number, v?: number | null) => withToken(`${apiBase()}/api/queue/${id}/thumb${v ? `?v=${v}` : ""}`),
+  queueThumbOptions: (id: number) =>
+    req<QueueThumbOptions>(`/api/queue/${id}/thumbnail/options`, { headers: headers(false) }),
+  queueThumbStudio: (id: number, option: "poster" | "shot1" | "shot2" | "refresh") =>
+    req<QueueThumbOptions>(`/api/queue/${id}/thumbnail/studio`, {
+      method: "POST", headers: headers(), body: JSON.stringify({ option }) }),
+  queueThumbUpload: async (id: number, file: File): Promise<QueueThumbOptions> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const h: Record<string, string> = {};
+    const t = token();
+    if (t) h["x-access-token"] = t;
+    const res = await fetch(`${apiBase()}/api/queue/${id}/thumbnail`, { method: "POST", headers: h, body: fd });
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    return res.json();
+  },
   uploadCookies: async (file: File) => {
     const fd = new FormData();
     fd.append("file", file);

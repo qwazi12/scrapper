@@ -819,3 +819,43 @@ def test_posted_rows_move_to_the_archive_and_still_count_toward_the_day(session,
     qm.save_schedule(session, {"timezone": "America/New_York", "start_hour": 10, "end_hour": 22,
                                "interval_hours": 2, "posts_per_day": 1})
     assert qm.posted_today(session, "Movie Clips", et(2026, 10, 3, 16)) == 1  # archived still counts
+
+
+# --- change a queue row's thumbnail from Edit (owner, 2026-10-05) --------------
+def test_upload_thumbnail_is_stored_as_small_jpeg(session, client):
+    import io
+    from PIL import Image
+    (it,) = add(session, 1)
+    buf = io.BytesIO()
+    Image.new("RGB", (3000, 2000), (200, 40, 40)).save(buf, "PNG")
+    r = client.post(f"/api/queue/{it.id}/thumbnail", files={"file": ("t.png", buf.getvalue(), "image/png")})
+    assert r.status_code == 200 and r.json()["has_thumbnail"]
+    session.refresh(it)
+    p = __import__("pathlib").Path(it.thumb_path)
+    assert p.suffix == ".jpg" and p.stat().st_size <= 2_000_000
+    with Image.open(p) as im:
+        assert im.size[0] <= 1920
+    assert client.get(f"/api/queue/{it.id}/thumb").status_code == 200
+    bad = client.post(f"/api/queue/{it.id}/thumbnail", files={"file": ("x.txt", b"not an image", "text/plain")})
+    assert bad.status_code == 400
+
+
+def test_longform_row_uses_its_breakdowns_options(session, client, monkeypatch, tmp_path):
+    from backend.app.models import StudioProject
+    from backend.app.studio import runner, stage_render
+    (it,) = add(session, 1, source="LongForm")
+    it.pipeline = "LongForm"
+    session.commit()
+    p = StudioProject(tmdb_id=600, title="LF", queue_item_id=it.id,
+                      render={"thumbnails": [{"id": "poster"}, {"id": "shot1"}, {"id": "shot2"}], "selected_thumbnail": "shot1"})
+    session.add(p)
+    session.commit()
+    picked = []
+    monkeypatch.setattr(stage_render, "select_project_thumbnail", lambda pid, opt: picked.append(opt))
+    d = client.get(f"/api/queue/{it.id}/thumbnail/options").json()
+    assert d["project_id"] == p.id and len(d["options"]) == 3
+    assert client.post(f"/api/queue/{it.id}/thumbnail/studio", json={"option": "shot2"}).status_code == 200
+    session.refresh(it)
+    assert picked == ["shot2"] and it.thumb_path.endswith("render/thumbnail.jpg")
+    (other,) = add(session, 1)                      # a Shorts row has no breakdown options
+    assert client.post(f"/api/queue/{other.id}/thumbnail/studio", json={"option": "poster"}).status_code == 400

@@ -827,6 +827,101 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     return item
 
 
+# --- thumbnail of a queue row (owner, 2026-10-05: change it from Edit) ---------
+QUEUE_THUMB_MAX = 5_000_000          # upload limit; stored as JPEG <= 2 MB (Upload-Post's limit)
+
+
+def _studio_project_for(s: Session, item: QueueItem):
+    from .models import StudioProject
+    return s.query(StudioProject).filter(StudioProject.queue_item_id == item.id).first() \
+        if item.pipeline == "LongForm" else None
+
+
+@app.get("/api/queue/{item_id}/thumb", dependencies=_AUTH)
+def queue_thumb(item_id: int, s: Session = Depends(get_session)):
+    item = s.get(QueueItem, item_id)
+    if not item or not item.thumb_path or item.thumb_path.startswith("http") \
+            or not pathlib.Path(item.thumb_path).exists():
+        raise HTTPException(404, "no thumbnail")
+    return FileResponse(item.thumb_path, media_type="image/jpeg")
+
+
+@app.get("/api/queue/{item_id}/thumbnail/options", dependencies=_AUTH)
+def queue_thumb_options(item_id: int, s: Session = Depends(get_session)) -> dict:
+    """The current thumbnail, plus a LongForm breakdown's 3 options."""
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    p = _studio_project_for(s, item)
+    r = (p.render or {}) if p else {}
+    tp = pathlib.Path(item.thumb_path) if item.thumb_path and not item.thumb_path.startswith("http") else None
+    has = bool(tp and tp.exists())
+    return {"has_thumbnail": has,
+            "updated_at": tp.stat().st_mtime if has else None,      # cache-buster for the preview
+            "project_id": p.id if p else None,
+            "selected": r.get("selected_thumbnail"),
+            "options": r.get("thumbnails") or []}
+
+
+class QueueThumbPick(BaseModel):
+    option: str        # poster | shot1 | shot2 | refresh
+
+
+@app.post("/api/queue/{item_id}/thumbnail/studio", dependencies=_AUTH)
+def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depends(get_session)) -> dict:
+    """LongForm row: use one of its breakdown's thumbnail options (or draw new ones)."""
+    from .studio import routes as studio_routes, stage_render
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    p = _studio_project_for(s, item)
+    if not p:
+        raise HTTPException(400, "this row didn't come from LongForm Studio — upload an image instead")
+    undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
+    try:
+        if req.option == "refresh":
+            stage_render.generate_thumbnails_for_project(p.id)
+        else:
+            stage_render.select_project_thumbnail(p.id, req.option)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(400, str(exc))
+    item.thumb_path = str(studio_routes.runner.project_dir(p.id) / "render" / "thumbnail.jpg")
+    s.commit()
+    logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail set from LongForm ({req.option})")
+    return queue_thumb_options(item_id, s)
+
+
+@app.post("/api/queue/{item_id}/thumbnail", dependencies=_AUTH)
+async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Session = Depends(get_session)) -> dict:
+    """Any row: upload an image. Stored as a JPEG under 2 MB (what Upload-Post accepts)."""
+    import io
+    from PIL import Image, UnidentifiedImageError
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    data = await file.read(QUEUE_THUMB_MAX + 1)
+    if len(data) > QUEUE_THUMB_MAX:
+        raise HTTPException(400, "image is larger than 5 MB")
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im = im.convert("RGB")
+            im.thumbnail((1920, 1080))
+            out_dir = settings.data_path / "queue_thumbs"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            dest = out_dir / f"{item.id}_{int(datetime.datetime.now().timestamp())}.jpg"
+            for q in (90, 80, 70, 60):
+                im.save(dest, "JPEG", quality=q)
+                if dest.stat().st_size <= 2_000_000:
+                    break
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "that file isn't an image (use JPG, PNG or WebP)")
+    undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
+    item.thumb_path = str(dest)
+    s.commit()
+    logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail uploaded ({dest.stat().st_size // 1024} KB)")
+    return queue_thumb_options(item_id, s)
+
+
 @app.delete("/api/queue/{item_id}", dependencies=_AUTH)
 def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
     item = s.get(QueueItem, item_id)

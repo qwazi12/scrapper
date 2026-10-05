@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
-import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
+import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, QueueThumbOptions, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 
 // Owner rule (2026-10-04): Posting Queue and LongForm videos never post to profile "mk"
@@ -1673,6 +1673,8 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               />
             </div>
 
+            <QueueThumbEditor itemId={editItem.id} />
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Status</label>
@@ -1863,5 +1865,66 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
         </div>
       )}
     </section>
+  );
+}
+
+
+/** Edit dialog: the row's thumbnail — breakdown options (LongForm) or an uploaded image. */
+function QueueThumbEditor({ itemId }: { itemId: number }) {
+  const [o, setO] = React.useState<QueueThumbOptions | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  React.useEffect(() => { api.queueThumbOptions(itemId).then(setO).catch(() => {}); }, [itemId]);
+
+  async function act(fn: () => Promise<QueueThumbOptions>, done: string) {
+    setBusy(true);
+    setMsg("");
+    try { setO(await fn()); setMsg(done); }
+    catch (e: any) { setMsg(`✕ ${e.message || e}`); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Thumbnail</label>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {o?.has_thumbnail
+          ? <img src={api.queueThumbUrl(itemId, o.updated_at)} alt="current thumbnail"
+                 style={{ width: 160, aspectRatio: "16/9", objectFit: "cover", borderRadius: 6, border: "2px solid var(--accent)" }} />
+          : <div style={{ width: 160, aspectRatio: "16/9", borderRadius: 6, background: "var(--chip)", display: "flex",
+                          alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--muted)" }}>No thumbnail</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <label style={{ fontSize: 11, cursor: busy ? "default" : "pointer" }}>
+            <span className="ui-btn" style={{ display: "inline-block", padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 6 }}>
+              {busy ? "⏳ Working…" : "⬆ Upload image"}
+            </span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} style={{ display: "none" }}
+                   onChange={(e) => { const f = e.target.files?.[0]; if (f) act(() => api.queueThumbUpload(itemId, f), "✓ Thumbnail uploaded"); e.target.value = ""; }} />
+          </label>
+          {o?.project_id && (
+            <button style={{ fontSize: 11, padding: "4px 10px" }} disabled={busy}
+                    onClick={() => act(() => api.queueThumbStudio(itemId, "refresh"), "✓ New options from the breakdown")}>
+              🔄 New options
+            </button>
+          )}
+          <span style={{ fontSize: 10, color: "var(--muted)" }}>JPG/PNG/WebP up to 5 MB · YouTube shows custom thumbnails on verified channels</span>
+        </div>
+      </div>
+      {o?.project_id && o.options.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginTop: 8 }}>
+          {o.options.map((t) => (
+            <button key={t.id} disabled={busy} title={t.desc}
+                    onClick={() => act(() => api.queueThumbStudio(itemId, t.id as "poster" | "shot1" | "shot2"), `✓ Using ${t.label}`)}
+                    style={{ padding: 3, border: o.selected === t.id ? "2px solid var(--accent)" : "1px solid var(--border)",
+                             borderRadius: 6, background: "var(--row)" }}>
+              <img src={api.studioFileUrl(o.project_id!, t.file, String(o.updated_at || ""))} alt={t.label}
+                   style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", borderRadius: 4 }} />
+              <div style={{ fontSize: 10, marginTop: 2 }}>{o.selected === t.id ? "✓ " : ""}{t.label}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {msg && <div style={{ fontSize: 11, marginTop: 4, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</div>}
+    </div>
   );
 }

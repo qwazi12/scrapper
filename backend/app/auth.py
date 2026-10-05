@@ -104,7 +104,7 @@ import re as _re
 
 MEDIA_PASS_TTL = 12 * 3600
 MEDIA_ROUTES = _re.compile(
-    r"^/api/(clips/\d+/(thumb|download)|compilations/\d+/download|events|"
+    r"^/api/(clips/\d+/(thumb|download)|queue/\d+/thumb|compilations/\d+/download|events|"
     r"studio/projects/\d+/file|tts/audio/[^/]+|backup/download/[^/]+)$")
 
 

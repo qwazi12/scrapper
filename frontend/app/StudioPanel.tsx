@@ -486,11 +486,12 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
         </div>
       </div>
 
+      {/* Owner (2026-10-05): the finished video first, above Research. */}
+      <VideoSection p={p} onChange={load} />
       <FactsSection p={p} />
       <FootageSection p={p} onChange={setP} running={running} />
       <ScriptSection p={p} onChange={setP} running={running} />
       <PlanSection p={p} onChange={setP} running={running} />
-      <VideoSection p={p} onChange={load} />
     </div>
   );
 }
