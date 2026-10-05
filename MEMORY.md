@@ -573,3 +573,14 @@ Cause: auth lockout (20 wrong tokens / 10 min → 15-min block per IP) counts EV
 - Refresh Options: the render stores thumb_round 0 → the first refresh shows new shots.
 - Live check: Review 0 / Ready 678 came from the owner's own bulk changes 18:10–18:38 (7 Movie Clips rows + #709–712 set to Ready, destinations assigned), not from code.
 - Tests: 221 pass.
+
+## Log — 2026-10-05 — Repo moved out of iCloud to ~/dev/scrapper
+- The Mac's disk hit 99% (8 GB free) and iCloud "Desktop & Documents" evicted 9,376 files of ~/Desktop/scrapper to the cloud (incl. `.git/index` and pack files) → `git status` (IDE and CLI) hung for minutes and commits were impossible.
+- Working copy is now **~/dev/scrapper** (not iCloud-synced; the launchd Mac worker already ran from it). Fast-forwarded to 8e41f83; same access token, `.venv`, `node_modules`, `.vercel` link. ~/Desktop/scrapper is retired (owner can delete it once happy).
+
+## PLAN — 2026-10-05 — Website feels slow / glitchy (owner, on phone)
+Measured: the queue re-downloads all 703 rows every 4 s (688 KB raw, 166 KB gzipped ≈ 2.5 MB a minute on mobile data) and redraws every row (678 cards on Ready to Post) each time. The main page polls 4 endpoints every 2.5 s and the jobs bar every 3 s, even in a background tab. On phones the posts/day menu opens off the right edge (anchored left:0 under a right-side button). Row size is real content (descriptions 37%), not waste.
+1. Queue: background refresh every 20 s instead of 4 s, only while the page is visible; nothing redraws when the data hasn't changed; refresh at once after your own actions.
+2. Queue: draw 50 rows at a time with "Show 50 more" (select-all still covers every row in the tab).
+3. Main page: poll every 10 s instead of 2.5 s, paused while hidden; jobs bar paused while hidden.
+4. Phone: posts/day menu anchored to the right edge and kept on screen.
