@@ -14,6 +14,7 @@ import {
   tokenRejected,
 } from "@/lib/api";
 import { PublishModal } from "./PublishModal";
+import { UpdateBanner } from "./UpdateBanner";
 import { QueuePanel } from "./QueuePanel";
 import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
@@ -365,6 +366,7 @@ export default function Page() {
         {/* Everything running on the server, with Stop — on every tab */}
         <JobsBar />
         <DialogHost />
+        <UpdateBanner />
 
         {/* Dedicated Tab 1: POSTING QUEUE (Google Sheets Experience) */}
         {/* Landing Page: Original Scrapper (Paste Link -> Scrape -> Download to Device) */}

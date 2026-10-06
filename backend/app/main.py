@@ -646,7 +646,8 @@ def get_queue_counts(
     for status_val, count_val in rows:
         st = (status_val or "").lower()
         counts[st] = count_val
-        counts["all"] += count_val
+        if st not in ("posted", "archived"):   # "all" = still in play; posted videos live in the archive
+            counts["all"] += count_val
 
     counts["errors_total"] = counts.get("error", 0) + counts.get("retry", 0)
     return counts

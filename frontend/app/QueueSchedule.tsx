@@ -88,7 +88,7 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
       <button onClick={() => setOpen(!open)} disabled={saving || !schedInfo}
               title={`${LABEL[queue]} posting schedule`}
               style={{ background: "#064e3b", borderColor: "#059669", color: "#d1fae5", fontWeight: 600, fontSize: 11 }}>
-        ⏰ {perDay}/day{isNarrow ? "" : ` · ${summary}`} ▾
+        ⏰ Schedule · {perDay}/day{isNarrow ? "" : ` · ${summary}`} ▾
       </button>
       {open && schedInfo && (
         <div style={{ ...sheet, zIndex: 60, background: "var(--panel)", border: "1px solid #059669", borderRadius: 10,

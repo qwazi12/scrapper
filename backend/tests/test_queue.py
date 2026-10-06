@@ -911,3 +911,14 @@ def test_post_next_takes_the_next_slot(session, client, reset_schedule):
     for i in items:
         session.refresh(i)
     assert all(qm._aware(last.scheduled_at) < qm._aware(i.scheduled_at) for i in items[:-1])
+
+
+def test_all_count_leaves_out_posted_videos(session, client):
+    from backend.app.models import QueueItem as QI
+    session.query(QI).delete()
+    session.commit()
+    add(session, 2)                                   # ready
+    add(session, 3, status="archived")                # posted → archive
+    add(session, 1, status="posted")
+    d = client.get("/api/queue/counts").json()
+    assert d["all"] == 2 and d["archived"] == 3 and d["posted"] == 1
