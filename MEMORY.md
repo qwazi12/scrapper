@@ -636,3 +636,8 @@ Checked: the server archives every posted row (30 archived, 0 posted) and the li
 1. Counts: "all" = rows still in play (not posted/archived); a separate "archived" count stays for the Posted Archive tab. Sidebar + Posting Queue button use it.
 2. Update banner: each build writes its version (git commit) into the page and `/version.json`; the page checks every 5 min and when it comes back to the foreground; on a new version it shows "A new version is ready — Reload" (auto-reloads if the tab was in the background).
 3. Clearer labels so the new controls are findable: "⏰ Schedule · N/day", and the "Post next" / "📌 Pin" hints.
+
+## Log — 2026-10-06 — Counts + update banner (7b384ee)
+- Cause of "I don't see it": the server and the live bundle were already up to date; the owner's device was showing an older copy of the page, and nothing told it a newer one existed. Now each build carries its version (GITHUB_SHA → `NEXT_PUBLIC_BUILD_ID` → `/version.json`, static per build). The page checks every 5 min and on return to the tab and shows "A new version of Scrapper is ready — Reload" (a background tab reloads itself on return). Pages loaded before 7b384ee need one manual reload to get this.
+- Cause of "posted videos still in All": every post was archived (30 archived, 0 posted), but `/api/queue/counts` "all" included them, so the sidebar and the Posting Queue button said 708. Now "all" = still in play: live 678.
+- Schedule button now reads "⏰ Schedule · N/day · hours". Verified live in Chrome. Tests 230 pass.
