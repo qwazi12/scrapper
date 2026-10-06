@@ -79,6 +79,8 @@ def _migrate() -> None:
             conn.execute(text("ALTER TABLE queue_items ADD COLUMN research JSON"))
         if "media_url" not in cols:
             conn.execute(text("ALTER TABLE queue_items ADD COLUMN media_url TEXT"))
+        if "pinned_at" not in cols:
+            conn.execute(text("ALTER TABLE queue_items ADD COLUMN pinned_at TIMESTAMP WITH TIME ZONE"))
         if "position" not in cols:
             conn.execute(text('ALTER TABLE queue_items ADD COLUMN "position" INTEGER'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS ix_queue_items_position ON queue_items ("position")'))

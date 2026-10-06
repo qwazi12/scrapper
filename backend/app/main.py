@@ -772,6 +772,20 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         item.accounts = req.accounts
     if req.notes is not None:
         item.notes = req.notes
+    if req.pinned_at is not None:
+        if req.pinned_at == "":
+            item.pinned_at = None              # back to normal planning; the next tick re-plans it
+        else:
+            try:
+                pin = datetime.datetime.fromisoformat(req.pinned_at.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(400, "pinned_at must be an ISO date-time")
+            if pin.tzinfo is None:
+                raise HTTPException(400, "pinned_at needs a timezone")
+            if pin < datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=5):
+                raise HTTPException(400, "that time has already passed")
+            item.pinned_at = pin
+            item.scheduled_at = pin
     if req.scheduled_at is not None:
         if req.scheduled_at == "":
             item.scheduled_at = None
@@ -832,6 +846,24 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     s.commit()
     s.refresh(item)
     return item
+
+
+@app.post("/api/queue/{item_id}/post-next", dependencies=_AUTH)
+def queue_post_next(item_id: int, s: Session = Depends(get_session)) -> dict:
+    """⏫ Post next: put this video at the front of its queue's posting order;
+    it takes that queue's next free slot (pinned videos keep their own time)."""
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    undo.record(s, "queue", f"Post next: #{item.id}", rows=[item])
+    first = s.query(func.min(func.coalesce(QueueItem.position, QueueItem.id))).scalar() or 0
+    item.position = first - 1
+    s.commit()
+    queue_manager.plan_schedule(s, datetime.datetime.now(datetime.timezone.utc))
+    s.refresh(item)
+    logbus.log("info", "queue_post_next", f"Item #{item.id} moved to the front of the queue"
+               + (f" — next slot {item.scheduled_at.isoformat()}" if item.scheduled_at else ""))
+    return {"id": item.id, "position": item.position, "scheduled_at": item.scheduled_at}
 
 
 # --- thumbnail of a queue row (owner, 2026-10-05: change it from Edit) ---------
@@ -1557,6 +1589,9 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "pipeline_overrides": cfg.get("pipelines", {}),
         "account_overrides": cfg.get("accounts", {}),
         "pipeline_slots_per_day": pacing_summary,
+        # Each queue's own next post times (Posting Queue = "Movie Clips", LongForm).
+        "pipeline_next_slots": {name: queue_manager.slots_after(now, 5, pipeline=name)
+                                for name in ("Movie Clips", "LongForm")},
         "defaults": queue_manager.default_schedule(),
         "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,

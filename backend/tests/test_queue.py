@@ -859,3 +859,55 @@ def test_longform_row_uses_its_breakdowns_options(session, client, monkeypatch, 
     assert picked == ["shot2"] and it.thumb_path.endswith("render/thumbnail.jpg")
     (other,) = add(session, 1)                      # a Shorts row has no breakdown options
     assert client.post(f"/api/queue/{other.id}/thumbnail/studio", json={"option": "poster"}).status_code == 400
+
+
+# --- per-queue schedules, pinned times, post next (owner, 2026-10-05) ---------
+def test_each_queue_has_its_own_exact_times(session, client, reset_schedule):
+    r = client.put("/api/schedule/config", json={
+        "timezone": "America/New_York", "start_hour": 10, "end_hour": 20, "interval_hours": 2, "posts_per_day": 1,
+        "pipeline_overrides": {"Movie Clips": {"times": ["18:30", "10:00", "10:00"]},
+                               "LongForm": {"posts_per_day": 1, "start_hour": 12, "end_hour": 12}}})
+    assert r.status_code == 200, r.text
+    assert qm.slots_per_day(pipeline="Movie Clips") == 2
+    clips = [s.astimezone(ET).strftime("%H:%M") for s in qm.slots_after(et(2026, 10, 6, 9), 3, pipeline="Movie Clips")]
+    lf = [s.astimezone(ET).strftime("%H:%M") for s in qm.slots_after(et(2026, 10, 6, 9), 2, pipeline="LongForm")]
+    assert clips == ["10:00", "18:30", "10:00"] and lf == ["12:00", "12:00"]
+    assert r.json()["pipeline_next_slots"]["Movie Clips"]
+    bad = client.put("/api/schedule/config", json={
+        "timezone": "America/New_York", "start_hour": 10, "end_hour": 20, "interval_hours": 2,
+        "pipeline_overrides": {"Movie Clips": {"times": ["25:00"]}}})
+    assert bad.status_code == 400
+
+
+def test_pinned_time_survives_replanning_and_doesnt_use_a_slot(session, client, reset_schedule):
+    import datetime as _dt
+    qm.save_schedule(session, {"timezone": "America/New_York", "start_hour": 10, "end_hour": 22,
+                               "interval_hours": 2, "posts_per_day": 1})
+    a, b = add(session, 2)
+    pin = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=2)).replace(microsecond=0)
+    r = client.patch(f"/api/queue/{b.id}", json={"pinned_at": pin.isoformat(), "status": "ready"})
+    assert r.status_code == 200, r.text
+    for _ in range(2):
+        qm.plan_schedule(session, _dt.datetime.now(_dt.timezone.utc))
+    session.refresh(b)
+    assert qm._aware(b.scheduled_at) == pin                      # never re-planned
+    assert client.patch(f"/api/queue/{b.id}", json={"pinned_at": "2020-01-01T10:00:00+00:00"}).status_code == 400
+    # a pinned post that went out today doesn't count toward the day's regular posts
+    b.status, b.scheduled_at = "archived", et(2026, 10, 7, 11)
+    session.commit()
+    assert qm.posted_today(session, "Movie Clips", et(2026, 10, 7, 16)) == 0
+    client.patch(f"/api/queue/{b.id}", json={"pinned_at": ""})
+    session.refresh(b)
+    assert b.pinned_at is None
+
+
+def test_post_next_takes_the_next_slot(session, client, reset_schedule):
+    qm.save_schedule(session, {"timezone": "America/New_York", "start_hour": 10, "end_hour": 22,
+                               "interval_hours": 2, "posts_per_day": 1})
+    items = add(session, 3)
+    last = items[-1]
+    d = client.post(f"/api/queue/{last.id}/post-next").json()
+    others = [qm._aware(i.scheduled_at) for i in items[:-1] if i.scheduled_at]
+    for i in items:
+        session.refresh(i)
+    assert all(qm._aware(last.scheduled_at) < qm._aware(i.scheduled_at) for i in items[:-1])

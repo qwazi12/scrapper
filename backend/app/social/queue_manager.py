@@ -89,6 +89,27 @@ def default_schedule() -> dict[str, Any]:
     }
 
 
+def clean_times(raw: Any, where: str = "") -> list[str]:
+    """Exact posting times ["HH:MM", ...] → sorted, unique, validated (max 48)."""
+    if isinstance(raw, str):
+        raw = [t for t in raw.replace(";", ",").split(",")]
+    out = set()
+    for t in raw or []:
+        t = str(t).strip()
+        if not t:
+            continue
+        try:
+            h, m = (int(x) for x in t.split(":"))
+        except ValueError:
+            raise ValueError(f"{where + ': ' if where else ''}'{t}' isn't a time like 10:00 or 18:30")
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(f"{where + ': ' if where else ''}'{t}' isn't a valid time")
+        out.add(f"{h:02d}:{m:02d}")
+    if len(out) > 48:
+        raise ValueError(f"{where + ': ' if where else ''}at most 48 posting times a day")
+    return sorted(out)
+
+
 def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
     """Return a clean config or raise ValueError with a readable reason."""
     try:
@@ -148,6 +169,8 @@ def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
                 if not (1 <= ih <= 24):
                     raise ValueError(f"Override for {k}: interval must be 1-24 hours")
                 entry["interval_hours"] = ih
+            if v.get("times"):
+                entry["times"] = clean_times(v["times"], k)
             if entry:
                 cleaned[str(k)] = entry
         return cleaned
@@ -270,13 +293,15 @@ def resolve_pacing(
             end = int(override["end_hour"])
         if override.get("interval_hours") is not None:
             step = int(override["interval_hours"])
+    times = list((override or {}).get("times") or [])
 
     return {
         "timezone": tz,
         "start_hour": start,
         "end_hour": end,
         "interval_hours": step,
-        "posts_per_day": ppd,
+        "posts_per_day": len(times) if times else ppd,
+        "times": times,
     }
 
 
@@ -287,8 +312,16 @@ def day_slots_for_pacing(
     end_hour: int,
     interval_hours: int,
     posts_per_day: int | None,
+    times: list[str] | None = None,
 ) -> list[datetime.datetime]:
-    """Calculate the list of slot datetimes for a single day based on pacing rules."""
+    """Calculate the list of slot datetimes for a single day based on pacing rules.
+    Exact times (owner-set, e.g. 10:00 and 18:30) win over posts/day spreading."""
+    if times:
+        out = []
+        for t in times:
+            h, m = (int(x) for x in t.split(":"))
+            out.append(datetime.datetime.combine(day, datetime.time(h, m), tzinfo=tz))
+        return out
     if posts_per_day is not None and posts_per_day > 0:
         if posts_per_day == 1:
             return [datetime.datetime.combine(day, datetime.time(start_hour), tzinfo=tz)]
@@ -331,7 +364,7 @@ def slots_after(
         for slot in day_slots_for_pacing(
             day, tz,
             pacing["start_hour"], pacing["end_hour"],
-            pacing["interval_hours"], pacing["posts_per_day"],
+            pacing["interval_hours"], pacing["posts_per_day"], pacing.get("times"),
         ):
             if slot > local:
                 out.append(slot.astimezone(UTC))
@@ -366,6 +399,7 @@ def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
     rows = (s.query(QueueItem)
             .filter(QueueItem.scheduled_at >= start, QueueItem.scheduled_at < end)
             .filter(QueueItem.status.in_(["posting", "posted", "archived", "retry", "error"]))
+            .filter(QueueItem.pinned_at.is_(None))      # pinned posts are extra, by the owner's choice
             .all())
     return sum(1 for it in rows if pipeline_group(it) == group)
 
@@ -393,6 +427,11 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         if not it.accounts:
             if it.scheduled_at is not None:
                 it.scheduled_at = None
+                changed += 1
+            continue
+        if it.pinned_at is not None:              # owner-pinned: its own time, never re-planned
+            if _aware(it.scheduled_at) != _aware(it.pinned_at):
+                it.scheduled_at = it.pinned_at
                 changed += 1
             continue
         if _is_due(it, now):
@@ -818,7 +857,7 @@ def run_scheduler_tick():
             # one day than this pipeline's posts/day setting.
             limit = slots_per_day(pipeline=group, accounts=item.accounts)
             done = posted_today(s, group, now)
-            if done >= limit:
+            if item.pinned_at is None and done >= limit:
                 if scheduler_status.get("limit_logged") != (group, now.date().isoformat()):
                     scheduler_status["limit_logged"] = (group, now.date().isoformat())
                     logbus.log("warning", "queue_daily_limit",

@@ -142,6 +142,7 @@ class QueueItemUpdate(BaseModel):
     status: str | None = None
     accounts: list[str] | None = None
     scheduled_at: str | None = None
+    pinned_at: str | None = None     # ISO time to lock this video's post time; "" unpins
     notes: str | None = None
     media_url: str | None = None
 
@@ -165,6 +166,7 @@ class QueueItemOut(BaseModel):
     notes: str | None
     position: int | None = None
     scheduled_at: UTCDateTime | None
+    pinned_at: UTCDateTime | None = None
     published_at: UTCDateTime | None
     publish_requests: list | None = None
     research: dict | None = None
@@ -192,6 +194,7 @@ class PacingRuleIn(BaseModel):
     start_hour: int | None = None
     end_hour: int | None = None
     interval_hours: int | None = None
+    times: list[str] | None = None      # exact posting times "HH:MM" (win over posts_per_day)
 
 
 class ScheduleConfigIn(BaseModel):
