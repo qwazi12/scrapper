@@ -624,3 +624,9 @@ Today: posts/day per pipeline only (and the Posting Queue dropdown edits the GLO
 2. **📌 Post a video at a set time**: in Edit, pick a date/time and lock it. The planner keeps it (never re-planned) and fills the other slots around it; clearing it returns the video to normal planning. A pinned post goes out at its time and doesn't use up one of the day's regular slots. New column `queue_items.pinned_at` (additive migration).
 3. **⏫ Post next**: per-row button that moves a video to the front of its queue's posting order (takes the next slot).
 Tests for each (incl. the 3 Oct incident replay still passing); commit + push per part; check the result on the live site at phone width.
+
+## Log — 2026-10-05 (night) — Plan done: per-queue schedules, pinned times, post next (3fc248f backend, 3147b5a UI)
+- Each queue tab's "⏰ N/day" button edits only that queue (Posting Queue = "Movie Clips" override, LongForm = "LongForm"): Spread across hours (posts/day + first/last post) or Exact times (`times: ["HH:MM"]`), shows the next 5 post times, "Use the default" drops the override. Before, the Posting Queue dropdown edited the GLOBAL value LongForm inherited.
+- Edit → "📌 Post at a set time": `queue_items.pinned_at` (additive migration); never re-planned; doesn't use up a regular daily slot; unpin returns it to planning. Rows show 📌 + "(pinned)".
+- Ready rows: "⏫ Post next" → front of the posting order → next slot.
+- Verified live at 390 px: LongForm sheet (2/day, 10 AM–8 PM; next Tue 10 AM, Tue 8 PM, Wed 10 AM…), 14 Post next buttons, pin control in Edit; nothing saved. Tests 229 pass (incl. the 3 Oct incident replay).
