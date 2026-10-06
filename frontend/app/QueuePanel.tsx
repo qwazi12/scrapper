@@ -12,6 +12,7 @@ const QUEUE_BLOCKED_PROFILES = ["mk"];
 const DONE = ["posted", "archived"];
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
+import { QueueScheduleButton } from "./QueueSchedule";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   review: { bg: "#1e293b", text: "#38bdf8", label: "👁 Review" },
@@ -128,9 +129,6 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   // Pacing / posting frequency menu
   const [schedInfo, setSchedInfo] = useState<ScheduleInfo | null>(null);
-  const [showPacingMenu, setShowPacingMenu] = useState(false);
-  const [pacingSaving, setPacingSaving] = useState(false);
-  const [customPacingInput, setCustomPacingInput] = useState("");
 
   // New item modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -245,54 +243,6 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     }).catch(() => {});
   }, []);
 
-  const currentPpd = useMemo(() => {
-    if (!schedInfo) return 8;
-    if (longform) {
-      const overrides = schedInfo.pipeline_overrides || schedInfo.pipelines || {};
-      return overrides["LongForm"]?.posts_per_day ?? schedInfo.posts_per_day ?? schedInfo.slots_per_day ?? 8;
-    }
-    return schedInfo.posts_per_day ?? schedInfo.slots_per_day ?? 8;
-  }, [schedInfo, longform]);
-
-  async function applyPacing(count: number) {
-    if (count <= 0 || isNaN(count)) return;
-    if (count > 48) {
-      notify("Pacing must be between 1 and 48 posts per day.");
-      return;
-    }
-    if (!schedInfo) return;
-    setPacingSaving(true);
-    try {
-      // PUT /api/schedule/config replaces the whole schedule, so send every
-      // field as currently saved and change only the posts-per-day value.
-      const pipelineOverrides = { ...(schedInfo.pipeline_overrides || {}) };
-      const full = {
-        timezone: schedInfo.timezone,
-        start_hour: schedInfo.start_hour,
-        end_hour: schedInfo.end_hour,
-        interval_hours: schedInfo.interval_hours,
-        posts_per_day: schedInfo.posts_per_day ?? null,
-        pipeline_overrides: pipelineOverrides,
-        account_overrides: { ...(schedInfo.account_overrides || {}) },
-      };
-      if (longform) {
-        pipelineOverrides["LongForm"] = { ...(pipelineOverrides["LongForm"] || {}), posts_per_day: count };
-        await api.updateSchedule(full);
-      } else {
-        await api.updateSchedule({ ...full, posts_per_day: count });
-      }
-      const updated = await api.schedule();
-      setSchedInfo(updated);
-      setShowPacingMenu(false);
-      setUndoVersion((v) => v + 1);
-      onChange();
-    } catch (err: any) {
-      notify(`Could not update pacing: ${err.message || err}`);
-    } finally {
-      setPacingSaving(false);
-    }
-  }
-
   // Draw 50 rows at a time (678 cards at once froze phones); "Show more" adds 50.
   const [shownLimit, setShownLimit] = useState(50);
   useEffect(() => setShownLimit(50), [statusFilter, pipelineFilter]);
@@ -322,6 +272,16 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       setSel(new Set(items.map((i) => i.id)));
     } else {
       setSel(new Set());
+    }
+  }
+
+  async function handlePostNext(item: QueueItem) {
+    try {
+      const r = await api.queuePostNext(item.id);
+      notify(`✓ "${item.title}" is next${r.scheduled_at ? ` — posts ${fmtET(r.scheduled_at)}` : ""}.`);
+      loadQueue();
+    } catch (e: any) {
+      notify(`Could not move it: ${e.message || e}`);
     }
   }
 
@@ -793,135 +753,13 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             )}
           </div>
 
-          {/* Posting Frequency / Pacing Dropdown */}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setShowPacingMenu(!showPacingMenu)}
-              disabled={pacingSaving}
-              title="Change posting frequency and pacing"
-              style={{
-                background: "#065f46",
-                borderColor: "#059669",
-                color: "#a7f3d0",
-                fontWeight: 600,
-                fontSize: 11,
-                padding: "6px 12px",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <span>⚡</span> {pacingSaving ? "Saving…" : isNarrow ? `${currentPpd}/d ▾` : `Pacing: ${currentPpd}/day ▾`}
-            </button>
-
-            {showPacingMenu && (
-              <div
-                style={{
-                  // Phones: a sheet pinned to the bottom of the screen (it opened off the right edge).
-                  ...(isNarrow
-                    ? { position: "fixed" as const, left: 16, right: 16, bottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
-                        maxHeight: "70vh", overflowY: "auto" as const }
-                    : { position: "absolute" as const, top: "100%", right: 0, marginTop: 6 }),
-                  background: "#064e3b",
-                  border: "1px solid #059669",
-                  borderRadius: 8,
-                  padding: 8,
-                  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.5)",
-                  zIndex: 50,
-                  width: isNarrow ? "auto" : "min(280px, 85vw)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                <div style={{ padding: "4px 8px", fontSize: 10, color: "#a7f3d0", fontWeight: 700, textTransform: "uppercase", display: "flex", justifyContent: "space-between" }}>
-                  <span>Posting Frequency</span>
-                  <span style={{ opacity: 0.8, fontSize: 9 }}>{longform ? "LongForm" : "All Pipelines"}</span>
-                </div>
-
-                {[
-                  { count: 1, label: "1 / day", desc: "Daily highlight drop (every 24h)" },
-                  { count: 3, label: "3 / day", desc: "Morning, afternoon, evening" },
-                  { count: 4, label: "4 / day", desc: "Every 4 hours evenly" },
-                  { count: 8, label: "8 / day (Standard)", desc: "Every 2 hours during posting hours" },
-                  { count: 12, label: "12 / day", desc: "High velocity (every ~70 min)" },
-                  { count: 20, label: "20 / day (Blitz)", desc: "Maximum output (every ~44 min)" },
-                ].map((preset) => {
-                  const isSelected = currentPpd === preset.count;
-                  return (
-                    <button
-                      key={preset.count}
-                      onClick={() => applyPacing(preset.count)}
-                      style={{
-                        background: isSelected ? "rgba(16, 185, 129, 0.25)" : "rgba(255, 255, 255, 0.05)",
-                        border: isSelected ? "1px solid #10b981" : "none",
-                        color: "#ecfdf5",
-                        textAlign: "left",
-                        padding: "7px 10px",
-                        borderRadius: 6,
-                        fontSize: 11,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 2,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <span style={{ fontWeight: 600, color: isSelected ? "#34d399" : "#6ee7b7", display: "flex", justifyContent: "space-between" }}>
-                        <span>{preset.label}</span>
-                        {isSelected && <span style={{ fontSize: 10 }}>✓ Active</span>}
-                      </span>
-                      <span style={{ fontSize: 10, color: "#94a3b8" }}>{preset.desc}</span>
-                    </button>
-                  );
-                })}
-
-                {/* Custom input */}
-                <div style={{ marginTop: 4, paddingTop: 6, borderTop: "1px solid rgba(255, 255, 255, 0.1)", display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    type="number"
-                    min="1"
-                    max="48"
-                    placeholder="Custom / day"
-                    value={customPacingInput}
-                    onChange={(e) => setCustomPacingInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && customPacingInput) {
-                        applyPacing(parseInt(customPacingInput, 10));
-                      }
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "5px 8px",
-                      fontSize: 11,
-                      background: "rgba(0, 0, 0, 0.3)",
-                      border: "1px solid #059669",
-                      borderRadius: 4,
-                      color: "#ecfdf5",
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const val = parseInt(customPacingInput, 10);
-                      if (val > 0) applyPacing(val);
-                    }}
-                    disabled={!customPacingInput || parseInt(customPacingInput, 10) <= 0}
-                    style={{
-                      background: "#10b981",
-                      border: "none",
-                      color: "#022c22",
-                      fontWeight: 700,
-                      fontSize: 11,
-                      padding: "5px 10px",
-                      borderRadius: 4,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Set
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* This queue's own schedule: posts/day + hours or exact times (owner, 2026-10-05) */}
+          <QueueScheduleButton
+            queue={longform ? "LongForm" : "Movie Clips"}
+            schedInfo={schedInfo}
+            isNarrow={isNarrow}
+            onSaved={(u) => { setSchedInfo(u); setUndoVersion((v) => v + 1); loadQueue(true); onChange(); }}
+          />
 
           <button
             onClick={() => setShowAddModal(true)}
@@ -1169,7 +1007,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                                    whiteSpace: "nowrap" }}>{st.label}</span>
                   </div>
                   {item.status === "ready" && item.scheduled_at && (
-                    <div style={{ fontSize: 11, color: "#34d399" }}>⏰ {fmtET(item.scheduled_at)}</div>
+                    <div style={{ fontSize: 11, color: "#34d399" }}>{item.pinned_at ? "📌" : "⏰"} {fmtET(item.scheduled_at)}{item.pinned_at ? " (pinned)" : ""}</div>
                   )}
                   {item.notes && (item.status === "retry" || item.status === "error" || DONE.includes(item.status)) && (
                     <div style={{ fontSize: 10, color: DONE.includes(item.status) ? "var(--muted)" : "#f87171",
@@ -1183,6 +1021,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {item.status === "review" && (
                       <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleApprove(item.id)}>✓ Approve</button>
+                    )}
+                    {item.status === "ready" && !item.pinned_at && (
+                      <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handlePostNext(item)}
+                              title="Put this video first in line — it takes the queue's next post time">⏫ Post next</button>
                     )}
                     <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handlePublishNow(item)}>🚀 Post now</button>
                     <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleGenerateAi(item.id)}>✨ AI</button>
@@ -1396,7 +1238,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       )}
                       {item.status === "ready" && item.scheduled_at && (
                         <div style={{ fontSize: 10, color: "#34d399", marginTop: 4 }} title="Next posting slot">
-                          ⏰ {fmtET(item.scheduled_at)}
+                          {item.pinned_at ? "📌" : "⏰"} {fmtET(item.scheduled_at)}{item.pinned_at ? " (pinned)" : ""}
                         </div>
                       )}
                       {item.published_at && (
@@ -1451,6 +1293,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           >
                             ✓ Approve
                           </button>
+                        )}
+                        {item.status === "ready" && !item.pinned_at && (
+                          <button style={{ fontSize: 10, padding: "3px 7px" }} onClick={() => handlePostNext(item)}
+                                  title="Put this video first in line — it takes the queue's next post time">⏫ Post next</button>
                         )}
                         <button
                           style={{ fontSize: 10, padding: "3px 7px", background: "#7c3aed", borderColor: "#6d28d9", color: "#fff" }}
@@ -1676,6 +1522,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             </div>
 
             <QueueThumbEditor itemId={editItem.id} onChanged={() => loadQueue(true)} />
+            <PinTimeEditor item={editItem} onChanged={() => loadQueue(true)} />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
@@ -1943,5 +1790,52 @@ function RowThumb({ item, onOpen, wide = false }: { item: QueueItem; onOpen: () 
            style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block" }}
            onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }} />
     </button>
+  );
+}
+
+
+/** Edit dialog: pin this video to an exact post time (never re-planned) or unpin it. */
+function PinTimeEditor({ item, onChanged }: { item: QueueItem; onChanged?: () => void }) {
+  const toLocal = (iso: string) => {
+    const d = new Date(iso);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  const [pinned, setPinned] = React.useState<string | null>(item.pinned_at || null);
+  const [value, setValue] = React.useState(toLocal(item.pinned_at || item.scheduled_at || new Date(Date.now() + 3600e3).toISOString()));
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+
+  async function apply(unpin: boolean) {
+    setBusy(true);
+    setMsg("");
+    try {
+      const iso = unpin ? "" : new Date(value).toISOString();      // this device's local time → UTC
+      const r = await api.queuePin(item.id, iso);
+      setPinned(r.pinned_at || null);
+      setMsg(unpin ? "✓ Unpinned — it goes back to the queue's normal times" : "✓ Pinned — it posts at exactly this time");
+      onChanged?.();
+    } catch (e: any) {
+      setMsg(`✕ ${e.message || e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>
+        📌 Post at a set time {pinned ? <span style={{ color: "var(--accent)" }}>(pinned)</span> : <span style={{ color: "var(--muted)", fontWeight: 400 }}>(optional)</span>}
+      </label>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <input type="datetime-local" value={value} onChange={(e) => setValue(e.target.value)} style={{ flex: "1 1 180px" }} />
+        <button style={{ fontSize: 11 }} disabled={busy || !value} onClick={() => apply(false)}>{pinned ? "Update pin" : "📌 Pin this time"}</button>
+        {pinned && <button style={{ fontSize: 11 }} disabled={busy} onClick={() => apply(true)}>Unpin</button>}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>
+        Time on this device. A pinned video keeps its time and doesn't take one of the queue's regular daily posts. It must be Ready to Post with a destination.
+      </div>
+      {msg && <div style={{ fontSize: 11, marginTop: 3, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</div>}
+    </div>
   );
 }

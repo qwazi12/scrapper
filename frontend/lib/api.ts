@@ -106,6 +106,7 @@ export type QueueItem = {
     guess?: string; source?: string; cast?: { actor: string; character: string }[]; keywords?: string[];
   } | null;
   scheduled_at: string | null;
+  pinned_at?: string | null;          // owner-pinned post time (never re-planned)
   published_at: string | null;
   publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
   media_url?: string | null;
@@ -117,6 +118,7 @@ export type PacingOverride = {
   start_hour?: number | null;
   end_hour?: number | null;
   interval_hours?: number | null;
+  times?: string[] | null;          // exact posting times "HH:MM" — win over posts_per_day
 };
 
 export type ScheduleConfig = {
@@ -262,6 +264,7 @@ export type ScheduleInfo = ScheduleConfig & {
   customized: boolean;
   slots_per_day: number;
   pipeline_slots_per_day?: Record<string, number>;
+  pipeline_next_slots?: Record<string, string[]>;
   next_slots: string[];
   archive_delete_days: number;
   ready_without_accounts: number;
@@ -682,6 +685,11 @@ export const api = {
   deleteCompilation: (id: number) =>
     req<{ deleted: number }>(`/api/compilations/${id}`, { method: "DELETE", headers: headers(false) }),
 
+  queuePostNext: (id: number) =>
+    req<{ id: number; position: number; scheduled_at: string | null }>(`/api/queue/${id}/post-next`, {
+      method: "POST", headers: headers() }),
+  queuePin: (id: number, pinnedAt: string) =>        // ISO with timezone; "" unpins
+    req<QueueItem>(`/api/queue/${id}`, { method: "PATCH", headers: headers(), body: JSON.stringify({ pinned_at: pinnedAt }) }),
   queueThumbUrl: (id: number, v?: number | null) => withToken(`${apiBase()}/api/queue/${id}/thumb${v ? `?v=${v}` : ""}`),
   queueThumbOptions: (id: number) =>
     req<QueueThumbOptions>(`/api/queue/${id}/thumbnail/options`, { headers: headers(false) }),
