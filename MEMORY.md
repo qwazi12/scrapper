@@ -617,3 +617,10 @@ Trigger: Railway emailed "Volume of scrapper is 80% full in production".
 ## Log — 2026-10-05 (night) — Selected thumbnail shown in SocialPilot rows (222d1c8)
 - Queue rows with a thumbnail (the 19 LongForm rows; Drive Shorts have none) show it above the title (table + phone cards); click → Edit to change it. `/api/queue` returns `thumb_version` (mtime) so a re-picked option shows at once.
 - Verified live at 390 px: 15 Ready LongForm rows show their thumbnails (200 image/jpeg; lazy-loaded, so they appear as you scroll).
+
+## PLAN — 2026-10-05 (night, owner request) — Control posting times per queue and per video
+Today: posts/day per pipeline only (and the Posting Queue dropdown edits the GLOBAL value LongForm inherits); one shared hours window; no exact times; a time set on a video is overwritten by the 5-min re-plan; "next video" only by re-sorting.
+1. **Separate schedules for Posting Queue (Movie Clips) and LongForm**: each has its own posts/day and either a time window (first–last post) or **exact times** (e.g. 10:00, 18:30). The ⏰ button on each tab edits only that queue and shows its next 5 post times. Backend: pipeline overrides gain `times: ["HH:MM", ...]`; the Posting Queue dropdown writes the "Movie Clips" override, not the global value.
+2. **📌 Post a video at a set time**: in Edit, pick a date/time and lock it. The planner keeps it (never re-planned) and fills the other slots around it; clearing it returns the video to normal planning. A pinned post goes out at its time and doesn't use up one of the day's regular slots. New column `queue_items.pinned_at` (additive migration).
+3. **⏫ Post next**: per-row button that moves a video to the front of its queue's posting order (takes the next slot).
+Tests for each (incl. the 3 Oct incident replay still passing); commit + push per part; check the result on the live site at phone width.
