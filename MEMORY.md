@@ -630,3 +630,9 @@ Tests for each (incl. the 3 Oct incident replay still passing); commit + push pe
 - Edit → "📌 Post at a set time": `queue_items.pinned_at` (additive migration); never re-planned; doesn't use up a regular daily slot; unpin returns it to planning. Rows show 📌 + "(pinned)".
 - Ready rows: "⏫ Post next" → front of the posting order → next slot.
 - Verified live at 390 px: LongForm sheet (2/day, 10 AM–8 PM; next Tue 10 AM, Tue 8 PM, Wed 10 AM…), 14 Post next buttons, pin control in Edit; nothing saved. Tests 229 pass (incl. the 3 Oct incident replay).
+
+## PLAN — 2026-10-06 — "I don't see it" + posted videos still counted in All
+Checked: the server archives every posted row (30 archived, 0 posted) and the live bundle contains the new schedule/pin/post-next UI. But: (a) the sidebar "708 items" and the "📋 Posting Queue (708)" button count ALL rows incl. the 30 archived (`/api/queue/counts` "all"); (b) an open page or a phone's saved copy keeps running the old version — nothing tells it a new one exists.
+1. Counts: "all" = rows still in play (not posted/archived); a separate "archived" count stays for the Posted Archive tab. Sidebar + Posting Queue button use it.
+2. Update banner: each build writes its version (git commit) into the page and `/version.json`; the page checks every 5 min and when it comes back to the foreground; on a new version it shows "A new version is ready — Reload" (auto-reloads if the tab was in the background).
+3. Clearer labels so the new controls are findable: "⏰ Schedule · N/day", and the "Post next" / "📌 Pin" hints.
