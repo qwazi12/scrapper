@@ -641,3 +641,7 @@ Checked: the server archives every posted row (30 archived, 0 posted) and the li
 - Cause of "I don't see it": the server and the live bundle were already up to date; the owner's device was showing an older copy of the page, and nothing told it a newer one existed. Now each build carries its version (GITHUB_SHA → `NEXT_PUBLIC_BUILD_ID` → `/version.json`, static per build). The page checks every 5 min and on return to the tab and shows "A new version of Scrapper is ready — Reload" (a background tab reloads itself on return). Pages loaded before 7b384ee need one manual reload to get this.
 - Cause of "posted videos still in All": every post was archived (30 archived, 0 posted), but `/api/queue/counts` "all" included them, so the sidebar and the Posting Queue button said 708. Now "all" = still in play: live 678.
 - Schedule button now reads "⏰ Schedule · N/day · hours". Verified live in Chrome. Tests 230 pass.
+
+## Log — 2026-10-06 — Handbook republished as v4
+- https://claude.ai/artifact/SF2MvUyAwnXo6rcEnXikwP (version 4): per-queue ⏰ Schedule, 📌 pin / ⏫ Post next, thumbnails in Edit, mk blocked, LongForm send → Ready, auto-archive of posted, shot rhythm, disk guard at 80%, update banner, ACCESS_TOKEN / 429 notes, new troubleshooting rows.
+- Docs only; no code changed.
