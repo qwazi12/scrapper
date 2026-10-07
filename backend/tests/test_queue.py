@@ -134,6 +134,21 @@ def test_sweep_keeps_row_when_drive_trash_fails(session, monkeypatch):
     assert session.get(QueueItem, it.id) is not None
 
 
+def test_sweep_drops_row_when_robot_cannot_trash_owner_file(session, monkeypatch):
+    now = datetime.datetime.now(UTC)
+    it = add(session, 1, status="archived", drive_link="https://drive.google.com/file/d/Y/view",
+             published_at=now - datetime.timedelta(days=10))[0]
+    import backend.app.drive_sync as ds
+
+    def denied(link):
+        raise RuntimeError("HttpError 403 ... 'reason': 'insufficientFilePermissions'")
+
+    monkeypatch.setattr(ds, "trash_drive_file", denied)
+    it_id = it.id
+    assert qm.sweep_archive(session, now) == 1
+    assert session.get(QueueItem, it_id) is None
+
+
 # --- API ----------------------------------------------------------------------
 @pytest.fixture()
 def client():

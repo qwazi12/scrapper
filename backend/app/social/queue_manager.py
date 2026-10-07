@@ -800,9 +800,20 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
             try:
                 trashed = trash_drive_file(item.drive_link)
             except Exception as exc:
-                # Keep the row; the next sweep retries. Never orphan a Drive file.
-                logbus.log("error", "archive_trash_failed", f"Item #{item.id}: {exc}")
-                continue
+                # Owner rule (2026-10-07): the robot can't trash a file it doesn't own —
+                # retrying never helps, so drop the row, leave the file for the owner
+                # to delete, and say so once with its link.
+                if "insufficientFilePermissions" in str(exc):
+                    logbus.log(
+                        "warning", "archive_drive_kept",
+                        f"Item #{item.id} ('{(item.title or '')[:40]}') removed; the robot can't delete its "
+                        f"Drive file (not its owner) — delete it yourself: {item.drive_link}",
+                        drive_link=item.drive_link,
+                    )
+                else:
+                    # Keep the row; the next sweep retries. Never orphan a Drive file.
+                    logbus.log("error", "archive_trash_failed", f"Item #{item.id}: {exc}")
+                    continue
         logbus.log(
             "info", "archive_deleted",
             f"Item #{item.id} ('{(item.title or '')[:40]}') removed {settings.archive_delete_days}d after posting"

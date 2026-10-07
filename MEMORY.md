@@ -645,3 +645,8 @@ Checked: the server archives every posted row (30 archived, 0 posted) and the li
 ## Log — 2026-10-06 — Handbook republished as v4
 - https://claude.ai/artifact/SF2MvUyAwnXo6rcEnXikwP (version 4): per-queue ⏰ Schedule, 📌 pin / ⏫ Post next, thumbnails in Edit, mk blocked, LongForm send → Ready, auto-archive of posted, shot rhythm, disk guard at 80%, update banner, ACCESS_TOKEN / 429 notes, new troubleshooting rows.
 - Docs only; no code changed.
+
+## Log — 2026-10-07 — Archive sweep stops retrying Drive files the robot can't delete
+- Cause: 21 posted Shorts past the 5-day window had Drive files owned by the owner's account; trashing them returned 403 insufficientFilePermissions, the row was kept, and the sweep retried all 21 every 10 min (log spam).
+- Owner chose: on insufficientFilePermissions, delete the row, log one `archive_drive_kept` warning with the Drive link, leave the file for the owner to delete. Other Drive errors still keep the row and retry.
+- Test added; 231 pass. Not yet verified live (needs a token to read logs): expect 21 `archive_drive_kept` lines on the next sweep and no more `archive_trash_failed` for these items.
