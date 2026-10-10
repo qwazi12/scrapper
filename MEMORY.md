@@ -728,6 +728,13 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - Pinned posting times (`pinned_at`) remain strictly respected.
 - **Discovery Candidate Pool (`backend/app/studio/candidates.py`)**:
   - `RELEASE_BEHIND` updated from `30` to `0` days.
+  - Breakdown candidate checks now require `0 <= days <= RELEASE_AHEAD` (unreleased titles only), rejecting already-opened films to keep channel content pre-release focused.
+- **Frontend Badges & Alerts (`MomentumBadge.tsx`, `StudioPanel.tsx`, `StudioAuto.tsx`, `QueuePanel.tsx`)**:
+  - `MomentumBadge.tsx`: Displays colored status pill with countdown days and release date.
+  - `StudioPanel.tsx`: Adds badges to every project card in the list and in the project header.
+  - `StudioAuto.tsx`: Adds dedicated `🚨 Urgent (≤3d)` and `⚡ Pre-Release` filter pills with counts and priority sorting.
+  - `QueuePanel.tsx`: Displays momentum badges in the Title column; displays an eye-catching warning box with a 1-click `⚡ Post Next` button if an item is scheduled after its release date.
+
 ## Log — 2026-10-10 — Top 5 & Top 10 Countdown Compilations Research Engine & Studio Tab
 
 - **Autonomous Content Strategist & List Engine (`backend/app/studio/compilations/engine.py`)**:
