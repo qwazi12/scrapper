@@ -778,6 +778,32 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - Added a dedicated **"🕒 Searched & Researched Countdowns"** card section to the Discovery view right under the on-demand search bar with 1-click access to previously researched scripts, rankings, and streaming links.
   - Persisted the last-viewed countdown ID in `localStorage` so returning to Countdown Studio immediately restores the user's active research.
 
+## Log — 2026-10-10 — 1-Click Auto-Queue Researched Countdowns for Video Creation
 
-
-
+- **Problem:**
+  - When viewing a researched countdown (e.g. *Top 15 Scariest Horror Movies of All Time*), entries previously displayed `"No local breakdown rendered yet"`.
+  - Clicking `🎬 Stitch Video (8–12m)` previously only opened a modal to stitch *already rendered local Studio projects*, blocking the user from turning new researched lists into videos.
+- **Solution — End-to-End Autonomous Auto-Queue Pipeline:**
+  - **Backend Engine (`backend/app/studio/compilations/engine.py:auto_queue_researched_countdown`)**:
+    - Takes any researched countdown (Top 5, Top 10, or Top 15).
+    - Checks each ranked title against existing `StudioProject` records (by TMDB ID or title match).
+    - If a project does not exist, automatically searches TMDB and creates a new `StudioProject` populated with the title, year, poster, rankings, and fun facts, then triggers the studio runner (`gather` -> `plan`).
+    - Assembles the complete 8–12m YouTube Master Package:
+      - First 10-second retention hook script
+      - Timed chapters from 0:00 Intro & Preview through each countdown slot (#15 to #1) to Outro
+      - Ranked entries with 0-100 scores and JustWatch US streaming links
+      - Closing debate question to drive viewer comment interaction
+    - Inserts a new `QueueItem` into the Posting Queue under pipeline `"LongForm"` and source `"Countdown Studio"` with status `"ready"` and target account `default:*` (Screen Central).
+    - Links the created projects to the countdown entries and auto-saves the countdown in `saved_countdowns`.
+  - **API Route (`backend/app/studio/compilations/routes.py:POST /api/studio/compilations/auto-queue`)**:
+    - Exposes `POST /api/studio/compilations/auto-queue` with `AutoQueueCountdownRequest`.
+  - **Frontend Integration (`frontend/app/CountdownsStudioPanel.tsx`, `frontend/lib/api.ts`)**:
+    - **Header & Action Buttons:** Both top banner `🎬 Stitch Video (8–12m)` and the Researched Countdown action button `🎬 Stitch Video (8–12m)` now automatically trigger `handleAutoQueueCountdown()`, confirming the operation and auto-queuing all entries.
+    - **Live Status Badges on Entry Cards:**
+      - If rendered: `✓ Local 1080p Breakdown Footage Ready (Ns)`
+      - If in pipeline: `⏳ Studio Breakdown #ID (status)` + `▶ Run` button
+      - If missing: `No local breakdown rendered yet` + `+ Create Breakdown Project` button
+    - **Saved Countdowns View:** Added `🎬 Auto-Queue Video` button directly on saved countdown cards for instant queuing.
+  - **Verification:**
+    - `npx tsc --noEmit` passed cleanly.
+    - Added and passed unit test `backend/tests/test_studio_auto_queue.py` verifying full QueueItem assembly, chapters, and project generation.
