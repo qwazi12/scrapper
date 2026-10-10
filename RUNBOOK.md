@@ -127,3 +127,13 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
 - **Why isn't it starting?** The card's "Next" line says exactly what it's waiting on. Check the trending tab's "Didn't make the list" for each title's failed checks.
 - **Review → render**: Your videos → filter "Needs review" → tick "✓ Reviewed" → Select all shown → 🎞 Render selected. The batch renders one at a time (runs step 5 first if missing), survives restarts, and stops from the running-jobs list.
 - **Queue**: filter "Rendered" → select → 📤 Send to queue (status Review in the Posting Queue).
+
+## LongForm Studio vs Countdowns Studio (2026-10-10)
+- **Separation of Studios**:
+  - **🎬 LongForm Studio**: Dedicated 100% to single-title **Trailer Breakdowns** (2–4 min: research → footage → shots → script → voice → video render → Posting Queue). No compilation or countdown stitchers live here.
+  - **🏆 Countdowns Studio**: Dedicated standalone studio tab for **Top 5 & Top 10 Countdown Compilations** (8–12 min YouTube mid-roll eligible videos) with its autonomous 5-step research engine (Topic Discovery, Defensible Ranking, Multi-Angle Scripting, Audio/Visuals, Final Audit).
+- **Release Timing & Momentum Rules (October 2026 Forward)**:
+  - **Current Month Forward**: Only titles releasing in the current month forward (e.g. October 2026+) or upcoming future months (up to 90 days ahead) are eligible for trailer breakdowns.
+  - **15-Day Cutoff**: Any title released more than 15 days ago (`days < -15`) or released before the first day of the current month (`date < 1st of current month`) is automatically filtered out from LongForm Studio and rejected during discovery checks.
+  - **Pre-Release Priority**: Focus on unreleased and prime approaching titles (0–14 days ahead) to capture search momentum before films hit theaters or streaming.
+

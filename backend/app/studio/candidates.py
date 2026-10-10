@@ -50,7 +50,7 @@ UTC = datetime.timezone.utc
 TOP_N = 25                 # shown per type (owner, 2026-10-03)
 POOL_PAGES = 4             # TMDB trending pages per type (20 a page) — room for 25 to pass
 RELEASE_AHEAD = 90         # days
-RELEASE_BEHIND = 0          # days: 0 means pre-release only to catch and ride momentum
+RELEASE_BEHIND = 15        # days: at most 15 days ago, and must be in the current month forward
 MIN_POPULARITY = 20.0      # TMDB popularity floor …
 MIN_TRAILER_VIEWS = 100_000  # … or trailer views …
 MAX_METER_RANK = 1000      # … or IMDb meter rank
@@ -169,17 +169,74 @@ def check(row: dict[str, Any], made: set[str], today: datetime.date) -> dict[str
     put("facts", "fail" if missing else "pass", f"missing {', '.join(missing)}" if missing else "IMDb id, poster, summary, cast")
 
     rel = row.get("release") or {}
+    CURRENT_MONTH_START = datetime.date(today.year, today.month, 1)
+    MAX_DAYS_BEHIND = RELEASE_BEHIND
+
     if row["media_type"] == "movie":
-        days = _days_from_today(rel.get("date") or "", today)
-        ok = days is not None and 0 <= days <= RELEASE_AHEAD
-        why = ("no US release date" if days is None else
-               f"opens in {days} days" if days > 0 else "opens today" if days == 0 else f"opened {-days} days ago (momentum missed)")
+        rel_str = rel.get("date") or ""
+        days = _days_from_today(rel_str, today)
+        rel_date = None
+        if rel_str:
+            try:
+                rel_date = datetime.date.fromisoformat(rel_str[:10])
+            except (ValueError, TypeError):
+                pass
+
+        if rel_date is None or days is None:
+            ok = False
+            why = "no US release date"
+        elif rel_date < CURRENT_MONTH_START:
+            ok = False
+            why = f"released {rel_str[:10]} before current month ({today.strftime('%B %Y')})"
+        elif days < -MAX_DAYS_BEHIND:
+            ok = False
+            why = f"released {-days} days ago (>15 days cutoff)"
+        elif days > RELEASE_AHEAD:
+            ok = False
+            why = f"releases in {days} days (>{RELEASE_AHEAD} days ahead)"
+        else:
+            ok = True
+            why = f"opens in {days} days" if days > 0 else "opens today" if days == 0 else f"opened {-days} days ago"
     else:
         nd, ld = _days_from_today(rel.get("next") or "", today), _days_from_today(rel.get("last") or "", today)
-        ok = (nd is not None and 0 <= nd <= RELEASE_AHEAD)
-        why = (f"next episode in {nd} days" if nd is not None and nd >= 0 else
-               f"last episode {-ld} days ago (momentum missed)" if ld is not None else "no episode dates")
-    put("release", "pass" if ok else "fail", why + ("" if ok else f" (pre-release momentum window: 0 to {RELEASE_AHEAD} days ahead)"))
+        nxt_str, last_str = rel.get("next") or "", rel.get("last") or ""
+        nxt_date, last_date = None, None
+        if nxt_str:
+            try:
+                nxt_date = datetime.date.fromisoformat(nxt_str[:10])
+            except (ValueError, TypeError):
+                pass
+        if last_str:
+            try:
+                last_date = datetime.date.fromisoformat(last_str[:10])
+            except (ValueError, TypeError):
+                pass
+
+        if nd is not None and nd >= 0:
+            if nxt_date is not None and nxt_date < CURRENT_MONTH_START:
+                ok = False
+                why = f"next episode {nxt_str[:10]} before current month ({today.strftime('%B %Y')})"
+            elif nd > RELEASE_AHEAD:
+                ok = False
+                why = f"next episode in {nd} days (>{RELEASE_AHEAD} days ahead)"
+            else:
+                ok = True
+                why = f"next episode in {nd} days"
+        elif ld is not None:
+            if last_date is not None and last_date < CURRENT_MONTH_START:
+                ok = False
+                why = f"last episode {last_str[:10]} before current month ({today.strftime('%B %Y')})"
+            elif ld < -MAX_DAYS_BEHIND:
+                ok = False
+                why = f"last episode {-ld} days ago (>15 days cutoff)"
+            else:
+                ok = True
+                why = f"last episode {-ld} days ago"
+        else:
+            ok = False
+            why = "no episode dates"
+
+    put("release", "pass" if ok else "fail", why + ("" if ok else f" (window: current month forward, ≤{MAX_DAYS_BEHIND}d ago, ≤{RELEASE_AHEAD}d ahead)"))
 
     views = (row.get("trailer_stats") or {}).get("views") or 0
     rank = au.get("meter_rank")

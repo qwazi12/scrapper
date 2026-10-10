@@ -93,5 +93,6 @@ This document defines all configuration options, environment variables, default 
 | `studio_candidate_marks` | `app_settings` | — | Owner ⭐ pin / ✕ skip per `movie:<id>` / `tv:<id>` |
 | `YOUTUBE_API_KEY` | Railway env | — | YouTube Data API v3, read-only trailer stats (~2 quota units per refresh). Optional |
 | `studio_projects.review` | DB column | — | `{auto, reviewed_at, score}` |
-| Check thresholds | `studio/candidates.py` constants | release −30…+90 days; popularity 20 / 100K views / IMDb rank 1000 | |
+| Check thresholds | `studio/candidates.py` constants | release: current month forward, ≤15 days ago, ≤90 days ahead; popularity 20 / 100K views / IMDb rank 1000 |
+| Studio Architecture | `StudioPanel.tsx` vs `CountdownsStudioPanel.tsx` | LongForm Studio (Trailer Breakdowns) and Countdowns Studio (Top 5 / Top 10) are separate standalone studios |
 | Auto steps | `runner.start(..., until="plan")` | steps 1–5 | Stops before render for review |

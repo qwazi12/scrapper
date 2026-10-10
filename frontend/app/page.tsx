@@ -20,6 +20,7 @@ import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
+import { CountdownsStudioPanel } from "./CountdownsStudioPanel";
 import { JobsBar } from "./JobsBar";
 import { DialogHost } from "./DialogHost";
 import { SchedulerView } from "./PacingThrottle";
@@ -551,15 +552,15 @@ export default function Page() {
               </button>
             </div>
             {compTab === "longform" ? (
-              <StudioPanel initialTab="countdowns" />
+              <CountdownsStudioPanel />
             ) : (
               <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
             )}
           </div>
         )}
 
-        {activeTab === "longform" && <StudioPanel initialTab="breakdowns" />}
-        {activeTab === "countdowns" && <StudioPanel initialTab="countdowns" />}
+        {activeTab === "longform" && <StudioPanel />}
+        {activeTab === "countdowns" && <CountdownsStudioPanel />}
 
         {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (

@@ -162,7 +162,26 @@ def search(q: str) -> list[dict[str, Any]]:
 
 @router.get("/projects")
 def list_projects(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    return [_out(p, full=False) for p in s.query(StudioProject).order_by(desc(StudioProject.id)).all()]
+    import datetime
+    today = datetime.date.today()
+    current_month_start = datetime.date(today.year, today.month, 1)
+
+    projects = s.query(StudioProject).order_by(desc(StudioProject.id)).all()
+    out = []
+    for p in projects:
+        f = p.facts or {}
+        p_date_str = f.get("primary_date")
+        if p_date_str:
+            try:
+                p_date = datetime.date.fromisoformat(str(p_date_str)[:10])
+                days_diff = (p_date - today).days
+                # Remove anything released before current month or released more than 15 days ago
+                if p_date < current_month_start or days_diff < -15:
+                    continue
+            except (ValueError, TypeError):
+                pass
+        out.append(_out(p, full=False))
+    return out
 
 
 @router.post("/projects")

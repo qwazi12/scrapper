@@ -745,12 +745,27 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
     - **STEP 4 — Fact Rules & Verification:** Pulls official US streaming availability via TMDB JustWatch (`watch/providers`), TMDB ratings, box office, awards; flags unverified claims in `unverified_flags`.
     - **STEP 5 — Standardized Output:** Generates structured JSON with 3 clickable titles (<60 chars), 3–4 word thumbnail text, 10s retention hook script, ranked entries (#10 to #1), honorable mentions, and closing question.
 - **Dedicated Countdown Studio Panel & Navigation (`frontend/app/CountdownsStudioPanel.tsx`, `frontend/app/StudioPanel.tsx`, `frontend/app/page.tsx`)**:
-  - Added dedicated **"🏆 Top 5 & Top 10 Countdowns"** sub-tab inside LongForm Studio with view switcher (`[📹 Trailer Breakdowns]  [🏆 Top 5 & Top 10 Countdowns]`).
-  - Added direct sidebar button **"🏆 Countdowns Studio"** in the main application navigation.
+  - Main application sidebar navigation features a dedicated **"🏆 Countdowns Studio"** item.
   - Three integrated views:
     - `🎯 Topic Discovery & Scoring`: 5-trigger filter pills, 15 scored candidates with 5-factor matrix, and on-demand custom topic research bar (Top 5 / Top 10 / Top 15 formats).
     - `📊 Researched Countdown Viewer`: Interactive countdown viewer with clickable title options, thumbnail badge, 10s retention hook script, #10 to #1 entry cards with high-res posters, JustWatch US streaming links, defensible ranking breakdown, local footage matching status, honorable mentions, closing debate question, and fact verification status.
     - `📁 Saved Countdowns`: Dedicated library to save, view, or manage researched countdowns.
   - 1-click video stitching button (`🎬 Stitch 8–12m Video`) opens `CountdownModal` to assemble trailer breakdowns into monetizable compilations.
+
+## Log — 2026-10-10 — LongForm Studio vs Countdowns Studio Separation & Release Window Guardrail
+
+- **Studio Separation (`frontend/app/StudioPanel.tsx`, `frontend/app/page.tsx`)**:
+  - `LongForm Studio` and `Countdowns Studio` are completely separate standalone studios:
+    - **LongForm Studio (`StudioPanel.tsx`)**: 100% focused on trailer breakdowns (research → footage → shots → script → voice → video → Posting Queue). All countdown sub-tabs, countdown compilation cards, and countdown modal triggers removed from `StudioPanel.tsx`.
+    - **Countdowns Studio (`CountdownsStudioPanel.tsx`)**: Directly rendered from the sidebar navigation tab `activeTab === "countdowns"` as well as `compTab === "longform"`.
+- **15-Day & Current-Month-Forward Release Timing Rule (`backend/app/studio/candidates.py`, `backend/app/studio/routes.py`)**:
+  - From now on, trailer breakdowns are strictly titles from the current month forward (October 2026+) and at most 15 days ago:
+    - Enforced in `candidates.py`: `check()` validates `rel_date >= datetime.date(today.year, today.month, 1)` and `days >= -15` (and `days <= 90`). Rejects older releases with clear diagnostics (`"released ... before current month (October 2026)"` or `"released X days ago (>15 days cutoff)"`).
+    - Enforced in `routes.py`: `list_projects()` automatically filters out any existing project in the database released before the current month start or >15 days ago.
+    - Pruned 20 stale projects from live Railway production database (from 1999, 2021, 2022, 2024, and pre-October September 2026).
+- **Handbook & Operator Docs (`RUNBOOK.md`, `CONFIG.md`, MEMORY.md)**:
+  - Updated `CONFIG.md` release threshold documentation.
+  - Added "LongForm Studio vs Countdowns Studio (2026-10-10)" and "Release Timing & Momentum Rules" to `RUNBOOK.md`.
+
 
 
