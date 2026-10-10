@@ -371,14 +371,14 @@ def render(project_id: int) -> str:
                            None))
     thumb_shot2 = thumbnail(root / best_shot2["still"] if best_shot2 else backdrop, poster, title, out_dir / "thumbnail_shot2.jpg")
 
-    # Default active thumbnail is shot1 (character close-up) if available, else poster
-    default_thumb_src = out_dir / "thumbnail_shot1.jpg" if best_shot1 else out_dir / "thumbnail_poster.jpg"
+    # Default active thumbnail is poster (Official Poster) going forward, else shot1 if poster is absent
+    default_thumb_src = out_dir / "thumbnail_poster.jpg" if (out_dir / "thumbnail_poster.jpg").exists() else (out_dir / "thumbnail_shot1.jpg" if best_shot1 else out_dir / "thumbnail_poster.jpg")
     shutil.copy(default_thumb_src, out_dir / "thumbnail.jpg")
     active_thumb = out_dir / "thumbnail.jpg"
 
     secs = media.duration(final)
     info = {"file": str(final.relative_to(root)), "thumbnail": str(active_thumb.relative_to(root)),
-            "selected_thumbnail": "shot1" if best_shot1 else "poster",
+            "selected_thumbnail": "poster",
             "thumb_round": 0,
             "thumbnails": [
                 {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": str(thumb_poster.relative_to(root))},
@@ -694,7 +694,7 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
     thumb_shot1 = thumbnail(root / best_shot1["still"] if best_shot1 else None, poster, title, render_dir / "thumbnail_shot1.jpg")
     thumb_shot2 = thumbnail(root / best_shot2["still"] if best_shot2 else backdrop, poster, title, render_dir / "thumbnail_shot2.jpg")
 
-    selected = render_info.get("selected_thumbnail") or ("shot1" if best_shot1 else "poster")
+    selected = render_info.get("selected_thumbnail") or "poster"
     active_src = render_dir / f"thumbnail_{selected}.jpg"
     if active_src.exists():
         shutil.copy(active_src, render_dir / "thumbnail.jpg")

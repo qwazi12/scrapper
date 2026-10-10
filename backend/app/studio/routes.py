@@ -17,7 +17,7 @@ from ..config import settings
 from ..db import get_session
 from ..models import StudioProject
 from .. import control, costs, undo
-from . import runner, tmdb
+from . import momentum, runner, tmdb
 
 # What a Studio undo restores (text/plan level; footage and shots are files).
 UNDO_FIELDS = ["script", "plan", "render", "target_minutes"]
@@ -46,12 +46,16 @@ class RunStage(BaseModel):
 
 
 def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
+    f = p.facts or {}
+    primary_date = f.get("primary_date")
     d = {
         "id": p.id, "tmdb_id": p.tmdb_id, "media_type": p.media_type, "title": p.title,
         "target_minutes": p.target_minutes, "stage": p.stage, "stage_status": p.stage_status,
         "stage_message": p.stage_message, "queue_item_id": p.queue_item_id,
         "created_at": p.created_at, "updated_at": p.updated_at,
-        "poster": (p.facts or {}).get("poster"),
+        "poster": f.get("poster"),
+        "primary_date": primary_date,
+        "momentum": momentum.compute_momentum(primary_date),
         "cost_usd": round(costs.ref_cost(f"studio:{p.id}"), 4),
         "has": {k: bool(getattr(p, k)) for k in ("facts", "research", "trailer", "shots", "script", "plan", "render")},
     }
@@ -520,12 +524,25 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
         raise HTTPException(400, "Render the video first")
     sc = p.script or {}
     tags = " ".join("#" + "".join(ch for ch in t if ch.isalnum()) for t in sc.get("tags", []) if t.strip())
+    primary_date = (p.facts or {}).get("primary_date")
     fields = dict(
         pipeline="LongForm", video_name=f"{p.title} — Trailer Breakdown",
         video_path=str(root / p.render["file"]),
         thumb_path=str(root / p.render["thumbnail"]) if p.render.get("thumbnail") else None,
         title=sc.get("youtube_title") or p.title, description=sc.get("description", ""), tags=tags,
         source="LongForm Studio",
+        research={
+            "tmdb_id": p.tmdb_id,
+            "media_type": p.media_type,
+            "title": p.title,
+            "year": primary_date[:4] if primary_date else None,
+            "primary_date": primary_date,
+            "release_date": primary_date,
+            "releases": (p.facts or {}).get("releases", []),
+            "poster": (p.facts or {}).get("poster"),
+            "matched": True,
+            "source": f"https://www.themoviedb.org/{p.media_type}/{p.tmdb_id}",
+        },
     )
     item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
     if item and item.status in ("review", "ready", "retry", "error"):

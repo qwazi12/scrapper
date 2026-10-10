@@ -362,7 +362,7 @@ export function RankedTrending({ busy, onCreate }: { busy: boolean; onCreate: (c
 }
 
 // --- your videos: review, batch render, batch queue -----------------------------------------
-type Filter = "all" | "review" | "reviewed" | "rendered" | "queued" | "archived";
+type Filter = "all" | "urgent" | "momentum" | "review" | "reviewed" | "rendered" | "queued" | "archived";
 
 function stateOf(p: StudioProject): Filter {
   if (p.review?.delete_after) return "archived";
@@ -403,13 +403,31 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
   }, [batch?.running]);
 
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: projects.length, review: 0, reviewed: 0, rendered: 0, queued: 0, archived: 0 };
+    const c: Record<Filter, number> = {
+      all: projects.length,
+      urgent: projects.filter((p) => p.momentum?.status === "critical").length,
+      momentum: projects.filter((p) => p.momentum?.is_pre_release).length,
+      review: 0,
+      reviewed: 0,
+      rendered: 0,
+      queued: 0,
+      archived: 0,
+    };
     projects.forEach((p) => { const s = stateOf(p); if (s !== "all") c[s] += 1; });
     return c;
   }, [projects]);
   const rank = (p: StudioProject) => { const a = attention(p); return a ? (a.kind === "review" ? 0 : 1) : 2; };
-  const shown = projects.filter((p) => filter === "all" || stateOf(p) === filter)
-    .sort((a, b) => rank(a) - rank(b));          // what needs you first; the rest keep their order
+  const shown = projects.filter((p) => {
+    if (filter === "all") return true;
+    if (filter === "urgent") return p.momentum?.status === "critical";
+    if (filter === "momentum") return Boolean(p.momentum?.is_pre_release);
+    return stateOf(p) === filter;
+  }).sort((a, b) => {
+    if (filter === "urgent" || filter === "momentum") {
+      return (b.momentum?.priority_score || 0) - (a.momentum?.priority_score || 0);
+    }
+    return rank(a) - rank(b);
+  });
   const needs = projects.filter((p) => attention(p)?.kind === "review").length;
   const toSend = projects.filter((p) => attention(p)?.kind === "send").length;
   const chosen = projects.filter((p) => sel.has(p.id));
@@ -478,7 +496,16 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
     finally { setWorking(false); }
   }
 
-  const pills: [Filter, string][] = [["all", "All"], ["review", "Needs review"], ["reviewed", "Reviewed"], ["rendered", "Rendered"], ["queued", "In queue"], ["archived", "🗄 Archived"]];
+  const pills: [Filter, string][] = [
+    ["all", "All"],
+    ["urgent", "🚨 Urgent (≤3d)"],
+    ["momentum", "⚡ Pre-Release"],
+    ["review", "Needs review"],
+    ["reviewed", "Reviewed"],
+    ["rendered", "Rendered"],
+    ["queued", "In queue"],
+    ["archived", "🗄 Archived"],
+  ];
   return (
     <div style={card}>
       <h2 style={h2}>Your videos ({projects.length})</h2>

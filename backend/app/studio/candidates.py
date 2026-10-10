@@ -50,7 +50,7 @@ UTC = datetime.timezone.utc
 TOP_N = 25                 # shown per type (owner, 2026-10-03)
 POOL_PAGES = 4             # TMDB trending pages per type (20 a page) — room for 25 to pass
 RELEASE_AHEAD = 90         # days
-RELEASE_BEHIND = 30        # days
+RELEASE_BEHIND = 0          # days: 0 means pre-release only to catch and ride momentum
 MIN_POPULARITY = 20.0      # TMDB popularity floor …
 MIN_TRAILER_VIEWS = 100_000  # … or trailer views …
 MAX_METER_RANK = 1000      # … or IMDb meter rank
@@ -171,15 +171,15 @@ def check(row: dict[str, Any], made: set[str], today: datetime.date) -> dict[str
     rel = row.get("release") or {}
     if row["media_type"] == "movie":
         days = _days_from_today(rel.get("date") or "", today)
-        ok = days is not None and -RELEASE_BEHIND <= days <= RELEASE_AHEAD
+        ok = days is not None and 0 <= days <= RELEASE_AHEAD
         why = ("no US release date" if days is None else
-               f"opens in {days} days" if days > 0 else "opens today" if days == 0 else f"opened {-days} days ago")
+               f"opens in {days} days" if days > 0 else "opens today" if days == 0 else f"opened {-days} days ago (momentum missed)")
     else:
         nd, ld = _days_from_today(rel.get("next") or "", today), _days_from_today(rel.get("last") or "", today)
-        ok = (nd is not None and 0 <= nd <= RELEASE_AHEAD) or (ld is not None and -RELEASE_BEHIND <= ld <= 0)
+        ok = (nd is not None and 0 <= nd <= RELEASE_AHEAD)
         why = (f"next episode in {nd} days" if nd is not None and nd >= 0 else
-               f"last episode {-ld} days ago" if ld is not None else "no episode dates")
-    put("release", "pass" if ok else "fail", why + ("" if ok else f" (window: {RELEASE_BEHIND} days back to {RELEASE_AHEAD} ahead)"))
+               f"last episode {-ld} days ago (momentum missed)" if ld is not None else "no episode dates")
+    put("release", "pass" if ok else "fail", why + ("" if ok else f" (pre-release momentum window: 0 to {RELEASE_AHEAD} days ahead)"))
 
     views = (row.get("trailer_stats") or {}).get("views") or 0
     rank = au.get("meter_rank")

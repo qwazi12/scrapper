@@ -110,7 +110,23 @@ export type QueueItem = {
   published_at: string | null;
   publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
   media_url?: string | null;
+  momentum?: ReleaseMomentum | null;
   created_at: string;
+};
+
+export type ReleaseMomentum = {
+  has_release_date: boolean;
+  release_date: string | null;
+  days_until_release: number | null;
+  status: "critical" | "approaching" | "upcoming" | "released" | "unknown";
+  urgency: "urgent" | "optimal" | "early" | "missed" | "none";
+  is_pre_release: boolean;
+  is_post_release: boolean;
+  scheduled_after_release: boolean;
+  badge_text: string;
+  badge_variant: "critical" | "approaching" | "upcoming" | "missed" | "neutral";
+  warning: string | null;
+  priority_score: number;
 };
 
 export type PacingOverride = {
@@ -436,6 +452,8 @@ export type StudioProject = {
   created_at: string;
   updated_at: string;
   poster: string | null;
+  primary_date?: string | null;
+  momentum?: ReleaseMomentum | null;
   cost_usd?: number;
   archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
   review?: { auto?: boolean; reviewed_at?: string | null; score?: number;

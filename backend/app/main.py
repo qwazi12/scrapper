@@ -577,6 +577,22 @@ def _mark_published(it: QueueItem, status: str) -> None:
     if status in ("posted", "archived") and it.published_at is None:
         it.published_at = datetime.datetime.now(datetime.timezone.utc)
 
+
+def _enrich_queue_item(it: QueueItem, s: Session | None = None) -> QueueItem:
+    if it.thumb_path and not it.thumb_path.startswith("http"):
+        try:
+            it.thumb_version = pathlib.Path(it.thumb_path).stat().st_mtime
+        except OSError:
+            it.thumb_version = None
+    try:
+        from .studio import momentum
+        rel_date = momentum.extract_release_date(it, session=s)
+        it.momentum = momentum.compute_momentum(rel_date, scheduled_at=it.scheduled_at)
+    except Exception:
+        it.momentum = None
+    return it
+
+
 @app.get("/api/queue", response_model=list[QueueItemOut], dependencies=_AUTH)
 def list_queue(
     pipeline: str | None = None,
@@ -604,12 +620,8 @@ def list_queue(
 
     # Posting order (next to post first); the UI can re-sort either direction.
     rows = q.order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
-    for it in rows:                       # lets the page show the CURRENT thumbnail (same file name, new picture)
-        if it.thumb_path and not it.thumb_path.startswith("http"):
-            try:
-                it.thumb_version = pathlib.Path(it.thumb_path).stat().st_mtime
-            except OSError:
-                it.thumb_version = None
+    for it in rows:                       # lets the page show CURRENT thumbnail + momentum tracker
+        _enrich_queue_item(it, s)
     return rows
 
 
@@ -873,7 +885,7 @@ QUEUE_THUMB_MAX = 5_000_000          # upload limit; stored as JPEG <= 2 MB (Upl
 
 def _studio_project_for(s: Session, item: QueueItem):
     from .models import StudioProject
-    return s.query(StudioProject).filter(StudioProject.queue_item_id == item.id).first() \
+    return s.query(StudioProject).filter(StudioProject.queue_item_id == item.id).order_by(StudioProject.id.desc()).first() \
         if item.pipeline == "LongForm" else None
 
 

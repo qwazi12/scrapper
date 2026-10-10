@@ -707,3 +707,32 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - `StudioPanel.tsx`: Added dedicated `CountdownStudioCard` prominently placed above the video list with live count of rendered breakdowns ready to stitch and one-click launch.
   - `page.tsx`: Compilations sidebar tab now features a sub-tab toggle between `🎬 LongForm Countdowns (Top 5 / Top 10)` and `📱 Short-Form Vertical Clips`.
 
+## Log — 2026-10-10 — Official Poster Thumbnail Default & Release Momentum System Tracker
+
+- **Default Thumbnail Choice (`backend/app/studio/stage_render.py`)**:
+  - Default thumbnail changed from `👤 Lead Close-Up` (`shot1`) to `🪧 Official Poster` (`poster`).
+  - Active file `render/thumbnail.jpg` defaults to `render/thumbnail_poster.jpg` on all renders and re-renders; `selected_thumbnail` defaults to `"poster"`.
+  - Manual option switching between Poster, Lead Close-Up, and Scene Still remains fully available in both Studio and Queue.
+- **Release Momentum System Tracker (`backend/app/studio/momentum.py`)**:
+  - Purpose: Ensures movie and TV breakdowns are posted **before** theatrical/streaming release dates to ride peak pre-release search momentum.
+  - Categorization:
+    - 🚨 `Critical / Urgent` (0–3 days): Imminent premiere, peak search buzz window.
+    - ⚡ `Approaching / Prime` (4–14 days): Ideal trailer breakdown window.
+    - 🗓️ `Upcoming` (>14 days): Early pre-release planning.
+    - ⚠️ `Released / Missed` (<0 days): Title already opened; pre-release momentum passed.
+  - Checks: Validates whether `scheduled_at` falls on or after the movie release date (`scheduled_after_release: true`).
+- **Automated Posting Scheduler (`backend/app/social/queue_manager.py`)**:
+  - In `plan_schedule()`, `LongForm` items (and items with release dates) are prioritized by release urgency (`days_until_release` ascending).
+  - Movies releasing soonest are allocated earlier posting slots so they publish before their release dates.
+  - Already-released titles or dateless videos do not take earlier slots from upcoming premieres.
+  - Pinned posting times (`pinned_at`) remain strictly respected.
+- **Discovery Candidate Pool (`backend/app/studio/candidates.py`)**:
+  - `RELEASE_BEHIND` updated from `30` to `0` days.
+  - Breakdown candidate checks now require `0 <= days <= RELEASE_AHEAD` (unreleased titles only), rejecting already-opened films to keep channel content pre-release focused.
+- **Frontend Badges & Alerts (`MomentumBadge.tsx`, `StudioPanel.tsx`, `StudioAuto.tsx`, `QueuePanel.tsx`)**:
+  - `MomentumBadge.tsx`: Displays colored status pill with countdown days and release date.
+  - `StudioPanel.tsx`: Adds badges to every project card in the list and in the project header.
+  - `StudioAuto.tsx`: Adds dedicated `🚨 Urgent (≤3d)` and `⚡ Pre-Release` filter pills with counts and priority sorting.
+  - `QueuePanel.tsx`: Displays momentum badges in the Title column; displays an eye-catching warning box with a 1-click `⚡ Post Next` button if an item is scheduled after its release date.
+
+

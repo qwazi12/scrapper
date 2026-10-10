@@ -17,6 +17,7 @@ import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
 import { AutomationCard, deleteProject, RankedTrending, VideosList } from "./StudioAuto";
 import { CountdownModal } from "./CountdownModal";
+import { MomentumBadge } from "./MomentumBadge";
 
 // LongForm Studio: trailer breakdowns from research to rendered video.
 // Every stage runs on the server and saves its own output, so any step can be
@@ -114,6 +115,7 @@ export function StudioPanel() {
               <b style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {p.title || `TMDB ${p.tmdb_id}`}
               </b>
+              <MomentumBadge momentum={p.momentum} compact />
               <StageBadge p={p} />
               {p.archive?.archived_at && <span style={{ ...muted, color: "#93c5fd" }}>📦 archived — video in Drive</span>}
               {p.queue_item_id && <span style={{ ...muted, color: "var(--accent)" }}>in Posting Queue #{p.queue_item_id}</span>}
@@ -496,6 +498,9 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
             >
               {[2, 2.5, 3, 3.5, 4].map((m) => <option key={m} value={m}>{m} min</option>)}
             </select>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <MomentumBadge momentum={p.momentum} />
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: p.stage_status === "error" ? "var(--red)" : running ? "var(--yellow)" : p.stage_status === "stopped" || p.stage_status === "paused" ? "#f59e0b" : "var(--text)" }}>
             {running ? "⏳ " : p.stage_status === "error" ? "✕ " : p.stage_status === "stopped" ? "■ " : p.stage_status === "paused" ? "⏸ " : p.stage_status === "done" ? "✓ " : ""}

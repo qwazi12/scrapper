@@ -451,7 +451,27 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived"]))
             .all()))
 
+    from ..studio import momentum
+
+    def _momentum_order_key(it: QueueItem) -> tuple:
+        rel = momentum.extract_release_date(it, session=s)
+        pos = it.position if it.position is not None else it.id
+        if not rel:
+            return (2, pos)
+        m = momentum.compute_momentum(rel, today=now.date())
+        days = m["days_until_release"]
+        if days is not None and days >= 0:
+            # Pre-release momentum: sooner releases get earlier slots to post before release!
+            return (0, days, pos)
+        elif days is not None and days < 0:
+            # Past release: momentum window closed, placed behind upcoming pre-release titles
+            return (3, abs(days), pos)
+        return (2, pos)
+
     for group, items in groups.items():
+        if group == "LongForm" or any(bool(momentum.extract_release_date(it, session=s)) for it in items):
+            items.sort(key=_momentum_order_key)
+
         primary_accs = items[0].accounts if items else None
         cur = current_slot(now, pipeline=group, accounts=primary_accs)
         slots = slots_after(now, len(items), pipeline=group, accounts=primary_accs)

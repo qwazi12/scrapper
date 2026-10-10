@@ -13,6 +13,7 @@ const DONE = ["posted", "archived"];
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
 import { QueueScheduleButton } from "./QueueSchedule";
+import { MomentumBadge } from "./MomentumBadge";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   review: { bg: "#1e293b", text: "#38bdf8", label: "👁 Review" },
@@ -1120,6 +1121,11 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                     {/* Title & Description */}
                     <td style={{ padding: "10px", verticalAlign: "top", maxWidth: 360 }}>
                       <RowThumb item={item} onOpen={() => setEditItem(item)} />
+                      {item.momentum && (
+                        <div style={{ marginBottom: 4 }}>
+                          <MomentumBadge momentum={item.momentum} compact showWarning={false} />
+                        </div>
+                      )}
                       <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
                         {item.title || "Untitled Video"}
                       </div>
@@ -1239,6 +1245,43 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       {item.status === "ready" && item.scheduled_at && (
                         <div style={{ fontSize: 10, color: "#34d399", marginTop: 4 }} title="Next posting slot">
                           {item.pinned_at ? "📌" : "⏰"} {fmtET(item.scheduled_at)}{item.pinned_at ? " (pinned)" : ""}
+                        </div>
+                      )}
+                      {item.status === "ready" && item.momentum?.scheduled_after_release && (
+                        <div
+                          style={{
+                            marginTop: 5,
+                            padding: "4px 6px",
+                            background: "rgba(239, 68, 68, 0.18)",
+                            border: "1px solid rgba(239, 68, 68, 0.5)",
+                            borderRadius: 4,
+                            fontSize: 10,
+                            color: "#fca5a5",
+                            lineHeight: 1.25,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 3,
+                          }}
+                        >
+                          <b>⚠️ Scheduled AFTER Release!</b>
+                          <span>Releases: {item.momentum.release_date}</span>
+                          <button
+                            onClick={() => handlePostNext(item)}
+                            style={{
+                              fontSize: 9,
+                              padding: "2px 6px",
+                              background: "#e50914",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: 3,
+                              cursor: "pointer",
+                              width: "fit-content",
+                              fontWeight: 600,
+                              marginTop: 2,
+                            }}
+                          >
+                            ⚡ Post Next (Bump to 1st)
+                          </button>
                         </div>
                       )}
                       {item.published_at && (

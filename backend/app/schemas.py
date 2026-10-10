@@ -170,6 +170,7 @@ class QueueItemOut(BaseModel):
     published_at: UTCDateTime | None
     publish_requests: list | None = None
     research: dict | None = None
+    momentum: dict | None = None
     media_url: str | None = None
     created_at: UTCDateTime
 
