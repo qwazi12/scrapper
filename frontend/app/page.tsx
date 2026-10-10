@@ -25,7 +25,7 @@ import { DialogHost } from "./DialogHost";
 import { SchedulerView } from "./PacingThrottle";
 import { askConfirm, notify } from "@/lib/dialogs";
 
-type NavTab = "scraper" | "socialpilot" | "longform" | "comps" | "logs" | "settings";
+type NavTab = "scraper" | "socialpilot" | "longform" | "countdowns" | "comps" | "logs" | "settings";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -272,6 +272,19 @@ export default function Page() {
             icon="🎬"
             title="LongForm Studio"
             subtitle="Trailer breakdown videos"
+          />
+
+          {/* Top 5 & Top 10 Countdown Studio */}
+          <NavButton
+            active={activeTab === "countdowns"}
+            collapsed={collapsed}
+            onClick={() => handleTabSelect("countdowns")}
+            icon="🏆"
+            title="Countdowns Studio"
+            subtitle="Top 5 & Top 10 research engine"
+            badge="AI Engine"
+            badgeColor="#fca5a5"
+            badgeBg="#7f1d1d"
           />
 
           {/* 3. Compilations & Stitching */}
@@ -538,14 +551,15 @@ export default function Page() {
               </button>
             </div>
             {compTab === "longform" ? (
-              <StudioPanel />
+              <StudioPanel initialTab="countdowns" />
             ) : (
               <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
             )}
           </div>
         )}
 
-        {activeTab === "longform" && <StudioPanel />}
+        {activeTab === "longform" && <StudioPanel initialTab="breakdowns" />}
+        {activeTab === "countdowns" && <StudioPanel initialTab="countdowns" />}
 
         {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (

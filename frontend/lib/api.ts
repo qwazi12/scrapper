@@ -587,6 +587,71 @@ export type FmhyResource = {
   description: string;
 };
 
+export type CountdownTrigger = {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+};
+
+export type CountdownTopicCandidate = {
+  id: string;
+  topic: string;
+  trigger: "trending" | "calendar" | "streaming" | "debate" | "evergreen" | string;
+  trigger_name: string;
+  format: "top5" | "top10" | "top15" | string;
+  why_now: string;
+  demand: number;
+  momentum: number;
+  debate: number;
+  gap: number;
+  visuals: number;
+  total_score: number;
+  suggested_entries: string[];
+};
+
+export type CountdownEntry = {
+  rank: number;
+  title: string;
+  year: number;
+  score: number;
+  key_stat: string;
+  why_it_ranks: string;
+  fun_fact: string;
+  where_to_watch: string;
+  sources: string[];
+  tmdb_id?: number;
+  media_type?: string;
+  poster?: string | null;
+  backdrop?: string | null;
+  tmdb_rating?: number;
+  overview?: string;
+  justwatch_url?: string;
+  linked_project?: {
+    project_id: number;
+    has_render: boolean;
+    seconds: number;
+    thumbnail?: string | null;
+    stage?: string;
+  } | null;
+  has_footage?: boolean;
+};
+
+export type ResearchedCountdown = {
+  id?: string;
+  topic: string;
+  why_now: string;
+  format: "top5" | "top10" | "top15" | string;
+  title_options: string[];
+  thumbnail_text: string;
+  hook_script: string;
+  entries: CountdownEntry[];
+  honorable_mentions: string[];
+  closing_question: string;
+  unverified_flags: string[];
+  generated_at?: string;
+};
+
 // --- Stop + Undo ---------------------------------------------------------------
 
 
@@ -1086,6 +1151,20 @@ export const api = {
     req<CinemetaTitle>(`/api/studio/compilations/cinemeta/meta?imdb_id=${encodeURIComponent(imdb_id)}&media_type=${media_type}`, { headers: headers(false) }),
   fmhyResources: () =>
     req<FmhyResource[]>("/api/studio/compilations/fmhy/resources", { headers: headers(false) }),
+
+  // Top 5 & Top 10 Countdown Research Engine
+  countdownTriggers: () =>
+    req<CountdownTrigger[]>("/api/studio/compilations/triggers", { headers: headers(false) }),
+  countdownTopics: (trigger?: string) =>
+    req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${trigger && trigger !== "all" ? `?trigger=${encodeURIComponent(trigger)}` : ""}`, { headers: headers(false) }),
+  countdownResearch: (data: { topic: string; format?: string; custom_instructions?: string }) =>
+    req<ResearchedCountdown>("/api/studio/compilations/research", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  savedCountdowns: () =>
+    req<ResearchedCountdown[]>("/api/studio/compilations/saved", { headers: headers(false) }),
+  saveCountdown: (data: ResearchedCountdown) =>
+    req<ResearchedCountdown>("/api/studio/compilations/saved", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  deleteSavedCountdown: (id: string) =>
+    req<{ deleted: boolean }>(`/api/studio/compilations/saved/${encodeURIComponent(id)}`, { method: "DELETE", headers: headers(false) }),
 
 
 

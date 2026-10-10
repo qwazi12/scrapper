@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import pathlib
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("scrapper.compilations.routes")
 
 from ...config import settings
 from ...db import SessionLocal
@@ -159,7 +162,14 @@ def stitch_compilation(req: StitchRequest) -> dict[str, Any]:
 
 
 from . import cinemeta
+from . import engine
 from . import fmhy
+
+
+class ResearchRequest(BaseModel):
+    topic: str
+    format: str = "top10"  # top5, top10, top15
+    custom_instructions: str = ""
 
 
 @router.get("/cinemeta/top")
@@ -186,4 +196,57 @@ def get_cinemeta_meta(imdb_id: str, media_type: str = "movie") -> dict[str, Any]
 def get_fmhy_resources() -> list[dict[str, Any]]:
     """Return curated video scraping, media tracking, and audio tools from FMHY."""
     return fmhy.get_curated_resources()
+
+
+@router.get("/triggers")
+def get_demand_triggers() -> list[dict[str, Any]]:
+    """Return the 5 demand triggers: Trending, Calendar, Streaming, Debate, Evergreen."""
+    return engine.DEMAND_TRIGGERS
+
+
+@router.get("/topics")
+def get_candidate_topics(trigger: str | None = None) -> list[dict[str, Any]]:
+    """STEP 1: Discover and score 15 candidate topics across the 5 demand triggers."""
+    return engine.discover_topics(category_filter=trigger)
+
+
+@router.post("/research")
+def research_countdown(req: ResearchRequest) -> dict[str, Any]:
+    """STEPS 2-5: Generate fully researched countdown rankings and retention script."""
+    if not req.topic.strip():
+        raise HTTPException(400, "Topic cannot be empty")
+    fmt = req.format.lower()
+    if fmt not in ("top5", "top10", "top15"):
+        fmt = "top10"
+    try:
+        return engine.generate_countdown(
+            topic=req.topic.strip(),
+            format_type=fmt,
+            custom_instructions=req.custom_instructions.strip(),
+        )
+    except Exception as e:
+        logger.error("Failed to generate countdown research: %s", e)
+        raise HTTPException(500, f"Countdown research failed: {str(e)}")
+
+
+@router.get("/saved")
+def get_saved_countdowns() -> list[dict[str, Any]]:
+    """List saved researched countdowns."""
+    return engine.list_saved_countdowns()
+
+
+@router.post("/saved")
+def save_countdown(countdown: dict[str, Any]) -> dict[str, Any]:
+    """Save a researched countdown list."""
+    if not countdown or not countdown.get("topic"):
+        raise HTTPException(400, "Invalid countdown payload")
+    return engine.save_countdown_item(countdown)
+
+
+@router.delete("/saved/{countdown_id}")
+def delete_saved_countdown_route(countdown_id: str) -> dict[str, bool]:
+    """Delete a saved researched countdown list."""
+    ok = engine.delete_saved_countdown(countdown_id)
+    return {"deleted": ok}
+
 

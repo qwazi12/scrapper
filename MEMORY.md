@@ -728,11 +728,22 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - Pinned posting times (`pinned_at`) remain strictly respected.
 - **Discovery Candidate Pool (`backend/app/studio/candidates.py`)**:
   - `RELEASE_BEHIND` updated from `30` to `0` days.
-  - Breakdown candidate checks now require `0 <= days <= RELEASE_AHEAD` (unreleased titles only), rejecting already-opened films to keep channel content pre-release focused.
-- **Frontend Badges & Alerts (`MomentumBadge.tsx`, `StudioPanel.tsx`, `StudioAuto.tsx`, `QueuePanel.tsx`)**:
-  - `MomentumBadge.tsx`: Displays colored status pill with countdown days and release date.
-  - `StudioPanel.tsx`: Adds badges to every project card in the list and in the project header.
-  - `StudioAuto.tsx`: Adds dedicated `🚨 Urgent (≤3d)` and `⚡ Pre-Release` filter pills with counts and priority sorting.
-  - `QueuePanel.tsx`: Displays momentum badges in the Title column; displays an eye-catching warning box with a 1-click `⚡ Post Next` button if an item is scheduled after its release date.
+## Log — 2026-10-10 — Top 5 & Top 10 Countdown Compilations Research Engine & Studio Tab
+
+- **Autonomous Content Strategist & List Engine (`backend/app/studio/compilations/engine.py`)**:
+  - Implemented the full 5-step agentic countdown methodology:
+    - **STEP 1 — Topic Discovery:** Scans market context from TMDB upcoming calendar and Cinemeta top titles. Scores 15 candidates across 5 demand triggers: `TRENDING`, `CALENDAR`, `STREAMING`, `DEBATE`, `EVERGREEN` using formula: Demand (0.30) + Momentum (0.25) + Debate (0.20) + Gap (0.15) + Visuals (0.10).
+    - **STEP 2 — Ranking Logic:** Computes defensible composite scores normalized 0–100 (Ratings 35%, Cultural Impact 25%, Current Buzz 20%, Fan Sentiment 20%). Minimum vote count prevents obscure outliers; deduplicates franchise entries.
+    - **STEP 3 — Entertainment Ordering:** Scripts for high watch-time and comment retention: #1 teased in opening hook without spoilers; surprise/controversial pick at #3–#4; strong opener at lowest rank; 2–3 honorable mentions right before #1; closing debate question drives comment section debate.
+    - **STEP 4 — Fact Rules & Verification:** Pulls official US streaming availability via TMDB JustWatch (`watch/providers`), TMDB ratings, box office, awards; flags unverified claims in `unverified_flags`.
+    - **STEP 5 — Standardized Output:** Generates structured JSON with 3 clickable titles (<60 chars), 3–4 word thumbnail text, 10s retention hook script, ranked entries (#10 to #1), honorable mentions, and closing question.
+- **Dedicated Countdown Studio Panel & Navigation (`frontend/app/CountdownsStudioPanel.tsx`, `frontend/app/StudioPanel.tsx`, `frontend/app/page.tsx`)**:
+  - Added dedicated **"🏆 Top 5 & Top 10 Countdowns"** sub-tab inside LongForm Studio with view switcher (`[📹 Trailer Breakdowns]  [🏆 Top 5 & Top 10 Countdowns]`).
+  - Added direct sidebar button **"🏆 Countdowns Studio"** in the main application navigation.
+  - Three integrated views:
+    - `🎯 Topic Discovery & Scoring`: 5-trigger filter pills, 15 scored candidates with 5-factor matrix, and on-demand custom topic research bar (Top 5 / Top 10 / Top 15 formats).
+    - `📊 Researched Countdown Viewer`: Interactive countdown viewer with clickable title options, thumbnail badge, 10s retention hook script, #10 to #1 entry cards with high-res posters, JustWatch US streaming links, defensible ranking breakdown, local footage matching status, honorable mentions, closing debate question, and fact verification status.
+    - `📁 Saved Countdowns`: Dedicated library to save, view, or manage researched countdowns.
+  - 1-click video stitching button (`🎬 Stitch 8–12m Video`) opens `CountdownModal` to assemble trailer breakdowns into monetizable compilations.
 
 
