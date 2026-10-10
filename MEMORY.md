@@ -767,5 +767,17 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - Updated `CONFIG.md` release threshold documentation.
   - Added "LongForm Studio vs Countdowns Studio (2026-10-10)" and "Release Timing & Momentum Rules" to `RUNBOOK.md`.
 
+## Log — 2026-10-10 — Countdown Studio Candidate Caching & Persistent Researched Items
+
+- **Candidate Topic Caching (`backend/app/studio/compilations/engine.py`, `backend/app/studio/compilations/routes.py`)**:
+  - Implemented 72-hour database caching via `AppSetting("countdown_candidates")` in `get_or_discover_topics()`.
+  - Fixes repeated `"Scoring candidate topics across market signals..."` loading screen on every visit to Countdown Studio: cached topics are now returned in milliseconds.
+  - Added `refresh=true` support on `GET /api/studio/compilations/topics` wired to the "Refresh Demand Signals" button in the UI.
+- **Instant Search Item Persistence & Discovery Cards (`frontend/app/CountdownsStudioPanel.tsx`, `backend/app/studio/compilations/routes.py`)**:
+  - `POST /api/studio/compilations/research` now automatically commits every generated countdown to `saved_countdowns` so searched topics are never lost when navigating between tabs.
+  - Added a dedicated **"🕒 Searched & Researched Countdowns"** card section to the Discovery view right under the on-demand search bar with 1-click access to previously researched scripts, rankings, and streaming links.
+  - Persisted the last-viewed countdown ID in `localStorage` so returning to Countdown Studio immediately restores the user's active research.
+
+
 
 

@@ -157,6 +157,52 @@ Return JSON array of 15 candidate objects:
     return _default_candidate_topics()
 
 
+def get_or_discover_topics(category_filter: str | None = None, force_refresh: bool = False) -> list[dict[str, Any]]:
+    """Return cached candidate topics if available; otherwise discover and cache.
+    Ensures Countdown Studio loads instantly without re-scoring every page visit."""
+    if not force_refresh:
+        with SessionLocal() as s:
+            row = s.get(AppSetting, "countdown_candidates")
+            cached = (row.value or {}) if row else {}
+            items = cached.get("items", [])
+            updated_at = cached.get("updated_at")
+            if items:
+                if updated_at:
+                    try:
+                        dt = datetime.datetime.fromisoformat(updated_at)
+                        if (datetime.datetime.now(UTC) - dt).total_seconds() < 72 * 3600:
+                            out = items
+                            if category_filter and category_filter != "all":
+                                out = [c for c in items if c.get("trigger") == category_filter] or items
+                            return out
+                    except Exception:
+                        pass
+                else:
+                    out = items
+                    if category_filter and category_filter != "all":
+                        out = [c for c in items if c.get("trigger") == category_filter] or items
+                    return out
+
+    candidates = discover_topics(category_filter=None)
+    if candidates:
+        with SessionLocal() as s:
+            row = s.get(AppSetting, "countdown_candidates")
+            payload = {
+                "items": candidates,
+                "updated_at": datetime.datetime.now(UTC).isoformat(),
+            }
+            if row:
+                row.value = payload
+            else:
+                s.add(AppSetting(key="countdown_candidates", value=payload))
+            s.commit()
+
+    out = candidates
+    if category_filter and category_filter != "all":
+        out = [c for c in candidates if c.get("trigger") == category_filter] or candidates
+    return out
+
+
 def _default_candidate_topics() -> list[dict[str, Any]]:
     """High-performing fallback topics matching the 5 triggers."""
     return [

@@ -1155,8 +1155,13 @@ export const api = {
   // Top 5 & Top 10 Countdown Research Engine
   countdownTriggers: () =>
     req<CountdownTrigger[]>("/api/studio/compilations/triggers", { headers: headers(false) }),
-  countdownTopics: (trigger?: string) =>
-    req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${trigger && trigger !== "all" ? `?trigger=${encodeURIComponent(trigger)}` : ""}`, { headers: headers(false) }),
+  countdownTopics: (trigger?: string, refresh?: boolean) => {
+    const params = new URLSearchParams();
+    if (trigger && trigger !== "all") params.set("trigger", trigger);
+    if (refresh) params.set("refresh", "true");
+    const q = params.toString() ? `?${params.toString()}` : "";
+    return req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${q}`, { headers: headers(false) });
+  },
   countdownResearch: (data: { topic: string; format?: string; custom_instructions?: string }) =>
     req<ResearchedCountdown>("/api/studio/compilations/research", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   savedCountdowns: () =>

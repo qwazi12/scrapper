@@ -205,9 +205,9 @@ def get_demand_triggers() -> list[dict[str, Any]]:
 
 
 @router.get("/topics")
-def get_candidate_topics(trigger: str | None = None) -> list[dict[str, Any]]:
-    """STEP 1: Discover and score 15 candidate topics across the 5 demand triggers."""
-    return engine.discover_topics(category_filter=trigger)
+def get_candidate_topics(trigger: str | None = None, refresh: bool = False) -> list[dict[str, Any]]:
+    """STEP 1: Discover and score 15 candidate topics across the 5 demand triggers (cached for instant load)."""
+    return engine.get_or_discover_topics(category_filter=trigger, force_refresh=refresh)
 
 
 @router.post("/research")
@@ -219,11 +219,14 @@ def research_countdown(req: ResearchRequest) -> dict[str, Any]:
     if fmt not in ("top5", "top10", "top15"):
         fmt = "top10"
     try:
-        return engine.generate_countdown(
+        res = engine.generate_countdown(
             topic=req.topic.strip(),
             format_type=fmt,
             custom_instructions=req.custom_instructions.strip(),
         )
+        # Automatically save researched countdown so searched items are always preserved and available!
+        engine.save_countdown_item(res)
+        return res
     except Exception as e:
         logger.error("Failed to generate countdown research: %s", e)
         raise HTTPException(500, f"Countdown research failed: {str(e)}")

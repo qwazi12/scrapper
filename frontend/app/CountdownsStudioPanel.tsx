@@ -65,10 +65,10 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
     loadSaved();
   }, []);
 
-  const loadCandidates = async (triggerFilter: string) => {
+  const loadCandidates = async (triggerFilter: string, forceRefresh = false) => {
     setLoadingCandidates(true);
     try {
-      const data = await api.countdownTopics(triggerFilter);
+      const data = await api.countdownTopics(triggerFilter, forceRefresh);
       setCandidates(data);
     } catch (e: any) {
       notify("Failed to discover topics: " + (e.message || String(e)));
@@ -82,6 +82,11 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
     try {
       const data = await api.savedCountdowns();
       setSavedList(data);
+      if (data && data.length > 0) {
+        const lastId = typeof window !== "undefined" ? localStorage.getItem("scrapper_last_countdown_id") : null;
+        const found = lastId ? data.find((d) => d.id === lastId) : null;
+        setCurrentCountdown((prev) => prev || found || data[0]);
+      }
     } catch (e) {
       console.error("Failed to load saved countdowns:", e);
     } finally {
@@ -91,7 +96,7 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
 
   const handleSelectTrigger = (tId: string) => {
     setSelectedTrigger(tId);
-    loadCandidates(tId);
+    loadCandidates(tId, false);
   };
 
   const handleResearchTopic = async (topic: string, format: string, instructions = "") => {
@@ -116,6 +121,10 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
       });
       setCurrentCountdown(res);
       setSubView("researched");
+      if (typeof window !== "undefined" && res.id) {
+        localStorage.setItem("scrapper_last_countdown_id", res.id);
+      }
+      loadSaved();
       notify(`Research complete for "${res.topic}"!`);
     } catch (e: any) {
       notify("Research failed: " + (e.message || String(e)));
@@ -325,7 +334,7 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
 
         {subView === "discovery" && (
           <button
-            onClick={() => loadCandidates(selectedTrigger)}
+            onClick={() => loadCandidates(selectedTrigger, true)}
             disabled={loadingCandidates}
             style={{
               padding: "6px 12px",
@@ -341,7 +350,7 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
             }}
           >
             <span>🔄</span>
-            <span>{loadingCandidates ? "Scanning Market..." : "Refresh Demand Signals"}</span>
+            <span>{loadingCandidates ? "Scoring Market Signals..." : "Refresh Demand Signals"}</span>
           </button>
         )}
       </div>
@@ -492,6 +501,85 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
               )}
             </div>
           </div>
+
+          {/* Searched & Researched Countdowns */}
+          {savedList.length > 0 && (
+            <div style={{ ...cardStyle, background: "rgba(30, 41, 59, 0.45)", border: "1px solid rgba(229, 9, 20, 0.3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>🕒</span>
+                  <h3 style={{ margin: 0, fontSize: 13, color: "#f8fafc", fontWeight: 700 }}>
+                    Searched & Researched Countdowns ({savedList.length})
+                  </h3>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                    Instant access to previously generated scripts, rankings & streaming data
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSubView("saved")}
+                  style={{
+                    padding: "3px 8px",
+                    borderRadius: 4,
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--muted)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                >
+                  View All Saved Library →
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
+                {savedList.slice(0, 6).map((item) => (
+                  <div
+                    key={item.id || item.topic}
+                    onClick={() => {
+                      setCurrentCountdown(item);
+                      setSubView("researched");
+                      if (typeof window !== "undefined" && item.id) {
+                        localStorage.setItem("scrapper_last_countdown_id", item.id);
+                      }
+                    }}
+                    style={{
+                      background: "rgba(15, 23, 42, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: 8,
+                      padding: "10px 12px",
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      transition: "border-color 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.08)")}
+                  >
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={badgeStyle("#7f1d1d", "#fca5a5")}>
+                          {(item.format || "top10").toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: 10, color: "var(--muted)" }}>
+                          {(item.entries || []).length} ranked titles
+                        </span>
+                      </div>
+                      <h4 style={{ margin: "2px 0 0", fontSize: 13, color: "#f8fafc", lineHeight: 1.3 }}>
+                        {item.topic}
+                      </h4>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>
+                      <span>View Script & Rankings</span>
+                      <span>→</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* 5 Demand Trigger Filters */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
