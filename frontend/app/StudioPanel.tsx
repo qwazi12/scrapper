@@ -16,6 +16,7 @@ import {
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
 import { AutomationCard, deleteProject, RankedTrending, VideosList } from "./StudioAuto";
+import { CountdownModal } from "./CountdownModal";
 
 // LongForm Studio: trailer breakdowns from research to rendered video.
 // Every stage runs on the server and saves its own output, so any step can be
@@ -94,6 +95,8 @@ export function StudioPanel() {
       <ArchiveRule />
       {err && <div style={{ ...card, color: "var(--red)", fontSize: 12 }}>{err}</div>}
 
+      <CountdownStudioCard projects={projects} onReload={loadList} />
+
       <AutomationCard onChange={loadList} />
 
       <VideosList
@@ -126,6 +129,107 @@ export function StudioPanel() {
           setOpenId(p.id);
         }}
       />
+    </div>
+  );
+}
+
+function CountdownStudioCard({ projects, onReload }: { projects: StudioProject[]; onReload: () => void }) {
+  const [showModal, setShowModal] = useState(false);
+  const rendered = useMemo(() => projects.filter((p) => p.has?.render), [projects]);
+  const renderedSeconds = useMemo(() => {
+    return rendered.reduce((acc, p) => acc + (p.render?.seconds || 150), 0);
+  }, [rendered]);
+  const estMinutes = Math.round((renderedSeconds / 60) * 10) / 10;
+  const isEligible = estMinutes >= 8.0;
+
+  return (
+    <div
+      style={{
+        ...card,
+        background: "linear-gradient(135deg, rgba(229, 9, 20, 0.08) 0%, rgba(30, 41, 59, 0.6) 100%)",
+        border: "1px solid rgba(229, 9, 20, 0.35)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 18 }}>🎬</span>
+            <h2 style={{ ...h2, margin: 0, fontSize: 15, color: "#fff" }}>
+              Top 5 & Top 10 Countdown Compilations
+            </h2>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 10,
+                background: rendered.length >= 2 ? (isEligible ? "rgba(34, 197, 94, 0.2)" : "rgba(245, 158, 11, 0.2)") : "rgba(100, 116, 139, 0.2)",
+                color: rendered.length >= 2 ? (isEligible ? "#4ade80" : "#fbbf24") : "#94a3b8",
+                border: `1px solid ${rendered.length >= 2 ? (isEligible ? "#22c55e" : "#f59e0b") : "#475569"}`,
+              }}
+            >
+              {rendered.length} Rendered Breakdowns Ready {isEligible ? "· ✓ Mid-Roll Eligible (≥8m)" : `(~${estMinutes}m)`}
+            </span>
+          </div>
+          <div style={{ ...muted, marginTop: 4, color: "#cbd5e1" }}>
+            Stitch trailer breakdowns into high-retention 8–12 min YouTube countdowns with animated bumpers (#10 to #1), unified loudnorm (-14 LUFS), and auto-chapters.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setShowModal(true)}
+            style={{
+              padding: "7px 16px",
+              background: "#e50914",
+              color: "#fff",
+              fontWeight: 700,
+              fontSize: 12,
+              borderRadius: 6,
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(229, 9, 20, 0.4)",
+            }}
+          >
+            🎬 Launch Countdown Studio ({rendered.length})
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+        <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>Curated Presets:</span>
+        {["Sci-Fi 2026", "Psychological Thrillers", "Horror Chills", "Action Blockbusters", "Netflix Hits", "Prestige TV"].map((preset) => (
+          <span
+            key={preset}
+            onClick={() => setShowModal(true)}
+            style={{
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 4,
+              backgroundColor: "rgba(255,255,255,0.06)",
+              color: "#cbd5e1",
+              border: "1px solid rgba(255,255,255,0.1)",
+              cursor: "pointer",
+            }}
+          >
+            {preset}
+          </span>
+        ))}
+      </div>
+
+      {showModal && (
+        <CountdownModal
+          initialProjectIds={rendered.map((p) => p.id)}
+          onClose={() => setShowModal(false)}
+          onSuccess={() => {
+            onReload();
+            setShowModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

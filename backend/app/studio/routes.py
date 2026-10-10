@@ -717,3 +717,8 @@ def publish_batch(req: IdsIn, s: Session = Depends(get_session)) -> dict[str, An
     ok = sum(1 for r in results if r["ok"])
     logbus.log("info", "studio_publish_batch", f"Sent {ok} of {len(results)} breakdown(s) to the Posting Queue")
     return {"results": results, "sent": ok}
+
+
+from .compilations.routes import router as compilations_router
+router.include_router(compilations_router)
+

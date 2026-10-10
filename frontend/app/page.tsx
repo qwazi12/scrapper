@@ -55,6 +55,7 @@ export default function Page() {
   }, []);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
+  const [compTab, setCompTab] = useState<"longform" | "shortform">("longform");
   const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "scheduler" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   // Phones: the sidebar becomes a slide-out drawer so pages get the full width.
@@ -503,7 +504,45 @@ export default function Page() {
         )}
 
         {activeTab === "comps" && (
-          <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
+              <button
+                onClick={() => setCompTab("longform")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  backgroundColor: compTab === "longform" ? "#e50914" : "var(--panel)",
+                  color: compTab === "longform" ? "#fff" : "var(--muted)",
+                  fontWeight: compTab === "longform" ? 700 : 500,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                🎬 LongForm Countdowns (Top 5 / Top 10)
+              </button>
+              <button
+                onClick={() => setCompTab("shortform")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  backgroundColor: compTab === "shortform" ? "var(--accent)" : "var(--panel)",
+                  color: compTab === "shortform" ? "#fff" : "var(--muted)",
+                  fontWeight: compTab === "shortform" ? 700 : 500,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                📱 Short-Form Vertical Clips ({comps.length})
+              </button>
+            </div>
+            {compTab === "longform" ? (
+              <StudioPanel />
+            ) : (
+              <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
+            )}
+          </div>
         )}
 
         {activeTab === "longform" && <StudioPanel />}

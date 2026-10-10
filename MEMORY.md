@@ -650,3 +650,60 @@ Checked: the server archives every posted row (30 archived, 0 posted) and the li
 - Cause: 21 posted Shorts past the 5-day window had Drive files owned by the owner's account; trashing them returned 403 insufficientFilePermissions, the row was kept, and the sweep retried all 21 every 10 min (log spam).
 - Owner chose: on insufficientFilePermissions, delete the row, log one `archive_drive_kept` warning with the Drive link, leave the file for the owner to delete. Other Drive errors still keep the row and retry.
 - Test added; 231 pass. Not yet verified live (needs a token to read logs): expect 21 `archive_drive_kept` lines on the next sweep and no more `archive_trash_failed` for these items.
+
+## PLAN — 2026-10-08 — Top 5 & Top 10 Recommendations & Countdown Lists (8–12 min Compilations)
+Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 / Top 10" recommendations and countdown lists (movies & TV shows released, upcoming, or of all time).
+
+### Why this beats single-movie recaps:
+1. **Unlocks YouTube Mid-Roll Monetization (≥8 Minutes)**:
+   - Top 5 (5 titles × ~1.5–2 min) = **8–10 minutes total**.
+   - Top 10 (10 titles × ~1–1.2 min) = **10–12 minutes total**.
+   - Yields the high RPM of long-form videos while retaining high viewer completion rates.
+2. **100% Reuses the Existing Trailer Studio Formula**:
+   - Zero full movie rips or spoiler searches needed; utilizes verified official promotional materials (IMDb 1080p MP4 / YouTube clips).
+   - Same battle-tested 1080p 30fps canvas, adaptive shot tagging, moving clip rhythm, release/streaming badges, and Chirp 3 HD / Gemini TTS voiceover.
+   - Minimal copyright risk (Fair Use recommendations and commentary on public promotional materials).
+3. **High Search Intent & Evergreen Traffic**:
+   - Formats like *"Top 10 Upcoming Sci-Fi Movies in 2026"*, *"Top 5 Mind-Bending Thrillers You Missed"*, *"Top 10 Best Netflix Releases of the Month"*.
+
+### Video Architecture:
+- **Intro Hook (15–25s)**: Rapid montage teaser of featured titles + vocal hook teasing the #1 entry.
+- **Ranked Countdown Items (#5–#1 or #10–#1)**:
+  - Graphic countdown bumper badge (e.g. `#5: TITLE`, release date, streaming service).
+  - Opening moving clip hook (0:00–0:04).
+  - Voiceover narration: premise, recommendation hook, cast highlights, critical buzz.
+  - Visual rhythm: alternating moving trailer clips, high-res stills, and official poster frame.
+- **Outro & CTA (15–20s)**: Discussion prompt ("Which one are you watching first?"), channel subscribe lower-third, and YouTube end-screen.
+
+## Log — 2026-10-10 — Built: Top 5 & Top 10 Countdown Compilations (8–12 Min)
+- **Countdown Transition Bumpers (`backend/app/studio/compilations/bumper.py`)**:
+  - Generates 1920×1080 30fps transition bumpers (#10 down to #1) with Screen Central red/white badges, bold typography, entry titles, and release/platform subtitle badges.
+  - Matches the exact ffmpeg timescale (`-video_track_timescale 30000`) and pixel format (`yuv420p`, tv range) of Studio renders for glitch-free concat.
+- **Thematic Curation & Discovery (`backend/app/studio/compilations/curation.py`)**:
+  - 6 preset themes: Upcoming Sci-Fi (2026), Mind-Bending Thrillers, Horror Chills, Action Blockbusters, Netflix Hits, and Binge-Worthy TV.
+  - Queries TMDB Discover and external IMDb IDs; maintains permanent deduplication ledger (`app_settings.compilations_made`).
+- **Master Countdown Stitching Engine (`backend/app/studio/compilations/stitch.py`)**:
+  - Synthesizes Intro hook video (15–22s) with TTS narration teasing the countdown and #1 pick.
+  - Inserts countdown graphic bumpers before each breakdown segment.
+  - Synthesizes Outro bookend (14–20s) with community discussion prompt and subscribe CTA.
+  - Concat demuxer joins all segments; normalizes master audio to YouTube broadcast standard -14 LUFS (`loudnorm`).
+  - Automatically calculates exact chapter timestamps (`0:00 Intro`, `0:22 #5 ...`) and writes timestamps into video description.
+  - Generates 3 clickable 1280×720 JPEG thumbnail options (Poster Collage, Action Still with #1 badge, Split Contrast).
+  - Pushes to Posting Queue under `LongForm` pipeline, status `ready`, target `default:*` (Screen Central).
+- **FastAPI Endpoints (`backend/app/studio/compilations/routes.py`)**:
+  - `GET /api/studio/compilations/themes`
+  - `POST /api/studio/compilations/curate`
+  - `GET /api/studio/compilations/eligible-projects`
+  - `POST /api/studio/compilations/preview-chapters`
+  - `POST /api/studio/compilations/stitch`
+  - Mounted under `/api/studio/compilations/` in `backend/app/studio/routes.py`.
+- **Stremio Cinemeta & FMHY Integration (`cinemeta.py`, `fmhy.py`, `CountdownModal.tsx`)**:
+  - `cinemeta.py`: Keyless, zero-credential client querying Stremio's Cinemeta API (`v3-cinemeta.strem.io`) for trending movie & series catalogs, IMDb ratings, cast, director, and YouTube trailer IDs with redirect following.
+  - Automatic fallback in `curation.py`: If TMDB API is ever unconfigured or rate-limited, title curation automatically falls back to Stremio Cinemeta's top catalog.
+  - `fmhy.py`: Indexes verified FreeMediaHeckYeah directories for movie/show discovery (Trakt, Letterboxd, JustWatch), royalty-free audio/SFX libraries (FMA, Incompetech, Freesound), and scrapers (Cobalt, yt-dlp, NewPipe).
+  - API endpoints: `GET /api/studio/compilations/cinemeta/top`, `GET /api/studio/compilations/cinemeta/meta`, `GET /api/studio/compilations/fmhy/resources`.
+- **Frontend UI Integration (`CountdownModal.tsx`, `StudioPanel.tsx`, `StudioAuto.tsx`, `page.tsx`)**:
+  - `CountdownModal.tsx`: Interactive countdown builder with reordering controls, estimated runtime gauge, YouTube mid-roll monetization eligibility indicator, YouTube chapters preview, batch pickers ("Pick Top 5", "Pick Top 10", "+ Add All"), and tabs for Cinemeta Catalog and FMHY Resources.
+  - `StudioPanel.tsx`: Added dedicated `CountdownStudioCard` prominently placed above the video list with live count of rendered breakdowns ready to stitch and one-click launch.
+  - `page.tsx`: Compilations sidebar tab now features a sub-tab toggle between `🎬 LongForm Countdowns (Top 5 / Top 10)` and `📱 Short-Form Vertical Clips`.
+

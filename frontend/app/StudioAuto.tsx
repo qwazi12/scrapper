@@ -10,6 +10,7 @@ import {
   StudioProject,
 } from "../lib/api";
 import { askConfirm, notify } from "../lib/dialogs";
+import { CountdownModal } from "./CountdownModal";
 
 // Breakdown automation UI: the on/off switch + daily limits, the checked and
 // ranked trending list (10 movies + 10 TV), and "Your videos" with review
@@ -391,6 +392,7 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
   const [filter, setFilter] = useState<Filter>("all");
   const [batch, setBatch] = useState<RenderBatch | null>(null);
   const [working, setWorking] = useState(false);
+  const [showCountdown, setShowCountdown] = useState(false);
 
   const loadBatch = () => api.studioRenderBatchStatus().then(setBatch).catch(() => {});
   useEffect(() => { loadBatch(); }, []);
@@ -506,6 +508,20 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
         <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={working || !chosen.length} onClick={queueSelected}>
           📤 Send to queue ({chosen.filter((p) => p.has?.render).length})
         </button>
+        <button
+          style={{
+            fontSize: 11,
+            padding: "3px 10px",
+            background: chosen.filter((p) => p.has?.render).length >= 2 ? "#e50914" : undefined,
+            color: chosen.filter((p) => p.has?.render).length >= 2 ? "#fff" : undefined,
+            fontWeight: 700,
+          }}
+          disabled={working || chosen.filter((p) => p.has?.render).length < 2}
+          onClick={() => setShowCountdown(true)}
+          title="Stitch selected rendered videos into a Top 5 or Top 10 countdown compilation"
+        >
+          🎬 Stitch Countdown ({chosen.filter((p) => p.has?.render).length})
+        </button>
         <button style={{ fontSize: 11, padding: "3px 10px" }} disabled={working || !chosen.length} onClick={() => archiveSelected(true)}
                 title="Deleted automatically 5 days from now; un-archive any time before">
           🗄 Archive ({chosen.length})
@@ -526,6 +542,17 @@ export function VideosList({ projects, onOpen, onReload, renderItem }: {
             <div key={r.id} style={{ color: r.ok ? "var(--accent)" : "var(--red)" }}>{r.ok ? "✓" : "✕"} {r.title}{r.why ? ` — ${r.why}` : ""}</div>
           ))}
         </div>
+      )}
+      {showCountdown && (
+        <CountdownModal
+          initialProjectIds={chosen.filter((p) => p.has?.render).map((p) => p.id)}
+          onClose={() => setShowCountdown(false)}
+          onSuccess={() => {
+            onReload();
+            setSel(new Set());
+            setShowCountdown(false);
+          }}
+        />
       )}
       {shown.length === 0 ? (
         <div style={muted}>{projects.length ? "Nothing in this filter." : "Nothing yet. Pick a title below to start one."}</div>

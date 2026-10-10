@@ -478,7 +478,100 @@ export type StudioStatus = {
   attribution: string;
 };
 
+// --- Countdown Compilations ---
+export type CountdownTheme = {
+  id: string;
+  title: string;
+  description: string;
+  media_type: string;
+  genre_ids?: number[];
+  default_count: number;
+};
+
+export type CuratedCandidate = {
+  tmdb_id: number;
+  media_type: string;
+  imdb_id: string | null;
+  title: string;
+  date: string;
+  overview: string;
+  poster: string | null;
+  backdrop: string | null;
+  vote_average: number;
+  popularity: number;
+};
+
+export type EligibleProject = {
+  id: number;
+  title: string;
+  media_type: string;
+  tmdb_id: number;
+  seconds: number;
+  rendered_at: string;
+  poster_url: string | null;
+  thumb_url: string;
+  facts: {
+    primary_date?: string;
+    genres?: string[];
+    tagline?: string;
+  };
+};
+
+export type CompilationChapter = {
+  time: number;
+  time_formatted: string;
+  title: string;
+  project_id?: number;
+};
+
+export type CompilationPreview = {
+  title: string;
+  total_seconds: number;
+  total_minutes: number;
+  item_count: number;
+  chapters: CompilationChapter[];
+};
+
+export type StitchResult = {
+  compilation_id: number;
+  title: string;
+  total_seconds: number;
+  total_minutes: number;
+  video_path: string;
+  primary_thumb: string;
+  thumbnails: string[];
+  chapters: CompilationChapter[];
+  chapters_text: string;
+  description: string;
+  queue_item_id: number | null;
+};
+
+export type CinemetaTitle = {
+  imdb_id: string;
+  title: string;
+  year: string;
+  media_type: string;
+  genres: string[];
+  director: string[];
+  cast: string[];
+  rating: number;
+  synopsis: string;
+  poster: string | null;
+  background: string | null;
+  runtime: string;
+  trailers: { youtube_id: string; type: string; url: string }[];
+};
+
+export type FmhyResource = {
+  category: string;
+  name: string;
+  url: string;
+  description: string;
+};
+
 // --- Stop + Undo ---------------------------------------------------------------
+
+
 export type Job = {
   id: string;
   kind: string;
@@ -959,6 +1052,24 @@ export const api = {
     if (bust) q.set("v", bust);
     return mediaUrl(`/api/studio/projects/${id}/file?${q.toString()}`);
   },
+
+  // --- Countdown Compilations ---
+  compilationThemes: () => req<CountdownTheme[]>("/api/studio/compilations/themes", { headers: headers(false) }),
+  compilationCurate: (data: { theme_id?: string; custom_query?: string; media_type?: string; limit?: number }) =>
+    req<CuratedCandidate[]>("/api/studio/compilations/curate", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  compilationEligibleProjects: () => req<EligibleProject[]>("/api/studio/compilations/eligible-projects", { headers: headers(false) }),
+  compilationPreview: (data: { project_ids: number[]; title: string }) =>
+    req<CompilationPreview>("/api/studio/compilations/preview-chapters", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  compilationStitch: (data: { project_ids: number[]; title: string; custom_intro?: string; custom_outro?: string; accounts?: string[] }) =>
+    req<StitchResult>("/api/studio/compilations/stitch", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  cinemetaTop: (media_type = "movie") =>
+    req<CinemetaTitle[]>(`/api/studio/compilations/cinemeta/top?media_type=${media_type}`, { headers: headers(false) }),
+  cinemetaMeta: (imdb_id: string, media_type = "movie") =>
+    req<CinemetaTitle>(`/api/studio/compilations/cinemeta/meta?imdb_id=${encodeURIComponent(imdb_id)}&media_type=${media_type}`, { headers: headers(false) }),
+  fmhyResources: () =>
+    req<FmhyResource[]>("/api/studio/compilations/fmhy/resources", { headers: headers(false) }),
+
+
 
   aiCheck: () =>
     req<{ ok: boolean; model: string; title: string; hashtags: string[] }>("/api/social/ai-check", {
