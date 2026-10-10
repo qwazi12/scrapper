@@ -52,8 +52,9 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
   const [savedList, setSavedList] = useState<ResearchedCountdown[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
 
-  // Stitch Modal
+  // Stitch Modal & Auto-Queue
   const [showStitchModal, setShowStitchModal] = useState(false);
+  const [autoQueuing, setAutoQueuing] = useState(false);
 
   // Load triggers and candidates on mount
   useEffect(() => {
@@ -145,6 +146,39 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
     }
   };
 
+  const handleAutoQueueCountdown = async (countdownOverride?: ResearchedCountdown, targetCount?: number) => {
+    const target = countdownOverride || currentCountdown;
+    if (!target) {
+      setShowStitchModal(true);
+      return;
+    }
+    const count = targetCount || target.entries.length;
+    const ok = await askConfirm(
+      `Auto-queue "${target.topic}" for video creation?\n\n` +
+      `This will:\n` +
+      `1. Look up TMDB & auto-create Studio breakdown projects for any unmade titles\n` +
+      `2. Assemble the full 8–12m Master Compilation with auto-chapters, 10s retention hook & US streaming links\n` +
+      `3. Queue the compilation in the Posting Queue ready for publishing`
+    );
+    if (!ok) return;
+
+    setAutoQueuing(true);
+    try {
+      const res = await api.countdownAutoQueue(target, count);
+      notify(res.message);
+      if (onReloadProjects) onReloadProjects();
+      await loadSaved();
+      const data = await api.savedCountdowns();
+      setSavedList(data);
+      const updated = data.find((d) => d.id === target.id || d.topic === target.topic);
+      if (updated) setCurrentCountdown(updated);
+    } catch (e: any) {
+      notify("Auto-queue failed: " + (e.message || String(e)));
+    } finally {
+      setAutoQueuing(false);
+    }
+  };
+
   const handleDeleteSaved = async (id?: string) => {
     if (!id) return;
     const ok = await askConfirm("Delete this saved countdown list?");
@@ -227,7 +261,14 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
         {/* Quick Action: Stitcher */}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
-            onClick={() => setShowStitchModal(true)}
+            onClick={() => {
+              if (currentCountdown) {
+                handleAutoQueueCountdown();
+              } else {
+                setShowStitchModal(true);
+              }
+            }}
+            disabled={autoQueuing}
             style={{
               display: "flex",
               alignItems: "center",
@@ -240,10 +281,11 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
               fontWeight: 600,
               fontSize: 12,
               cursor: "pointer",
+              opacity: autoQueuing ? 0.7 : 1,
             }}
           >
-            <span>🎬</span>
-            <span>Stitch Video (8–12m)</span>
+            <span>{autoQueuing ? "⏳" : "🎬"}</span>
+            <span>{autoQueuing ? "Auto-Queuing Video..." : "Stitch Video (8–12m)"}</span>
           </button>
         </div>
       </div>
@@ -874,7 +916,8 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                     </button>
 
                     <button
-                      onClick={() => setShowStitchModal(true)}
+                      onClick={() => handleAutoQueueCountdown()}
+                      disabled={autoQueuing}
                       style={{
                         padding: "7px 14px",
                         borderRadius: 6,
@@ -887,10 +930,11 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
+                        opacity: autoQueuing ? 0.7 : 1,
                       }}
                     >
-                      <span>🎬</span>
-                      <span>Stitch 8–12m Video</span>
+                      <span>{autoQueuing ? "⏳" : "🎬"}</span>
+                      <span>{autoQueuing ? "Auto-Queuing Video..." : "Stitch 8–12m Video"}</span>
                     </button>
                   </div>
                 </div>
@@ -999,6 +1043,32 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                   const isNumberOne = entry.rank === 1;
                   const isControversial = (currentCountdown.entries.length <= 5 && entry.rank === 3) ||
                                           (currentCountdown.entries.length > 5 && entry.rank === 4);
+                  const entryTitleClean = entry.title.toLowerCase().trim();
+                  const linkedStudioProj = projects.find((p) => {
+                    const pTitleClean = p.title.toLowerCase().trim();
+                    return (
+                      (entry.tmdb_id && p.tmdb_id === entry.tmdb_id) ||
+                      pTitleClean.includes(entryTitleClean) ||
+                      entryTitleClean.includes(pTitleClean)
+                    );
+                  });
+                  const projectId = linkedStudioProj?.id || entry.linked_project?.project_id || (entry.linked_project as any)?.id;
+                  const hasRender = Boolean(
+                    entry.has_footage ||
+                    entry.linked_project?.has_render ||
+                    linkedStudioProj?.has?.render ||
+                    linkedStudioProj?.render
+                  );
+                  const renderSeconds =
+                    linkedStudioProj?.render?.seconds ||
+                    entry.linked_project?.seconds ||
+                    (entry.linked_project as any)?.seconds ||
+                    0;
+                  const stageStatus =
+                    linkedStudioProj?.stage_status ||
+                    linkedStudioProj?.stage ||
+                    entry.linked_project?.stage ||
+                    "Queued";
 
                   return (
                     <div
@@ -1163,14 +1233,77 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                           </div>
 
                           {/* Local Footage check */}
-                          {entry.has_footage ? (
+                          {hasRender ? (
                             <span style={badgeStyle("#064e3b", "#34d399")}>
-                              ✓ Local 1080p Breakdown Footage Ready ({entry.linked_project?.seconds}s)
+                              ✓ Local 1080p Breakdown Footage Ready {renderSeconds > 0 ? `(${Math.round(renderSeconds)}s)` : ""}
                             </span>
+                          ) : projectId ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={badgeStyle("#1e3a8a", "#60a5fa")}>
+                                ⏳ Studio Breakdown #{projectId} ({stageStatus})
+                              </span>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.studioRun(projectId, "gather", true, "render");
+                                    notify(`Started pipeline for Studio project #${projectId}`);
+                                    if (onReloadProjects) onReloadProjects();
+                                  } catch (err: any) {
+                                    notify(`Failed to run: ${err.message || String(err)}`);
+                                  }
+                                }}
+                                style={{
+                                  background: "rgba(96, 165, 250, 0.15)",
+                                  border: "1px solid rgba(96, 165, 250, 0.4)",
+                                  color: "#60a5fa",
+                                  borderRadius: 4,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  padding: "2px 8px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                ▶ Run
+                              </button>
+                            </div>
                           ) : (
-                            <span style={badgeStyle("#1e293b", "#94a3b8")}>
-                              No local breakdown rendered yet
-                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={badgeStyle("#1e293b", "#94a3b8")}>
+                                No local breakdown rendered yet
+                              </span>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    notify(`Creating Studio breakdown project for "${entry.title}"...`);
+                                    const proj = await api.studioCreate({
+                                      title: `${entry.title}${entry.year ? ` (${entry.year})` : ""}`,
+                                      tmdb_id: entry.tmdb_id || 0,
+                                      media_type: entry.media_type || "movie",
+                                    });
+                                    try {
+                                      await api.studioRun(proj.id, "gather", true, "plan");
+                                    } catch (_) {}
+                                    notify(`Queued Studio project #${proj.id} for "${entry.title}"`);
+                                    if (onReloadProjects) onReloadProjects();
+                                    await loadSaved();
+                                  } catch (err: any) {
+                                    notify(`Failed to create project: ${err.message || String(err)}`);
+                                  }
+                                }}
+                                style={{
+                                  background: "rgba(56, 189, 248, 0.15)",
+                                  border: "1px solid rgba(56, 189, 248, 0.4)",
+                                  color: "#38bdf8",
+                                  borderRadius: 4,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  padding: "2px 8px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                + Create Breakdown Project
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1345,6 +1478,23 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                       }}
                     >
                       Open & View
+                    </button>
+
+                    <button
+                      onClick={() => handleAutoQueueCountdown(item)}
+                      disabled={autoQueuing}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid #ef4444",
+                        background: "rgba(239, 68, 68, 0.15)",
+                        color: "#f87171",
+                        fontWeight: 600,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      🎬 Auto-Queue Video
                     </button>
 
                     <button

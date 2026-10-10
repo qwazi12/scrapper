@@ -1170,6 +1170,20 @@ export const api = {
     req<ResearchedCountdown>("/api/studio/compilations/saved", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   deleteSavedCountdown: (id: string) =>
     req<{ deleted: boolean }>(`/api/studio/compilations/saved/${encodeURIComponent(id)}`, { method: "DELETE", headers: headers(false) }),
+  countdownAutoQueue: (countdown: ResearchedCountdown, targetCount?: number) =>
+    req<{
+      ok: boolean;
+      queue_item_id: number;
+      project_ids: number[];
+      created_count: number;
+      title: string;
+      entry_count: number;
+      message: string;
+    }>("/api/studio/compilations/auto-queue", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ countdown, target_count: targetCount }),
+    }),
 
 
 

@@ -253,3 +253,28 @@ def delete_saved_countdown_route(countdown_id: str) -> dict[str, bool]:
     return {"deleted": ok}
 
 
+class AutoQueueCountdownRequest(BaseModel):
+    countdown: dict[str, Any]
+    target_count: int | None = None
+
+
+@router.post("/auto-queue")
+def auto_queue_countdown(req: AutoQueueCountdownRequest) -> dict[str, Any]:
+    """Auto-queue a researched countdown for video production:
+    1. Ensures each ranked title has a Studio breakdown project (creates and triggers gather if needed).
+    2. Builds the complete YouTube master package (Hook, auto-chapters, streaming links, discussion question).
+    3. Enqueues the master countdown compilation video into the Posting Queue (QueueItem) with status 'ready'.
+    """
+    try:
+        return engine.auto_queue_researched_countdown(
+            countdown=req.countdown,
+            target_count=req.target_count,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error("Auto-queue countdown failed: %s", e)
+        raise HTTPException(500, f"Auto-queue failed: {str(e)}")
+
+
+

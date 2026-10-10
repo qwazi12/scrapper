@@ -530,3 +530,165 @@ def delete_saved_countdown(countdown_id: str) -> bool:
         row.value = {"items": items}
         s.commit()
     return True
+
+
+def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int | None = None) -> dict[str, Any]:
+    """Auto-queue a researched countdown for full video production:
+    1. Ensures each ranked title has a Studio breakdown project (creates and triggers gather if needed).
+    2. Builds the complete YouTube master package (Hook, auto-chapters, streaming links, discussion question).
+    3. Enqueues the master countdown compilation video into the Posting Queue (QueueItem) with status 'ready'.
+    """
+    from ...models import StudioProject, QueueItem
+    from .. import runner
+
+    entries = countdown.get("entries", [])
+    if not entries:
+        raise ValueError("Countdown has no entries to queue")
+
+    limit = target_count or (15 if countdown.get("format") == "top15" else 5 if countdown.get("format") == "top5" else 10)
+    selected_entries = [e for e in entries if e.get("rank", 999) <= limit]
+    selected_entries.sort(key=lambda x: x.get("rank", 0), reverse=True)
+
+    project_ids = []
+    created_count = 0
+    with SessionLocal() as s:
+        for entry in selected_entries:
+            title = entry.get("title", "")
+            year = entry.get("year")
+            tmdb_id = entry.get("tmdb_id")
+
+            existing = None
+            if tmdb_id:
+                existing = s.query(StudioProject).filter(StudioProject.tmdb_id == tmdb_id).first()
+            if not existing and title:
+                existing = s.query(StudioProject).filter(StudioProject.title.ilike(f"%{title}%")).first()
+
+            if existing:
+                project_ids.append(existing.id)
+                entry["linked_project"] = {
+                    "id": existing.id,
+                    "title": existing.title,
+                    "seconds": (existing.render or {}).get("seconds", 0),
+                }
+                entry["has_footage"] = bool(existing.render)
+            else:
+                m_type = "movie"
+                if not tmdb_id and tmdb.configured():
+                    try:
+                        results = tmdb.search(title)
+                        if results:
+                            match = results[0]
+                            if year and len(results) > 1:
+                                for r in results[:4]:
+                                    r_year = (r.get("date") or "")[:4]
+                                    if r_year and str(year) == r_year:
+                                        match = r
+                                        break
+                            tmdb_id = match.get("tmdb_id") or match.get("id")
+                            m_type = match.get("media_type") or "movie"
+                    except Exception:
+                        pass
+
+                clean_title = f"{title} ({year})" if year else title
+                p = StudioProject(
+                    tmdb_id=tmdb_id or 0,
+                    media_type=m_type,
+                    title=clean_title,
+                    target_minutes=1.5,
+                    facts={
+                        "primary_date": f"{year}-01-01" if year else None,
+                        "overview": entry.get("why_it_ranks", ""),
+                        "poster": entry.get("poster"),
+                        "why_it_ranks": entry.get("why_it_ranks"),
+                        "fun_fact": entry.get("fun_fact"),
+                        "key_stat": entry.get("key_stat"),
+                        "where_to_watch": entry.get("where_to_watch"),
+                    },
+                )
+                s.add(p)
+                s.commit()
+                s.refresh(p)
+                created_count += 1
+                project_ids.append(p.id)
+                entry["linked_project"] = {"id": p.id, "title": p.title, "seconds": 0}
+                entry["has_footage"] = False
+
+                if tmdb_id and not runner.busy().get("project_id"):
+                    try:
+                        runner.start(p.id, "gather", auto=True, until="plan")
+                    except Exception:
+                        pass
+
+        topic = countdown.get("topic", "Top Countdown")
+        hook_script = countdown.get("hook_script", "")
+        closing_q = countdown.get("closing_question", "")
+        title_opts = countdown.get("title_options", [topic])
+        chosen_title = title_opts[0] if title_opts else topic
+
+        desc_lines = []
+        if hook_script:
+            desc_lines.append(f'"{hook_script}"\n')
+        desc_lines.append(f"In this episode of Screen Central, we are counting down the {topic}!\n")
+        desc_lines.append("⏳ CHAPTERS:")
+        desc_lines.append("0:00 Intro & Preview")
+
+        curr_sec = 16
+        for e in selected_entries:
+            m = curr_sec // 60
+            sec = curr_sec % 60
+            desc_lines.append(f"{m}:{sec:02d} #{e['rank']}: {e['title']} ({e.get('year', '')})")
+            curr_sec += 75
+
+        m = curr_sec // 60
+        sec = curr_sec % 60
+        desc_lines.append(f"{m}:{sec:02d} Outro & Final Thoughts\n")
+
+        desc_lines.append("🎬 RANKED ENTRIES & WHERE TO STREAM:")
+        for e in selected_entries:
+            desc_lines.append(f"• #{e['rank']} {e['title']} ({e.get('year', '')}) — Score: {e.get('score', 90)}/100")
+            if e.get("where_to_watch"):
+                desc_lines.append(f"  Streaming (US): {e['where_to_watch']}")
+            if e.get("key_stat"):
+                desc_lines.append(f"  Key Stat: {e['key_stat']}")
+
+        if closing_q:
+            desc_lines.append(f"\n💬 DISCUSSION:\n{closing_q}\n")
+
+        desc_lines.append("\n🔔 Subscribe to Screen Central for daily film & TV countdowns, reviews, and rankings!")
+        description = "\n".join(desc_lines)
+
+        tags = f"countdown, top 10, {topic.lower()}, movies, film ranking, screen central"
+        for e in selected_entries[:6]:
+            tags += f", {e.get('title', '').lower()}"
+
+        q = QueueItem(
+            pipeline="LongForm",
+            source="Countdown Studio",
+            video_name=f"Top {len(selected_entries)} Countdown - {topic[:60]}",
+            title=chosen_title[:100],
+            description=description,
+            tags=tags[:500],
+            status="ready",
+            accounts=["default:*"],
+            notes=f"Auto-queued Countdown Video from Countdown Studio ({len(selected_entries)} titles: #{selected_entries[0]['rank']} to #{selected_entries[-1]['rank']})",
+            research={
+                "countdown": countdown,
+                "project_ids": project_ids,
+                "created_count": created_count,
+            },
+        )
+        s.add(q)
+        s.commit()
+        s.refresh(q)
+
+    save_countdown_item(countdown)
+
+    return {
+        "ok": True,
+        "queue_item_id": q.id,
+        "project_ids": project_ids,
+        "created_count": created_count,
+        "title": chosen_title,
+        "entry_count": len(selected_entries),
+        "message": f"Successfully auto-queued '{topic}'! Master Compilation added to Posting Queue (#{q.id}), and {created_count} breakdown projects created.",
+    }
