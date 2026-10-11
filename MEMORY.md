@@ -808,20 +808,28 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
     - `npx tsc --noEmit` passed cleanly.
     - Added and passed unit test `backend/tests/test_studio_auto_queue.py` verifying full QueueItem assembly, chapters, and project generation.
 
-## Log — 2026-10-11 — Studio Segregation & Dedicated Countdown Compilations Shelf
+## Log — 2026-10-11 — Studio Segregation, Compilations-Only Output & Dedicated Countdown Player
 
-- **Clear Boundary Between LongForm Studio and Countdown Studio:**
-  - **Single Title Breakdowns (LongForm Studio):** Only upcoming / current-month-forward single trailer breakdowns (2–4 min) appear in LongForm Studio (`Wildwood`, `Whalefall`, etc.).
-  - **Countdown Segments Excluded from LongForm Studio (`backend/app/studio/routes.py:list_projects`)**: All projects created for countdowns are tagged with `is_countdown=True` and `origin="countdown"`. `list_projects` automatically filters them out so LongForm Studio never gets flooded with catalog movies from past years.
-  - **No Standalone Single Video Posts for Countdowns:** Countdown segment projects are created for the countdown compilation only (`queue_item_id=None`). Only the master 8–12 minute countdown compilation is queued for publishing.
+- **Architectural Separation: LongForm Studio vs Countdown Studio:**
+  - **LongForm Studio = Single-Title Factory (2–4m):** Strictly limited to upcoming & current-month-forward single trailer breakdowns (*Wildwood*, *Whalefall*, etc.).
+  - **Countdown Studio = Macro Curator & Master Compilation Director (8–12m):** Discovers high-demand topics, ranks 5–15 titles from composite data (TMDB, Letterboxd, IMDb, JustWatch), scripts retention hooks and debate prompts, and directs compilation assembly.
+- **Strict Studio Segregation & No Clutter:**
+  - **Countdown Projects Excluded from LongForm Studio (`backend/app/studio/routes.py:list_projects`)**: Whenever projects are created for a countdown (e.g. catalog classics like *The Ring*, *The Descent*, *Alien*), they are tagged with `is_countdown=True` and `origin="countdown"`. `list_projects` automatically filters them out so LongForm Studio never gets flooded with catalog movies from past years.
+  - **Compilations-Only Publishing (No Standalone Single Video Posts):** Countdown segment projects are created strictly as building blocks for the compilation (`queue_item_id=None`). They are never queued or published as individual videos. Only the master 8–12 minute compilation is placed in the Posting Queue.
 - **Dedicated "Countdown Compilations" Shelf & Video Player (`frontend/app/CountdownsStudioPanel.tsx`)**:
-  - Added 4th sub-tab: **`🎬 Countdown Compilations`**.
-  - Lists all master countdown compilations (rendered MP4s and queued compilations).
-  - Built-in **HTML5 Video Player** streaming directly from `/api/studio/compilations/{id}/file?path=final_compilation.mp4` or the queue video endpoint.
-  - Interactive timed chapters list (#15 down to #1, Intro, Outro) with 1-click clipboard copy.
-  - Packaging inspector (Clickable YouTube titles, 10s retention hook script, closing debate prompt).
-  - Underlying countdown segment inspector showing the live render progress of all ranked titles.
-- **API Endpoints (`backend/app/studio/compilations/routes.py`)**:
-  - `GET /api/studio/compilations/list`: Returns all compilations (queue items + on-disk renders).
-  - `GET /api/studio/compilations/projects`: Lists countdown-specific segment projects.
-  - `GET /api/studio/compilations/{compilation_id}/file`: Streams compilation video / thumbnail files.
+  - Added 4th sub-tab: **`🎬 Countdown Compilations`** (joining `Topic Discovery`, `Researched Countdown`, and `Saved Countdowns`).
+  - Lists all master countdown compilations (both completed MP4 renders and in-progress/queued compilations).
+  - Built-in **HTML5 Video Player** with direct streaming via `mediaUrl(/api/studio/compilations/{id}/file?path=final_compilation.mp4)` or the queue video route.
+  - Interactive timed chapters list (#15 down to #1, Intro, Outro) with 1-click clipboard copy for YouTube timestamps.
+  - Retention strategy & packaging inspector (YouTube titles, 10-second retention hook script, and closing debate prompt).
+  - Countdown segments inspector displaying real-time render status (`✓ Rendered` or `⏳ In Progress`) for every ranked title with individual `▶ Run` buttons.
+- **Backend API Endpoints (`backend/app/studio/compilations/routes.py`)**:
+  - `GET /api/studio/compilations/list`: Returns all compilations (SocialPilot queue items + on-disk renders with metadata).
+  - `GET /api/studio/compilations/projects`: Lists countdown-specific segment projects (isolated from LongForm Studio).
+  - `GET /api/studio/compilations/{compilation_id}/file`: Streams compilation video / thumbnail files using `FileResponse`.
+  - `POST /api/studio/compilations/auto-queue`: 1-click bridge that creates/starts missing segment projects and queues the master compilation.
+- **Verification & Testing:**
+  - Frontend typecheck passed cleanly with zero errors (`npx tsc --noEmit`).
+  - Unit test passed (`backend/tests/test_studio_auto_queue.py`).
+  - Pushed to `origin/main` (commits `996b0da`, `8df26c1`, `590ee1a`, `7f83c4e`).
+
