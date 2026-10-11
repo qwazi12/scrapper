@@ -8,6 +8,8 @@ import {
   ResearchedCountdown,
   CountdownEntry,
   StudioProject,
+  CountdownCompilation,
+  mediaUrl,
 } from "../lib/api";
 import { notify, askConfirm } from "../lib/dialogs";
 import { CountdownModal } from "./CountdownModal";
@@ -32,7 +34,7 @@ const badgeStyle = (bg: string, fg: string): React.CSSProperties => ({
 });
 
 export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { projects?: StudioProject[]; onReloadProjects?: () => void }) {
-  const [subView, setSubView] = useState<"discovery" | "researched" | "saved">("discovery");
+  const [subView, setSubView] = useState<"discovery" | "researched" | "saved" | "compilations">("discovery");
   const [triggers, setTriggers] = useState<CountdownTrigger[]>([]);
   const [selectedTrigger, setSelectedTrigger] = useState<string>("all");
   const [candidates, setCandidates] = useState<CountdownTopicCandidate[]>([]);
@@ -52,6 +54,12 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
   const [savedList, setSavedList] = useState<ResearchedCountdown[]>([]);
   const [loadingSaved, setLoadingSaved] = useState(false);
 
+  // Compilations & Countdown Projects
+  const [compilations, setCompilations] = useState<CountdownCompilation[]>([]);
+  const [loadingCompilations, setLoadingCompilations] = useState(false);
+  const [selectedCompilation, setSelectedCompilation] = useState<CountdownCompilation | null>(null);
+  const [countdownProjects, setCountdownProjects] = useState<StudioProject[]>([]);
+
   // Stitch Modal & Auto-Queue
   const [showStitchModal, setShowStitchModal] = useState(false);
   const [autoQueuing, setAutoQueuing] = useState(false);
@@ -64,7 +72,33 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
 
     loadCandidates("all");
     loadSaved();
+    loadCompilations();
+    loadCountdownProjects();
   }, []);
+
+  const loadCompilations = async () => {
+    setLoadingCompilations(true);
+    try {
+      const data = await api.countdownCompilationsList();
+      setCompilations(data);
+      if (data && data.length > 0) {
+        setSelectedCompilation((prev) => (prev ? data.find((d) => d.id === prev.id) || data[0] : data[0]));
+      }
+    } catch (e) {
+      console.error("Failed to load compilations:", e);
+    } finally {
+      setLoadingCompilations(false);
+    }
+  };
+
+  const loadCountdownProjects = async () => {
+    try {
+      const projs = await api.countdownStudioProjects();
+      setCountdownProjects(projs);
+    } catch (e) {
+      console.error("Failed to load countdown projects:", e);
+    }
+  };
 
   const loadCandidates = async (triggerFilter: string, forceRefresh = false) => {
     setLoadingCandidates(true);
@@ -371,6 +405,30 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
           >
             <span>📁</span>
             <span>Saved Countdowns ({savedList.length})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setSubView("compilations");
+              loadCompilations();
+              loadCountdownProjects();
+            }}
+            style={{
+              padding: "7px 14px",
+              borderRadius: 6,
+              border: "none",
+              background: subView === "compilations" ? "var(--accent)" : "transparent",
+              color: subView === "compilations" ? "#fff" : "var(--muted)",
+              fontWeight: 600,
+              fontSize: 12,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <span>🎬</span>
+            <span>Countdown Compilations ({compilations.length})</span>
           </button>
         </div>
 
@@ -1514,6 +1572,344 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── SUB-VIEW 4: COUNTDOWN COMPILATIONS SHELF & PLAYER ─── */}
+      {subView === "compilations" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, color: "#f8fafc" }}>
+                🎬 Countdown Compilations & Master Videos
+              </h3>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                8–12 minute full compilation videos assembled from researched countdown rankings. Complete with 10s retention hooks, timed chapters (#15 to #1), and debate outros.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => {
+                  loadCompilations();
+                  loadCountdownProjects();
+                }}
+                disabled={loadingCompilations}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: "1px solid var(--border)",
+                  background: "var(--panel)",
+                  color: "var(--text)",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                🔄 Refresh
+              </button>
+              <button
+                onClick={() => setShowStitchModal(true)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 6,
+                  border: "1px solid #ef4444",
+                  background: "#b91c1c",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span>🎬</span>
+                <span>Stitch Manual Compilation</span>
+              </button>
+            </div>
+          </div>
+
+          {loadingCompilations ? (
+            <div style={{ ...cardStyle, textAlign: "center", padding: 30, color: "var(--muted)" }}>
+              Loading countdown compilations...
+            </div>
+          ) : compilations.length === 0 ? (
+            <div style={{ ...cardStyle, textAlign: "center", padding: 40 }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>🎬</div>
+              <h4 style={{ margin: "0 0 8px", fontSize: 16, color: "#f8fafc" }}>No Countdown Compilations Yet</h4>
+              <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--muted)", maxWidth: 500, marginInline: "auto" }}>
+                Countdown videos are produced as full 8–12 minute compilations. Pick any topic in <strong>Topic Discovery</strong>, research it, and click <strong>🎬 Stitch Video (8–12m)</strong> to auto-queue your first master compilation!
+              </p>
+              <button
+                onClick={() => setSubView("discovery")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontWeight: 600,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Go to Topic Discovery
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 360px) 1fr", gap: 16, alignItems: "start" }}>
+              {/* Left Column: Compilations Shelf */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {compilations.map((comp) => {
+                  const isSelected = selectedCompilation?.id === comp.id;
+                  return (
+                    <div
+                      key={comp.id}
+                      onClick={() => setSelectedCompilation(comp)}
+                      style={{
+                        ...cardStyle,
+                        cursor: "pointer",
+                        border: isSelected ? "2px solid #ef4444" : "1px solid var(--border)",
+                        background: isSelected ? "rgba(185, 28, 28, 0.1)" : "var(--panel)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={badgeStyle("#7f1d1d", "#fca5a5")}>
+                          {comp.format.toUpperCase()} COMPILATION
+                        </span>
+                        <span style={badgeStyle(comp.has_video ? "#064e3b" : "#1e3a8a", comp.has_video ? "#34d399" : "#60a5fa")}>
+                          {comp.has_video ? "✓ Rendered MP4" : `⏳ ${comp.status.toUpperCase()}`}
+                        </span>
+                      </div>
+
+                      <h4 style={{ margin: 0, fontSize: 14, color: "#f8fafc", lineHeight: 1.4 }}>
+                        {comp.topic || comp.title}
+                      </h4>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--muted)" }}>
+                        <span>{comp.entry_count ? `${comp.entry_count} ranked entries` : "Master video"}</span>
+                        <span>{comp.created_at ? new Date(comp.created_at).toLocaleDateString() : ""}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Right Column: Selected Master Compilation Inspector & Video Player */}
+              {selectedCompilation && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {/* Video Player Card */}
+                  <div style={{ ...cardStyle, background: "#0a0f1d", padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <h4 style={{ margin: 0, fontSize: 16, color: "#f8fafc" }}>
+                        🎬 {selectedCompilation.title}
+                      </h4>
+                      {selectedCompilation.queue_item_id && (
+                        <span style={badgeStyle("#1e3a8a", "#93c5fd")}>
+                          Posting Queue #{selectedCompilation.queue_item_id}
+                        </span>
+                      )}
+                    </div>
+
+                    {selectedCompilation.video_url ? (
+                      <video
+                        controls
+                        src={mediaUrl(selectedCompilation.video_url)}
+                        poster={selectedCompilation.thumb_url ? mediaUrl(selectedCompilation.thumb_url) : undefined}
+                        style={{ width: "100%", maxHeight: 420, borderRadius: 8, background: "#000" }}
+                      />
+                    ) : selectedCompilation.has_video && selectedCompilation.queue_item_id ? (
+                      <video
+                        controls
+                        src={mediaUrl(`/api/queue/${selectedCompilation.queue_item_id}/video`)}
+                        style={{ width: "100%", maxHeight: 420, borderRadius: 8, background: "#000" }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 240,
+                          background: "linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.6) 100%)",
+                          borderRadius: 8,
+                          border: "1px dashed rgba(255, 255, 255, 0.15)",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 12,
+                          padding: 20,
+                          textAlign: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: 36 }}>⏳</span>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: "#f8fafc" }}>
+                            Master Countdown Compilation Assembling
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                            {selectedCompilation.entry_count || "Ranked"} segments are in production. Once segment footage is rendered, the master 8–12m video stitches automatically with countdown bumpers.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Packaging & Retention Strategy */}
+                  <div
+                    style={{
+                      ...cardStyle,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {selectedCompilation.hook_script && (
+                      <div style={{ background: "rgba(15, 23, 42, 0.6)", padding: 12, borderRadius: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#fbbf24", marginBottom: 6 }}>
+                          🎣 First 10-Second Retention Hook
+                        </div>
+                        <p style={{ margin: 0, fontSize: 12, color: "#cbd5e1", fontStyle: "italic", lineHeight: 1.4 }}>
+                          "{selectedCompilation.hook_script}"
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedCompilation.closing_question && (
+                      <div style={{ background: "rgba(15, 23, 42, 0.6)", padding: 12, borderRadius: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 6 }}>
+                          💬 Closing Debate Question
+                        </div>
+                        <p style={{ margin: 0, fontSize: 12, color: "#cbd5e1", fontStyle: "italic", lineHeight: 1.4 }}>
+                          "{selectedCompilation.closing_question}"
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Timed Chapters Section */}
+                  {selectedCompilation.chapters && selectedCompilation.chapters.length > 0 && (
+                    <div style={cardStyle}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <h4 style={{ margin: 0, fontSize: 14, color: "#f8fafc" }}>
+                          ⏱️ Timed YouTube Chapters ({selectedCompilation.chapters.length})
+                        </h4>
+                        <button
+                          onClick={() => {
+                            const txt = selectedCompilation.chapters?.map((c) => `${c.time_formatted} ${c.title}`).join("\n") || "";
+                            navigator.clipboard.writeText(txt);
+                            notify("Chapters copied to clipboard!");
+                          }}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 6,
+                            border: "1px solid var(--border)",
+                            background: "transparent",
+                            color: "var(--text)",
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          📋 Copy Chapters
+                        </button>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
+                        {selectedCompilation.chapters.map((ch, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              background: "rgba(15, 23, 42, 0.5)",
+                              padding: "6px 10px",
+                              borderRadius: 6,
+                              border: "1px solid rgba(255, 255, 255, 0.05)",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              fontSize: 12,
+                            }}
+                          >
+                            <span style={{ color: "#38bdf8", fontFamily: "monospace", fontWeight: 700 }}>
+                              {ch.time_formatted}
+                            </span>
+                            <span style={{ color: "#e2e8f0" }}>
+                              {ch.title}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Underlying Segment Projects for this Compilation */}
+                  {selectedCompilation.project_ids && selectedCompilation.project_ids.length > 0 && (
+                    <div style={cardStyle}>
+                      <h4 style={{ margin: "0 0 12px", fontSize: 14, color: "#f8fafc" }}>
+                        🧩 Countdown Segments ({selectedCompilation.project_ids.length} Titles)
+                      </h4>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {selectedCompilation.project_ids.map((pid) => {
+                          const proj = countdownProjects.find((p) => p.id === pid) || projects.find((p) => p.id === pid);
+                          return (
+                            <div
+                              key={pid}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                background: "rgba(15, 23, 42, 0.4)",
+                                padding: "8px 12px",
+                                borderRadius: 6,
+                                border: "1px solid rgba(255, 255, 255, 0.05)",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: "#f8fafc" }}>
+                                  #{pid} {proj ? proj.title : `Segment #${pid}`}
+                                </span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={badgeStyle(proj?.has?.render ? "#064e3b" : "#1e3a8a", proj?.has?.render ? "#34d399" : "#60a5fa")}>
+                                  {proj?.has?.render ? "✓ Rendered" : proj?.stage_status || "Queued"}
+                                </span>
+                                {proj && !proj.has?.render && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await api.studioRun(proj.id, "gather", true, "render");
+                                        notify(`Started pipeline for project #${proj.id}`);
+                                        loadCountdownProjects();
+                                      } catch (err: any) {
+                                        notify(`Failed to run: ${err.message || String(err)}`);
+                                      }
+                                    }}
+                                    style={{
+                                      background: "rgba(96, 165, 250, 0.15)",
+                                      border: "1px solid rgba(96, 165, 250, 0.4)",
+                                      color: "#60a5fa",
+                                      borderRadius: 4,
+                                      fontSize: 11,
+                                      fontWeight: 600,
+                                      padding: "2px 8px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    ▶ Run
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

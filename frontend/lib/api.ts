@@ -652,6 +652,31 @@ export type ResearchedCountdown = {
   generated_at?: string;
 };
 
+export type CountdownCompilation = {
+  id: string;
+  queue_item_id?: number;
+  compilation_id?: string;
+  title: string;
+  topic: string;
+  status: string;
+  pipeline: string;
+  source: string;
+  video_path?: string | null;
+  thumb_path?: string | null;
+  has_video: boolean;
+  format: string;
+  hook_script?: string;
+  closing_question?: string;
+  chapters?: { time_formatted: string; title: string; rank?: number }[];
+  created_at?: string | null;
+  notes?: string | null;
+  project_ids?: number[];
+  entry_count?: number;
+  size_mb?: number;
+  video_url?: string | null;
+  thumb_url?: string | null;
+};
+
 // --- Stop + Undo ---------------------------------------------------------------
 
 
@@ -1184,6 +1209,10 @@ export const api = {
       headers: headers(),
       body: JSON.stringify({ countdown, target_count: targetCount }),
     }),
+  countdownCompilationsList: () =>
+    req<CountdownCompilation[]>("/api/studio/compilations/list", { headers: headers(false) }),
+  countdownStudioProjects: () =>
+    req<StudioProject[]>("/api/studio/compilations/projects", { headers: headers(false) }),
 
 
 

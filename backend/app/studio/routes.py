@@ -170,6 +170,9 @@ def list_projects(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
     out = []
     for p in projects:
         f = p.facts or {}
+        # Countdown segments belong in Countdown Studio, not LongForm Studio
+        if f.get("is_countdown") or f.get("origin") == "countdown":
+            continue
         p_date_str = f.get("primary_date")
         if p_date_str:
             try:

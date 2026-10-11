@@ -277,4 +277,107 @@ def auto_queue_countdown(req: AutoQueueCountdownRequest) -> dict[str, Any]:
         raise HTTPException(500, f"Auto-queue failed: {str(e)}")
 
 
+from fastapi.responses import FileResponse
+from ...models import QueueItem
+
+
+@router.get("/projects")
+def get_countdown_projects() -> list[dict[str, Any]]:
+    """List all Studio projects created for Countdowns (filtered out of LongForm Studio)."""
+    with SessionLocal() as s:
+        projects = (
+            s.query(StudioProject)
+            .order_by(StudioProject.id.desc())
+            .all()
+        )
+        out = []
+        for p in projects:
+            f = p.facts or {}
+            if f.get("is_countdown") or f.get("origin") == "countdown":
+                from ..routes import _out
+                out.append(_out(p, full=False))
+        return out
+
+
+@router.get("/list")
+def list_compilations() -> list[dict[str, Any]]:
+    """List all countdown compilation videos (both on-disk renders and active Posting Queue items)."""
+    out = []
+    seen_titles = set()
+
+    with SessionLocal() as s:
+        # 1. Check Posting Queue items from Countdown Studio
+        q_items = (
+            s.query(QueueItem)
+            .filter(QueueItem.source == "Countdown Studio")
+            .order_by(QueueItem.id.desc())
+            .all()
+        )
+        for q in q_items:
+            r = q.research or {}
+            c = r.get("countdown") or {}
+            seen_titles.add(q.title)
+            out.append({
+                "id": f"queue-{q.id}",
+                "queue_item_id": q.id,
+                "title": q.title or q.video_name,
+                "topic": c.get("topic") or q.video_name,
+                "status": q.status,
+                "pipeline": q.pipeline,
+                "source": q.source,
+                "video_path": q.video_path,
+                "thumb_path": q.thumb_path,
+                "has_video": bool(q.video_path and pathlib.Path(q.video_path).is_file()),
+                "format": c.get("format", "top10"),
+                "hook_script": c.get("hook_script", ""),
+                "closing_question": c.get("closing_question", ""),
+                "chapters": r.get("chapters", []),
+                "created_at": q.created_at.isoformat() if q.created_at else None,
+                "notes": q.notes,
+                "project_ids": r.get("project_ids", []),
+                "entry_count": len(c.get("entries", [])) or len(r.get("project_ids", [])),
+            })
+
+    # 2. Check on-disk rendered compilations in settings.data_path / studio / compilations
+    cdir = stitch.compilations_dir()
+    if cdir.exists():
+        for sub in sorted(cdir.iterdir(), reverse=True):
+            if sub.is_dir() and (sub / "final_compilation.mp4").is_file():
+                comp_id = sub.name
+                v_file = sub / "final_compilation.mp4"
+                thumb_file = sub / "thumbnails" / "thumbnail.jpg"
+                out.append({
+                    "id": f"disk-{comp_id}",
+                    "compilation_id": comp_id,
+                    "title": f"Compilation #{comp_id}",
+                    "topic": f"Countdown Compilation #{comp_id}",
+                    "status": "rendered",
+                    "pipeline": "LongForm",
+                    "source": "Countdown Studio",
+                    "video_path": str(v_file),
+                    "thumb_path": str(thumb_file) if thumb_file.is_file() else None,
+                    "has_video": True,
+                    "format": "compilation",
+                    "size_mb": round(v_file.stat().st_size / (1024 * 1024), 2),
+                    "video_url": f"/api/studio/compilations/{comp_id}/file?path=final_compilation.mp4",
+                    "thumb_url": f"/api/studio/compilations/{comp_id}/file?path=thumbnail.jpg" if thumb_file.is_file() else None,
+                })
+
+    return out
+
+
+@router.get("/{compilation_id}/file")
+def get_compilation_file(compilation_id: str, path: str = "final_compilation.mp4"):
+    """Serve compilation video or thumbnail file."""
+    cdir = stitch.compilations_dir() / compilation_id
+    if path == "thumbnail.jpg":
+        target = cdir / "thumbnails" / "thumbnail.jpg"
+    else:
+        target = cdir / path
+    target = target.resolve()
+    if not target.is_file():
+        raise HTTPException(404, "Compilation file not found")
+    return FileResponse(target)
+
+
 

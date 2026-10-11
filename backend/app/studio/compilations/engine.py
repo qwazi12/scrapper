@@ -545,6 +545,7 @@ def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int
     if not entries:
         raise ValueError("Countdown has no entries to queue")
 
+    topic = countdown.get("topic", "Top Countdown")
     limit = target_count or (15 if countdown.get("format") == "top15" else 5 if countdown.get("format") == "top5" else 10)
     selected_entries = [e for e in entries if e.get("rank", 999) <= limit]
     selected_entries.sort(key=lambda x: x.get("rank", 0), reverse=True)
@@ -565,6 +566,15 @@ def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int
 
             if existing:
                 project_ids.append(existing.id)
+                # Tag as countdown project if not already tagged
+                f_exist = dict(existing.facts or {})
+                if not f_exist.get("is_countdown"):
+                    f_exist["is_countdown"] = True
+                    f_exist["origin"] = "countdown"
+                    f_exist["countdown_topic"] = topic
+                    f_exist["countdown_id"] = countdown.get("id")
+                    existing.facts = f_exist
+                    s.commit()
                 entry["linked_project"] = {
                     "id": existing.id,
                     "title": existing.title,
@@ -603,6 +613,10 @@ def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int
                         "fun_fact": entry.get("fun_fact"),
                         "key_stat": entry.get("key_stat"),
                         "where_to_watch": entry.get("where_to_watch"),
+                        "origin": "countdown",
+                        "is_countdown": True,
+                        "countdown_topic": topic,
+                        "countdown_id": countdown.get("id"),
                     },
                 )
                 s.add(p)
@@ -632,16 +646,20 @@ def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int
         desc_lines.append("⏳ CHAPTERS:")
         desc_lines.append("0:00 Intro & Preview")
 
+        chapters_list = [{"time_formatted": "0:00", "title": "Intro & Preview"}]
         curr_sec = 16
         for e in selected_entries:
             m = curr_sec // 60
             sec = curr_sec % 60
-            desc_lines.append(f"{m}:{sec:02d} #{e['rank']}: {e['title']} ({e.get('year', '')})")
+            ch_title = f"#{e['rank']}: {e['title']} ({e.get('year', '')})"
+            desc_lines.append(f"{m}:{sec:02d} {ch_title}")
+            chapters_list.append({"time_formatted": f"{m}:{sec:02d}", "title": ch_title, "rank": e["rank"]})
             curr_sec += 75
 
         m = curr_sec // 60
         sec = curr_sec % 60
         desc_lines.append(f"{m}:{sec:02d} Outro & Final Thoughts\n")
+        chapters_list.append({"time_formatted": f"{m}:{sec:02d}", "title": "Outro & Final Thoughts"})
 
         desc_lines.append("🎬 RANKED ENTRIES & WHERE TO STREAM:")
         for e in selected_entries:
@@ -675,6 +693,7 @@ def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int
                 "countdown": countdown,
                 "project_ids": project_ids,
                 "created_count": created_count,
+                "chapters": chapters_list,
             },
         )
         s.add(q)
