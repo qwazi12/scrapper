@@ -807,3 +807,21 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - **Verification:**
     - `npx tsc --noEmit` passed cleanly.
     - Added and passed unit test `backend/tests/test_studio_auto_queue.py` verifying full QueueItem assembly, chapters, and project generation.
+
+## Log — 2026-10-11 — Studio Segregation & Dedicated Countdown Compilations Shelf
+
+- **Clear Boundary Between LongForm Studio and Countdown Studio:**
+  - **Single Title Breakdowns (LongForm Studio):** Only upcoming / current-month-forward single trailer breakdowns (2–4 min) appear in LongForm Studio (`Wildwood`, `Whalefall`, etc.).
+  - **Countdown Segments Excluded from LongForm Studio (`backend/app/studio/routes.py:list_projects`)**: All projects created for countdowns are tagged with `is_countdown=True` and `origin="countdown"`. `list_projects` automatically filters them out so LongForm Studio never gets flooded with catalog movies from past years.
+  - **No Standalone Single Video Posts for Countdowns:** Countdown segment projects are created for the countdown compilation only (`queue_item_id=None`). Only the master 8–12 minute countdown compilation is queued for publishing.
+- **Dedicated "Countdown Compilations" Shelf & Video Player (`frontend/app/CountdownsStudioPanel.tsx`)**:
+  - Added 4th sub-tab: **`🎬 Countdown Compilations`**.
+  - Lists all master countdown compilations (rendered MP4s and queued compilations).
+  - Built-in **HTML5 Video Player** streaming directly from `/api/studio/compilations/{id}/file?path=final_compilation.mp4` or the queue video endpoint.
+  - Interactive timed chapters list (#15 down to #1, Intro, Outro) with 1-click clipboard copy.
+  - Packaging inspector (Clickable YouTube titles, 10s retention hook script, closing debate prompt).
+  - Underlying countdown segment inspector showing the live render progress of all ranked titles.
+- **API Endpoints (`backend/app/studio/compilations/routes.py`)**:
+  - `GET /api/studio/compilations/list`: Returns all compilations (queue items + on-disk renders).
+  - `GET /api/studio/compilations/projects`: Lists countdown-specific segment projects.
+  - `GET /api/studio/compilations/{compilation_id}/file`: Streams compilation video / thumbnail files.
