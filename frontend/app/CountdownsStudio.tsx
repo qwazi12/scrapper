@@ -512,13 +512,13 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
               {e.reused && <div style={{ ...muted, color: "#93c5fd" }}>Uses your LongForm breakdown as it is</div>}
               {e.why_it_ranks && <div style={{ ...muted, overflowWrap: "anywhere" }}>{e.why_it_ranks}</div>}
               {(e.key_stat || e.where_to_watch) && <div style={{ ...muted, overflowWrap: "anywhere" }}>{[e.key_stat, e.where_to_watch && `Watch: ${e.where_to_watch}`].filter(Boolean).join(" · ")}</div>}
-            </div>
-            <div style={{ display: "flex", gap: 3, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 120 }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
               <button style={{ fontSize: 10, padding: "1px 6px" }} disabled={i === 0} onClick={() => move(i, -1)} title="Move up (higher rank)">↑</button>
               <button style={{ fontSize: 10, padding: "1px 6px" }} disabled={i === entries.length - 1} onClick={() => move(i, 1)} title="Move down">↓</button>
               <button style={{ fontSize: 10, padding: "1px 6px" }} onClick={() => { setSwapAt(i); setQ(e.title); setResults(null); }} title="Swap for another title">Swap</button>
               <button className="danger" style={{ fontSize: 10, padding: "1px 6px" }} disabled={entries.length <= 2}
                       onClick={() => save(entries.filter((_, k) => k !== i))} title="Remove">✕</button>
+            </div>
             </div>
           </div>
         ))}
