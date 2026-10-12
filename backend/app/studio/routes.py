@@ -162,29 +162,12 @@ def search(q: str) -> list[dict[str, Any]]:
 
 @router.get("/projects")
 def list_projects(s: Session = Depends(get_session)) -> list[dict[str, Any]]:
-    import datetime
-    today = datetime.date.today()
-    current_month_start = datetime.date(today.year, today.month, 1)
-
+    # Countdown segments live in Countdown Studio; old titles are hidden unless
+    # still in progress (rules in membership.shown_in_longform).
+    from . import membership
+    ids = membership.countdown_ids(s)
     projects = s.query(StudioProject).order_by(desc(StudioProject.id)).all()
-    out = []
-    for p in projects:
-        f = p.facts or {}
-        # Countdown segments belong in Countdown Studio, not LongForm Studio
-        if f.get("is_countdown") or f.get("origin") == "countdown":
-            continue
-        p_date_str = f.get("primary_date")
-        if p_date_str:
-            try:
-                p_date = datetime.date.fromisoformat(str(p_date_str)[:10])
-                days_diff = (p_date - today).days
-                # Remove anything released before current month or released more than 15 days ago
-                if p_date < current_month_start or days_diff < -15:
-                    continue
-            except (ValueError, TypeError):
-                pass
-        out.append(_out(p, full=False))
-    return out
+    return [_out(p, full=False) for p in projects if membership.shown_in_longform(p, ids)]
 
 
 @router.post("/projects")

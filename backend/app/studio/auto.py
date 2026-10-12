@@ -116,11 +116,16 @@ def limit_for(media_type: str, cfg: dict[str, Any]) -> int:
 
 
 def made_today(s, now: datetime.datetime | None = None) -> dict[str, int]:
+    """Breakdowns started today. Countdown segments don't count (audit 2026-10-11:
+    a 5-title countdown used up the day's limit and stopped the automation)."""
+    from . import membership
     start, end = costs.day_bounds(now)
+    ids = membership.countdown_ids(s)
     out = {"movie": 0, "tv": 0}
-    for (mt,) in s.query(StudioProject.media_type).filter(StudioProject.created_at >= start,
-                                                          StudioProject.created_at < end).all():
-        out[mt] = out.get(mt, 0) + 1
+    for p in s.query(StudioProject).filter(StudioProject.created_at >= start,
+                                           StudioProject.created_at < end).all():
+        if not membership.is_countdown(p, ids):
+            out[p.media_type] = out.get(p.media_type, 0) + 1
     return out
 
 

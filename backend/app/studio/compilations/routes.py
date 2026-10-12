@@ -284,19 +284,12 @@ from ...models import QueueItem
 @router.get("/projects")
 def get_countdown_projects() -> list[dict[str, Any]]:
     """List all Studio projects created for Countdowns (filtered out of LongForm Studio)."""
+    from .. import membership
+    from ..routes import _out
     with SessionLocal() as s:
-        projects = (
-            s.query(StudioProject)
-            .order_by(StudioProject.id.desc())
-            .all()
-        )
-        out = []
-        for p in projects:
-            f = p.facts or {}
-            if f.get("is_countdown") or f.get("origin") == "countdown":
-                from ..routes import _out
-                out.append(_out(p, full=False))
-        return out
+        ids = membership.countdown_ids(s)
+        projects = s.query(StudioProject).order_by(StudioProject.id.desc()).all()
+        return [_out(p, full=False) for p in projects if membership.is_countdown(p, ids)]
 
 
 @router.get("/list")

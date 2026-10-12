@@ -87,7 +87,8 @@ def gather(project_id: int) -> str:
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         p.title = facts["title"]
-        p.facts = facts
+        from .membership import keep_tags
+        p.facts = keep_tags(p.facts, facts)      # a countdown segment stays one
         p.research = research
         s.commit()
     good = sum(1 for x in research["sources"] if x.get("tier") in ("official", "trusted"))
