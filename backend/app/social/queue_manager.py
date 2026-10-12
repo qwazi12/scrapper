@@ -956,12 +956,12 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error in breakdown automation: %s", exc)
 
-        # Countdown production: segments only when Studio is free, then the stitch.
+        # Countdowns Studio: segments only when Studio is free (after LongForm).
         try:
-            from ..studio.compilations import production as countdown_production
-            countdown_production.tick()
+            from ..studio import countdown as countdown_studio
+            countdown_studio.tick()
         except Exception as exc:
-            logger.error("Error in countdown production: %s", exc)
+            logger.error("Error in Countdowns Studio: %s", exc)
 
 
 _scheduler_running = False

@@ -596,6 +596,72 @@ export type CountdownTrigger = {
   desc: string;
 };
 
+// --- Countdowns Studio (2026-10-12) ---------------------------------------------------
+export type CountdownEntryRow = {
+  rank: number;
+  title: string;
+  year?: number | string;
+  score?: number;
+  tmdb_id?: number | null;
+  media_type?: string;
+  poster?: string | null;
+  why_it_ranks?: string;
+  key_stat?: string;
+  fun_fact?: string;
+  where_to_watch?: string;
+  segment_id?: number;
+  reused?: boolean;
+};
+
+export type CountdownSegment = {
+  id: number;
+  title: string;
+  rank?: number;
+  poster?: string | null;
+  stage: string;
+  stage_status: string;
+  stage_message?: string | null;
+  rendered: boolean;
+  seconds?: number;
+  reused?: boolean;
+  missing?: boolean;
+};
+
+export type CountdownProject = {
+  id: number;
+  topic: string;
+  fmt: "top5" | "top10" | "top15" | string;
+  count: number;
+  stage: string;
+  stage_status: string;
+  stage_message?: string | null;
+  title: string;
+  queue_item_id?: number | null;
+  queue_status?: string | null;
+  review: { reviewed_at?: string | null; delete_after?: string | null };
+  created_at: string;
+  updated_at: string;
+  posters: string[];
+  entry_count: number;
+  unmatched: number;
+  segments_made: number;
+  segments_total: number;
+  est_minutes: number;
+  cost_usd: number;
+  has: { ranking: boolean; titles: boolean; segments: boolean; script: boolean; render: boolean };
+  render?: {
+    compilation_id: number; file: string; thumbnail: string; thumbnails: Record<string, string>;
+    selected_thumbnail: string; chapters: { time_formatted: string; title: string }[];
+    seconds: number; minutes: number; rendered_at: string; thumb_v?: number;
+  } | null;
+  // full view only
+  ranking?: { entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
+              why_now?: string; honorable_mentions?: string[] } | null;
+  notes?: string | null;
+  script?: { title?: string; title_options?: string[]; intro?: string; outro?: string; thumbnail_text?: string } | null;
+  segments?: CountdownSegment[];
+};
+
 export type CountdownTopicCandidate = {
   id: string;
   topic: string;
@@ -1169,11 +1235,6 @@ export const api = {
   compilationThemes: () => req<CountdownTheme[]>("/api/studio/compilations/themes", { headers: headers(false) }),
   compilationCurate: (data: { theme_id?: string; custom_query?: string; media_type?: string; limit?: number }) =>
     req<CuratedCandidate[]>("/api/studio/compilations/curate", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
-  compilationEligibleProjects: () => req<EligibleProject[]>("/api/studio/compilations/eligible-projects", { headers: headers(false) }),
-  compilationPreview: (data: { project_ids: number[]; title: string }) =>
-    req<CompilationPreview>("/api/studio/compilations/preview-chapters", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
-  compilationStitch: (data: { project_ids: number[]; title: string; custom_intro?: string; custom_outro?: string; accounts?: string[] }) =>
-    req<StitchResult>("/api/studio/compilations/stitch", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   cinemetaTop: (media_type = "movie") =>
     req<CinemetaTitle[]>(`/api/studio/compilations/cinemeta/top?media_type=${media_type}`, { headers: headers(false) }),
   cinemetaMeta: (imdb_id: string, media_type = "movie") =>
@@ -1191,36 +1252,40 @@ export const api = {
     const q = params.toString() ? `?${params.toString()}` : "";
     return req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${q}`, { headers: headers(false) });
   },
-  countdownResearch: (data: { topic: string; format?: string; custom_instructions?: string }) =>
-    req<ResearchedCountdown>("/api/studio/compilations/research", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
-  savedCountdowns: () =>
-    req<ResearchedCountdown[]>("/api/studio/compilations/saved", { headers: headers(false) }),
-  saveCountdown: (data: ResearchedCountdown) =>
-    req<ResearchedCountdown>("/api/studio/compilations/saved", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
-  deleteSavedCountdown: (id: string) =>
-    req<{ deleted: boolean }>(`/api/studio/compilations/saved/${encodeURIComponent(id)}`, { method: "DELETE", headers: headers(false) }),
-  countdownAutoQueue: (countdown: ResearchedCountdown, targetCount?: number) =>
-    req<{
-      ok: boolean;
-      queue_item_id: number;
-      project_ids: number[];
-      created_count: number;
-      title: string;
-      entry_count: number;
-      message: string;
-    }>("/api/studio/compilations/auto-queue", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ countdown, target_count: targetCount }),
-    }),
-  countdownCompilationsList: () =>
-    req<CountdownCompilation[]>("/api/studio/compilations/list", { headers: headers(false) }),
-  countdownMake: (queueId: number) =>
-    req<{ ok: boolean; done: number; total: number }>(`/api/studio/compilations/${queueId}/make`, { method: "POST", headers: headers(false) }),
-  countdownStudioProjects: () =>
-    req<StudioProject[]>("/api/studio/compilations/projects", { headers: headers(false) }),
 
-
+  // --- Countdowns Studio (2026-10-12): a countdown is a project, like a breakdown ---
+  countdowns: () => req<CountdownProject[]>("/api/countdowns", { headers: headers(false) }),
+  countdown: (id: number) => req<CountdownProject>(`/api/countdowns/${id}`, { headers: headers(false) }),
+  countdownCreate: (data: { topic: string; fmt: string; notes?: string }) =>
+    req<CountdownProject>("/api/countdowns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  countdownFromBreakdowns: (data: { topic: string; project_ids: number[] }) =>
+    req<CountdownProject>("/api/countdowns/from-breakdowns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  countdownResearch: (id: number) =>
+    req<{ ok: boolean }>(`/api/countdowns/${id}/research`, { method: "POST", headers: headers(false) }),
+  countdownEntries: (id: number, entries: CountdownEntryRow[]) =>
+    req<CountdownProject>(`/api/countdowns/${id}/entries`, { method: "PUT", headers: headers(), body: JSON.stringify({ entries }) }),
+  countdownConfirm: (id: number) =>
+    req<CountdownProject>(`/api/countdowns/${id}/confirm`, { method: "POST", headers: headers(false) }),
+  countdownMake: (id: number) =>
+    req<CountdownProject>(`/api/countdowns/${id}/make`, { method: "POST", headers: headers(false) }),
+  countdownStop: (id: number) =>
+    req<CountdownProject>(`/api/countdowns/${id}/stop`, { method: "POST", headers: headers(false) }),
+  countdownScript: (id: number, patch: { title?: string; intro?: string; outro?: string }) =>
+    req<CountdownProject>(`/api/countdowns/${id}/script`, { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  countdownRender: (id: number) =>
+    req<{ ok: boolean; job_id: string }>(`/api/countdowns/${id}/render`, { method: "POST", headers: headers(false) }),
+  countdownThumbnail: (id: number, option: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/thumbnail`, { method: "POST", headers: headers(), body: JSON.stringify({ option }) }),
+  countdownPublish: (id: number) =>
+    req<{ queue_item_id: number; status: string }>(`/api/countdowns/${id}/publish`, { method: "POST", headers: headers(false) }),
+  countdownReview: (id: number, on: boolean) =>
+    req<CountdownProject>(`/api/countdowns/${id}/review`, { method: "PUT", headers: headers(), body: JSON.stringify({ on }) }),
+  countdownArchive: (id: number, on: boolean) =>
+    req<CountdownProject>(`/api/countdowns/${id}/archive`, { method: "PUT", headers: headers(), body: JSON.stringify({ on }) }),
+  countdownDelete: (id: number) =>
+    req<{ deleted: number }>(`/api/countdowns/${id}`, { method: "DELETE", headers: headers(false) }),
+  countdownFileUrl: (id: number, path = "video", bust?: string | number) =>
+    mediaUrl(`/api/countdowns/${id}/file?path=${encodeURIComponent(path)}${bust ? `&v=${bust}` : ""}`),
 
   aiCheck: () =>
     req<{ ok: boolean; model: string; title: string; hashtags: string[] }>("/api/social/ai-check", {

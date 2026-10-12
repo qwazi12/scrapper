@@ -68,6 +68,8 @@ from .studio import runner as studio_runner, stage_gather, stage_plan, stage_ren
 from .studio import batch as studio_batch  # noqa: E402,F401  (registers the render-batch resume)
 
 app.include_router(studio_routes.router)
+from .studio import countdown as countdown_studio  # noqa: E402  (Countdowns Studio, 2026-10-12)
+app.include_router(countdown_studio.router)
 
 
 @app.middleware("http")
@@ -102,6 +104,10 @@ def _startup() -> None:
             rescan.rescan_library(s)
     except Exception as exc:  # never block startup on recovery
         logbus.log("error", "startup_rescan_failed", str(exc))
+    try:
+        countdown_studio.migrate_legacy()          # old saved countdowns + rows -> Countdowns Studio (once)
+    except Exception as exc:  # noqa: BLE001 — never block startup
+        logbus.log("error", "startup_countdown_migrate_failed", str(exc))
     try:
         studio_runner.recover_interrupted()
     except Exception as exc:  # never block startup on recovery
@@ -1084,7 +1090,8 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
         else:
             q = q.filter(QueueItem.pipeline == req.pipeline)
     else:
-        q = q.filter(QueueItem.pipeline != "LongForm")  # LongForm has its own section; "all" means all clips
+        # LongForm and Countdowns have their own sections; "all" means all clips
+        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns"]))
     if req.status and req.status != "all":
         q = q.filter(QueueItem.status == req.status)
 
@@ -1594,7 +1601,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
     per_day = queue_manager.slots_per_day()
     pacing_summary = {
         name: queue_manager.slots_per_day(pipeline=name)
-        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm"]
+        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns"]
     }
     return {
         "timezone": cfg["timezone"],
@@ -1607,7 +1614,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "pipeline_slots_per_day": pacing_summary,
         # Each queue's own next post times (Posting Queue = "Movie Clips", LongForm).
         "pipeline_next_slots": {name: queue_manager.slots_after(now, 5, pipeline=name)
-                                for name in ("Movie Clips", "LongForm")},
+                                for name in ("Movie Clips", "LongForm", "Countdowns")},
         "defaults": queue_manager.default_schedule(),
         "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,

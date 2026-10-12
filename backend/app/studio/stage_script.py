@@ -117,6 +117,44 @@ Return JSON:
 "refs" lists the storyboard ids a sentence relies on; [] only for pure opinion/transition/CTA lines."""
 
 
+def countdown_notes(ctx: dict) -> str:
+    """The countdown's research for this title, as citable storyboard lines [C1…]."""
+    notes = [f"Ranked #{ctx.get('rank')} of {ctx.get('total')} in the countdown \"{ctx.get('topic')}\"."]
+    for k in ("why_it_ranks", "key_stat", "fun_fact", "where_to_watch"):
+        if ctx.get(k):
+            notes.append(f"{k.replace('_', ' ').capitalize()}: {ctx[k]}")
+    return "\n".join(["", "COUNTDOWN NOTES (researched for this list):"] +
+                     [f"[C{i + 1}] {x}" for i, x in enumerate(notes)])
+
+
+def countdown_prompt(board: str, title: str, minutes: float, ctx: dict) -> str:
+    """One segment of a Top 5/10/15 countdown video (Countdowns Studio, 2026-10-12)."""
+    words = int(minutes * WPM)
+    return f"""You are writing ONE segment of a countdown video, "{ctx.get('topic')}", for text-to-speech
+narration. This segment is entry #{ctx.get('rank')} of {ctx.get('total')}: "{title}".
+
+Use ONLY the storyboard below (facts, web findings, trailer shot log and countdown notes). Never invent
+plot, awards, box office, quotes or dates.
+
+Rules:
+- About {words} words ({minutes:g} minutes at {WPM} words per minute).
+- The first sentence is exactly: "Number {ctx.get('rank')}: {title}." Then hook the viewer in one sentence.
+- Say in a few sentences what it is about (from the synopsis), who stars, and why it earns this spot
+  (from the countdown notes). Include one striking stat or fun fact if the notes have one.
+- Say where to watch it if the notes say so.
+- 7th-grade reading level, short sentences, enthusiastic. One continuous narrative, no lists.
+- Do NOT add a subscribe line or a goodbye; the next entry follows straight after.
+
+Storyboard:
+{board}
+
+Return JSON:
+{{"sentences": [{{"paragraph": 1, "text": "...", "refs": ["F1","C1","T3"]}}, ...],
+  "youtube_title": "{title}",
+  "tags": ["5-10 search tags"]}}
+"refs" lists the storyboard ids a sentence relies on; [] only for pure opinion/transition lines."""
+
+
 def check_prompt(board: str, sentences: list[dict]) -> str:
     numbered = "\n".join(f"{i + 1}. {s['text']}" for i, s in enumerate(sentences))
     return f"""You are a strict fact-checker. Judge each numbered script sentence ONLY against the
@@ -165,8 +203,13 @@ def script(project_id: int) -> str:
     board_txt = _board_text(board)
     channel = settings.studio_channel_name
 
+    ctx = facts.get("countdown") if isinstance(facts.get("countdown"), dict) else None
+    if ctx:
+        board_txt += "\n" + countdown_notes(ctx)
     control.check()
-    draft = gemini.ask_json(draft_prompt(board_txt, facts["title"], minutes, channel), temperature=0.7)
+    prompt = countdown_prompt(board_txt, facts["title"], minutes, ctx) if ctx \
+        else draft_prompt(board_txt, facts["title"], minutes, channel)
+    draft = gemini.ask_json(prompt, temperature=0.7)
     control.check()
     sentences = [{"paragraph": int(x.get("paragraph") or 1), "text": str(x.get("text") or "").strip(),
                   "refs": [str(r) for r in (x.get("refs") or [])]}

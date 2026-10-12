@@ -20,7 +20,7 @@ import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
-import { CountdownsStudioPanel } from "./CountdownsStudioPanel";
+import { CountdownsStudio } from "./CountdownsStudio";
 import { JobsBar } from "./JobsBar";
 import { DialogHost } from "./DialogHost";
 import { SchedulerView } from "./PacingThrottle";
@@ -56,8 +56,7 @@ export default function Page() {
   }, []);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
-  const [compTab, setCompTab] = useState<"longform" | "shortform">("longform");
-  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "scheduler" | "ingest" | "drive">("queue");
+  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "countdowns" | "scheduler" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   // Phones: the sidebar becomes a slide-out drawer so pages get the full width.
   const [isMobile, setIsMobile] = useState(false);
@@ -282,10 +281,7 @@ export default function Page() {
             onClick={() => handleTabSelect("countdowns")}
             icon="🏆"
             title="Countdowns Studio"
-            subtitle="Top 5 & Top 10 research engine"
-            badge="AI Engine"
-            badgeColor="#fca5a5"
-            badgeBg="#7f1d1d"
+            subtitle="Top 5 / 10 / 15 videos (8–12 min)"
           />
 
           {/* 3. Compilations & Stitching */}
@@ -468,6 +464,19 @@ export default function Page() {
                   🎬 LongForm Breakdowns
                 </button>
                 <button
+                  onClick={() => setSocialPilotTab("countdowns")}
+                  style={{
+                    background: socialPilotTab === "countdowns" ? "#713f12" : "transparent",
+                    color: socialPilotTab === "countdowns" ? "#fde68a" : "var(--text)",
+                    border: socialPilotTab === "countdowns" ? "1px solid #ca8a04" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  🏆 Countdowns
+                </button>
+                <button
                   onClick={() => setSocialPilotTab("scheduler")}
                   style={{
                     background: socialPilotTab === "scheduler" ? "#0f766e" : "transparent",
@@ -511,6 +520,7 @@ export default function Page() {
 
             {socialPilotTab === "queue" && <QueuePanel key="clips" onChange={refresh} />}
             {socialPilotTab === "longform" && <QueuePanel key="longform" mode="longform" onChange={refresh} />}
+            {socialPilotTab === "countdowns" && <QueuePanel key="countdowns" mode="countdowns" onChange={refresh} />}
             {socialPilotTab === "scheduler" && <SchedulerView onSaved={refresh} />}
             {socialPilotTab === "ingest" && <ChannelIngestPanel onIngested={refresh} />}
             {socialPilotTab === "drive" && <DrivePanel onIngested={refresh} />}
@@ -518,49 +528,11 @@ export default function Page() {
         )}
 
         {activeTab === "comps" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
-              <button
-                onClick={() => setCompTab("longform")}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 6,
-                  border: "none",
-                  backgroundColor: compTab === "longform" ? "#e50914" : "var(--panel)",
-                  color: compTab === "longform" ? "#fff" : "var(--muted)",
-                  fontWeight: compTab === "longform" ? 700 : 500,
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                🎬 LongForm Countdowns (Top 5 / Top 10)
-              </button>
-              <button
-                onClick={() => setCompTab("shortform")}
-                style={{
-                  padding: "8px 16px",
-                  borderRadius: 6,
-                  border: "none",
-                  backgroundColor: compTab === "shortform" ? "var(--accent)" : "var(--panel)",
-                  color: compTab === "shortform" ? "#fff" : "var(--muted)",
-                  fontWeight: compTab === "shortform" ? 700 : 500,
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                📱 Short-Form Vertical Clips ({comps.length})
-              </button>
-            </div>
-            {compTab === "longform" ? (
-              <CountdownsStudioPanel />
-            ) : (
-              <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
-            )}
-          </div>
+          <ExportPanel comps={comps} onChange={refresh} retentionDays={stats?.retention_days ?? 0} />
         )}
 
         {activeTab === "longform" && <StudioPanel />}
-        {activeTab === "countdowns" && <CountdownsStudioPanel />}
+        {activeTab === "countdowns" && <CountdownsStudio />}
 
         {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (

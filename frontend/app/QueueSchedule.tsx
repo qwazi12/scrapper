@@ -8,8 +8,8 @@ import { notify } from "../lib/dialogs";
 // ("Movie Clips") and LongForm each get posts/day + hours, or exact times —
 // editing one never changes the other.
 
-type Queue = "Movie Clips" | "LongForm";
-const LABEL: Record<Queue, string> = { "Movie Clips": "Posting Queue", LongForm: "LongForm" };
+type Queue = "Movie Clips" | "LongForm" | "Countdowns";
+const LABEL: Record<Queue, string> = { "Movie Clips": "Posting Queue", LongForm: "LongForm", Countdowns: "Countdowns" };
 
 const fmtHour = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? " AM" : " PM"}`;
 const fmtTime = (t: string) => {

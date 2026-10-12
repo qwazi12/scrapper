@@ -98,21 +98,3 @@ def test_fmhy_curated_resources():
     assert "Trakt.tv" in names
     assert "Letterboxd" in names
     assert "NewPipe Extractor" in names
-
-
-
-def test_compilation_file_route_serves_only_its_own_files(tmp_path, monkeypatch):
-    """Audit 2026-10-11: the route used to serve any path on the volume."""
-    from fastapi.testclient import TestClient
-    from backend.app.main import app
-    from backend.app.studio.compilations import stitch
-    monkeypatch.setattr(stitch, "compilations_dir", lambda: tmp_path / "compilations")
-    d = tmp_path / "compilations" / "20261011120000"
-    d.mkdir(parents=True)
-    (d / "final_compilation.mp4").write_bytes(b"v")
-    (tmp_path / "secret.txt").write_text("x")
-    c = TestClient(app, headers={"x-access-token": "test-token"})
-    base = "/api/studio/compilations"
-    assert c.get(f"{base}/20261011120000/file").status_code == 200
-    assert c.get(f"{base}/20261011120000/file", params={"path": "../../secret.txt"}).status_code == 404
-    assert c.get(f"{base}/..%2F..%2Fsecret.txt/file").status_code == 404

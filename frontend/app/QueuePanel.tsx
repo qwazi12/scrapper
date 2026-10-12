@@ -31,6 +31,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 // Default were unused). Rows from elsewhere still show under "All Pipelines".
 const PIPELINES = ["Movie Clips"];
 const LONGFORM = "LongForm";
+const COUNTDOWNS = "Countdowns";            // Countdowns Studio's own queue (2026-10-12)
+const OWN_SECTIONS = [LONGFORM, COUNTDOWNS];  // never listed in the clips queue
 
 type SortKey = "position" | "id" | "title" | "channel" | "status" | "scheduled";
 const SORT_LABELS: Record<SortKey, string> = {
@@ -61,13 +63,15 @@ function fmtET(iso: string): string {
   }) + " ET";
 }
 
-export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void; mode?: "clips" | "longform" }) {
-  const longform = mode === "longform";
+export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void; mode?: "clips" | "longform" | "countdowns" }) {
+  // "longform" = a queue with its own section (LongForm or Countdowns), not the clips queue.
+  const section = mode === "countdowns" ? COUNTDOWNS : mode === "longform" ? LONGFORM : null;
+  const longform = section !== null;
   const [allItems, setAllItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("review");
-  const [pipelineFilter, setPipelineFilter] = useState<string>(longform ? LONGFORM : "all");
+  const [pipelineFilter, setPipelineFilter] = useState<string>(section ?? "all");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -202,7 +206,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     try {
       // Always load all items for the selected pipeline/channel so badge counts are 100% accurate across all tabs
       const data = await api.queue(pipelineFilter, "all");
-      const rows = longform ? data : data.filter((i) => i.pipeline !== LONGFORM);
+      const rows = longform ? data : data.filter((i) => !OWN_SECTIONS.includes(i.pipeline || ""));
       const sig = JSON.stringify(rows);
       if (sig !== lastSig.current) {
         lastSig.current = sig;
@@ -537,7 +541,9 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       >
         <div style={{ display: "flex", alignItems: "center", gap: isNarrow ? 6 : 10, flexWrap: "wrap", minWidth: 0 }}>
           <span style={{ fontSize: isNarrow ? 14 : 15, fontWeight: 700, ...(isNarrow ? { width: "100%" } : {}) }}>
-            {longform
+            {section === COUNTDOWNS
+              ? isNarrow ? "🏆 Countdowns Queue" : "🏆 Countdowns Queue"
+              : longform
               ? isNarrow ? "🎬 LongForm Queue" : "🎬 LongForm Breakdowns Queue"
               : isNarrow ? "📋 Posting Queue" : "📋 Posting Queue & Content Calendar"}
           </span>
@@ -756,7 +762,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
           {/* This queue's own schedule: posts/day + hours or exact times (owner, 2026-10-05) */}
           <QueueScheduleButton
-            queue={longform ? "LongForm" : "Movie Clips"}
+            queue={section === COUNTDOWNS ? "Countdowns" : longform ? "LongForm" : "Movie Clips"}
             schedInfo={schedInfo}
             isNarrow={isNarrow}
             onSaved={(u) => { setSchedInfo(u); setUndoVersion((v) => v + 1); loadQueue(true); onChange(); }}
@@ -1657,7 +1663,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 <select value={bulkPipeline} onChange={(e) => setBulkPipeline(e.target.value)}
                   style={{ width: "100%", padding: 6, fontSize: 12 }}>
                   <option value="">(unchanged)</option>
-                  {(longform ? [LONGFORM] : PIPELINES).map((p) => (
+                  {(section ? [section] : PIPELINES).map((p) => (
                     <option key={p} value={p}>{p === "default" ? "Default" : p}</option>
                   ))}
                 </select>

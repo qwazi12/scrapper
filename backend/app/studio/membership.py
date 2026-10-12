@@ -12,14 +12,21 @@ import datetime
 from typing import Any
 
 COUNTDOWN_SOURCE = "Countdown Studio"
-COUNTDOWN_KEYS = ("is_countdown", "origin", "countdown_topic", "countdown_id")
+COUNTDOWN_KEYS = ("is_countdown", "origin", "countdown_topic", "countdown_id", "countdown")
 RECENT_DAYS = 15
 
 
 def countdown_ids(s) -> set[int]:
-    """Project ids linked to any Countdown Studio queue row."""
-    from ..models import QueueItem
+    """Project ids used as countdown segments (Countdowns Studio projects, plus the
+    old Countdown Studio queue rows)."""
+    from ..models import CountdownProject, QueueItem
     ids: set[int] = set()
+    for (segs,) in s.query(CountdownProject.segment_ids).all():
+        for pid in segs or []:
+            try:
+                ids.add(int(pid))
+            except (TypeError, ValueError):
+                pass
     for (research,) in s.query(QueueItem.research).filter(QueueItem.source == COUNTDOWN_SOURCE).all():
         for pid in (research or {}).get("project_ids") or []:
             try:

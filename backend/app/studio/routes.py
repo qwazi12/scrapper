@@ -333,7 +333,7 @@ def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session))
         raise HTTPException(409, f"this project is already {p.stage_status}")
     stage = req.stage
     if stage == "next":       # continue from where it stopped (no re-paying for finished steps)
-        from .compilations.production import _next_stage
+        from .countdown import _next_stage
         stage = _next_stage(p)
     try:
         state = runner.start_or_queue(p.id, stage, auto=req.auto, until=req.until)

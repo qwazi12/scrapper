@@ -196,6 +196,29 @@ class StudioProject(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class CountdownProject(Base):
+    """One Countdowns Studio video (Top 5 / 10 / 15), built like a LongForm
+    breakdown (owner, 2026-10-12): research → titles → segments → script → render
+    → the Countdowns queue. Each title's segment is a StudioProject (segment_ids)."""
+    __tablename__ = "countdown_projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic: Mapped[str] = mapped_column(String(255), default="")
+    fmt: Mapped[str] = mapped_column(String(8), default="top10")              # top5 | top10 | top15
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)           # extra research instructions
+    stage: Mapped[str] = mapped_column(String(32), default="new")            # new|research|titles|segments|script|render
+    stage_status: Mapped[str] = mapped_column(String(16), default="idle")    # idle|running|waiting|done|error|stopped
+    stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ranking: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # researched list: entries, hook, titles…
+    segment_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)    # StudioProject ids, lowest rank → #1
+    script: Mapped[dict | None] = mapped_column(JSON, nullable=True)         # title, hook, intro, outro, question
+    render: Mapped[dict | None] = mapped_column(JSON, nullable=True)         # file, thumbnails, chapters, seconds
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review: Mapped[dict | None] = mapped_column(JSON, nullable=True)         # reviewed_at, delete_after, legacy
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class UndoEntry(Base):
     """One undo step: the rows as they were before a change (manhwa-style
     snapshot, restored as-is — never an "inverse" operation)."""
