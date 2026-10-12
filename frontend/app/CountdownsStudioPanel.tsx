@@ -1304,7 +1304,7 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                               <button
                                 onClick={async () => {
                                   try {
-                                    await api.studioRun(projectId, "gather", true, "render");
+                                    await api.studioRun(projectId, "next", true, "render");
                                     notify(`Started pipeline for Studio project #${projectId}`);
                                     if (onReloadProjects) onReloadProjects();
                                   } catch (err: any) {
@@ -1332,6 +1332,10 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                               </span>
                               <button
                                 onClick={async () => {
+                                  if (!entry.tmdb_id) {
+                                    notify(`"${entry.title}" isn't matched to a movie or show on TMDB, so it has no trailer to use.`);
+                                    return;
+                                  }
                                   try {
                                     notify(`Creating Studio breakdown project for "${entry.title}"...`);
                                     const proj = await api.studioCreate({
@@ -1896,7 +1900,7 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                                   <button
                                     onClick={async () => {
                                       try {
-                                        await api.studioRun(proj.id, "gather", true, "render");
+                                        await api.studioRun(proj.id, "next", true, "render");
                                         notify(`Started pipeline for project #${proj.id}`);
                                         loadCountdownProjects();
                                       } catch (err: any) {

@@ -331,11 +331,15 @@ def run_stage(project_id: int, req: RunStage, s: Session = Depends(get_session))
     p = _get(s, project_id)
     if p.stage_status in ("running", "queued"):
         raise HTTPException(409, f"this project is already {p.stage_status}")
+    stage = req.stage
+    if stage == "next":       # continue from where it stopped (no re-paying for finished steps)
+        from .compilations.production import _next_stage
+        stage = _next_stage(p)
     try:
-        state = runner.start_or_queue(p.id, req.stage, auto=req.auto, until=req.until)
+        state = runner.start_or_queue(p.id, stage, auto=req.auto, until=req.until)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    return {"ok": True, "stage": req.stage, "auto": req.auto, "state": state}
+    return {"ok": True, "stage": stage, "auto": req.auto, "state": state}
 
 
 @router.post("/recompute-usable")

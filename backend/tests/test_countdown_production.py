@@ -58,3 +58,12 @@ def test_tick_stitches_when_all_segments_are_made_and_attaches_video():
         assert q.video_path == "/v/final.mp4" and q.status == "review"           # owner approves it
         assert q.research["production"]["state"] == "done" and "0:00 Intro" in q.description
         s.delete(q); s.commit()
+
+
+def test_next_stage_continues_where_it_stopped():
+    p = StudioProject(tmdb_id=1, media_type="movie", title="x", stage="plan", stage_status="done")
+    assert production._next_stage(p) == "render"
+    p.stage, p.stage_status = "shots", "error"
+    assert production._next_stage(p) == "shots"
+    p.stage, p.stage_status = "new", "idle"
+    assert production._next_stage(p) == "gather"
