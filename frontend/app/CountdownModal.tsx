@@ -152,7 +152,9 @@ export function CountdownModal({ initialProjectIds, onClose, onSuccess }: Countd
         custom_outro: customOutro,
       });
       setResult(res);
-      notify(`Countdown compilation rendered! Saved to Posting Queue (#${res.queue_item_id})`);
+      notify(res.started
+        ? "Rendering started in the background — the video lands in the Posting Queue as Needs Review when it's done."
+        : `Countdown compilation rendered! Saved to Posting Queue (#${res.queue_item_id})`);
       if (onSuccess) onSuccess(res);
     } catch (err: any) {
       notify("Failed to assemble countdown: " + (err.message || String(err)));
@@ -451,9 +453,12 @@ export function CountdownModal({ initialProjectIds, onClose, onSuccess }: Countd
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <span style={{ fontSize: "32px" }}>🎉</span>
                 <div>
-                  <h3 style={{ margin: 0, color: "#4ade80", fontSize: "18px" }}>Compilation Successfully Rendered!</h3>
+                  <h3 style={{ margin: 0, color: "#4ade80", fontSize: "18px" }}>
+                    {result.started ? "Rendering started" : "Compilation Successfully Rendered!"}
+                  </h3>
                   <p style={{ margin: "4px 0 0", fontSize: "14px", color: "#cbd5e1" }}>
-                    Total Runtime: <strong>{result.total_minutes} min</strong> ({result.total_seconds}s) · 3 Thumbnails Generated
+                    {result.started ? "Estimated runtime" : "Total Runtime"}: <strong>{result.total_minutes} min</strong> ({result.total_seconds}s)
+                    {result.started ? " · it appears in the Posting Queue (Needs Review) when it's done" : " · 3 Thumbnails Generated"}
                   </p>
                 </div>
               </div>

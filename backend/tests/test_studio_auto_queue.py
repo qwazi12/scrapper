@@ -68,27 +68,38 @@ def test_auto_queue_researched_countdown():
         "honorable_mentions": ["Arrival", "Solaris"],
     }
 
-    with patch("backend.app.studio.runner.busy", return_value={"project_id": 1}), \
-         patch("backend.app.studio.runner.start", return_value=None), \
-         patch("backend.app.studio.tmdb.search", return_value=[{"id": 101, "media_type": "movie"}]), \
-         patch("backend.app.studio.tmdb.configured", return_value=False):
+    fake_search = lambda title: [{"tmdb_id": 100 + len(title), "media_type": "movie", "title": title, "date": ""}]
+    with patch("backend.app.studio.tmdb.search", side_effect=fake_search), \
+         patch("backend.app.studio.tmdb.configured", return_value=True):
         res = auto_queue_researched_countdown(countdown)
+        again = auto_queue_researched_countdown(countdown)
 
     assert res["ok"] is True
     assert res["entry_count"] == 5
-    assert res["created_count"] >= 1
-    assert "queue_item_id" in res
+    assert res["created_count"] == 5
+    assert again["already_queued"] and again["queue_item_id"] == res["queue_item_id"]   # never queued twice
 
     with SessionLocal() as s:
         q = s.get(QueueItem, res["queue_item_id"])
         assert q is not None
         assert q.pipeline == "LongForm"
         assert q.source == "Countdown Studio"
+        assert q.status == "review" and not q.video_path          # never Ready without a video
+        assert (q.research["production"]["state"]) == "making"
         assert "CHAPTERS:" in q.description
-        assert "0:00 Intro & Preview" in q.description
         assert "2001: A Space Odyssey" in q.description
         assert "Interstellar" in q.description
         assert "Which film was robbed" in q.description
-        # cleanup
         s.delete(q)
         s.commit()
+
+
+def test_auto_queue_refuses_entries_that_are_not_titles():
+    import pytest
+    countdown = {"id": "theories", "topic": "Spider-Man 4 theories", "format": "top5",
+                 "entries": [{"rank": 2, "title": "Ned Leeds Becomes Hobgoblin"},
+                             {"rank": 1, "title": "Mayor Fisk Enacts the Anti-Vigilante Act"}]}
+    with patch("backend.app.studio.tmdb.search", return_value=[]), \
+         patch("backend.app.studio.tmdb.configured", return_value=True):
+        with pytest.raises(ValueError, match="aren't movies or shows"):
+            auto_queue_researched_countdown(countdown)

@@ -192,7 +192,8 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
       `This will:\n` +
       `1. Look up TMDB & auto-create Studio breakdown projects for any unmade titles\n` +
       `2. Assemble the full 8–12m Master Compilation with auto-chapters, 10s retention hook & US streaming links\n` +
-      `3. Queue the compilation in the Posting Queue ready for publishing`
+      `3. Make each title's segment one at a time when Studio is free (uses the daily AI budget)\n` +
+      `4. Stitch the video and leave it in Needs Review for you to watch and approve`
     );
     if (!ok) return;
 
@@ -1723,12 +1724,6 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                         poster={selectedCompilation.thumb_url ? mediaUrl(selectedCompilation.thumb_url) : undefined}
                         style={{ width: "100%", maxHeight: 420, borderRadius: 8, background: "#000" }}
                       />
-                    ) : selectedCompilation.has_video && selectedCompilation.queue_item_id ? (
-                      <video
-                        controls
-                        src={mediaUrl(`/api/queue/${selectedCompilation.queue_item_id}/video`)}
-                        style={{ width: "100%", maxHeight: 420, borderRadius: 8, background: "#000" }}
-                      />
                     ) : (
                       <div
                         style={{
@@ -1749,12 +1744,33 @@ export function CountdownsStudioPanel({ projects = [], onReloadProjects }: { pro
                         <span style={{ fontSize: 36 }}>⏳</span>
                         <div>
                           <div style={{ fontSize: 15, fontWeight: 700, color: "#f8fafc" }}>
-                            Master Countdown Compilation Assembling
+                            {selectedCompilation.production?.state === "stopped" ? "Countdown stopped"
+                              : selectedCompilation.production?.state === "stitching" ? "Stitching the video…"
+                              : selectedCompilation.production?.state === "making" ? "Countdown in production"
+                              : "Not started"}
                           </div>
                           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                            {selectedCompilation.entry_count || "Ranked"} segments are in production. Once segment footage is rendered, the master 8–12m video stitches automatically with countdown bumpers.
+                            {selectedCompilation.notes ||
+                              "Segments are made one at a time when Studio is free, then stitched into the video."}
                           </div>
                         </div>
+                        {selectedCompilation.queue_item_id &&
+                          !["making", "stitching", "done"].includes(selectedCompilation.production?.state || "") && (
+                          <button
+                            className="primary"
+                            onClick={async () => {
+                              try {
+                                const r = await api.countdownMake(selectedCompilation.queue_item_id!);
+                                notify(`Countdown in production: ${r.done} of ${r.total} segments made. It continues automatically when Studio is free.`);
+                                loadCompilations();
+                              } catch (e: any) {
+                                notify("Can't make this countdown: " + (e.message || String(e)));
+                              }
+                            }}
+                          >
+                            ▶ Make video
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

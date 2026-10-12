@@ -141,24 +141,33 @@ def preview_chapters(req: StitchRequest) -> dict[str, Any]:
 
 @router.post("/stitch")
 def stitch_compilation(req: StitchRequest) -> dict[str, Any]:
-    """Stitch selected projects into a countdown compilation MP4."""
-    try:
-        result = stitch.stitch_countdown_compilation(
-            project_ids=req.project_ids,
-            title=req.title,
-            custom_intro=req.custom_intro,
-            custom_outro=req.custom_outro,
-            accounts=req.accounts,
-            channel_name=req.channel_name,
-            send_to_queue=True,
-        )
-        # Record into deduplication ledger
+    """Stitch selected rendered projects into a countdown video — in a background
+    job (audit 2026-10-11: an 8–12 min render inside the request timed out).
+    Returns the estimate now; the video lands in the Posting Queue as Needs Review."""
+    est = preview_chapters(req)          # also checks every project is rendered
+
+    def work() -> dict[str, Any]:
+        res = stitch.stitch_countdown_compilation(
+            project_ids=req.project_ids, title=req.title, custom_intro=req.custom_intro,
+            custom_outro=req.custom_outro, accounts=req.accounts, channel_name=req.channel_name,
+            send_to_queue=True)
         curation.record_compilation_made(req.title, req.project_ids)
-        return result
+        return res
+
+    job_id = control.start_thread("countdown", f"Countdown: stitch '{req.title[:40]}'", "studio", work)
+    return {**est, "started": True, "job_id": job_id, "compilation_id": None, "video_path": "",
+            "primary_thumb": "", "thumbnails": [], "description": "", "queue_item_id": None,
+            "chapters_text": "\n".join(f"{c['time_formatted']} {c['title']}" for c in est["chapters"])}
+
+
+@router.post("/{queue_id}/make")
+def make_countdown_video(queue_id: int) -> dict[str, Any]:
+    """▶ Make video: start (or retry) production of a queued countdown."""
+    from . import production
+    try:
+        return production.make(queue_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
-        raise HTTPException(500, f"Compilation stitch failed: {str(e)}")
 
 
 from . import cinemeta
@@ -306,10 +315,14 @@ def list_compilations() -> list[dict[str, Any]]:
             .order_by(QueueItem.id.desc())
             .all()
         )
+        linked: set[str] = set()
         for q in q_items:
             r = q.research or {}
             c = r.get("countdown") or {}
             seen_titles.add(q.title)
+            comp = r.get("compilation_id")
+            if comp:
+                linked.add(str(comp))
             out.append({
                 "id": f"queue-{q.id}",
                 "queue_item_id": q.id,
@@ -329,13 +342,16 @@ def list_compilations() -> list[dict[str, Any]]:
                 "notes": q.notes,
                 "project_ids": r.get("project_ids", []),
                 "entry_count": len(c.get("entries", [])) or len(r.get("project_ids", [])),
+                "production": r.get("production") or {},
+                "video_url": f"/api/studio/compilations/{comp}/file?path=final_compilation.mp4" if comp else None,
+                "thumb_url": f"/api/queue/{q.id}/thumb" if q.thumb_path else None,
             })
 
     # 2. Check on-disk rendered compilations in settings.data_path / studio / compilations
     cdir = stitch.compilations_dir()
     if cdir.exists():
         for sub in sorted(cdir.iterdir(), reverse=True):
-            if sub.is_dir() and (sub / "final_compilation.mp4").is_file():
+            if sub.is_dir() and sub.name not in linked and (sub / "final_compilation.mp4").is_file():
                 comp_id = sub.name
                 v_file = sub / "final_compilation.mp4"
                 thumb_file = sub / "thumbnails" / "thumbnail.jpg"

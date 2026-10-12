@@ -562,6 +562,8 @@ export type StitchResult = {
   chapters_text: string;
   description: string;
   queue_item_id: number | null;
+  started?: boolean;   // the stitch runs in the background; the video lands in Needs Review
+  job_id?: string;
 };
 
 export type CinemetaTitle = {
@@ -675,6 +677,8 @@ export type CountdownCompilation = {
   size_mb?: number;
   video_url?: string | null;
   thumb_url?: string | null;
+  // Countdown production (audit 2026-10-11): making → stitching → done, or stopped with a reason.
+  production?: { state?: string; reason?: string | null; started_at?: string; finished_at?: string };
 };
 
 // --- Stop + Undo ---------------------------------------------------------------
@@ -1211,6 +1215,8 @@ export const api = {
     }),
   countdownCompilationsList: () =>
     req<CountdownCompilation[]>("/api/studio/compilations/list", { headers: headers(false) }),
+  countdownMake: (queueId: number) =>
+    req<{ ok: boolean; done: number; total: number }>(`/api/studio/compilations/${queueId}/make`, { method: "POST", headers: headers(false) }),
   countdownStudioProjects: () =>
     req<StudioProject[]>("/api/studio/compilations/projects", { headers: headers(false) }),
 

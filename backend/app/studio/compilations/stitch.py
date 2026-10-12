@@ -522,8 +522,10 @@ def stitch_countdown_compilation(
                 description=description,
                 tags=tags[:500],
                 accounts=accounts or ["default:*"],
-                status="ready",
-                notes=f"Top {len(projects)} countdown compilation (#{comp_id})",
+                # Needs Review: the owner watches a new countdown before it posts (audit 2026-10-11).
+                status="review", source="Countdown Studio",
+                notes=f"Top {len(projects)} countdown compilation (#{comp_id}) — watch it, then approve it to post.",
+                research={"project_ids": list(project_ids), "chapters": chapters, "compilation_id": comp_id},
             )
             s.add(q)
             s.commit()

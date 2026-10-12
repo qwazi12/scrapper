@@ -509,8 +509,11 @@ def save_countdown_item(countdown: dict[str, Any]) -> dict[str, Any]:
     with SessionLocal() as s:
         row = s.get(AppSetting, "saved_countdowns")
         items = list((row.value or {}).get("items", [])) if row else []
-        cid = f"cd-{int(datetime.datetime.now(UTC).timestamp())}"
-        countdown["id"] = cid
+        # Keep a countdown's id and update it in place (audit 2026-10-11: every save
+        # minted a new id and a duplicate, which broke the link to its queue row).
+        if not countdown.get("id"):
+            countdown["id"] = f"cd-{int(datetime.datetime.now(UTC).timestamp() * 1000)}"
+        items = [c for c in items if c.get("id") != countdown["id"]]
         items.insert(0, countdown)
         items = items[:50]  # keep up to 50 saved lists
         if row:
@@ -532,182 +535,137 @@ def delete_saved_countdown(countdown_id: str) -> bool:
     return True
 
 
+def _resolve_title(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """The entry's real TMDB title, or None. A countdown is made from trailers, so an
+    entry that isn't a movie or show (e.g. "Ned Leeds Becomes Hobgoblin…") can't be used."""
+    if entry.get("tmdb_id"):
+        return {"tmdb_id": int(entry["tmdb_id"]), "media_type": entry.get("media_type") or "movie",
+                "title": entry.get("title") or ""}
+    title = (entry.get("title") or "").strip()
+    if not title or not tmdb.configured():
+        return None
+    try:
+        results = tmdb.search(title)
+    except Exception:  # noqa: BLE001 — treated as "not found"
+        return None
+    norm = lambda t: "".join(ch for ch in (t or "").lower() if ch.isalnum())
+    year = str(entry.get("year") or "")
+    same = [r for r in results if norm(r["title"]) == norm(title)]
+    if year:
+        same = [r for r in same if (r.get("date") or "")[:4] == year] or same
+    return same[0] if same else None
+
+
+def countdown_description(countdown: dict[str, Any], entries: list[dict[str, Any]],
+                          chapter_lines: list[str]) -> str:
+    """YouTube description for a countdown: hook, chapters, where to stream, question."""
+    topic = countdown.get("topic", "Top Countdown")
+    lines = []
+    if countdown.get("hook_script"):
+        lines.append(f'"{countdown["hook_script"]}"\n')
+    lines.append(f"In this episode of Screen Central, we are counting down the {topic}!\n")
+    lines.append("⏳ CHAPTERS:")
+    lines.extend(chapter_lines)
+    lines.append("")
+    lines.append("🎬 RANKED ENTRIES & WHERE TO STREAM:")
+    for e in entries:
+        lines.append(f"• #{e['rank']} {e['title']} ({e.get('year', '')}) — Score: {e.get('score', 90)}/100")
+        if e.get("where_to_watch"):
+            lines.append(f"  Streaming (US): {e['where_to_watch']}")
+        if e.get("key_stat"):
+            lines.append(f"  Key Stat: {e['key_stat']}")
+    if countdown.get("closing_question"):
+        lines.append(f"\n💬 DISCUSSION:\n{countdown['closing_question']}\n")
+    lines.append("\n🔔 Subscribe to Screen Central for daily film & TV countdowns, reviews, and rankings!")
+    lines.append(tmdb.ATTRIBUTION)
+    return "\n".join(lines)
+
+
 def auto_queue_researched_countdown(countdown: dict[str, Any], target_count: int | None = None) -> dict[str, Any]:
-    """Auto-queue a researched countdown for full video production:
-    1. Ensures each ranked title has a Studio breakdown project (creates and triggers gather if needed).
-    2. Builds the complete YouTube master package (Hook, auto-chapters, streaming links, discussion question).
-    3. Enqueues the master countdown compilation video into the Posting Queue (QueueItem) with status 'ready'.
+    """Queue a researched countdown for production (rebuilt in the audit of 2026-10-11).
+
+    1. Every entry must be a real movie/show on TMDB (trailers are the footage) —
+       otherwise nothing is created and the reason names the entries.
+    2. Idempotent: the same countdown is never queued twice.
+    3. Each title gets a Studio project (an existing breakdown of the same title
+       is reused as-is). Projects are linked through the queue row, so
+       they stay out of LongForm Studio and the daily breakdown limit.
+    4. The queue row is created as Needs Review with NO video; production.tick()
+       makes the segments one at a time when Studio is free, stitches the video,
+       and attaches it. It is never Ready to Post until the owner approves the video.
     """
-    from ...models import StudioProject, QueueItem
-    from .. import runner
+    from ...models import QueueItem
+    from .. import membership
 
     entries = countdown.get("entries", [])
     if not entries:
         raise ValueError("Countdown has no entries to queue")
-
     topic = countdown.get("topic", "Top Countdown")
     limit = target_count or (15 if countdown.get("format") == "top15" else 5 if countdown.get("format") == "top5" else 10)
-    selected_entries = [e for e in entries if e.get("rank", 999) <= limit]
-    selected_entries.sort(key=lambda x: x.get("rank", 0), reverse=True)
+    selected = sorted((e for e in entries if e.get("rank", 999) <= limit), key=lambda x: x.get("rank", 0), reverse=True)
 
-    project_ids = []
-    created_count = 0
+    resolved, missing = [], []
+    for e in selected:
+        r = _resolve_title(e)
+        (resolved if r else missing).append((e, r))
+    if missing:
+        names = ", ".join(f"#{e.get('rank')} {e.get('title')}" for e, _ in missing)
+        raise ValueError(f"These entries aren't movies or shows with trailers, so they can't be made into a video: "
+                         f"{names}. Research a list of titles instead.")
+    if len(resolved) < 2:
+        raise ValueError("A countdown needs at least 2 titles.")
+
     with SessionLocal() as s:
-        for entry in selected_entries:
-            title = entry.get("title", "")
-            year = entry.get("year")
-            tmdb_id = entry.get("tmdb_id")
+        cid = countdown.get("id")
+        if cid:
+            for q in s.query(QueueItem).filter(QueueItem.source == membership.COUNTDOWN_SOURCE).all():
+                if ((q.research or {}).get("countdown") or {}).get("id") == cid and q.status not in ("posted", "archived"):
+                    return {"ok": True, "queue_item_id": q.id, "project_ids": (q.research or {}).get("project_ids", []),
+                            "created_count": 0, "title": q.title, "entry_count": len(selected), "already_queued": True,
+                            "message": f"'{topic}' is already in the Posting Queue (#{q.id})."}
 
-            existing = None
-            if tmdb_id:
-                existing = s.query(StudioProject).filter(StudioProject.tmdb_id == tmdb_id).first()
-            if not existing and title:
-                existing = s.query(StudioProject).filter(StudioProject.title.ilike(f"%{title}%")).first()
-
-            if existing:
-                project_ids.append(existing.id)
-                # Tag as countdown project if not already tagged
-                f_exist = dict(existing.facts or {})
-                if not f_exist.get("is_countdown"):
-                    f_exist["is_countdown"] = True
-                    f_exist["origin"] = "countdown"
-                    f_exist["countdown_topic"] = topic
-                    f_exist["countdown_id"] = countdown.get("id")
-                    existing.facts = f_exist
-                    s.commit()
-                entry["linked_project"] = {
-                    "id": existing.id,
-                    "title": existing.title,
-                    "seconds": (existing.render or {}).get("seconds", 0),
-                }
-                entry["has_footage"] = bool(existing.render)
-            else:
-                m_type = "movie"
-                if not tmdb_id and tmdb.configured():
-                    try:
-                        results = tmdb.search(title)
-                        if results:
-                            match = results[0]
-                            if year and len(results) > 1:
-                                for r in results[:4]:
-                                    r_year = (r.get("date") or "")[:4]
-                                    if r_year and str(year) == r_year:
-                                        match = r
-                                        break
-                            tmdb_id = match.get("tmdb_id") or match.get("id")
-                            m_type = match.get("media_type") or "movie"
-                    except Exception:
-                        pass
-
-                clean_title = f"{title} ({year})" if year else title
-                p = StudioProject(
-                    tmdb_id=tmdb_id or 0,
-                    media_type=m_type,
-                    title=clean_title,
-                    target_minutes=1.5,
-                    facts={
-                        "primary_date": f"{year}-01-01" if year else None,
-                        "overview": entry.get("why_it_ranks", ""),
-                        "poster": entry.get("poster"),
-                        "why_it_ranks": entry.get("why_it_ranks"),
-                        "fun_fact": entry.get("fun_fact"),
-                        "key_stat": entry.get("key_stat"),
-                        "where_to_watch": entry.get("where_to_watch"),
-                        "origin": "countdown",
-                        "is_countdown": True,
-                        "countdown_topic": topic,
-                        "countdown_id": countdown.get("id"),
-                    },
-                )
+        project_ids, created = [], 0
+        for e, r in resolved:
+            p = (s.query(StudioProject)
+                 .filter(StudioProject.tmdb_id == r["tmdb_id"], StudioProject.media_type == r["media_type"])
+                 .order_by(StudioProject.id.desc()).first())
+            if p is None:
+                p = StudioProject(tmdb_id=r["tmdb_id"], media_type=r["media_type"], title=r["title"] or e.get("title"),
+                                  target_minutes=1.5,
+                                  facts={"origin": "countdown", "is_countdown": True, "countdown_topic": topic,
+                                         "countdown_id": cid})
                 s.add(p)
                 s.commit()
-                s.refresh(p)
-                created_count += 1
-                project_ids.append(p.id)
-                entry["linked_project"] = {"id": p.id, "title": p.title, "seconds": 0}
-                entry["has_footage"] = False
+                created += 1
+            project_ids.append(p.id)
+            e["tmdb_id"], e["media_type"] = r["tmdb_id"], r["media_type"]
+            e["linked_project"] = {"id": p.id, "title": p.title, "seconds": (p.render or {}).get("seconds", 0)}
+            e["has_footage"] = bool(p.render)
 
-                if tmdb_id and not runner.busy().get("project_id"):
-                    try:
-                        runner.start(p.id, "gather", auto=True, until="plan")
-                    except Exception:
-                        pass
-
-        topic = countdown.get("topic", "Top Countdown")
-        hook_script = countdown.get("hook_script", "")
-        closing_q = countdown.get("closing_question", "")
-        title_opts = countdown.get("title_options", [topic])
-        chosen_title = title_opts[0] if title_opts else topic
-
-        desc_lines = []
-        if hook_script:
-            desc_lines.append(f'"{hook_script}"\n')
-        desc_lines.append(f"In this episode of Screen Central, we are counting down the {topic}!\n")
-        desc_lines.append("⏳ CHAPTERS:")
-        desc_lines.append("0:00 Intro & Preview")
-
-        chapters_list = [{"time_formatted": "0:00", "title": "Intro & Preview"}]
-        curr_sec = 16
-        for e in selected_entries:
-            m = curr_sec // 60
-            sec = curr_sec % 60
-            ch_title = f"#{e['rank']}: {e['title']} ({e.get('year', '')})"
-            desc_lines.append(f"{m}:{sec:02d} {ch_title}")
-            chapters_list.append({"time_formatted": f"{m}:{sec:02d}", "title": ch_title, "rank": e["rank"]})
-            curr_sec += 75
-
-        m = curr_sec // 60
-        sec = curr_sec % 60
-        desc_lines.append(f"{m}:{sec:02d} Outro & Final Thoughts\n")
-        chapters_list.append({"time_formatted": f"{m}:{sec:02d}", "title": "Outro & Final Thoughts"})
-
-        desc_lines.append("🎬 RANKED ENTRIES & WHERE TO STREAM:")
-        for e in selected_entries:
-            desc_lines.append(f"• #{e['rank']} {e['title']} ({e.get('year', '')}) — Score: {e.get('score', 90)}/100")
-            if e.get("where_to_watch"):
-                desc_lines.append(f"  Streaming (US): {e['where_to_watch']}")
-            if e.get("key_stat"):
-                desc_lines.append(f"  Key Stat: {e['key_stat']}")
-
-        if closing_q:
-            desc_lines.append(f"\n💬 DISCUSSION:\n{closing_q}\n")
-
-        desc_lines.append("\n🔔 Subscribe to Screen Central for daily film & TV countdowns, reviews, and rankings!")
-        description = "\n".join(desc_lines)
-
-        tags = f"countdown, top 10, {topic.lower()}, movies, film ranking, screen central"
-        for e in selected_entries[:6]:
+        title_opts = countdown.get("title_options") or [topic]
+        chapter_lines = ["(timestamps are added when the video is made)"]
+        tags = f"countdown, top {len(selected)}, {topic.lower()}, movies, film ranking, screen central"
+        for e in selected[:6]:
             tags += f", {e.get('title', '').lower()}"
-
         q = QueueItem(
-            pipeline="LongForm",
-            source="Countdown Studio",
-            video_name=f"Top {len(selected_entries)} Countdown - {topic[:60]}",
-            title=chosen_title[:100],
-            description=description,
-            tags=tags[:500],
-            status="ready",
-            accounts=["default:*"],
-            notes=f"Auto-queued Countdown Video from Countdown Studio ({len(selected_entries)} titles: #{selected_entries[0]['rank']} to #{selected_entries[-1]['rank']})",
-            research={
-                "countdown": countdown,
-                "project_ids": project_ids,
-                "created_count": created_count,
-                "chapters": chapters_list,
-            },
+            pipeline="LongForm", source=membership.COUNTDOWN_SOURCE,
+            video_name=f"Top {len(selected)} Countdown - {topic[:60]}",
+            title=title_opts[0][:100], description=countdown_description(countdown, selected, chapter_lines),
+            tags=tags[:500], status="review", accounts=["default:*"],
+            notes=f"In production: 0 of {len(project_ids)} segments made. The video is made automatically when "
+                  f"Studio is free; it stays in Needs Review until you approve it.",
+            research={"countdown": countdown, "project_ids": project_ids, "created_count": created,
+                      "production": {"state": "making", "started_at": datetime.datetime.now(UTC).isoformat()}},
         )
         s.add(q)
         s.commit()
-        s.refresh(q)
+        qid = q.id
 
     save_countdown_item(countdown)
-
-    return {
-        "ok": True,
-        "queue_item_id": q.id,
-        "project_ids": project_ids,
-        "created_count": created_count,
-        "title": chosen_title,
-        "entry_count": len(selected_entries),
-        "message": f"Successfully auto-queued '{topic}'! Master Compilation added to Posting Queue (#{q.id}), and {created_count} breakdown projects created.",
-    }
+    logbus_msg = f"Countdown '{topic}' queued as #{qid}: {len(project_ids)} titles ({created} new projects)"
+    from ... import logbus
+    logbus.log("info", "countdown_queued", logbus_msg)
+    return {"ok": True, "queue_item_id": qid, "project_ids": project_ids, "created_count": created,
+            "title": title_opts[0], "entry_count": len(selected),
+            "message": f"'{topic}' is in production (#{qid}). Its {len(project_ids)} segments are made one at a time "
+                       f"when Studio is free, then stitched; it waits in Needs Review for you."}

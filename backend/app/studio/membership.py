@@ -48,7 +48,7 @@ def keep_tags(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]
 
 def _in_progress(p, now: datetime.datetime) -> bool:
     from ..models import QueueItem
-    if p.stage_status in ("running", "queued", "budget_paused"):
+    if p.stage_status in ("running", "queued", "paused"):
         return True
     created = p.created_at
     if created is not None:
