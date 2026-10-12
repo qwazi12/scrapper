@@ -841,3 +841,27 @@ Owner: "a lot of updates and breaks… routes and other things that aren't compl
 3. Cross-check every `api.*` call in frontend/lib/api.ts against the backend's real routes (method + path + payload).
 4. Fix in small commits with tests; push after each checkpoint; verify live (Railway + Vercel).
 5. Log findings + fixes here, then update the handbook (v5) to match what actually works.
+
+## FINDINGS + FIX PLAN — 2026-10-11 — Deep audit (live data checked read-only with the owner's token)
+Baseline: 247 pass / 1 fail (test_list_has_checks_reasons_and_sentiment — wording changed by the release-window rule); tsc clean; live frontend = 590ee1a (last frontend commit).
+Broken / dead ends found:
+1. **Countdown rows posted with no video.** auto-queue made queue rows #745–747 `ready` with no file (746/747 duplicates); first was due 2026-10-12 15:00 UTC. → DONE live: moved to Needs Review.
+2. **A countdown never becomes a video.** Segment projects run only to `plan` (and only if Studio is idle — runner.start, not start_or_queue); nothing renders them, nothing stitches, nothing attaches the result to the queue row.
+3. **Non-titles become projects.** "Spider-Man 4 theories" entries (no TMDB match) became movie projects #65–69 with tmdb_id 0.
+4. **Countdown projects eat the daily breakdown limit.** made_today counts every project → today's automation stopped ("today's limits reached") after the 5 theory projects.
+5. **Countdown tag is lost.** gather rewrites `facts`, dropping is_countdown/origin → projects #45–59 (horror Top 15) are hidden from BOTH studios.
+6. **Title match steals projects.** `ilike %title%` + tagging can pull a real LongForm breakdown into Countdowns (hidden from LongForm).
+7. **LongForm list hides live work.** The "current month / ≤15 days" filter hides projects still in progress (e.g. #60 CIA, #61 at plan) — and on the 1st of every month hides everything from last month.
+8. **Momentum sort overrides ⏫ Post next** for LongForm (sort ignores the owner's choice).
+9. **Security:** /api/studio/compilations/{id}/file has no path check (can read any file on the volume with a token).
+10. **/compilations/stitch runs an 8–12 min render inside the HTTP request** (times out, blocks a worker).
+11. **Dead route:** Countdown player falls back to /api/queue/{id}/video, which doesn't exist.
+Fix plan (small commits, tests, push each):
+A. Queue guard: never schedule/post a row with no video (no video_path/drive_link/media_url); approve/bulk-Ready refuse it.
+B. Countdown membership = ids in Countdown Studio rows' research.project_ids (+ tag kept through gather) → used by LongForm list, Countdown list, daily limit.
+C. auto-queue: real titles only (TMDB match by id/exact title), idempotent per countdown id, row status `review` ("in production"), segments start_or_queue through render; a tick stitches when every segment is rendered (background job), attaches the video + thumbnail, leaves it in Needs Review.
+D. LongForm list: hide old titles only when nothing is in progress.
+E. Post next wins over momentum order (post_next_at column).
+F. File route: digits-only id, allowlisted file names, must stay inside the folder.
+G. /stitch → background job; fix the player fallback route; fix the stale test.
+H. Handbook v5.
