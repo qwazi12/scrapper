@@ -147,7 +147,8 @@ def test_migration_moves_old_rows_and_saved_lists():
             s.delete(saved)
         s.add(AppSetting(key="saved_countdowns", value={"items": [
             {"id": "cd-1", "topic": "Old list", "entries": [{"rank": 1, "title": "X"}]},
-            {"id": "cd-2", "topic": "Other list", "format": "top10", "entries": [{"rank": 1, "title": "Y"}]}]}))
+            {"id": "cd-2", "topic": "Other list", "format": "top10", "entries": [{"rank": 1, "title": "Y"}]},
+            {"id": "cd-9", "topic": "Other list", "format": "top10", "entries": [{"rank": 1, "title": "Y"}]}]}))  # same list saved twice
         s.commit()
     with SessionLocal() as s:
         segs = [StudioProject(tmdb_id=900 + i, media_type="movie", title=f"S{i}") for i in range(2)]

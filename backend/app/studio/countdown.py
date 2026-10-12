@@ -450,11 +450,16 @@ def migrate_legacy() -> int:
                 q.source = SOURCE
             else:
                 s.delete(q)
+        # The old Save gave every save a new id, so one list could be saved many times:
+        # match on topic + titles too, so each list comes over once.
+        sig = lambda cd: (cd.get("topic"), tuple(sorted(str(e.get("title")) for e in cd.get("entries") or [])))
+        seen_sigs = {sig(c.ranking or {}) for c in seen.values()}
         saved = s.get(AppSetting, "saved_countdowns")
         for cd in ((saved.value or {}).get("items") or []) if saved else []:
             key = cd.get("id")
-            if key in seen or not cd.get("entries"):
+            if key in seen or not cd.get("entries") or sig(cd) in seen_sigs:
                 continue
+            seen_sigs.add(sig(cd))
             c = CountdownProject(topic=cd.get("topic") or "Countdown", fmt=cd.get("format") or "top10", ranking=cd,
                                  stage="research", stage_status="done",
                                  stage_message="Moved from Saved Countdowns — check the titles (step 2).")
