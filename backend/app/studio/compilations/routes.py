@@ -368,14 +368,17 @@ def list_compilations() -> list[dict[str, Any]]:
 
 @router.get("/{compilation_id}/file")
 def get_compilation_file(compilation_id: str, path: str = "final_compilation.mp4"):
-    """Serve compilation video or thumbnail file."""
-    cdir = stitch.compilations_dir() / compilation_id
-    if path == "thumbnail.jpg":
-        target = cdir / "thumbnails" / "thumbnail.jpg"
-    else:
-        target = cdir / path
-    target = target.resolve()
-    if not target.is_file():
+    """Serve compilation video or thumbnail file. Only the compilation's own
+    video and thumbnails — never any other file on the volume (audit 2026-10-11)."""
+    if not compilation_id.isdigit():
+        raise HTTPException(404, "Compilation file not found")
+    cdir = (stitch.compilations_dir() / compilation_id).resolve()
+    allowed = {"final_compilation.mp4": cdir / "final_compilation.mp4",
+               "thumbnail.jpg": cdir / "thumbnails" / "thumbnail.jpg"}
+    allowed.update({f"thumbnails/{n}": cdir / "thumbnails" / n
+                    for n in ("thumbnail.jpg", "thumb_option_1_poster.jpg", "thumb_option_2_action.jpg", "thumb_option_3_split.jpg")})
+    target = allowed.get(path)
+    if target is None or not target.resolve().is_relative_to(cdir) or not target.is_file():
         raise HTTPException(404, "Compilation file not found")
     return FileResponse(target)
 
