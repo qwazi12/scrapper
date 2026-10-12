@@ -865,3 +865,19 @@ E. Post next wins over momentum order (post_next_at column).
 F. File route: digits-only id, allowlisted file names, must stay inside the folder.
 G. /stitch → background job; fix the player fallback route; fix the stale test.
 H. Handbook v5.
+
+## Log — 2026-10-11 — Deep audit fixes deployed (cc6bf0b → 7b65b19), handbook v5
+- Live data fix (owner's token, read + 3 PATCHes): Countdown rows #745–747 were Ready with no video (first due 2026-10-12 15:00 UTC) → moved to Needs Review.
+- cc6bf0b queue: a row with no video never gets a slot and can't be set Ready; stale release-window test fixed.
+- 43352ef security: /api/studio/compilations/{id}/file serves only that compilation's video + thumbnails (was any path on the volume).
+- 9a2cb5c studio: countdown membership via the Countdown rows' research.project_ids (tag also kept through gather) → #45–59 back in Countdowns Studio; countdown projects don't use the daily breakdown limit; LongForm list never hides work in progress.
+- 04a6d8a queue: post_next_at column (auto-added on boot) — ⏫ Post next beats the release-date order.
+- 49ceecb countdowns: auto-queue = real titles only, idempotent, Needs Review; production loop (one segment at a time when Studio is idle → background stitch → video attached, Needs Review); /stitch in background; ▶ Make video; saved countdowns keep their id (each save used to mint a new id + duplicate); player uses the real file route (/api/queue/{id}/video never existed).
+- 7b65b19 countdowns: ▶ Run continues from the last finished step (stage "next"); no project for unmatched titles.
+- Verified live: version.json = 49ceecb, new route answers; LongForm list 26 (incl. in-progress #60/#61), Countdown list 20 (#45–59, #65–69); automation count now 3 movies + 2 TV (was 8 movies incl. the 5 theory projects) — today's limit is genuinely reached.
+- Tests 260 pass; tsc + next build clean.
+- Handbook v5 published (same URL): Part 4 Countdowns, release-date order + badges, no-video guard, LongForm list rule, poster default thumbnail, new troubleshooting rows. RUNBOOK updated to match.
+### Pending (owner decisions)
+- #746/#747 (Spider-Man 4 "theories", duplicates) and their projects #65–69 (tmdb_id 0, never run) can't become videos — delete them? (not done: destructive).
+- #745 (Top 15 horror, 15 real titles) is in Needs Review, not in production. ▶ Make video starts it: ~15 segments of AI spend under the daily cap, made only when Studio is idle.
+- 20 stale projects were pruned on 2026-10-10 by the earlier session (before this audit) — not recoverable from here except from a DB backup.

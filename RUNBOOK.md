@@ -134,6 +134,15 @@ The restore CLI (`scripts/restore_db.py`) prevents accidental overwrites:
   - **🏆 Countdowns Studio**: Dedicated standalone studio tab for **Top 5 & Top 10 Countdown Compilations** (8–12 min YouTube mid-roll eligible videos) with its autonomous 5-step research engine (Topic Discovery, Defensible Ranking, Multi-Angle Scripting, Audio/Visuals, Final Audit).
 - **Release Timing & Momentum Rules (October 2026 Forward)**:
   - **Current Month Forward**: Only titles releasing in the current month forward (e.g. October 2026+) or upcoming future months (up to 90 days ahead) are eligible for trailer breakdowns.
-  - **15-Day Cutoff**: Any title released more than 15 days ago (`days < -15`) or released before the first day of the current month (`date < 1st of current month`) is automatically filtered out from LongForm Studio and rejected during discovery checks.
+  - **15-Day Cutoff**: Any title released more than 15 days ago (`days < -15`) or released before the first day of the current month (`date < 1st of current month`) is rejected during discovery checks, and hidden from LongForm Studio **unless still in progress** (started in the last 15 days, running/queued/paused, rendered but not sent, or its queue row not yet posted) — `studio/membership.py:shown_in_longform` (2026-10-11).
   - **Pre-Release Priority**: Focus on unreleased and prime approaching titles (0–14 days ahead) to capture search momentum before films hit theaters or streaming.
 
+
+## Countdown production (2026-10-11)
+- **Auto-Queue Video** (`POST /api/studio/compilations/auto-queue`): every entry must match a TMDB title, else 400 naming the entries; the same countdown id is never queued twice. Creates/reuses one Studio project per title and a LongForm queue row (source `Countdown Studio`) in **Needs Review with no video**, `research.production.state = "making"`.
+- **Production loop** (`studio/compilations/production.py`, every scheduler tick, after the LongForm automation): starts the next unrendered segment through `render` only when Studio is idle and its line is empty; when all segments are rendered, stitches in a background job (`countdown` in the jobs bar) and attaches video, thumbnail and real chapters. The row stays Needs Review for the owner.
+- A failed/stopped segment or stitch sets `production.state = "stopped"` with the reason in the row's notes; nothing loops. **▶ Make video** (`POST /api/studio/compilations/{queue_id}/make`) restarts it (failed segments retry from their step).
+- Countdown segments are found via the Countdown rows' `research.project_ids` (`studio/membership.py`): hidden from LongForm Studio, listed in Countdowns Studio, and **not** counted in the daily breakdown limit. They do use the daily AI cap.
+- `POST /api/studio/compilations/stitch` (manual stitch of rendered projects) runs in the background; its row lands in Needs Review.
+- Guard: a queue row with no video (`video_path`/`drive_link`/`media_url`/clip/compilation) never gets a slot and can't be set to Ready (`queue_manager.has_video_source`).
+- ⏫ Post next (`queue_items.post_next_at`) beats the automatic release-date order of the LongForm queue.
