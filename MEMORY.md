@@ -833,3 +833,11 @@ Strategic pivot from single-movie 20-min recaps to 8–12 minute curated "Top 5 
   - Unit test passed (`backend/tests/test_studio_auto_queue.py`).
   - Pushed to `origin/main` (commits `996b0da`, `8df26c1`, `590ee1a`, `7f83c4e`).
 
+
+## PLAN — 2026-10-11 — Deep audit: unfinished routes, dead ends, broken connections (owner request)
+Owner: "a lot of updates and breaks… routes and other things that aren't completely finished or not done with future connections in mind… do a deep dive and implement fixes after logging the plan, and update the handbook after."
+1. Baseline: backend tests, frontend typecheck + production build, live /api/health and Vercel deploy state.
+2. Review everything since 77d6796 (Countdowns Studio, momentum, poster default, release-window filter, auto-queue, compilations shelf) line by line: routes the UI calls that don't exist (and vice versa), schema changes without migrations, queue rows that could post a video that doesn't exist yet, filters that hide data, missing auth, secrets.
+3. Cross-check every `api.*` call in frontend/lib/api.ts against the backend's real routes (method + path + payload).
+4. Fix in small commits with tests; push after each checkpoint; verify live (Railway + Vercel).
+5. Log findings + fixes here, then update the handbook (v5) to match what actually works.
