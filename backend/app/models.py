@@ -142,6 +142,8 @@ class QueueItem(Base):
     scheduled_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     # Owner-pinned posting time: kept as scheduled_at, never re-planned (2026-10-05).
     pinned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ⏫ Post next: the owner's choice beats the automatic release-date order (audit 2026-10-11).
+    post_next_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outstand_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # history (pre-Upload-Post)
     publish_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)  # Upload-Post request_ids

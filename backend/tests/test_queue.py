@@ -952,3 +952,17 @@ def test_row_with_no_video_never_gets_a_slot_or_ready(session, client, reset_sch
     session.refresh(empty)
     session.refresh(real)
     assert empty.scheduled_at is None and real.scheduled_at is not None
+
+
+def test_post_next_beats_release_date_order(session, reset_schedule):
+    """Audit 2026-10-11: the release-date sort used to override ⏫ Post next on LongForm."""
+    now = datetime.datetime(2030, 1, 7, 6, 0, tzinfo=UTC)       # fixed, before the first slot: nothing is "due"
+    soon = now.date() + datetime.timedelta(days=2)
+    (urgent,) = add(session, 1, source="LongForm", research={"release_date": soon.isoformat()})
+    (mine,) = add(session, 1, source="LongForm")
+    qm.plan_schedule(session, now)
+    assert urgent.scheduled_at < mine.scheduled_at          # release date first by default
+    mine.post_next_at = now                                 # what ⏫ Post next records
+    session.commit()
+    qm.plan_schedule(session, now)
+    assert mine.scheduled_at < urgent.scheduled_at          # the owner's choice wins

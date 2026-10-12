@@ -460,8 +460,11 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     from ..studio import momentum
 
     def _momentum_order_key(it: QueueItem) -> tuple:
-        rel = momentum.extract_release_date(it, session=s)
         pos = it.position if it.position is not None else it.id
+        if it.post_next_at is not None:
+            # ⏫ Post next always goes first, newest choice first.
+            return (-1, -_aware(it.post_next_at).timestamp(), pos)
+        rel = momentum.extract_release_date(it, session=s)
         if not rel:
             return (2, pos)
         m = momentum.compute_momentum(rel, today=now.date())

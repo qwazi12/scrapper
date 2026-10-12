@@ -873,6 +873,7 @@ def queue_post_next(item_id: int, s: Session = Depends(get_session)) -> dict:
     undo.record(s, "queue", f"Post next: #{item.id}", rows=[item])
     first = s.query(func.min(func.coalesce(QueueItem.position, QueueItem.id))).scalar() or 0
     item.position = first - 1
+    item.post_next_at = datetime.datetime.now(datetime.timezone.utc)
     s.commit()
     queue_manager.plan_schedule(s, datetime.datetime.now(datetime.timezone.utc))
     s.refresh(item)
