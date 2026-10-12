@@ -893,3 +893,13 @@ Evaluation (why it feels broken): a countdown isn't a thing you can open — it'
 6. Research engine asked for titles only; entries resolved against TMDB during research; unmatched ones flagged with a "swap" option instead of a dead end.
 7. Tests for the new model/steps/queue; RUNBOOK + handbook (v6) updated.
 Owner decision pending (not done without a yes): delete the two Spider-Man "theories" countdowns (#746/#747) and their 5 placeholder projects (#65–69).
+
+## Log — 2026-10-12 — Countdowns Studio rebuilt like LongForm, own queue, mobile (8ae72d0, 1c32765, 075f6f5)
+- Evaluation: the old Countdowns Studio wasn't a thing you could open (saved-list JSON + loose queue rows + loose projects), had no steps/progress/review gate, ranked non-titles and only failed at the end ("Make video" 400 on the Spider-Man theories list), posted through the LongForm queue, and overflowed on phones.
+- Built: `countdown_projects` + `studio/countdown.py` (5 steps: research → titles → segments → script → render → Send to the new Countdowns queue); new page `CountdownsStudio.tsx` laid out like LongForm (Your countdowns cards/filters/highlights, Start a new countdown: your topic / topic ideas / from your breakdowns, project page with stepper, Video, Titles editor with ↑↓/Swap/✕/+Add, Segments, Script); SocialPilot → 🏆 Countdowns queue with its own schedule; segment scripts written as countdown entries.
+- Removed the old auto-queue/stitch/production paths, CountdownModal, CountdownsStudioPanel, LongForm's Stitch Countdown button; Compilations tab back to short-form exports only.
+- Verified: 260 tests; tsc + next build; local copy (test DB + generated test token on localhost) checked at 390 px in Chrome: Countdowns list/project page/titles/confirm flow and the Countdowns queue; a sweep of all 7 tabs found no sideways overflow. Live: version.json 8ae72d0, /api/countdowns answering.
+- Migration ran live: horror Top 15 → #1 (its 15 segments attached, stopped — nothing spends until ▶ Make segments); Spider-Man theories → #2 (5 entries flagged, not makeable). It also made exact duplicates #3, #4, #5 (old saves had many ids) — migration fixed (075f6f5) but **deleting #3–#5 was blocked by the auto-mode classifier; left for the owner** (🗑 on each card).
+### Pending (owner)
+- Delete duplicates #3, #4, #5 in Countdowns Studio; decide on #2 (Spider-Man theories: swap in real titles or delete; its 5 placeholder projects #65–69 are hidden).
+- #1 (Top 15 horror): ▶ Make segments to start (15 segments of AI spend under the daily cap).
