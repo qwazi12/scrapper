@@ -19,6 +19,7 @@ def et(y, mo, d, h, mi=0):
 
 def add(s, n, source="Movie Clips / @VynixAE", status="ready", **kw):
     kw.setdefault("accounts", ["default:youtube"])   # profile "mk" is never used for queue videos
+    kw.setdefault("video_path", "video.mp4")         # a row with no video never gets a slot
     items = []
     for _ in range(n):
         it = QueueItem(pipeline=source.split(" / ")[-1], source=source, title="t",
@@ -937,3 +938,17 @@ def test_all_count_leaves_out_posted_videos(session, client):
     add(session, 1, status="posted")
     d = client.get("/api/queue/counts").json()
     assert d["all"] == 2 and d["archived"] == 3 and d["posted"] == 1
+
+
+def test_row_with_no_video_never_gets_a_slot_or_ready(session, client, reset_schedule):
+    """Audit 2026-10-11: Countdown rows were Ready with no video and took Screen Central's slots."""
+    (empty,) = add(session, 1, source="LongForm", video_path=None, status="review")
+    (real,) = add(session, 1, source="LongForm")
+    r = client.patch(f"/api/queue/{empty.id}", json={"status": "ready"})
+    assert r.status_code == 400 and "no video" in r.json()["detail"]
+    empty.status = "ready"            # e.g. set by an older code path
+    session.commit()
+    qm.plan_schedule(session, datetime.datetime.now(UTC))
+    session.refresh(empty)
+    session.refresh(real)
+    assert empty.scheduled_at is None and real.scheduled_at is not None

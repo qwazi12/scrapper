@@ -116,6 +116,7 @@ def test_queue_scheduler_prioritizes_upcoming_releases_before_release(session):
         title="Movie Far Ahead",
         accounts=["default:*"],
         status="ready",
+        video_path="video.mp4",
         position=1,
         research={"release_date": "2026-10-30"},
     )
@@ -125,6 +126,7 @@ def test_queue_scheduler_prioritizes_upcoming_releases_before_release(session):
         title="Movie Releasing Soon",
         accounts=["default:*"],
         status="ready",
+        video_path="video.mp4",
         position=5,
         research={"release_date": "2026-10-12"},
     )
@@ -134,6 +136,7 @@ def test_queue_scheduler_prioritizes_upcoming_releases_before_release(session):
         title="Movie Already Out",
         accounts=["default:*"],
         status="ready",
+        video_path="video.mp4",
         position=2,
         research={"release_date": "2026-09-30"},
     )

@@ -90,7 +90,7 @@ def test_list_has_checks_reasons_and_sentiment(world):
     assert [r["title"] for r in lst["movie"]] == ["Hit Movie"]
     assert [r["title"] for r in lst["tv"]] == ["Airing Show", "YouTube Only Show"]
     why = {r["title"]: r["checks"] for r in lst["not_passing"]}
-    assert why["Old Movie"]["release"]["status"] == "fail" and "days ago" in why["Old Movie"]["release"]["why"]
+    assert why["Old Movie"]["release"]["status"] == "fail" and "released" in why["Old Movie"]["release"]["why"]
     assert why["No Trailer"]["trailer"]["status"] == "fail"
     yt_only = next(r for r in lst["tv"] if r["title"] == "YouTube Only Show")
     assert yt_only["checks"]["trailer"]["status"] == "warn" and not yt_only["auto_ok"]

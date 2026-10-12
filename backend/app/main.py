@@ -778,6 +778,8 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
     if req.pipeline is not None:
         item.pipeline = req.pipeline
     if req.status is not None:
+        if req.status == "ready" and not queue_manager.has_video_source(item):
+            raise HTTPException(400, "This row has no video yet — it can be Ready to Post once its video exists.")
         item.status = req.status
         _mark_published(item, req.status)
     if req.accounts is not None:

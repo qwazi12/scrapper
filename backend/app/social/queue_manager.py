@@ -409,11 +409,17 @@ def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
     return at is not None and now - DUE_GRACE < at <= now
 
 
+def has_video_source(item: QueueItem) -> bool:
+    """Is there anything to upload? (Audit 2026-10-11: Countdown rows were Ready
+    with no video, took Screen Central's slots and would have failed at post time.)"""
+    return bool(item.video_path or item.compilation_id or item.clip_id or item.drive_link or item.media_url)
+
+
 def plan_schedule(s: Session, now: datetime.datetime) -> int:
     """Give every Ready item a slot: per pipeline, in posting order, one item
     per slot. Items already due keep their slot; items with no accounts picked
-    get no slot (nothing is ever posted to accounts the owner didn't choose).
-    Returns rows changed."""
+    or no video yet get no slot (nothing is ever posted to accounts the owner
+    didn't choose, and a missing video never burns a slot). Returns rows changed."""
     ready = (
         s.query(QueueItem)
         .filter(QueueItem.status == "ready")
@@ -424,7 +430,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     due_groups: set[str] = set()
     changed = 0
     for it in ready:
-        if not it.accounts:
+        if not it.accounts or not has_video_source(it):
             if it.scheduled_at is not None:
                 it.scheduled_at = None
                 changed += 1
