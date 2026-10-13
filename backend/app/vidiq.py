@@ -37,9 +37,15 @@ UTC = datetime.timezone.utc
 
 DEFAULTS = {"enabled": True, "daily_credits": 60, "monthly_credits": 1800, "cache_hours": 24}
 COST_DEFAULT = 5                      # vidIQ: "most research tools cost 5 credits per call"
-COSTS = {"video": 25, "watch": 25, "thumbnail": 22, "short": 10, "voice": 14}   # by name fragment
-FREE_HINTS = ("balance", "credit", "list_channels", "channels", "job", "status", "bookmark", "competitor_list",
-              "trend_categor", "categories", "voices", "import", "feedback")
+# Free per vidIQ (balance, your channels, jobs, bookmarks, competitor list, trend categories,
+# voices, imports, feedback). Exact names from tools/list on 2026-10-13.
+FREE = {"vidiq_balance", "vidiq_user_channels", "vidiq_jobs_list", "vidiq_job_poll", "vidiq_bookmarks_list",
+        "vidiq_bookmarks_save", "vidiq_bookmarks_remove", "vidiq_list_competitors", "vidiq_update_competitors",
+        "vidiq_trend_categories", "vidiq_voiceover_list_voices", "vidiq_video_upload", "vidiq_submit_feedback"}
+# Known heavier tools (estimates err high; vidiq_balance shows the true balance).
+COSTS = {"vidiq_video_watch": 25, "vidiq_watch_shortform_content": 10, "vidiq_generate_thumbnail": 22,
+         "vidiq_refine_thumbnail": 22, "vidiq_voiceover_generate": 14, "vidiq_generate_video": 50,
+         "vidiq_generate_music": 20, "vidiq_compose": 20, "vidiq_generate_clips": 30, "vidiq_generate_script": 10}
 BACKOFF = 30 * 60
 CACHE_MAX = 400
 
@@ -115,13 +121,9 @@ def _charge(tool: str, credits: int) -> None:
 
 
 def cost_of(tool: str) -> int:
-    t = tool.lower()
-    if any(h in t for h in FREE_HINTS):
+    if tool in FREE:
         return 0
-    for frag, c in COSTS.items():
-        if frag in t:
-            return c
-    return COST_DEFAULT
+    return COSTS.get(tool, COST_DEFAULT)
 
 
 def _check_credits(tool: str) -> int:
