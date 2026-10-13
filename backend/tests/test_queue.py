@@ -1002,3 +1002,37 @@ def test_per_platform_daily_numbers(session, reset_schedule, monkeypatch, tmp_pa
     (pinned,) = add(session, 1, accounts=["default:*"], video_path=str(video))
     asyncio.run(qm.publish_queue_item(pinned.id, session, regular=False))          # Post now / pinned: everywhere
     assert sent[-1] == ["facebook", "instagram", "youtube"]
+
+
+def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tmp_path):
+    """YouTube keeps 11:00 and 19:00; Facebook/Instagram post at 8:00, 12:40, 17:20, 22:00."""
+    import asyncio
+    from zoneinfo import ZoneInfo
+    from backend.app.social import upload_post as up
+    cfg = qm.load_schedule(session)
+    fb = ["08:00", "12:40", "17:20", "22:00"]
+    qm.save_schedule(session, {**cfg, "timezone": "America/New_York", "pipelines": {"LongForm": {
+        "platforms": {"youtube": ["11:00", "19:00"], "facebook": fb, "instagram": "8:00, 12:40, 17:20, 22:00"}}}})
+    assert qm.load_schedule(session)["pipelines"]["LongForm"]["platforms"]["instagram"] == fb
+    p = qm.resolve_pacing(pipeline="LongForm")
+    assert p["times"] == ["08:00", "11:00", "12:40", "17:20", "19:00", "22:00"] and qm.slots_per_day(pipeline="LongForm") == 6
+
+    async def list_accounts():
+        return [{"id": f"default:{n}", "profile": "default"} for n in ("youtube", "facebook", "instagram")]
+    sent = []
+
+    async def upload_video(path, *, profile, platforms, **kw):
+        sent.append(sorted(platforms))
+        return "r"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    tz = ZoneInfo("America/New_York")
+    for hhmm, expect in (("11:00", ["youtube"]), ("12:40", ["facebook", "instagram"])):
+        (it,) = add(session, 1, source="LongForm", accounts=["default:*"], video_path=str(video))
+        h, m = map(int, hhmm.split(":"))
+        it.scheduled_at = datetime.datetime.now(tz).replace(hour=h, minute=m, second=0, microsecond=0).astimezone(UTC)
+        session.commit()
+        asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
+        assert sent[-1] == expect

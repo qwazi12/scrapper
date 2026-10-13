@@ -173,13 +173,18 @@ def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
                 entry["times"] = clean_times(v["times"], k)
             if isinstance(v.get("platforms"), dict):
                 # Owner (2026-10-13): different daily numbers per platform, e.g. YouTube 1, Facebook 3, Instagram 3.
-                plats: dict[str, int] = {}
+                # A number = that many of the queue's posts a day (the first ones); a list of times
+                # = exactly those times (owner, 2026-10-13: keep YouTube's times, add Facebook/Instagram).
+                plats: dict[str, Any] = {}
                 for net, n in v["platforms"].items():
-                    if n is None or n == "":
+                    if n is None or n == "" or n == []:
                         continue
                     net = str(net).strip().lower()
                     if not net.isalnum():
                         raise ValueError(f"Override for {k}: unknown platform '{net}'")
+                    if isinstance(n, (list, str)) and ":" in (",".join(n) if isinstance(n, list) else n):
+                        plats[net] = clean_times(n, f"{k} {net}")
+                        continue
                     n = int(n)
                     if not (0 <= n <= 48):
                         raise ValueError(f"Override for {k}: {net} posts/day must be 0-48")
@@ -302,8 +307,10 @@ def resolve_pacing(
     if override:
         if override.get("posts_per_day") is not None:
             ppd = int(override["posts_per_day"])
-        if override.get("platforms") and not override.get("times"):
-            ppd = max(override["platforms"].values()) or ppd      # the queue runs at its busiest platform's rate
+        plats = override.get("platforms") or {}
+        nums = [x for x in plats.values() if isinstance(x, int)]
+        if nums and not override.get("times") and not any(isinstance(x, list) for x in plats.values()):
+            ppd = max(nums) or ppd                                # the queue runs at its busiest platform's rate
         if override.get("start_hour") is not None:
             start = int(override["start_hour"])
         if override.get("end_hour") is not None:
@@ -311,6 +318,9 @@ def resolve_pacing(
         if override.get("interval_hours") is not None:
             step = int(override["interval_hours"])
     times = list((override or {}).get("times") or [])
+    plat_times = {t for x in ((override or {}).get("platforms") or {}).values() if isinstance(x, list) for t in x}
+    if plat_times:                      # each platform's own times: the queue posts at all of them
+        times = sorted(set(times) | plat_times)
 
     return {
         "timezone": tz,
@@ -421,7 +431,7 @@ def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
     return sum(1 for it in rows if pipeline_group(it) == group)
 
 
-def platform_limits(group: str) -> dict[str, int]:
+def platform_limits(group: str) -> dict[str, Any]:
     """Daily posts per platform for this queue ({} = every post goes everywhere)."""
     return dict(((_schedule_cfg.get("pipelines") or {}).get(group) or {}).get("platforms") or {})
 
@@ -722,9 +732,12 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
         allow = None
         group = pipeline_group(item)
         limits = platform_limits(group) if regular else {}
-        if limits:      # owner (2026-10-13): e.g. YouTube 1/day, Facebook 3, Instagram 3
+        if limits:      # owner (2026-10-13): e.g. YouTube 1/day, Facebook 3, Instagram 3 — or each its own times
             counts = platform_posts_today(s, group, datetime.datetime.now(UTC))
-            allow = {net: counts.get(net, 0) < lim for net, lim in limits.items()}
+            at = _aware(item.scheduled_at)
+            hhmm = at.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M") if at else None
+            allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
+                     for net, lim in limits.items()}
         entries = await submit_upload(
             video_path, list(item.accounts), title=item.title or item.video_name,
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,

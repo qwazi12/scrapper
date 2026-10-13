@@ -135,7 +135,7 @@ export type PacingOverride = {
   end_hour?: number | null;
   interval_hours?: number | null;
   times?: string[] | null;          // exact posting times "HH:MM" — win over posts_per_day
-  platforms?: Record<string, number> | null;   // daily posts per platform, e.g. {youtube: 1, facebook: 3}
+  platforms?: Record<string, number | string[]> | null;   // per platform: posts/day, or its own times ["11:00", "19:00"]
 };
 
 export type ScheduleConfig = {

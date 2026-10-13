@@ -50,13 +50,14 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
     setStart(ov.start_hour ?? schedInfo.start_hour);
     setEnd(ov.end_hour ?? schedInfo.end_hour);
     setTimes(ov.times || []);
-    setPlats(Object.fromEntries(Object.entries(ov.platforms || {}).map(([k, v]) => [k, String(v)])));
+    setPlats(Object.fromEntries(Object.entries(ov.platforms || {}).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)])));
   }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const savedPlats = ov.platforms || {};
-  const platMax = Object.values(savedPlats).length ? Math.max(...Object.values(savedPlats)) : 0;
+  const platNums = Object.values(savedPlats).filter((v): v is number => typeof v === "number");
+  const platMax = platNums.length && !Object.values(savedPlats).some(Array.isArray) ? Math.max(...platNums) : 0;
   const perDay = ov.times?.length || platMax || ov.posts_per_day || globalPpd;
-  const platSummary = Object.entries(savedPlats).map(([k, v]) => `${SHORT[k] || k} ${v}`).join(" · ");
+  const platSummary = Object.entries(savedPlats).map(([k, v]) => `${SHORT[k] || k} ${Array.isArray(v) ? v.length : v}`).join(" · ");
   const summary = ov.times?.length ? ov.times.map(fmtTime).join(", ") : `${fmtHour(ov.start_hour ?? schedInfo?.start_hour ?? 10)}–${fmtHour(ov.end_hour ?? schedInfo?.end_hour ?? 20)}`;
   const next = schedInfo?.pipeline_next_slots?.[queue] || [];
   const tz = schedInfo?.timezone || "America/New_York";
@@ -65,14 +66,21 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
     if (!schedInfo) return;
     if (!useDefault && mode === "times" && times.length === 0) return notify("Add at least one posting time.");
     if (!useDefault && mode === "spread" && start > end) return notify("The first post must be at or before the last.");
-    const platforms: Record<string, number> = {};
+    const platforms: Record<string, number | string[]> = {};
     for (const [k, v] of Object.entries(plats)) {
-      if (v === "" || v === undefined) continue;
+      if (!v || !v.trim()) continue;
+      if (v.includes(":")) {                     // its own times, e.g. "11:00, 19:00"
+        const list = v.split(/[,;\s]+/).filter(Boolean);
+        if (!list.every((t) => /^\d{1,2}:\d{2}$/.test(t))) return notify(`${k}: write times like 8:00, 12:40, 17:20`);
+        platforms[k] = list;
+        continue;
+      }
       const n = Number(v);
-      if (!Number.isInteger(n) || n < 0 || n > 48) return notify(`${k}: a whole number 0–48, or leave it blank.`);
+      if (!Number.isInteger(n) || n < 0 || n > 48) return notify(`${k}: a whole number 0–48, times like 8:00, 12:40 — or leave it blank.`);
       platforms[k] = n;
     }
-    const pmax = Object.values(platforms).length ? Math.max(...Object.values(platforms)) : 0;
+    const nums = Object.values(platforms).filter((x): x is number => typeof x === "number");
+    const pmax = nums.length && !Object.values(platforms).some(Array.isArray) ? Math.max(...nums) : 0;
     if (!useDefault && mode === "times" && pmax > times.length)
       return notify(`A platform is set to ${pmax} a day but there are only ${times.length} posting time(s). Add times or lower the number.`);
     setSaving(true);
@@ -168,18 +176,19 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
 
           <div>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Per platform, per day <span style={{ color: "var(--muted)", fontWeight: 400 }}>(blank = every post)</span></div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(70px, 1fr))", gap: 6 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 6 }}>
               {PLATFORMS.map(([k, label]) => (
                 <label key={k} style={{ fontSize: 11 }}>{label}
-                  <input inputMode="numeric" value={plats[k] ?? ""} placeholder="all"
-                         onChange={(e) => setPlats({ ...plats, [k]: e.target.value.replace(/[^0-9]/g, "") })}
+                  <input value={plats[k] ?? ""} placeholder="all"
+                         onChange={(e) => setPlats({ ...plats, [k]: e.target.value.replace(/[^0-9:,; ]/g, "") })}
                          style={{ width: "100%", fontSize: 11 }} />
                 </label>
               ))}
             </div>
             <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 4 }}>
-              The queue posts at the highest number; each post goes to every platform still under its number that day
-              (e.g. YouTube 1, Facebook 3, Instagram 3 → 3 posts a day, YouTube gets the first). Pinned and 🚀 Post now go everywhere.
+              A number: the queue posts at the highest number and the platform gets that many of the day's posts (the first ones).
+              Times (e.g. 11:00, 19:00): the platform posts at exactly those times; the queue posts at every platform's times.
+              Pinned and 🚀 Post now go everywhere.
             </div>
           </div>
 
