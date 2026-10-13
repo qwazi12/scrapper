@@ -190,3 +190,28 @@ def test_research_gets_vidiq_search_and_competitor_data():
     assert "44,631" in seen["market"]
     with SessionLocal() as s:
         assert s.get(CountdownProject, cid).ranking["market"]["keyword"] == "horror movies"
+
+
+def test_topics_use_the_phrase_pool_without_extra_vidiq_calls():
+    calls = []
+    def km(kw, **k):
+        calls.append(kw)
+        return {"keyword": kw, "monthly_searches": 500000, "growth_pct": 5, "competition": 50, "overall": 70, "volume": 90,
+                "related": [{"keyword": "best horror movies", "monthly_searches": 134758, "overall": 61}]}
+    ai = [{"topic": "Top 10 Best Horror Movies", "keyword": "best horror movies", "group": "evergreen", "debate": 7, "titles": _titles(12)}]
+    resolve = lambda e: {"tmdb_id": 1000 + int(e["title"].split()[-1]), "media_type": "movie", "title": e["title"]}
+    with patch("backend.app.vidiq.keyword_metrics", side_effect=km), \
+         patch("backend.app.studio.gemini.ask_json", return_value=ai) as ask, \
+         patch("backend.app.studio.compilations.engine._resolve_title", side_effect=resolve), \
+         patch("backend.app.studio.compilations.engine._gather_market_context",
+               return_value={"upcoming": [], "trending": [], "tv_airing": [], "today": "2026-10-13"}), \
+         patch("backend.app.vidiq.configured", return_value=True), \
+         patch("backend.app.vidiq.breakout_videos", return_value=[]), \
+         patch("backend.app.vidiq.trending", return_value=[]), \
+         patch("backend.app.vidiq.rising", return_value=[]), \
+         patch("backend.app.vidiq.safe", return_value=None):
+        countdown_topics.build()
+    assert calls == countdown_topics.SEEDS                               # only the weekly seed lookups
+    assert "best horror movies — 134,758/month" in ask.call_args.args[0]  # the AI must pick from real searches
+    t = countdown_topics.listing()["topics"][0]
+    assert t["demand"]["monthly_searches"] == 134758 and t["checks"]["demand"]["status"] == "pass"

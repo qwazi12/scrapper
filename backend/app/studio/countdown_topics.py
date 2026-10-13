@@ -35,6 +35,10 @@ KEY, LEDGER = "countdown_topics_v2", "countdown_topic_ledger"
 STALE = datetime.timedelta(days=1)          # owner (2026-10-13): fresh every day
 SIZES = (5, 10, 15)
 DEMAND_CACHE_H = 168              # vidIQ demand per search phrase, cached 7 days (5 credits each)
+# Broad seeds: one vidIQ call each returns ~20 real search phrases with their monthly searches.
+# Cached a week (≈ 30 credits/week), so every topic can be built on a phrase with known demand.
+SEEDS = ["best movies", "best tv shows", "horror movies", "new movies", "netflix movies", "action movies"]
+EXTRA_CHECKS = 3                  # per build: phrases not in the pool get looked up individually (5 credits each)
 STRONG, WEAK = 20_000, 5_000      # monthly searches: Demand ✓ at 20K+, ⚠ 5–20K, ✕ below 5K
 LISTY = re.compile(r"\b(top ?\d+|best|worst|ranked|ranking|every|greatest|underrated|overrated|scariest)\b", re.I)
 SCREEN = re.compile(r"\b(movie|movies|film|films|show|shows|series|tv|anime|horror|thriller|netflix|marvel|disney|hbo|prime|sci-?fi)\b", re.I)
@@ -92,12 +96,25 @@ def _signals() -> dict[str, Any]:
     videos: list[dict[str, Any]] = []
     if vidiq.configured():
         for v in (vidiq.breakout_videos("top 10 movies", purpose="countdown topics")
-                  + vidiq.breakout_videos("best tv shows ranked", purpose="countdown topics")
                   + vidiq.trending("top 10 movies ranked", purpose="countdown topics")):
             t = v.get("title") or ""
             if LISTY.search(t) and SCREEN.search(t) and t not in {x["title"] for x in videos}:
                 videos.append(v)
     videos.sort(key=lambda v: -(v.get("views") or 0))
+    pool: dict[str, dict[str, Any]] = {}
+    if vidiq.configured():
+        for seed in SEEDS:
+            m = vidiq.keyword_metrics(seed, purpose="countdown phrase pool", cache_hours=DEMAND_CACHE_H)
+            if not m:
+                continue
+            for k in [{"keyword": m.get("keyword") or seed, "monthly_searches": m.get("monthly_searches", 0),
+                       "growth_pct": m.get("growth_pct", 0), "competition": m.get("competition", 0),
+                       "overall": m.get("overall", 0)}, *(m.get("related") or [])]:
+                if not k.get("keyword"):
+                    continue
+                key = k["keyword"].lower().strip()
+                if k.get("monthly_searches", 0) >= WEAK and key not in pool:
+                    pool[key] = k
     rising: list[dict[str, Any]] = []
     if vidiq.configured():
         # Searches climbing fastest this week: "trailers" + one film/TV category, rotating daily (10 credits).
@@ -113,8 +130,12 @@ def _signals() -> dict[str, Any]:
         raw = vidiq.safe("vidiq_comment_insights", {"mode": "discover", "niche": "movie and TV top 10 countdown and ranking videos",
                                                     "language": "en"}, cache_hours=168, purpose="countdown viewer requests")
         asks = (raw if isinstance(raw, str) else json.dumps(raw))[:1800] if raw else ""
+    for r in rising:
+        pool.setdefault(r["keyword"].lower().strip(), {"keyword": r["keyword"], "monthly_searches": r["monthly_searches"],
+                                                       "growth_pct": r["change_pct"], "rising": True})
+    phrases = sorted(pool.values(), key=lambda k: -k.get("monthly_searches", 0))[:70]
     return {**ctx, "month": month_titles[:25], "videos": videos[:20], "month_name": today.strftime("%B %Y"), "asks": asks,
-            "rising": rising[:25]}
+            "rising": rising[:25], "pool": phrases}
 
 
 def _prompt(sig_: dict[str, Any], avoid: list[str]) -> str:
@@ -122,6 +143,7 @@ def _prompt(sig_: dict[str, Any], avoid: list[str]) -> str:
                      for v in sig_["videos"]) or "- (none available)"
     rising = "\n".join(f"- \"{r['keyword']}\" — {r['monthly_searches']:,}/month, +{r['change_pct']}% ({r['category']})"
                        for r in sig_.get("rising") or [])
+    pool = "\n".join(f"- {p['keyword']} — {p['monthly_searches']:,}/month" for p in sig_.get("pool") or [])
     return f"""You plan Top 5 / Top 10 / Top 15 COUNTDOWN videos for the YouTube channel "Screen Central"
 (movies and TV). Today is {sig_['today']}; this month is {sig_['month_name']}.
 
@@ -141,8 +163,7 @@ Propose 15 distinct countdown topics with HIGH search demand right now (thousand
 - 5 tied to this month (new releases, streaming arrivals, seasonal/holiday, anniversaries) → "group": "month"
 - 5 riding what's breaking out or rising on YouTube (same angle, our own take) → "group": "trend"
 - 5 evergreen with big search volume (genre bests, underrated, director/actor rankings) → "group": "evergreen"
-For "keyword", use the phrase people actually type into YouTube search (broad and popular, e.g. "best horror movies",
-"new movies october 2026", "best netflix series") — prefer phrases from the rising searches above when they fit.
+For "keyword": the search phrase this video targets. {"It MUST be copied exactly from this list of real YouTube searches (monthly searches shown) — build topics around the biggest ones:" + chr(10) + pool if pool else "Use the phrase people actually type into YouTube search (broad and popular, e.g. 'best horror movies')."}
 Rules: every candidate must be a real MOVIE or TV SHOW (never scenes, theories, characters or moments).
 Do not repeat or lightly reword these already-made topics: {', '.join(avoid[:40]) or 'none'}.
 
@@ -201,11 +222,23 @@ def build() -> dict[str, Any]:
                        "why_now": (t.get("why_now") or "")[:300], "debate": max(1, min(10, int(t.get("debate") or 5))),
                        "best_format": t.get("best_format") if t.get("best_format") in ("top5", "top10", "top15") else "top10",
                        "titles": real, "sizes": sizes})
-    # Demand from vidIQ for every topic (phrases cached 7 days).
+    # Demand for every topic: from the phrase pool (already known), else a few individual lookups.
+    pool = {p["keyword"].lower().strip(): p for p in sig_.get("pool") or []}
+    extra = 0
     for t in topics:
+        hit = pool.get(t["keyword"].lower().strip())
+        if hit:
+            t["demand"] = {"overall": hit.get("overall", 0), "volume": hit.get("volume", 0), "competition": hit.get("competition", 0),
+                           "monthly_searches": int(hit.get("monthly_searches", 0)), "growth_pct": float(hit.get("growth_pct") or 0)}
+            t["keywords"] = [p["keyword"] for p in pool.values()
+                             if p["keyword"] != hit["keyword"] and set(p["keyword"].split()) & set(hit["keyword"].split())][:10]
+            continue
+        if extra >= EXTRA_CHECKS:
+            continue
         control.check()
         control.progress(f"vidIQ demand: {t['keyword']}")
         m = vidiq.keyword_metrics(t["keyword"], purpose="countdown topic demand", cache_hours=DEMAND_CACHE_H)
+        extra += 1
         if m:
             t["demand"] = {k: m[k] for k in ("overall", "volume", "competition", "monthly_searches", "growth_pct")}
             t["keywords"] = [r["keyword"] for r in m["related"][:12]]
