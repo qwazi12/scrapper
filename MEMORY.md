@@ -988,3 +988,10 @@ A. Engine fixes (waiting line, segment length, restart-safe, budget pause). B. P
 3. #1 Top 15 horror (4 of 15 made at the long length, $0.70 so far): stop it now and re-make the 4 at the right length (~$0.50), or keep long (~30 min video)?
 4. Drive copies of countdowns: yes (recommended)?
 5. vidIQ: use it on the server (create the API key) — and daily credit cap?
+
+### APPROVED — 2026-10-13 (owner answers to plan v2)
+1. Daily limit: 1 countdown per day.
+2. "It should take up 1 of the time slots midday" → read as: countdown work gets Studio's **midday turn** (12:00–15:00 ET countdown segments go first; otherwise behind LongForm), and the Countdowns queue posts at a **midday slot** (12:00 ET, 1/day) by default.
+3. #1 Top 15 horror: keep the 4 made; make the other 11 at the correct length (0.6 min). Checked: it stopped because the **daily cap** was hit (#49 It Follows paused at shots; resumes after midnight) — the card must say so.
+4. Drive copies: yes.
+5. vidIQ: yes — use it fully for topics, tags, descriptions, insights and trend research across Scrapper. Plan: Boost, **2,000 credits/month** (~66/day). `VIDIQ_API_KEY` is set in Railway by the owner. Budget: daily credit cap (default 60) + monthly guard, cached results, free tools (balance, trend categories, channels) used freely.
