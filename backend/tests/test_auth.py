@@ -149,6 +149,7 @@ def test_media_pass_opens_media_only_and_token_never_works_in_a_url():
     g = c.get("/api/media-pass", headers=hdr).json()["pass"]
     assert c.get(f"/api/tts/audio/missing.wav?g={g}").status_code == 404        # pass accepted (file just isn't there)
     assert c.get("/api/tts/audio/missing.wav").status_code == 401               # no pass, no token: refused
+    assert c.get(f"/api/countdowns/999999/file?path=video&g={g}").status_code == 404   # countdown player/thumbnails (2026-10-13)
     assert c.get(f"/api/jobs?g={g}").status_code == 401                          # not a media route
     assert c.post(f"/api/clips/1/select?g={g}", json={"selected": True}).status_code == 401  # never writes
     assert c.get("/api/jobs?token=test-token").status_code == 401               # token in a URL: refused
