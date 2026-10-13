@@ -1041,3 +1041,10 @@ Owner: "unable to watch countdown rendered videos or see thumbnails; when I refr
   - LongForm: YouTube unchanged 11:00, 19:00; Facebook + Instagram 08:00, 12:40, 17:20, 22:00 → 6 posts/day.
   - Countdowns: all three at 12:00 (unchanged).
 - Watch: LongForm now uses 6 videos/day vs ~5 made/day; videos at Facebook/Instagram times don't go to YouTube (YouTube keeps its own 4 + 2 a day).
+
+## Log — 2026-10-13 — Countdown audio fixed (99be495, cb0e970)
+Owner: "there's an issue with the audio for countdown; LongForm works fine."
+- Downloaded countdown #1 and probed it: **audio 36 min on an 18-min video**, 96 kHz, 12 kbps. Cause: the stitch joined pieces with different audio (breakdown renders 96 kHz mono, #N cards 48 kHz stereo, intro/outro voice 24 kHz) with `concat -c copy`; players read a stretched, drifting timeline. Fix: `stitch.uniform_audio` gives every piece 48 kHz stereo AAC padded/trimmed to its video before the join; final loudnorm output pinned to 48 kHz. Reproduced and verified locally (old: 4:46 video → 19:05 audio; new: equal). Re-render of #1: audio 18:20.7 = video 18:20.7, 48 kHz stereo, −14 LUFS.
+- Then found: **silent intro (18 s) and outro (24 s)** — the intro/outro voice-over was refused by the daily cap and the code silently used silence. Now a refused voice stops the render (cap → paused, resumes after midnight).
+- And **~11 s of dead air between entries** — each segment kept LongForm's 8 s silent subscribe end screen. Now each segment's silent tail is detected and trimmed (keeps 0.5 s); chapters follow the trimmed lengths.
+- #1 re-render queued; today's cap reached ($4.01/$4.00) → it pauses and finishes after midnight ET by itself.
