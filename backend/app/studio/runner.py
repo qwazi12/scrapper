@@ -231,7 +231,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
             try:
                 if not start_next_waiting():
                     from . import countdown        # a countdown's next segment chains straight on
-                    countdown.tick()
+                    countdown.tick(from_runner=True)
             except Exception as exc:  # noqa: BLE001 — the scheduler tick tries again
                 logger.warning("could not start the next waiting Studio job: %s", exc)
 

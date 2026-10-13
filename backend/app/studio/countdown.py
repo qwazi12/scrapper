@@ -162,6 +162,10 @@ def research_job(cid: int) -> str:
                 if bad else "Check the ranking in step 2, then confirm the titles."))
         _set(cid, ranking=data, stage="research", stage_status="done", stage_message=msg)
         logbus.log("info", "countdown_researched", f"Countdown #{cid}: {msg}")
+        with SessionLocal() as s:
+            auto = bool(((s.get(CountdownProject, cid).review) or {}).get("auto"))
+        if auto:
+            auto_titles(cid)
         return msg
     except control.Cancelled:
         _set(cid, stage_status="stopped", stage_message="Research stopped")
@@ -296,13 +300,19 @@ def _budget_ok() -> bool:
         return False
 
 
-def tick() -> dict[str, Any] | None:
+def tick(from_runner: bool = False) -> dict[str, Any] | None:
     """Advance countdowns. One countdown is made at a time (oldest first); its next
     segment goes into Studio's waiting line, so it starts the moment Studio is free
     and the following one chains straight after. Outside the midday turn it waits
     while LongForm's automation still has breakdowns to start today."""
     from . import runner
     did = None
+    if not from_runner:
+        try:
+            auto_tick()
+        except Exception as exc:  # noqa: BLE001 — never stops the segment work below
+            auto_state["last_result"] = f"error: {exc}"
+            logger.warning("countdown automation: %s", exc)
     with SessionLocal() as s:
         # Research/render the daily cap paused: carry on once there's budget again.
         for c in s.query(CountdownProject).filter(CountdownProject.stage.in_(["research", "render"]),
@@ -594,6 +604,188 @@ def migrate_legacy() -> int:
     return made
 
 
+# --- 🤖 automation (owner, 2026-10-13: like LongForm; 1 a day; waits for you before render) ---------
+AUTO_KEY = "countdown_auto"
+AUTO_DEFAULTS = {"enabled": True, "per_day": 1, "paused_until": None}
+SEGMENT_USD = 0.13                     # observed: ~$0.12–0.18 per segment (research + shots + script + voice)
+auto_state: dict[str, Any] = {"last_check_at": None, "last_result": None, "last_started": None}
+
+
+def auto_settings(s=None) -> dict[str, Any]:
+    own = s is None
+    s = s or SessionLocal()
+    try:
+        row = s.get(AppSetting, AUTO_KEY)
+        return {**AUTO_DEFAULTS, **((row.value or {}) if row else {})}
+    finally:
+        if own:
+            s.close()
+
+
+def save_auto(patch: dict[str, Any]) -> dict[str, Any]:
+    with SessionLocal() as s:
+        row = s.get(AppSetting, AUTO_KEY)
+        val = {**auto_settings(s), **patch}
+        if row:
+            row.value = val
+        else:
+            s.add(AppSetting(key=AUTO_KEY, value=val))
+        s.commit()
+    return auto_status()
+
+
+def estimate_usd(fmt: str) -> float:
+    return round(0.02 + COUNTS.get(fmt, 10) * SEGMENT_USD, 2)
+
+
+def started_today(s) -> int:
+    start, end = costs.day_bounds()
+    return s.query(CountdownProject).filter(CountdownProject.created_at >= start, CountdownProject.created_at < end).count()
+
+
+def in_progress(s) -> CountdownProject | None:
+    """A countdown still being made by the automation's steps (one at a time)."""
+    for c in s.query(CountdownProject).order_by(CountdownProject.id).all():
+        if (c.review or {}).get("delete_after"):
+            continue
+        if c.stage in ("new", "research") and c.stage_status in ("running", "paused"):
+            return c
+        if c.stage == "segments" and c.stage_status in ("waiting", "running", "paused"):
+            return c
+    return None
+
+
+def _fmt_for(topic: dict[str, Any]) -> str:
+    sizes = topic.get("sizes") or [5]
+    want = COUNTS.get(topic.get("best_format") or "top10", 10)
+    n = max([x for x in sizes if x <= want] or [min(sizes)])
+    return f"top{n}"
+
+
+def next_pick() -> dict[str, Any] | None:
+    from . import countdown_topics
+    for t in countdown_topics.listing()["topics"]:
+        if t.get("sizes"):
+            return {**t, "fmt": _fmt_for(t)}
+    return None
+
+
+def _wait_reason(s, cfg: dict[str, Any], pick: dict[str, Any] | None) -> str | None:
+    n, lim = started_today(s), int(cfg["per_day"])
+    if n >= lim:
+        return f"today's limit reached ({n} of {lim} started)"
+    busy = in_progress(s)
+    if busy:
+        return f"countdown #{busy.id} is still being made"
+    if pick is None:
+        return "no topic passes the checks — press ↻ Refresh topics"
+    need = estimate_usd(pick["fmt"])
+    ccfg = costs.settings_dict(s)
+    cap = costs.effective_cap(ccfg)
+    left = cap - costs.today_spend(s) if cap else 999.0
+    if left < need:
+        return f"not enough budget left today for a {pick['fmt'].replace('top', 'Top ')} (~${need:.2f} needed, ${max(left, 0):.2f} left)"
+    return None
+
+
+def create_from_topic(topic: dict[str, Any], fmt: str, auto: bool = False) -> int:
+    from . import countdown_topics
+    titles = ", ".join(t["title"] for t in (topic.get("titles") or [])[:15])
+    notes = (f"Rank from these real titles where they fit (checked on TMDB): {titles}." if titles else "")
+    with SessionLocal() as s:
+        c = CountdownProject(topic=topic["topic"][:255], fmt=fmt, notes=notes or None,
+                             review={"auto": auto, "topic_sig": topic.get("sig"), "keyword": topic.get("keyword"),
+                                     "keywords": topic.get("keywords") or [], "demand": topic.get("demand")})
+        s.add(c)
+        s.commit()
+        cid = c.id
+    if topic.get("sig"):
+        countdown_topics.mark(topic["sig"], "made")
+    start_research(cid)
+    return cid
+
+
+def auto_tick() -> dict[str, Any] | None:
+    from . import countdown_topics
+    now = _now()
+    auto_state["last_check_at"] = now.isoformat()
+    if countdown_topics.is_stale(now):
+        countdown_topics.refresh_async()
+    cfg = auto_settings()
+    if not cfg["enabled"]:
+        auto_state["last_result"] = "off"
+        return None
+    pu = cfg.get("paused_until")
+    if pu and now < datetime.datetime.fromisoformat(pu):
+        auto_state["last_result"] = f"paused for today (until {pu[:16]} UTC)"
+        return None
+    pick = next_pick()
+    with SessionLocal() as s:
+        reason = _wait_reason(s, cfg, pick)
+    if reason:
+        auto_state["last_result"] = f"waiting: {reason}"
+        return None
+    cid = create_from_topic(pick, pick["fmt"], auto=True)
+    started = {"countdown_id": cid, "topic": pick["topic"], "fmt": pick["fmt"], "score": pick["score"], "at": now.isoformat()}
+    auto_state["last_started"] = started
+    auto_state["last_result"] = f"started #{cid} {pick['topic']}"
+    logbus.log("info", "countdown_auto_started", f"Countdown automation started #{cid}: {pick['topic']} ({pick['fmt']})")
+    return started
+
+
+def auto_titles(cid: int) -> None:
+    """After research on an automatic countdown: keep real titles, fill gaps from the topic's
+    checked titles, then confirm — or stop at step 2 for the owner if it can't be filled."""
+    from . import countdown_topics
+    with SessionLocal() as s:
+        c = s.get(CountdownProject, cid)
+        need = COUNTS.get(c.fmt, 10)
+        ents = [e for e in sorted(entries_of(c), key=lambda e: int(e.get("rank") or 99)) if e.get("tmdb_id")]
+        have = {(e.get("tmdb_id"), e.get("media_type")) for e in ents}
+        topic = countdown_topics.find((c.review or {}).get("topic_sig") or "") or {}
+        for t in topic.get("titles") or []:
+            if len(ents) >= need:
+                break
+            if (t["tmdb_id"], t.get("media_type")) not in have:
+                ents.append({"title": t["title"], "year": t.get("year"), "tmdb_id": t["tmdb_id"],
+                             "media_type": t.get("media_type", "movie"), "poster": t.get("poster"),
+                             "why_it_ranks": "", "added_by": "automation"})
+                have.add((t["tmdb_id"], t.get("media_type")))
+        if len(ents) < need:
+            smaller = max([n for n in (5, 10, 15) if n <= len(ents)] or [0])
+            if not smaller:
+                c.stage_status, c.stage_message = "done", (f"👀 Only {len(ents)} real titles found — add or swap titles "
+                                                           f"in step 2, then Confirm titles.")
+                s.commit()
+                return
+            c.fmt = f"top{smaller}"
+            need = smaller
+        ents = ents[:need]
+        for i, e in enumerate(ents):
+            e["rank"] = i + 1
+        r = dict(c.ranking or {})
+        r["entries"] = ents
+        c.ranking = r
+        confirm_titles(s, c)
+        c.stage_message = (f"🤖 Titles checked and confirmed automatically ({len(ents)}). Segments are made one at a time; "
+                           f"it stops for your review before the final render.")
+        s.commit()
+    logbus.log("info", "countdown_auto_titles", f"Countdown #{cid}: titles confirmed automatically")
+
+
+def auto_status() -> dict[str, Any]:
+    from . import countdown_topics
+    cfg = auto_settings()
+    pick = next_pick()
+    with SessionLocal() as s:
+        reason = _wait_reason(s, cfg, pick) if cfg["enabled"] else "automation is off"
+        today = started_today(s)
+    return {"settings": cfg, "state": dict(auto_state), "today": today,
+            "next": ({"topic": pick["topic"], "fmt": pick["fmt"], "score": pick["score"], "sig": pick["sig"],
+                      "estimate_usd": estimate_usd(pick["fmt"])} if pick else None),
+            "waiting": reason, "topics_built_at": countdown_topics.stored().get("built_at")}
+
+
 # --- API ---------------------------------------------------------------------------------
 class NewCountdown(BaseModel):
     topic: str
@@ -669,6 +861,91 @@ def create_from_breakdowns(req: FromBreakdowns) -> dict[str, Any]:
         confirm_titles(s, c)
         s.commit()
         return out(s, c)
+
+
+class AutoIn(BaseModel):
+    enabled: bool | None = None
+    per_day: int | None = None
+
+
+class TopicStart(BaseModel):
+    sig: str
+    fmt: str
+
+
+class TopicMark(BaseModel):
+    kind: str          # pinned | skipped
+    on: bool = True
+
+
+@router.get("/auto")
+def get_auto() -> dict[str, Any]:
+    return auto_status()
+
+
+@router.put("/auto")
+def put_auto(req: AutoIn) -> dict[str, Any]:
+    patch = {k: v for k, v in req.model_dump().items() if v is not None}
+    if "per_day" in patch and not 0 <= int(patch["per_day"]) <= 5:
+        raise HTTPException(400, "per_day must be 0–5")
+    logbus.log("info", "countdown_auto_settings", f"Countdown automation: {patch}")
+    return save_auto(patch)
+
+
+@router.post("/auto/pause-today")
+def pause_today(req: FlagIn) -> dict[str, Any]:
+    _, midnight = costs.day_bounds()
+    return save_auto({"paused_until": midnight.isoformat() if req.on else None})
+
+
+@router.post("/auto/skip-next")
+def skip_next() -> dict[str, Any]:
+    from . import countdown_topics
+    pick = next_pick()
+    if not pick:
+        raise HTTPException(400, "there is no next pick to skip")
+    countdown_topics.mark(pick["sig"], "skipped")
+    logbus.log("info", "countdown_auto_skipped", f"Countdown automation: skipped {pick['topic']}")
+    return auto_status()
+
+
+@router.get("/topics")
+def get_topics() -> dict[str, Any]:
+    from . import countdown_topics
+    if countdown_topics.is_stale() and not countdown_topics.stored().get("topics"):
+        countdown_topics.refresh_async()
+    return countdown_topics.listing()
+
+
+@router.post("/topics/refresh")
+def refresh_topics() -> dict[str, Any]:
+    from . import countdown_topics
+    job = countdown_topics.refresh_async()
+    return {"started": bool(job), "job_id": job}
+
+
+@router.put("/topics/{topic_id}/mark")
+def mark_topic(topic_id: str, req: TopicMark) -> dict[str, Any]:
+    from . import countdown_topics
+    if req.kind not in ("pinned", "skipped"):
+        raise HTTPException(400, "kind must be pinned or skipped")
+    countdown_topics.mark(topic_id, req.kind, req.on)
+    return countdown_topics.listing()
+
+
+@router.post("/topics/start")
+def start_topic(req: TopicStart) -> dict[str, Any]:
+    """Make a countdown from a checked topic at Top 5 / 10 / 15."""
+    from . import countdown_topics
+    t = countdown_topics.find(req.sig)
+    if not t:
+        raise HTTPException(404, "topic not found — refresh the list")
+    n = COUNTS.get(req.fmt)
+    if not n or n not in (t.get("sizes") or []):
+        raise HTTPException(400, f"This topic has {len(t.get('titles') or [])} real titles — it can't fill a Top {n or '?'}")
+    cid = create_from_topic(t, req.fmt, auto=False)
+    with SessionLocal() as s:
+        return out(s, s.get(CountdownProject, cid))
 
 
 @router.get("/{cid}")

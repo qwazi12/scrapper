@@ -35,7 +35,7 @@ from .models import AppSetting
 logger = logging.getLogger("scrapper.vidiq")
 UTC = datetime.timezone.utc
 
-DEFAULTS = {"enabled": True, "daily_credits": 60, "monthly_credits": 1800, "cache_hours": 24}
+DEFAULTS = {"enabled": True, "daily_credits": 90, "monthly_credits": 1800, "cache_hours": 24}
 COST_DEFAULT = 5                      # vidIQ: "most research tools cost 5 credits per call"
 # Free per vidIQ (balance, your channels, jobs, bookmarks, competitor list, trend categories,
 # voices, imports, feedback). Exact names from tools/list on 2026-10-13.
@@ -332,6 +332,71 @@ def find_tool(*words: str) -> str | None:
         if all(w in n.lower() for w in words):
             return n
     return None
+
+
+# --- typed helpers (Scrapper's uses) ----------------------------------------------------------
+def _embedded_json(text: Any) -> Any:
+    """Some vidIQ tools answer in markdown with a 'JSON:' block; pull the JSON out."""
+    if not isinstance(text, str):
+        return text
+    i = text.find("{")
+    while i != -1:
+        try:
+            return json.loads(text[i:])
+        except ValueError:
+            j = text.rfind("}")
+            try:
+                return json.loads(text[i:j + 1])
+            except ValueError:
+                i = text.find("{", i + 1)
+    return None
+
+
+def keyword_metrics(keyword: str, *, related: bool = True, purpose: str = "") -> dict[str, Any] | None:
+    """Search demand for a phrase (5 credits, cached 3 days): volume/competition/overall 0–100,
+    monthly searches, growth %, and related keywords (good tags). None if unavailable."""
+    raw = safe("vidiq_keyword_research", {"mode": "research", "keyword": keyword[:120], "includeRelated": related,
+                                          "country": "US", "topMarketsLimit": 1},
+               cache_hours=72, purpose=purpose or f"demand: {keyword[:40]}")
+    data = _embedded_json(raw)
+    if not isinstance(data, dict) or not isinstance(data.get("seedKeyword"), dict):
+        return None
+    seed = data["seedKeyword"]
+    rel = [r for r in data.get("relatedKeywords") or [] if isinstance(r, dict) and r.get("keyword")]
+    return {"keyword": seed.get("keyword") or keyword, "volume": round(float(seed.get("volume") or 0), 1),
+            "competition": round(float(seed.get("competition") or 0), 1), "overall": round(float(seed.get("overall") or 0), 1),
+            "monthly_searches": int(seed.get("estimatedMonthlySearch") or 0),
+            "growth_pct": round(float(seed.get("searchDemandGrowthPct") or 0), 1),
+            "related": [{"keyword": r["keyword"], "overall": round(float(r.get("overall") or 0), 1),
+                         "monthly_searches": int(r.get("estimatedMonthlySearch") or 0)}
+                        for r in sorted(rel, key=lambda r: -(r.get("overall") or 0))[:20]]}
+
+
+def breakout_videos(keyword: str, *, purpose: str = "") -> list[dict[str, Any]]:
+    """Long-form videos far outperforming their channel this month (5 credits, cached 1 day)."""
+    raw = safe("vidiq_outliers", {"keyword": keyword, "contentType": "long", "publishedWithin": "thisMonth",
+                                  "language": "en", "sort": "breakoutScore", "limit": 25},
+               cache_hours=24, purpose=purpose or f"breakouts: {keyword}")
+    vids = (raw or {}).get("videos") if isinstance(raw, dict) else None
+    return [{"title": v.get("videoTitle"), "views": v.get("viewCount"), "breakout": v.get("breakoutScore"),
+             "channel": v.get("channelTitle"), "id": v.get("videoId")} for v in vids or [] if v.get("videoTitle")]
+
+
+def trending(query: str, *, purpose: str = "") -> list[dict[str, Any]]:
+    """Long-form videos gaining views fastest right now (5 credits, cached 1 day)."""
+    raw = safe("vidiq_trending_videos", {"videoFormat": "long", "titleQuery": query, "videoTitleLanguage": "en",
+                                         "sortBy": "vph", "limit": 25}, cache_hours=24, purpose=purpose or f"trending: {query}")
+    vids = (raw or {}).get("videos") if isinstance(raw, dict) else None
+    return [{"title": v.get("videoTitle"), "views": v.get("viewCount"), "vph": round(float(v.get("vph") or 0)),
+             "channel": v.get("channelTitle"), "id": v.get("videoId")} for v in vids or [] if v.get("videoTitle")]
+
+
+def score_title(title: str, *, purpose: str = "") -> dict[str, Any] | None:
+    """Click-through score 0–100 for a long-form title (5 credits, cached 3 days)."""
+    raw = safe("vidiq_score_title", {"title": title[:100], "type": "long"}, cache_hours=72,
+               purpose=purpose or "title score")
+    data = raw if isinstance(raw, dict) else _embedded_json(raw)
+    return data if isinstance(data, dict) else ({"text": raw} if raw else None)
 
 
 def status() -> dict[str, Any]:
