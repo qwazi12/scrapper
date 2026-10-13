@@ -1033,3 +1033,11 @@ Owner: "unable to watch countdown rendered videos or see thumbnails; when I refr
 - **Refresh keeps your place (68305ba):** cause — the hash reader didn't know `countdowns` (fell back to the start page) and never stored sub-tabs/open items. Now `#tab/sub/id`: `#socialpilot/countdowns`, `#countdowns/1`, `#longform/45` (`frontend/lib/hashnav.ts`). Verified by build/typecheck only (no signed-in browser to click through live).
 - **Per-platform rates (113711d, d1de8c3):** each queue's ⏰ Schedule has "Per platform, per day" (YouTube, Facebook, Instagram, TikTok; blank = every post). The queue runs at the busiest platform's number; each regular post goes to every platform still under its number today (YouTube gets the first posts); pinned / 🚀 Post now go everywhere; skipped platforms noted on the row (`publish_requests` gets a `{"skipped": [...]}` entry). Default: none set (unchanged behaviour). Tests 282 pass.
 - Owner to set the numbers (e.g. Posting Queue: YouTube 1, Facebook 3, Instagram 3).
+
+## Log — 2026-10-13 — Owner's per-platform schedule applied (a9315d7, dc4d3f9)
+- Added: a platform can have its own exact times (`platforms: {"youtube": ["11:00","19:00"], ...}`); the queue posts at the union; each regular post goes only to the platforms whose time it is. Fixed: the schedule API's request model dropped `platforms`.
+- Applied live (PUT /api/schedule/config), America/New_York:
+  - Shorts (Movie Clips): YouTube unchanged 09:00, 12:40, 16:20, 20:00; Facebook + Instagram 08:00, 12:40, 17:20, 22:00 → 7 posts/day (12:40 goes to all three).
+  - LongForm: YouTube unchanged 11:00, 19:00; Facebook + Instagram 08:00, 12:40, 17:20, 22:00 → 6 posts/day.
+  - Countdowns: all three at 12:00 (unchanged).
+- Watch: LongForm now uses 6 videos/day vs ~5 made/day; videos at Facebook/Instagram times don't go to YouTube (YouTube keeps its own 4 + 2 a day).
