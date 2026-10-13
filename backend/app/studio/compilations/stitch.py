@@ -64,13 +64,32 @@ def has_audio(path: pathlib.Path) -> bool:
     return bool((out or "").strip())
 
 
-def uniform_audio(src: pathlib.Path, dst: pathlib.Path) -> pathlib.Path:
+TAIL_KEEP = 0.5
+
+
+def trailing_silence(path: pathlib.Path, total: float | None = None) -> float:
+    """Seconds of silence at the very end of a file (0 if it ends on sound)."""
+    total = total or media.duration(path)
+    log = media.run(["ffmpeg", "-v", "info", "-nostats", "-i", str(path), "-vn", "-af",
+                     "silencedetect=n=-40dB:d=1.0", "-f", "null", "-"]).stderr or ""
+    start = None
+    for line in log.splitlines():
+        if "silence_start:" in line:
+            start = float(line.split("silence_start:")[1].split()[0])
+        elif "silence_end:" in line:
+            end = float(line.split("silence_end:")[1].split()[0])
+            if end < total - 0.3:
+                start = None              # sound came back before the end
+    return max(0.0, total - start) if start is not None else 0.0
+
+
+def uniform_audio(src: pathlib.Path, dst: pathlib.Path, keep: float | None = None) -> pathlib.Path:
     """Same audio format for every piece before the join (owner, 2026-10-13: countdown audio broken).
     Breakdown renders are 96 kHz mono, #N cards 48 kHz stereo, the intro/outro voice another
     format — joined as-is, players read a stretched, drifting audio timeline. Each piece gets
     48 kHz stereo AAC padded/trimmed to exactly its video's length (silence if it has none);
     the video is copied untouched."""
-    v_dur = media.duration(src)
+    v_dur = keep or media.duration(src)
     cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src)]
     if has_audio(src):
         amap = "0:a:0"
@@ -116,17 +135,10 @@ def create_intro_clip(
     work_dir.mkdir(parents=True, exist_ok=True)
     voice_mp3 = work_dir / "intro_voice.mp3"
 
-    try:
-        tts.synth(script_text, voice_mp3)
-        voice_dur = media.duration(voice_mp3)
-    except Exception:
-        # Fallback silent track if TTS unavailable
-        voice_dur = 14.0
-        media.run([
-            "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
-            f"anullsrc=channel_layout=stereo:sample_rate=48000:duration={voice_dur:.2f}",
-            "-c:a", "libmp3lame", str(voice_mp3)
-        ])
+    # No silent fallback (2026-10-13: a cap-refused voice shipped a silent intro/outro). A refused
+    # voice-over stops the render; on the daily cap it pauses and carries on after midnight.
+    tts.synth(script_text, voice_mp3)
+    voice_dur = media.duration(voice_mp3)
 
     intro_dur = max(voice_dur + 1.2, 12.0)
 
@@ -208,16 +220,10 @@ def create_outro_clip(
     work_dir.mkdir(parents=True, exist_ok=True)
     voice_mp3 = work_dir / "outro_voice.mp3"
 
-    try:
-        tts.synth(script_text, voice_mp3)
-        voice_dur = media.duration(voice_mp3)
-    except Exception:
-        voice_dur = 14.0
-        media.run([
-            "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
-            f"anullsrc=channel_layout=stereo:sample_rate=48000:duration={voice_dur:.2f}",
-            "-c:a", "libmp3lame", str(voice_mp3)
-        ])
+    # No silent fallback (2026-10-13: a cap-refused voice shipped a silent intro/outro). A refused
+    # voice-over stops the render; on the daily cap it pauses and carries on after midnight.
+    tts.synth(script_text, voice_mp3)
+    voice_dur = media.duration(voice_mp3)
 
     outro_dur = max(voice_dur + 1.5, 14.0)
     card_jpg = work_dir / "outro_card.jpg"
@@ -429,6 +435,7 @@ def stitch_countdown_compilation(
     intro_path, intro_dur = create_intro_clip(projects, title, intro_mp4, custom_text=custom_intro)
 
     ordered_segments: list[pathlib.Path] = [intro_path]
+    keep: dict[pathlib.Path, float] = {}
     chapters: list[dict[str, Any]] = [
         {"time": 0.0, "time_formatted": "0:00", "title": "Intro & Preview"}
     ]
@@ -474,12 +481,17 @@ def stitch_countdown_compilation(
         p_video = resolve_project_render(p.id, p.render)
         if not p_video or not p_video.exists():
             raise ValueError(f"Project #{p.id} render video not found on disk.")
-        p_dur = float(p.render.get("seconds") or media.duration(p_video))
+        full = media.duration(p_video)
+        # A breakdown render ends on its silent subscribe end screen (~8 s): cut it, keep a short breath,
+        # so the countdown moves straight on to the next entry (2026-10-13: 11 s of dead air each).
+        tail = trailing_silence(p_video, full)
+        p_dur = full - tail + TAIL_KEEP if tail > 3.0 else full
 
         # Direct copy into segments dir
         seg_item_mp4 = segs_dir / f"{idx + 1:02d}_content_{p.id}.mp4"
         shutil.copyfile(p_video, seg_item_mp4)
         ordered_segments.append(seg_item_mp4)
+        keep[seg_item_mp4] = p_dur
 
         cur_time += p_dur
 
@@ -506,7 +518,7 @@ def stitch_countdown_compilation(
     for i, seg in enumerate(ordered_segments):
         control.check()
         control.progress(f"matching audio {i + 1} of {len(ordered_segments)}")
-        uniform.append(uniform_audio(seg, segs_dir / f"u{i:03d}.mp4"))
+        uniform.append(uniform_audio(seg, segs_dir / f"u{i:03d}.mp4", keep.get(seg)))
     concat_list = comp_dir / "concat_segments.txt"
     concat_list.write_text("".join(f"file '{f}'\n" for f in uniform))
 

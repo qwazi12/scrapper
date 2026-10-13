@@ -123,3 +123,12 @@ def test_uniform_audio_keeps_the_joined_audio_as_long_as_the_video(tmp_path):
     streams = {s["codec_type"]: s for s in json.loads(probe)["streams"]}
     assert streams["audio"]["sample_rate"] == "48000"
     assert abs(float(streams["audio"]["duration"]) - float(streams["video"]["duration"])) < 0.2
+
+
+def test_trailing_silence_finds_the_end_screen(tmp_path):
+    import subprocess
+    f = tmp_path / "t.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=10",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-af", "apad", "-t", "10",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(f)], check=True)
+    assert 3.5 < stitch.trailing_silence(f) < 4.5          # 6 s of sound, 4 s silent tail
