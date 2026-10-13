@@ -1012,3 +1012,12 @@ Owner asked: how vidIQ is used; topics must be high demand / high search / new /
 3. **Demand = searches:** every topic checked with vidIQ (keyword results cached 7 days); score led by monthly searches (log scale) + growth; Demand ✓ ≥ 20K/month, ⚠ 5–20K, ✕ < 5K; vidIQ **rising searches** added as a topic source.
 4. **vidIQ inside research:** before ranking, the AI gets the topic's search data (related searches + what people ask) and the top competing countdown videos on YouTube (titles, views) to target real searches and avoid copying.
 5. **Topics rebuilt daily** (12–15 topics). vidIQ budget: daily cap 100 / monthly 1,850 (Boost 2,000 + 50 add-on); if a cap is hit, things carry on without vidIQ.
+
+## Log — 2026-10-13 — Plan done: add to line, topic buttons fill the box, real search demand, vidIQ in research, daily topics (7e173cb, 2e32b59, 8faa3bd)
+- **+ Add to line** on every topic card and next to Research & rank; **Up next** list on the automation card (↑, ✕, ▶ Make now); the automation makes the line first (daily limit still applies). API `/api/countdowns/line`.
+- A topic's **Top 5/10/15 now fills "Start a new countdown"** (topic + size, its checked titles kept); nothing is spent until Research & rank or + Add to line.
+- **Demand = monthly searches:** ✓ 20K+, ⚠ 5–20K, ✕ <5K; score led by searches (log scale) + growth; ✕ topics are never auto-picked.
+- **Phrase pool (8faa3bd):** the first live rebuild only checked 3 topics — the daily cap (100) was already spent by setup/tests/probes, and per-topic checks would cost ~75 credits/day on their own. Now 6 broad seed lookups a week ("best movies", "best tv shows", "horror movies", "new movies", "netflix movies", "action movies") give ~100 real phrases with monthly searches; the AI must build each topic on one of them, so every topic has real demand. Plus vidIQ rising searches (trailers + a rotating film/TV category) and up to 3 extra lookups per build. Expected ≈ 40 credits/day for topics.
+- **vidIQ in research:** related searches + what people ask + top existing videos (titles, views) go into the ranking prompt; shown as "🔎 What people search" on each countdown.
+- Topics rebuild daily. vidIQ caps: 100/day, 1,850/month. Today (2026-10-13) used 100 → next rebuild after midnight ET uses the pool.
+- Tests 281 pass; page checked at 390 px on the local copy; live: 2e32b59 (site) + 8faa3bd (server).
