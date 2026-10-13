@@ -196,6 +196,8 @@ class PacingRuleIn(BaseModel):
     end_hour: int | None = None
     interval_hours: int | None = None
     times: list[str] | None = None      # exact posting times "HH:MM" (win over posts_per_day)
+    # Per platform: posts/day (int) or its own times (["11:00", "19:00"]) — owner, 2026-10-13
+    platforms: dict[str, int | list[str] | str] | None = None
 
 
 class ScheduleConfigIn(BaseModel):

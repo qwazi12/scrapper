@@ -1036,3 +1036,12 @@ def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tm
         session.commit()
         asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
         assert sent[-1] == expect
+
+
+def test_schedule_api_keeps_platform_settings(session, client, reset_schedule):
+    body = {"timezone": "America/New_York", "start_hour": 10, "end_hour": 20, "interval_hours": 2,
+            "pipeline_overrides": {"LongForm": {"posts_per_day": 2, "start_hour": 11, "end_hour": 19,
+                                                "platforms": {"youtube": ["11:00", "19:00"], "facebook": 4}}}}
+    r = client.put("/api/schedule/config", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["pipeline_overrides"]["LongForm"]["platforms"] == {"youtube": ["11:00", "19:00"], "facebook": 4}
