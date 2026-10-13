@@ -1021,3 +1021,9 @@ Owner asked: how vidIQ is used; topics must be high demand / high search / new /
 - **vidIQ in research:** related searches + what people ask + top existing videos (titles, views) go into the ranking prompt; shown as "🔎 What people search" on each countdown.
 - Topics rebuild daily. vidIQ caps: 100/day, 1,850/month. Today (2026-10-13) used 100 → next rebuild after midnight ET uses the pool.
 - Tests 281 pass; page checked at 390 px on the local copy; live: 2e32b59 (site) + 8faa3bd (server).
+
+## PLAN — 2026-10-13 — Countdown video/thumbnails don't load; refresh goes back to the start page; per-platform posting rates (owner request)
+Owner: "unable to watch countdown rendered videos or see thumbnails; when I refresh the page it takes me to the starting page… post at a different rate for other social medias — more for Facebook and Instagram, less for YouTube."
+1. **Countdown video + thumbnails:** find why the player/thumbnails don't load (file route, auth on media URLs, paths) and fix; verify on the live site.
+2. **Refresh keeps your place:** the open tab (and sub-tab / open countdown or breakdown) is kept in the address (#hash) so a refresh — or Back — lands where you were.
+3. **Per-platform rates:** each queue's ⏰ Schedule gets "per day by platform" (e.g. YouTube 1, Facebook 3, Instagram 3). The queue posts at the highest rate; each video goes to every platform still under its daily number, so Facebook/Instagram get every slot and YouTube only its share (the first slots of the day). Skipped platforms are noted on the row. Default: no limits (today's behaviour).
