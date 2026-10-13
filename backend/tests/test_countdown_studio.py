@@ -24,10 +24,13 @@ IDS = {"The Shining": 694, "Alien": 348}
 @pytest.fixture(autouse=True)
 def _fresh():
     """Each test starts with no countdowns (the scheduler tick walks all of them)."""
-    with SessionLocal() as s:
-        s.query(CountdownProject).delete()
-        s.commit()
+    def clear():
+        with SessionLocal() as s:
+            s.query(CountdownProject).delete()
+            s.commit()
+    clear()
     yield
+    clear()          # the app's background scheduler must not pick up a test's countdowns
 
 
 @pytest.fixture()
@@ -282,3 +285,17 @@ def test_batch_and_segment_length(client):
     assert r["done"] == 0 and "segments" in r["results"][0]["why"]
     r = client.post("/api/countdowns/batch", json={"action": "archive", "ids": [cid]}).json()
     assert r["done"] == 1 and client.get(f"/api/countdowns/{cid}").json()["review"]["delete_after"]
+
+
+def test_restart_interruption_is_retried_not_a_failure(client):
+    cid, segs = _confirmed(client)
+    with SessionLocal() as s:
+        p = s.get(StudioProject, segs[0])
+        p.stage, p.stage_status, p.stage_message = "shots", "stopped", "shots was interrupted by a server restart — re-run it"
+        s.commit()
+    with patch("backend.app.studio.compilations.stitch.resolve_project_render", return_value=None), \
+         patch.object(countdown, "longform_first", return_value=False), \
+         patch("backend.app.studio.runner.start_or_queue", return_value="started") as soq:
+        countdown.tick()
+    assert client.get(f"/api/countdowns/{cid}").json()["stage_status"] == "running"
+    assert soq.call_args.args[:2] == (segs[0], "shots")

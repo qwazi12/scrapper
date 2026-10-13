@@ -329,6 +329,13 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
                 s.commit()
             segs = _segments(s, c)
             made = sum(1 for x in segs if x["rendered"])
+            # A step a deploy/restart cut off isn't a failure: put it back in line (owner never pressed Stop).
+            for x in segs:
+                if not x["rendered"] and x["stage_status"] == "stopped" and "restart" in (x.get("stage_message") or ""):
+                    p = s.get(StudioProject, x["id"])
+                    if p is not None:
+                        p.stage_status, x["stage_status"] = "idle", "idle"
+                        s.commit()
             failed = next((x for x in segs if not x["rendered"] and x["stage_status"] in ("error", "stopped")), None)
             if failed:
                 c.stage_status = "error"

@@ -12,14 +12,17 @@ from backend.app.studio import countdown, countdown_topics
 
 @pytest.fixture(autouse=True)
 def _fresh():
-    with SessionLocal() as s:
-        s.query(CountdownProject).delete()
-        for k in (countdown_topics.KEY, countdown_topics.LEDGER, countdown.AUTO_KEY):
-            row = s.get(AppSetting, k)
-            if row:
-                s.delete(row)
-        s.commit()
+    def clear():
+        with SessionLocal() as s:
+            s.query(CountdownProject).delete()
+            for k in (countdown_topics.KEY, countdown_topics.LEDGER, countdown.AUTO_KEY):
+                row = s.get(AppSetting, k)
+                if row:
+                    s.delete(row)
+            s.commit()
+    clear()
     yield
+    clear()          # no leftover topics/countdowns for the background scheduler to start
 
 
 @pytest.fixture()
