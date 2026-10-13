@@ -55,6 +55,36 @@ ENC = [
 NORM = "scale=out_range=tv:out_color_matrix=bt709,format=yuv420p"
 
 
+AUDIO_RATE = 48000
+
+
+def has_audio(path: pathlib.Path) -> bool:
+    out = media.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+                     "-of", "csv=p=0", str(path)]).stdout
+    return bool((out or "").strip())
+
+
+def uniform_audio(src: pathlib.Path, dst: pathlib.Path) -> pathlib.Path:
+    """Same audio format for every piece before the join (owner, 2026-10-13: countdown audio broken).
+    Breakdown renders are 96 kHz mono, #N cards 48 kHz stereo, the intro/outro voice another
+    format — joined as-is, players read a stretched, drifting audio timeline. Each piece gets
+    48 kHz stereo AAC padded/trimmed to exactly its video's length (silence if it has none);
+    the video is copied untouched."""
+    v_dur = media.duration(src)
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src)]
+    if has_audio(src):
+        amap = "0:a:0"
+    else:                                   # no sound at all: a silent track, so the join stays aligned
+        cmd += ["-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate={AUDIO_RATE}"]
+        amap = "1:a:0"
+    cmd += ["-map", "0:v:0", "-map", amap, "-c:v", "copy",
+            "-af", f"aresample={AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,apad",
+            "-t", f"{v_dur:.3f}", "-c:a", "aac", "-b:a", "192k", "-ar", str(AUDIO_RATE), "-ac", "2",
+            "-video_track_timescale", "30000", str(dst)]
+    media.run(cmd)
+    return dst
+
+
 def _format_time(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
@@ -472,8 +502,13 @@ def stitch_countdown_compilation(
 
     # 4. Master Concat & Audio Loudness Normalization
     control.check()
+    uniform = []
+    for i, seg in enumerate(ordered_segments):
+        control.check()
+        control.progress(f"matching audio {i + 1} of {len(ordered_segments)}")
+        uniform.append(uniform_audio(seg, segs_dir / f"u{i:03d}.mp4"))
     concat_list = comp_dir / "concat_segments.txt"
-    concat_list.write_text("".join(f"file '{f}'\n" for f in ordered_segments))
+    concat_list.write_text("".join(f"file '{f}'\n" for f in uniform))
 
     raw_joined_mp4 = comp_dir / "master_raw.mp4"
     media.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(raw_joined_mp4)])
@@ -485,7 +520,7 @@ def stitch_countdown_compilation(
         "-i", str(raw_joined_mp4),
         "-c:v", "copy",
         "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "aac", "-b:a", "192k", "-ar", str(AUDIO_RATE), "-ac", "2",   # loudnorm upsamples; keep 48 kHz
         str(final_mp4)
     ])
 

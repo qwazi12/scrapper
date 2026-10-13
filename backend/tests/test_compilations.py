@@ -98,3 +98,28 @@ def test_fmhy_curated_resources():
     assert "Trakt.tv" in names
     assert "Letterboxd" in names
     assert "NewPipe Extractor" in names
+
+
+def test_uniform_audio_keeps_the_joined_audio_as_long_as_the_video(tmp_path):
+    """Owner (2026-10-13): countdown audio broke — pieces with different audio formats
+    (96 kHz mono renders, 48 kHz stereo cards, 24 kHz voice, or none) were joined as-is."""
+    import subprocess
+    def clip(name, dur, audio):
+        cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=red:s=320x180:d={dur}"]
+        if audio:
+            cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:sample_rate={audio[0]}:duration={dur}", "-ac", str(audio[1])]
+        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-video_track_timescale", "30000"]
+        cmd += (["-c:a", "aac"] if audio else []) + [str(tmp_path / name)]
+        subprocess.run(cmd, check=True)
+        return tmp_path / name
+    parts = [clip("a.mp4", 3, (24000, 1)), clip("b.mp4", 2, None), clip("c.mp4", 4, (96000, 1))]
+    u = [stitch.uniform_audio(p, tmp_path / f"u{i}.mp4") for i, p in enumerate(parts)]
+    (tmp_path / "l.txt").write_text("".join(f"file '{x}'\n" for x in u))
+    out = tmp_path / "out.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(tmp_path / "l.txt"), "-c", "copy", str(out)], check=True)
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,sample_rate,duration", "-of", "json", str(out)],
+                           capture_output=True, text=True).stdout
+    import json
+    streams = {s["codec_type"]: s for s in json.loads(probe)["streams"]}
+    assert streams["audio"]["sample_rate"] == "48000"
+    assert abs(float(streams["audio"]["duration"]) - float(streams["video"]["duration"])) < 0.2
