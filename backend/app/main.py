@@ -106,6 +106,8 @@ def _startup() -> None:
         logbus.log("error", "startup_rescan_failed", str(exc))
     try:
         countdown_studio.migrate_legacy()          # old saved countdowns + rows -> Countdowns Studio (once)
+        countdown_studio.recover()                 # research/render a restart cut off starts again
+        countdown_studio.ensure_midday_schedule()  # Countdowns queue: 1 post a day at 12:00 (set once)
     except Exception as exc:  # noqa: BLE001 — never block startup
         logbus.log("error", "startup_countdown_migrate_failed", str(exc))
     try:

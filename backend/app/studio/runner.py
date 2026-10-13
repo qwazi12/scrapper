@@ -229,7 +229,9 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
             _stop_events.pop(project_id, None)
             _lock.release()
             try:
-                start_next_waiting()
+                if not start_next_waiting():
+                    from . import countdown        # a countdown's next segment chains straight on
+                    countdown.tick()
             except Exception as exc:  # noqa: BLE001 — the scheduler tick tries again
                 logger.warning("could not start the next waiting Studio job: %s", exc)
 

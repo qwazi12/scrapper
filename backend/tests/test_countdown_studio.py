@@ -193,3 +193,72 @@ def test_countdown_segment_script_prompt():
     p = stage_script.countdown_prompt("board", "Alien", 0.9, ctx)
     assert 'Number 4: Alien.' in p and "subscribe" in p.lower()
     assert "[C1] Ranked #4 of 10" in stage_script.countdown_notes(ctx)
+
+
+def _confirmed(client) -> tuple[int, list[int]]:
+    cid = _researched(client)
+    c = client.get(f"/api/countdowns/{cid}").json()
+    client.put(f"/api/countdowns/{cid}/entries", json={"entries": [e for e in c["ranking"]["entries"] if e.get("tmdb_id")]})
+    c = client.post(f"/api/countdowns/{cid}/confirm").json()
+    return cid, [x["id"] for x in c["segments"]]
+
+
+def test_longform_goes_first_outside_midday_then_midday_turn(client):
+    cid, segs = _confirmed(client)
+    import datetime as dt
+    morning = dt.datetime(2026, 10, 13, 13, 0, tzinfo=dt.timezone.utc)     # 9:00 ET
+    noon = dt.datetime(2026, 10, 13, 16, 30, tzinfo=dt.timezone.utc)       # 12:30 ET
+    with patch("backend.app.studio.compilations.stitch.resolve_project_render", return_value=None), \
+         patch.object(countdown, "longform_first", return_value=True), \
+         patch("backend.app.studio.runner.start_or_queue", return_value="queued") as soq, \
+         patch.object(countdown, "_now", return_value=morning):
+        assert countdown.tick() is None and not soq.called
+        assert "LongForm breakdowns go first" in client.get(f"/api/countdowns/{cid}").json()["stage_message"]
+    with patch("backend.app.studio.compilations.stitch.resolve_project_render", return_value=None), \
+         patch.object(countdown, "longform_first", return_value=True), \
+         patch("backend.app.studio.runner.start_or_queue", return_value="queued") as soq, \
+         patch.object(countdown, "_now", return_value=noon):
+        did = countdown.tick()
+    assert did["segment"] == segs[0] and did["state"] == "queued"
+    assert soq.call_count == 1 and soq.call_args.args[0] == segs[0] and soq.call_args.kwargs == {"auto": True, "until": "render"}
+    assert "next in Studio's line" in client.get(f"/api/countdowns/{cid}").json()["stage_message"]
+
+
+def test_segment_length_fixed_for_unscripted_segments_only(client):
+    cid, segs = _confirmed(client)
+    with SessionLocal() as s:
+        a, b = s.get(StudioProject, segs[0]), s.get(StudioProject, segs[1])
+        a.target_minutes, a.script = 1.5, {"sentences": []}            # already written: keep
+        b.target_minutes = 1.5                                         # old auto-queue length: fix
+        s.commit()
+        assert countdown.fix_lengths(s, s.get(CountdownProject, cid)) == 1
+        s.commit()
+        assert s.get(StudioProject, segs[0]).target_minutes == 1.5 and s.get(StudioProject, segs[1]).target_minutes == 1.6
+
+
+def test_daily_cap_pause_is_shown_on_the_countdown(client):
+    cid, segs = _confirmed(client)
+    with SessionLocal() as s:
+        p = s.get(StudioProject, segs[0])
+        p.stage, p.stage_status = "shots", "paused"
+        s.commit()
+    with patch("backend.app.studio.compilations.stitch.resolve_project_render", return_value=None):
+        countdown.tick()
+    c = client.get(f"/api/countdowns/{cid}").json()
+    assert c["stage_status"] == "paused" and "AI budget" in c["stage_message"]
+
+
+def test_countdowns_queue_posts_at_midday_once():
+    from backend.app.social import queue_manager as qm
+    with SessionLocal() as s:
+        for k in ("countdowns_schedule_set",):
+            row = s.get(AppSetting, k)
+            if row:
+                s.delete(row)
+        s.commit()
+    assert countdown.ensure_midday_schedule() is True
+    with SessionLocal() as s:
+        assert qm.load_schedule(s)["pipelines"]["Countdowns"] == {"times": ["12:00"]}
+    assert countdown.ensure_midday_schedule() is False                      # never put back over the owner's choice
+    with SessionLocal() as s:
+        qm.save_schedule(s, None)

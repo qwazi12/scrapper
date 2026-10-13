@@ -407,14 +407,11 @@ STEP 5 — OUTPUT JSON FORMAT ONLY (Do not wrap in markdown or explanation):
 }}
 """
 
-    try:
-        data = gemini.ask_json(prompt, temperature=0.5, max_tokens=16384)
-        if not isinstance(data, dict) or not data.get("entries"):
-            raise ValueError("AI failed to return valid countdown structure")
-    except Exception as e:
-        logger.error("Error generating countdown from Gemini: %s", e)
-        # Fallback to smart curated countdown structure
-        data = _generate_fallback_countdown(topic, format_type, count)
+    # No made-up fallback list (audit 2026-10-13): a failed or cap-paused call is reported
+    # as such — it used to return a fixed sci-fi list with invented stats for any topic.
+    data = gemini.ask_json(prompt, temperature=0.5, max_tokens=16384)
+    if not isinstance(data, dict) or not data.get("entries"):
+        raise ValueError("The AI didn't return a ranked list — try Re-run research")
 
     # Enrich each entry with TMDB posters, backdrops, real streaming data, and local footage links
     entries = data.get("entries", [])
@@ -446,59 +443,6 @@ STEP 5 — OUTPUT JSON FORMAT ONLY (Do not wrap in markdown or explanation):
     return data
 
 
-def _generate_fallback_countdown(topic: str, format_type: str, count: int) -> dict[str, Any]:
-    """Reliable fallback countdown if Gemini experiences network limits."""
-    sample_movies = [
-        {"title": "Interstellar", "year": 2014, "score": 96.5, "stat": "IMDb 8.7 · $730M Worldwide", "watch": "Prime Video (US)"},
-        {"title": "Arrival", "year": 2016, "score": 94.2, "stat": "8 Oscar Nominations · IMDb 7.9", "watch": "Paramount+ (US)"},
-        {"title": "Blade Runner 2049", "year": 2017, "score": 92.8, "stat": "2 Oscars · Letterboxd 4.1", "watch": "Max (US)"},
-        {"title": "The Matrix", "year": 1999, "score": 98.0, "stat": "4 Oscars · Cultural Milestone", "watch": "Max (US)"},
-        {"title": "Inception", "year": 2010, "score": 95.0, "stat": "$839M Box Office · IMDb 8.8", "watch": "Netflix (US)"},
-        {"title": "Ex Machina", "year": 2014, "score": 89.5, "stat": "Oscar Winner VFX · 92% RT", "watch": "Max (US)"},
-        {"title": "Children of Men", "year": 2006, "score": 91.0, "stat": "3 Oscar Noms · Legendary Long Takes", "watch": "Starz (US)"},
-        {"title": "2001: A Space Odyssey", "year": 1968, "score": 97.4, "stat": "AFI Top 10 · Cinematic Masterpiece", "watch": "Max (US)"},
-        {"title": "Annihilation", "year": 2018, "score": 88.0, "stat": "Cult Classic · 88% RT", "watch": "Paramount+ (US)"},
-        {"title": "Dune: Part Two", "year": 2024, "score": 96.0, "stat": "$714M Worldwide · IMDb 8.5", "watch": "Max (US)"},
-    ]
-
-    selected = sample_movies[:count]
-    entries = []
-    for i, m in enumerate(selected):
-        rank = count - i
-        entries.append({
-            "rank": rank,
-            "title": m["title"],
-            "year": m["year"],
-            "score": m["score"],
-            "key_stat": m["stat"],
-            "why_it_ranks": f"A defining entry in the genre, balancing high critical acclaim with immense audience impact.",
-            "fun_fact": "Widely praised for groundbreaking practical visual effects and narrative tension.",
-            "where_to_watch": m["watch"],
-            "sources": ["IMDb", "Letterboxd", "JustWatch"],
-        })
-
-    return {
-        "topic": topic,
-        "why_now": "Trending across cinema discussions and streaming platforms with surging audience search volume.",
-        "format": format_type,
-        "title_options": [
-            f"Top {count} Greatest {topic} of All Time",
-            f"{count} {topic} You MUST Watch Right Now",
-            f"Ranking The Top {count} {topic} (Ranked)",
-        ],
-        "thumbnail_text": "#1 WILL SURPRISE YOU",
-        "hook_script": f"From game-changing masterpieces to shocking twists, we are counting down the top {count} entries in cinema history—and our number one pick might surprise you.",
-        "entries": entries,
-        "honorable_mentions": [
-            "Solaris (1972) — Groundbreaking philosophical depth that barely missed the cut",
-            "District 9 (2009) — Explosive social commentary and revolutionary sci-fi action",
-        ],
-        "closing_question": "Did your favorite film make the countdown, or did we leave out a masterpiece? Let us know in the comments below!",
-        "unverified_flags": [],
-    }
-
-
-# --- Saved Countdowns Ledger ---
 def list_saved_countdowns() -> list[dict[str, Any]]:
     with SessionLocal() as s:
         row = s.get(AppSetting, "saved_countdowns")

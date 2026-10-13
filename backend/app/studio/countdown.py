@@ -166,6 +166,9 @@ def research_job(cid: int) -> str:
     except control.Cancelled:
         _set(cid, stage_status="stopped", stage_message="Research stopped")
         raise
+    except costs.DailyCapReached:
+        _set(cid, stage_status="paused", stage_message="⏸ Research paused — today's AI budget is used; it carries on after midnight.")
+        raise
     except Exception as exc:  # noqa: BLE001 — shown on the card
         _set(cid, stage_status="error", stage_message=f"Research failed: {str(exc)[:300]}")
         raise
@@ -248,15 +251,70 @@ def _next_stage(p: StudioProject) -> str:
     return p.stage if p.stage in runner.ORDER else "gather"
 
 
+MIDDAY = (12, 15)          # owner (2026-10-13): countdowns get Studio's midday turn, 12:00–15:00 local
+
+
+def _local_now(now: datetime.datetime | None = None) -> datetime.datetime:
+    return (now or _now()).astimezone(costs.day_tz())
+
+
+def midday(now: datetime.datetime | None = None) -> bool:
+    return MIDDAY[0] <= _local_now(now).hour < MIDDAY[1]
+
+
+def longform_first(s) -> bool:
+    """Outside the midday turn, LongForm goes first while its automation still has
+    breakdowns to start today (on, not paused, a type under its daily limit)."""
+    from . import auto
+    cfg = auto.settings_value(s)
+    if not cfg.get("enabled") or auto.paused_now(cfg):
+        return False
+    made = auto.made_today(s)
+    return any(made.get(mt, 0) < auto.limit_for(mt, cfg) for mt in ("movie", "tv"))
+
+
+def fix_lengths(s, c: CountdownProject) -> int:
+    """Segments made for this countdown that have no script yet get the format's
+    length (reused LongForm breakdowns and finished segments are never changed)."""
+    reused = {int(e["segment_id"]) for e in entries_of(c) if e.get("reused") and e.get("segment_id")}
+    want, n = SEGMENT_MINUTES.get(c.fmt, 1.0), 0
+    for pid in c.segment_ids or []:
+        p = s.get(StudioProject, int(pid))
+        if p is None or int(pid) in reused or p.script or p.stage_status == "running":
+            continue
+        if abs((p.target_minutes or 0) - want) > 0.01:
+            p.target_minutes = want
+            n += 1
+    return n
+
+
+def _budget_ok() -> bool:
+    try:
+        costs.check_budget()
+        return True
+    except Exception:  # noqa: BLE001 — DailyCapReached / BudgetExceeded
+        return False
+
+
 def tick() -> dict[str, Any] | None:
-    """Advance every countdown whose segments are being made. Starts at most one
-    Studio step per tick, and only when Studio is idle with nobody waiting."""
+    """Advance countdowns. One countdown is made at a time (oldest first); its next
+    segment goes into Studio's waiting line, so it starts the moment Studio is free
+    and the following one chains straight after. Outside the midday turn it waits
+    while LongForm's automation still has breakdowns to start today."""
     from . import runner
     did = None
     with SessionLocal() as s:
+        # Research/render the daily cap paused: carry on once there's budget again.
+        for c in s.query(CountdownProject).filter(CountdownProject.stage.in_(["research", "render"]),
+                                                  CountdownProject.stage_status == "paused").all():
+            if _budget_ok() and not control.running("countdown", c.id):
+                (start_research if c.stage == "research" else start_render)(c.id)
+        active_taken = False
         for c in s.query(CountdownProject).filter(CountdownProject.stage == "segments",
-                                                  CountdownProject.stage_status.in_(["waiting", "running"])) \
+                                                  CountdownProject.stage_status.in_(["waiting", "running", "paused"])) \
                 .order_by(CountdownProject.id).all():
+            if fix_lengths(s, c):
+                s.commit()
             segs = _segments(s, c)
             made = sum(1 for x in segs if x["rendered"])
             failed = next((x for x in segs if not x["rendered"] and x["stage_status"] in ("error", "stopped")), None)
@@ -269,27 +327,83 @@ def tick() -> dict[str, Any] | None:
                 logbus.log("error", "countdown_segment_failed", f"Countdown #{c.id}: {c.stage_message}")
                 continue
             if made == len(segs):
-                c.stage_status, c.stage_message = "done", f"All {made} segments made. Check the script (step 4), then render."
+                c.stage_status = "done"
+                c.stage_message = f"All {made} segments made. 👀 Check the titles and script, then press Render video."
+                if not c.script:
+                    c.script = default_script(c)
                 s.commit()
-                logbus.log("info", "countdown_segments_done", f"Countdown #{c.id}: all {made} segments made")
+                logbus.log("info", "countdown_segments_done", f"Countdown #{c.id}: all {made} segments made — ready for review")
                 continue
-            busy = any(x["stage_status"] in ("running", "queued", "paused") for x in segs if not x["rendered"])
-            c.stage_status = "running" if busy else "waiting"
-            c.stage_message = f"Making segments: {made} of {len(segs)} done" + ("" if busy else " — waiting for Studio to be free")
+            prefix = f"Making segments: {made} of {len(segs)} done"
+            paused = next((x for x in segs if x["stage_status"] == "paused"), None)
+            if paused:
+                c.stage_status = "paused"
+                c.stage_message = (f"⏸ {prefix} — today's AI budget is used; “{paused['title']}” carries on after "
+                                   f"midnight (or raise today's cap in Settings → Spending).")
+                s.commit()
+                active_taken = True
+                continue
+            inflight = next((x for x in segs if x["stage_status"] in ("running", "queued")), None)
+            if inflight:
+                c.stage_status = "running"
+                c.stage_message = (f"{prefix} — making “{inflight['title']}”" if inflight["stage_status"] == "running"
+                                   else f"{prefix} — “{inflight['title']}” is waiting in Studio's line")
+                s.commit()
+                active_taken = True
+                continue
+            if active_taken:
+                c.stage_status, c.stage_message = "waiting", f"{prefix} — starts after the countdown before it"
+                s.commit()
+                continue
+            active_taken = True
+            if not midday() and longform_first(s):
+                c.stage_status = "waiting"
+                c.stage_message = (f"{prefix} — LongForm breakdowns go first today; countdowns get Studio from "
+                                   f"{MIDDAY[0]}:00 to {MIDDAY[1] - 12}:00 PM, and any time LongForm is done for the day.")
+                s.commit()
+                continue
+            nxt = next(x for x in segs if not x["rendered"])
+            p = s.get(StudioProject, nxt["id"])
+            stage = _next_stage(p)
             s.commit()
-            if did is None and not busy and not runner.busy().get("project_id") and not runner.queued_jobs():
-                nxt = next(x for x in segs if not x["rendered"])
-                p = s.get(StudioProject, nxt["id"])
-                stage = _next_stage(p)
-                try:
-                    runner.start(p.id, stage, auto=True, until="render")
-                    did = {"countdown": c.id, "segment": p.id, "stage": stage}
-                    logbus.log("info", "countdown_segment", f"Countdown #{c.id}: making “{p.title}” from step '{stage}'",
-                               project=p.id)
-                except RuntimeError:
-                    pass
+            state = runner.start_or_queue(p.id, stage, auto=True, until="render")
+            busy_with = runner.busy().get("project_id")
+            c.stage_status = "running"
+            c.stage_message = (f"{prefix} — making “{p.title}”" if state == "started"
+                               else f"{prefix} — “{p.title}” is next in Studio's line (Studio is busy with #{busy_with})")
+            s.commit()
+            did = {"countdown": c.id, "segment": p.id, "stage": stage, "state": state}
+            logbus.log("info", "countdown_segment", f"Countdown #{c.id}: “{p.title}” from step '{stage}' ({state})",
+                       project=p.id)
         sweep_archived(s)
     return did
+
+
+def ensure_midday_schedule() -> bool:
+    """Owner (2026-10-13): the Countdowns queue posts once a day at midday. Set once
+    (the owner can change it in ⏰ Schedule afterwards; it isn't put back)."""
+    from ..social import queue_manager
+    with SessionLocal() as s:
+        if s.get(AppSetting, "countdowns_schedule_set") is not None:
+            return False
+        cfg = queue_manager.load_schedule(s)
+        pipes = dict(cfg.get("pipelines") or {})
+        if PIPELINE not in pipes:
+            pipes[PIPELINE] = {"times": ["12:00"]}
+            queue_manager.save_schedule(s, {**cfg, "pipelines": pipes})
+        s.add(AppSetting(key="countdowns_schedule_set", value={"at": _now().isoformat()}))
+        s.commit()
+    return True
+
+
+def recover() -> None:
+    """After a restart: research or render that was cut off starts again."""
+    with SessionLocal() as s:
+        cut = [(c.id, c.stage) for c in s.query(CountdownProject).filter(
+            CountdownProject.stage.in_(["research", "render"]), CountdownProject.stage_status == "running").all()]
+    for cid, stage in cut:
+        logbus.log("info", "countdown_resumed", f"Countdown #{cid}: {stage} was cut off by a restart — starting it again")
+        (start_research if stage == "research" else start_render)(cid)
 
 
 # --- 4. script -----------------------------------------------------------------------
@@ -315,6 +429,9 @@ def render_job(cid: int) -> dict[str, Any]:
     except control.Cancelled:
         _set(cid, stage_status="stopped", stage_message="Render stopped")
         raise
+    except costs.DailyCapReached:
+        _set(cid, stage_status="paused", stage_message="⏸ Render paused — today's AI budget is used (intro/outro voice); it carries on after midnight.")
+        raise
     except Exception as exc:  # noqa: BLE001
         _set(cid, stage_status="error", stage_message=f"Render failed: {str(exc)[:300]}")
         raise
@@ -326,6 +443,10 @@ def render_job(cid: int) -> dict[str, Any]:
          stage_message=f"Video made: {res['total_minutes']} min. Watch it, pick a thumbnail, then Send to the Countdowns queue.")
     logbus.log("info", "countdown_rendered", f"Countdown #{cid}: video made ({res['total_minutes']} min)")
     return res
+
+
+def start_render(cid: int) -> str:
+    return control.start_thread("countdown", f"Countdown #{cid}: render", "countdown", render_job, cid, ref=cid)
 
 
 def comp_dir(c: CountdownProject):
@@ -648,8 +769,7 @@ def render(cid: int) -> dict[str, Any]:
             raise HTTPException(409, "This countdown is busy")
         if not out(s, c, full=False)["has"]["segments"]:
             raise HTTPException(400, "Every segment must be made first (step 3)")
-    job = control.start_thread("countdown", f"Countdown #{cid}: render", "countdown", render_job, cid, ref=cid)
-    return {"ok": True, "job_id": job}
+    return {"ok": True, "job_id": start_render(cid)}
 
 
 @router.post("/{cid}/thumbnail")

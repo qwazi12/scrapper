@@ -48,23 +48,12 @@ def test_discover_topics_with_gemini(monkeypatch):
     assert res[0]["total_score"] == 8.7
 
 
-def test_generate_countdown_fallback():
-    data = engine._generate_fallback_countdown(
-        topic="Sci-Fi Movies",
-        format_type="top10",
-        count=10,
-    )
-    assert data["topic"] == "Sci-Fi Movies"
-    assert data["format"] == "top10"
-    assert len(data["entries"]) == 10
-    # Ranked #10 down to #1
-    ranks = [e["rank"] for e in data["entries"]]
-    assert ranks == list(range(10, 0, -1))
-    assert len(data["title_options"]) == 3
-    assert data["thumbnail_text"]
-    assert data["hook_script"]
-    assert data["closing_question"]
-    assert len(data["honorable_mentions"]) >= 2
+def test_generate_countdown_never_invents_a_list(monkeypatch):
+    """Audit 2026-10-13: an AI failure used to return a fixed sci-fi list for any topic."""
+    import pytest
+    monkeypatch.setattr(engine.gemini, "ask_json", lambda *a, **k: {"entries": []})
+    with pytest.raises(ValueError):
+        engine.generate_countdown(topic="Horror Movies", format_type="top10")
 
 
 def test_saved_countdowns_ledger(session):
