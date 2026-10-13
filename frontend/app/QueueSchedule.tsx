@@ -11,6 +11,10 @@ import { notify } from "../lib/dialogs";
 type Queue = "Movie Clips" | "LongForm" | "Countdowns";
 const LABEL: Record<Queue, string> = { "Movie Clips": "Posting Queue", LongForm: "LongForm", Countdowns: "Countdowns" };
 
+// Owner (2026-10-13): post more on Facebook/Instagram, less on YouTube.
+const PLATFORMS: [string, string][] = [["youtube", "YouTube"], ["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"]];
+const SHORT: Record<string, string> = { youtube: "YT", facebook: "FB", instagram: "IG", tiktok: "TT" };
+
 const fmtHour = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? " AM" : " PM"}`;
 const fmtTime = (t: string) => {
   const [h, m] = t.split(":").map(Number);
@@ -36,6 +40,7 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
   const [end, setEnd] = useState(20);
   const [times, setTimes] = useState<string[]>([]);
   const [newTime, setNewTime] = useState("10:00");
+  const [plats, setPlats] = useState<Record<string, string>>({});
 
   // Load the saved values each time the editor opens.
   useEffect(() => {
@@ -45,9 +50,13 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
     setStart(ov.start_hour ?? schedInfo.start_hour);
     setEnd(ov.end_hour ?? schedInfo.end_hour);
     setTimes(ov.times || []);
+    setPlats(Object.fromEntries(Object.entries(ov.platforms || {}).map(([k, v]) => [k, String(v)])));
   }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const perDay = ov.times?.length || ov.posts_per_day || globalPpd;
+  const savedPlats = ov.platforms || {};
+  const platMax = Object.values(savedPlats).length ? Math.max(...Object.values(savedPlats)) : 0;
+  const perDay = ov.times?.length || platMax || ov.posts_per_day || globalPpd;
+  const platSummary = Object.entries(savedPlats).map(([k, v]) => `${SHORT[k] || k} ${v}`).join(" · ");
   const summary = ov.times?.length ? ov.times.map(fmtTime).join(", ") : `${fmtHour(ov.start_hour ?? schedInfo?.start_hour ?? 10)}–${fmtHour(ov.end_hour ?? schedInfo?.end_hour ?? 20)}`;
   const next = schedInfo?.pipeline_next_slots?.[queue] || [];
   const tz = schedInfo?.timezone || "America/New_York";
@@ -56,14 +65,25 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
     if (!schedInfo) return;
     if (!useDefault && mode === "times" && times.length === 0) return notify("Add at least one posting time.");
     if (!useDefault && mode === "spread" && start > end) return notify("The first post must be at or before the last.");
+    const platforms: Record<string, number> = {};
+    for (const [k, v] of Object.entries(plats)) {
+      if (v === "" || v === undefined) continue;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 48) return notify(`${k}: a whole number 0–48, or leave it blank.`);
+      platforms[k] = n;
+    }
+    const pmax = Object.values(platforms).length ? Math.max(...Object.values(platforms)) : 0;
+    if (!useDefault && mode === "times" && pmax > times.length)
+      return notify(`A platform is set to ${pmax} a day but there are only ${times.length} posting time(s). Add times or lower the number.`);
     setSaving(true);
     try {
       // PUT replaces the whole schedule: send everything as saved, change only this queue.
       const pipelineOverrides = { ...(schedInfo.pipeline_overrides || {}) };
       if (useDefault) delete pipelineOverrides[queue];
-      else pipelineOverrides[queue] = mode === "times"
-        ? { times }
-        : { posts_per_day: ppd, start_hour: start, end_hour: end };
+      else pipelineOverrides[queue] = {
+        ...(mode === "times" ? { times } : { posts_per_day: pmax || ppd, start_hour: start, end_hour: end }),
+        ...(Object.keys(platforms).length ? { platforms } : {}),
+      };
       const updated = await api.updateSchedule({
         timezone: schedInfo.timezone, start_hour: schedInfo.start_hour, end_hour: schedInfo.end_hour,
         interval_hours: schedInfo.interval_hours, posts_per_day: schedInfo.posts_per_day ?? null,
@@ -88,7 +108,7 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
       <button onClick={() => setOpen(!open)} disabled={saving || !schedInfo}
               title={`${LABEL[queue]} posting schedule`}
               style={{ background: "#064e3b", borderColor: "#059669", color: "#d1fae5", fontWeight: 600, fontSize: 11 }}>
-        ⏰ Schedule · {perDay}/day{isNarrow ? "" : ` · ${summary}`} ▾
+        ⏰ Schedule · {perDay}/day{isNarrow ? "" : ` · ${summary}`}{platSummary ? ` · ${platSummary}` : ""} ▾
       </button>
       {open && schedInfo && (
         <div style={{ ...sheet, zIndex: 60, background: "var(--panel)", border: "1px solid #059669", borderRadius: 10,
@@ -145,6 +165,23 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
               <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 4 }}>One post at each time, every day ({tz}).</div>
             </div>
           )}
+
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Per platform, per day <span style={{ color: "var(--muted)", fontWeight: 400 }}>(blank = every post)</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(70px, 1fr))", gap: 6 }}>
+              {PLATFORMS.map(([k, label]) => (
+                <label key={k} style={{ fontSize: 11 }}>{label}
+                  <input inputMode="numeric" value={plats[k] ?? ""} placeholder="all"
+                         onChange={(e) => setPlats({ ...plats, [k]: e.target.value.replace(/[^0-9]/g, "") })}
+                         style={{ width: "100%", fontSize: 11 }} />
+                </label>
+              ))}
+            </div>
+            <div style={{ color: "var(--muted)", fontSize: 10, marginTop: 4 }}>
+              The queue posts at the highest number; each post goes to every platform still under its number that day
+              (e.g. YouTube 1, Facebook 3, Instagram 3 → 3 posts a day, YouTube gets the first). Pinned and 🚀 Post now go everywhere.
+            </div>
+          </div>
 
           <div>
             <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 2 }}>Next posts on the saved schedule:</div>
