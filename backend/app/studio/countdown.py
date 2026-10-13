@@ -147,8 +147,13 @@ def research_job(cid: int) -> str:
     _set(cid, stage="research", stage_status="running", stage_message="Researching and ranking titles…")
     try:
         control.check()
+        control.progress("vidIQ: what people search and the top existing videos")
+        mk = market_data(cid)
+        control.check()
         with costs.operation("countdown_research", ref=f"countdown:{cid}"):
-            data = engine.generate_countdown(topic=topic, format_type=fmt, custom_instructions=notes)
+            data = engine.generate_countdown(topic=topic, format_type=fmt, custom_instructions=notes,
+                                             market=market_text(mk))
+        data["market"] = mk
         control.check()
         entries = []
         for e in data.get("entries") or []:
@@ -178,6 +183,41 @@ def research_job(cid: int) -> str:
     except Exception as exc:  # noqa: BLE001 — shown on the card
         _set(cid, stage_status="error", stage_message=f"Research failed: {str(exc)[:300]}")
         raise
+
+
+def market_data(cid: int) -> dict[str, Any]:
+    """vidIQ data for the ranking (≈ 10–15 credits, cached): searches around the topic, what people ask,
+    and the most-viewed existing videos for it. Empty when vidIQ is off or capped."""
+    from .. import vidiq
+    if not vidiq.configured():
+        return {}
+    with SessionLocal() as s:
+        c = s.get(CountdownProject, cid)
+        topic, kw = c.topic, (c.review or {}).get("keyword")
+    import re as _re
+    kw = kw or _re.sub(r"\b(top\s*\d+|ranked|ranking|definitively|of all time|ever)\b", "", topic, flags=_re.I).strip(" ,-:") or topic
+    m = vidiq.keyword_metrics(kw, purpose=f"countdown #{cid} research", cache_hours=168)
+    subject = (m or {}).get("keyword") or kw
+    return {"keyword": kw, "demand": {k: m[k] for k in ("monthly_searches", "competition", "growth_pct")} if m else None,
+            "related": (m or {}).get("related", [])[:12],
+            "questions": vidiq.questions(subject, purpose=f"countdown #{cid} research")[:10],
+            "competitors": vidiq.competitor_videos(topic, purpose=f"countdown #{cid} research")[:10]}
+
+
+def market_text(mk: dict[str, Any]) -> str:
+    if not mk:
+        return ""
+    lines = []
+    if mk.get("demand"):
+        d = mk["demand"]
+        lines.append(f"- \"{mk['keyword']}\": {d['monthly_searches']:,} searches/month, competition {d['competition']:.0f}/100")
+    if mk.get("related"):
+        lines.append("- Related searches: " + "; ".join(f"{r['keyword']} ({r['monthly_searches']:,}/mo)" for r in mk["related"]))
+    if mk.get("questions"):
+        lines.append("- What people ask: " + "; ".join(f"{q['question']} ({q['monthly_searches']:,}/mo)" for q in mk["questions"]))
+    if mk.get("competitors"):
+        lines.append("- Top existing videos: " + "; ".join(f"\"{v['title']}\" ({(v.get('views') or 0):,} views)" for v in mk["competitors"]))
+    return "\n".join(lines)
 
 
 def start_research(cid: int) -> str:
@@ -800,10 +840,58 @@ def _fmt_for(topic: dict[str, Any]) -> str:
     return f"top{n}"
 
 
-def next_pick() -> dict[str, Any] | None:
+LINE_KEY = "countdown_line"
+
+
+def line(s=None) -> list[dict[str, Any]]:
+    own = s is None
+    s = s or SessionLocal()
+    try:
+        row = s.get(AppSetting, LINE_KEY)
+        return list((row.value or {}).get("items") or []) if row else []
+    finally:
+        if own:
+            s.close()
+
+
+def _save_line(items: list[dict[str, Any]]) -> None:
+    with SessionLocal() as s:
+        row = s.get(AppSetting, LINE_KEY)
+        if row:
+            row.value = {"items": items}
+        else:
+            s.add(AppSetting(key=LINE_KEY, value={"items": items}))
+        s.commit()
+
+
+def line_add(topic: str, fmt: str, sig: str | None = None, notes: str = "") -> list[dict[str, Any]]:
     from . import countdown_topics
+    items = line()
+    sg = sig or countdown_topics.sig(topic)
+    if any(i["sig"] == sg for i in items):
+        raise HTTPException(409, "That topic is already in the line")
+    items.append({"id": f"l{int(_now().timestamp() * 1000)}", "topic": topic[:255], "fmt": fmt if fmt in COUNTS else "top10",
+                  "sig": sg, "from_topics": bool(sig), "notes": notes[:500], "added_at": _now().isoformat()})
+    _save_line(items)
+    if sig:
+        countdown_topics.mark(sig, "made")          # leaves the topic list (it's in your line now)
+    return items
+
+
+def _topic_for(item: dict[str, Any]) -> dict[str, Any]:
+    from . import countdown_topics
+    t = countdown_topics.find(item["sig"]) if item.get("from_topics") else None
+    return {**(t or {}), "topic": item["topic"], "sig": item["sig"], "fmt": item["fmt"], "notes": item.get("notes") or ""}
+
+
+def next_pick() -> dict[str, Any] | None:
+    """Your line first (in its order), then the best topic with real search demand."""
+    from . import countdown_topics
+    items = line()
+    if items:
+        return {**_topic_for(items[0]), "line_id": items[0]["id"], "score": None}
     for t in countdown_topics.listing()["topics"]:
-        if t.get("sizes"):
+        if t.get("sizes") and (t.get("checks", {}).get("demand", {}).get("status") != "fail"):
             return {**t, "fmt": _fmt_for(t)}
     return None
 
@@ -829,7 +917,8 @@ def _wait_reason(s, cfg: dict[str, Any], pick: dict[str, Any] | None) -> str | N
 def create_from_topic(topic: dict[str, Any], fmt: str, auto: bool = False) -> int:
     from . import countdown_topics
     titles = ", ".join(t["title"] for t in (topic.get("titles") or [])[:15])
-    notes = (f"Rank from these real titles where they fit (checked on TMDB): {titles}." if titles else "")
+    notes = " ".join(x for x in ((f"Rank from these real titles where they fit (checked on TMDB): {titles}." if titles else ""),
+                                 topic.get("notes") or "") if x)
     with SessionLocal() as s:
         c = CountdownProject(topic=topic["topic"][:255], fmt=fmt, notes=notes or None,
                              review={"auto": auto, "topic_sig": topic.get("sig"), "keyword": topic.get("keyword"),
@@ -864,7 +953,10 @@ def auto_tick() -> dict[str, Any] | None:
         auto_state["last_result"] = f"waiting: {reason}"
         return None
     cid = create_from_topic(pick, pick["fmt"], auto=True)
-    started = {"countdown_id": cid, "topic": pick["topic"], "fmt": pick["fmt"], "score": pick["score"], "at": now.isoformat()}
+    if pick.get("line_id"):
+        _save_line([i for i in line() if i["id"] != pick["line_id"]])
+    started = {"countdown_id": cid, "topic": pick["topic"], "fmt": pick["fmt"], "score": pick["score"], "at": now.isoformat(),
+               "from_line": bool(pick.get("line_id"))}
     auto_state["last_started"] = started
     auto_state["last_result"] = f"started #{cid} {pick['topic']}"
     logbus.log("info", "countdown_auto_started", f"Countdown automation started #{cid}: {pick['topic']} ({pick['fmt']})")
@@ -920,7 +1012,8 @@ def auto_status() -> dict[str, Any]:
         today = started_today(s)
     return {"settings": cfg, "state": dict(auto_state), "today": today,
             "next": ({"topic": pick["topic"], "fmt": pick["fmt"], "score": pick["score"], "sig": pick["sig"],
-                      "estimate_usd": estimate_usd(pick["fmt"])} if pick else None),
+                      "estimate_usd": estimate_usd(pick["fmt"]), "from_line": bool(pick.get("line_id"))} if pick else None),
+            "line": line(),
             "waiting": reason, "topics_built_at": countdown_topics.stored().get("built_at")}
 
 
@@ -1042,6 +1135,8 @@ def skip_next() -> dict[str, Any]:
     pick = next_pick()
     if not pick:
         raise HTTPException(400, "there is no next pick to skip")
+    if pick.get("line_id"):
+        _save_line([i for i in line() if i["id"] != pick["line_id"]])
     countdown_topics.mark(pick["sig"], "skipped")
     logbus.log("info", "countdown_auto_skipped", f"Countdown automation: skipped {pick['topic']}")
     return auto_status()
@@ -1254,6 +1349,73 @@ def suggest_titles(cid: int) -> dict[str, Any]:
         c.script = sc
         s.commit()
         return out(s, c)
+
+
+class LineIn(BaseModel):
+    topic: str
+    fmt: str = "top10"
+    sig: str | None = None
+    notes: str = ""
+
+
+@router.get("/line")
+def get_line() -> list[dict[str, Any]]:
+    return line()
+
+
+@router.post("/line")
+def add_to_line(req: LineIn) -> dict[str, Any]:
+    """+ Add to line: the automation makes it next (before its own pick), within the daily limit."""
+    from . import countdown_topics
+    topic = req.topic.strip()
+    if req.sig:
+        t = countdown_topics.find(req.sig)
+        if t and COUNTS.get(req.fmt) not in (t.get("sizes") or []):
+            raise HTTPException(400, f"This topic has {len(t.get('titles') or [])} real titles — it can't fill a {FMT_NAME(req.fmt)}")
+        topic = topic or (t or {}).get("topic", "")
+    if not topic:
+        raise HTTPException(400, "Type a topic first")
+    line_add(topic, req.fmt, req.sig, req.notes)
+    logbus.log("info", "countdown_line_added", f"Countdown line: + {topic} ({req.fmt})")
+    return auto_status()
+
+
+@router.delete("/line/{item_id}")
+def remove_from_line(item_id: str) -> dict[str, Any]:
+    from . import countdown_topics
+    items = line()
+    gone = [i for i in items if i["id"] == item_id]
+    _save_line([i for i in items if i["id"] != item_id])
+    for i in gone:
+        if i.get("from_topics"):
+            countdown_topics.mark(i["sig"], "made", False)     # back in the topic list
+    return auto_status()
+
+
+@router.post("/line/{item_id}/up")
+def line_up(item_id: str) -> dict[str, Any]:
+    items = line()
+    k = next((n for n, i in enumerate(items) if i["id"] == item_id), None)
+    if k:
+        items[k - 1], items[k] = items[k], items[k - 1]
+        _save_line(items)
+    return auto_status()
+
+
+@router.post("/line/{item_id}/start")
+def line_start(item_id: str) -> dict[str, Any]:
+    """▶ Make now: start this line item right away (doesn't wait for the daily slot)."""
+    item = next((i for i in line() if i["id"] == item_id), None)
+    if not item:
+        raise HTTPException(404, "not in the line")
+    cid = create_from_topic(_topic_for(item), item["fmt"], auto=False)
+    _save_line([i for i in line() if i["id"] != item_id])
+    with SessionLocal() as s:
+        return out(s, s.get(CountdownProject, cid))
+
+
+def FMT_NAME(fmt: str) -> str:
+    return {"top5": "Top 5", "top10": "Top 10", "top15": "Top 15"}.get(fmt, fmt)
 
 
 @router.get("/{cid}")

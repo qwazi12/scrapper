@@ -35,7 +35,7 @@ from .models import AppSetting
 logger = logging.getLogger("scrapper.vidiq")
 UTC = datetime.timezone.utc
 
-DEFAULTS = {"enabled": True, "daily_credits": 90, "monthly_credits": 1800, "cache_hours": 24}
+DEFAULTS = {"enabled": True, "daily_credits": 100, "monthly_credits": 1850, "cache_hours": 24}
 COST_DEFAULT = 5                      # vidIQ: "most research tools cost 5 credits per call"
 # Free per vidIQ (balance, your channels, jobs, bookmarks, competitor list, trend categories,
 # voices, imports, feedback). Exact names from tools/list on 2026-10-13.
@@ -352,12 +352,12 @@ def _embedded_json(text: Any) -> Any:
     return None
 
 
-def keyword_metrics(keyword: str, *, related: bool = True, purpose: str = "") -> dict[str, Any] | None:
+def keyword_metrics(keyword: str, *, related: bool = True, purpose: str = "", cache_hours: float = 72) -> dict[str, Any] | None:
     """Search demand for a phrase (5 credits, cached 3 days): volume/competition/overall 0–100,
     monthly searches, growth %, and related keywords (good tags). None if unavailable."""
     raw = safe("vidiq_keyword_research", {"mode": "research", "keyword": keyword[:120], "includeRelated": related,
                                           "country": "US", "topMarketsLimit": 1},
-               cache_hours=72, purpose=purpose or f"demand: {keyword[:40]}")
+               cache_hours=cache_hours, purpose=purpose or f"demand: {keyword[:40]}")
     data = _embedded_json(raw)
     if not isinstance(data, dict) or not isinstance(data.get("seedKeyword"), dict):
         return None
@@ -389,6 +389,41 @@ def trending(query: str, *, purpose: str = "") -> list[dict[str, Any]]:
     vids = (raw or {}).get("videos") if isinstance(raw, dict) else None
     return [{"title": v.get("videoTitle"), "views": v.get("viewCount"), "vph": round(float(v.get("vph") or 0)),
              "channel": v.get("channelTitle"), "id": v.get("videoId")} for v in vids or [] if v.get("videoTitle")]
+
+
+# Film/TV categories vidIQ's "rising" mode accepts (from availableTopics, 2026-10-13).
+RISING_TOPICS = ["trailers", "thrillers", "action thrillers", "science fiction", "mysteries", "korean dramas",
+                 "romantic comedies", "anime", "comic books", "dramedy"]
+
+
+def rising(topic: str, *, purpose: str = "") -> list[dict[str, Any]]:
+    """Searches climbing fastest this week in a category (5 credits, cached 1 day)."""
+    raw = safe("vidiq_keyword_research", {"mode": "rising", "topic": topic, "period": "week", "language": "en", "limit": 25},
+               cache_hours=24, purpose=purpose or f"rising: {topic}")
+    data = _embedded_json(raw)
+    rows = (data or {}).get("risingKeywords") if isinstance(data, dict) else None
+    return [{"keyword": r["keyword"], "monthly_searches": int(r.get("estimatedMonthlySearch") or 0),
+             "change_pct": round(float(r.get("periodPercentChange") or 0))} for r in rows or [] if r.get("keyword")]
+
+
+def questions(keyword: str, *, purpose: str = "") -> list[dict[str, Any]]:
+    """What people ask about a subject, by search volume (5 credits, cached 7 days)."""
+    raw = safe("vidiq_keyword_research", {"mode": "questions", "keyword": keyword[:120], "limit": 15, "sort": "volume",
+                                          "language": "en"}, cache_hours=168, purpose=purpose or f"questions: {keyword[:40]}")
+    data = _embedded_json(raw)
+    rows = (data or {}).get("questions") if isinstance(data, dict) else None
+    return [{"question": r["question"], "monthly_searches": int(r.get("estimatedMonthlySearch") or 0)}
+            for r in rows or [] if r.get("question")]
+
+
+def competitor_videos(query: str, *, purpose: str = "") -> list[dict[str, Any]]:
+    """Top long-form YouTube videos already made for this query, by views (5 credits, cached 3 days)."""
+    raw = safe("vidiq_youtube_search", {"query": query[:120], "type": ["video"], "order": "viewCount", "limit": 15,
+                                        "videoDuration": "medium"}, cache_hours=72, purpose=purpose or f"competitors: {query[:40]}")
+    rows = (raw or {}).get("results") if isinstance(raw, dict) else None
+    return [{"title": r.get("title"), "views": r.get("viewCount"), "channel": r.get("channelTitle"),
+             "published": (r.get("publishedAt") or "")[:10], "id": r.get("id")}
+            for r in rows or [] if r.get("title") and "#shorts" not in (r.get("title") or "").lower()]
 
 
 def score_title(title: str, *, purpose: str = "") -> dict[str, Any] | None:

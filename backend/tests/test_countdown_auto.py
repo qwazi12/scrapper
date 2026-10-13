@@ -15,7 +15,7 @@ def _fresh():
     def clear():
         with SessionLocal() as s:
             s.query(CountdownProject).delete()
-            for k in (countdown_topics.KEY, countdown_topics.LEDGER, countdown.AUTO_KEY):
+            for k in (countdown_topics.KEY, countdown_topics.LEDGER, countdown.AUTO_KEY, countdown.LINE_KEY):
                 row = s.get(AppSetting, k)
                 if row:
                     s.delete(row)
@@ -118,3 +118,75 @@ def test_auto_status_and_controls(client):
     assert st["settings"]["enabled"] is False
     st = client.post("/api/countdowns/auto/pause-today", json={"on": True}).json()
     assert st["settings"]["paused_until"]
+
+
+
+def _two_topics():
+    big = {"overall": 70, "volume": 80, "competition": 40, "monthly_searches": 120000, "growth_pct": 10, "related": []}
+    small = {"overall": 70, "volume": 30, "competition": 10, "monthly_searches": 3000, "growth_pct": 0, "related": []}
+    ai = [{"topic": "Top 10 Big Search Movies", "keyword": "big", "group": "evergreen", "debate": 5, "titles": _titles(12)},
+          {"topic": "Top 10 Tiny Search Movies", "keyword": "tiny", "group": "month", "debate": 9, "titles": _titles(12)}]
+    with patch("backend.app.vidiq.keyword_metrics", side_effect=lambda kw, **k: big if kw == "big" else small):
+        resolve = lambda e: {"tmdb_id": 1000 + int(e["title"].split()[-1]), "media_type": "movie", "title": e["title"]}
+        with patch("backend.app.studio.gemini.ask_json", return_value=ai), \
+             patch("backend.app.studio.compilations.engine._resolve_title", side_effect=resolve), \
+             patch("backend.app.studio.compilations.engine._gather_market_context",
+                   return_value={"upcoming": [], "trending": [], "tv_airing": [], "today": "2026-10-13"}), \
+             patch("backend.app.vidiq.configured", return_value=True), \
+             patch("backend.app.vidiq.breakout_videos", return_value=[]), \
+             patch("backend.app.vidiq.trending", return_value=[]), \
+             patch("backend.app.vidiq.rising", return_value=[]), \
+             patch("backend.app.vidiq.safe", return_value=None):
+            countdown_topics.build()
+
+
+def test_demand_is_judged_by_searches_and_low_demand_is_never_auto_picked():
+    _two_topics()
+    t = {x["topic"]: x for x in countdown_topics.listing()["topics"]}
+    assert t["Top 10 Big Search Movies"]["checks"]["demand"]["status"] == "pass"
+    assert t["Top 10 Tiny Search Movies"]["checks"]["demand"]["status"] == "fail"      # 3K/month, even though "overall" is 70
+    assert t["Top 10 Big Search Movies"]["score"] > t["Top 10 Tiny Search Movies"]["score"]
+    assert countdown.next_pick()["topic"] == "Top 10 Big Search Movies"
+
+
+def test_line_goes_first_and_can_be_managed(client):
+    _two_topics()
+    tiny = next(x for x in countdown_topics.listing()["topics"] if "Tiny" in x["topic"])
+    st = client.post("/api/countdowns/line", json={"topic": "", "fmt": "top10", "sig": tiny["sig"]}).json()
+    assert [i["topic"] for i in st["line"]] == ["Top 10 Tiny Search Movies"] and st["next"]["from_line"]
+    assert all("Tiny" not in x["topic"] for x in client.get("/api/countdowns/topics").json()["topics"])   # moved into the line
+    st = client.post("/api/countdowns/line", json={"topic": "Top 5 My Own Idea", "fmt": "top5"}).json()
+    second = st["line"][1]["id"]
+    st = client.post(f"/api/countdowns/line/{second}/up").json()
+    assert st["line"][0]["topic"] == "Top 5 My Own Idea"
+    with patch.object(countdown, "start_research") as sr, patch("backend.app.costs.today_spend", return_value=0.0):
+        started = countdown.auto_tick()
+    assert started["from_line"] and started["topic"] == "Top 5 My Own Idea" and sr.called
+    assert [i["topic"] for i in countdown.line()] == ["Top 10 Tiny Search Movies"]
+    st = client.delete(f"/api/countdowns/line/{countdown.line()[0]['id']}").json()
+    assert st["line"] == [] and any("Tiny" in x["topic"] for x in client.get("/api/countdowns/topics").json()["topics"])
+
+
+def test_research_gets_vidiq_search_and_competitor_data():
+    mk = {"keyword": "horror movies", "demand": {"monthly_searches": 44631, "competition": 44, "growth_pct": 4},
+          "related": [{"keyword": "best horror movies", "monthly_searches": 134758, "overall": 61}],
+          "questions": [{"question": "what is the scariest movie", "monthly_searches": 9000}],
+          "competitors": [{"title": "Top 10 Horror Movies of 2026", "views": 2500000}]}
+    txt = countdown.market_text(mk)
+    assert "44,631 searches/month" in txt and "best horror movies (134,758/mo)" in txt
+    assert "what is the scariest movie" in txt and "Top 10 Horror Movies of 2026" in txt
+    with SessionLocal() as s:
+        c = CountdownProject(topic="Top 10 Horror Movies", fmt="top10")
+        s.add(c)
+        s.commit()
+        cid = c.id
+    seen = {}
+    def fake_gen(**kw):
+        seen.update(kw)
+        return {"entries": [{"rank": 1, "title": "Alien", "tmdb_id": 348, "media_type": "movie"}]}
+    with patch.object(countdown, "market_data", return_value=mk), \
+         patch("backend.app.studio.compilations.engine.generate_countdown", side_effect=fake_gen):
+        countdown.research_job(cid)
+    assert "44,631" in seen["market"]
+    with SessionLocal() as s:
+        assert s.get(CountdownProject, cid).ranking["market"]["keyword"] == "horror movies"

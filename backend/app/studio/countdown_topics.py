@@ -21,6 +21,7 @@ import datetime
 import hashlib
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -31,9 +32,10 @@ from ..models import AppSetting
 logger = logging.getLogger("scrapper.countdown.topics")
 UTC = datetime.timezone.utc
 KEY, LEDGER = "countdown_topics_v2", "countdown_topic_ledger"
-STALE = datetime.timedelta(days=3)
+STALE = datetime.timedelta(days=1)          # owner (2026-10-13): fresh every day
 SIZES = (5, 10, 15)
-DEMAND_CHECKS = 8                 # vidIQ demand lookups per build (5 credits each, cached 3 days)
+DEMAND_CACHE_H = 168              # vidIQ demand per search phrase, cached 7 days (5 credits each)
+STRONG, WEAK = 20_000, 5_000      # monthly searches: Demand ✓ at 20K+, ⚠ 5–20K, ✕ below 5K
 LISTY = re.compile(r"\b(top ?\d+|best|worst|ranked|ranking|every|greatest|underrated|overrated|scariest)\b", re.I)
 SCREEN = re.compile(r"\b(movie|movies|film|films|show|shows|series|tv|anime|horror|thriller|netflix|marvel|disney|hbo|prime|sci-?fi)\b", re.I)
 
@@ -96,18 +98,30 @@ def _signals() -> dict[str, Any]:
             if LISTY.search(t) and SCREEN.search(t) and t not in {x["title"] for x in videos}:
                 videos.append(v)
     videos.sort(key=lambda v: -(v.get("views") or 0))
+    rising: list[dict[str, Any]] = []
+    if vidiq.configured():
+        # Searches climbing fastest this week: "trailers" + one film/TV category, rotating daily (10 credits).
+        cats = ["trailers", vidiq.RISING_TOPICS[1 + today.toordinal() % (len(vidiq.RISING_TOPICS) - 1)]]
+        for cat in cats:
+            for r in vidiq.rising(cat, purpose="countdown topics"):
+                if r["monthly_searches"] >= WEAK:
+                    rising.append({**r, "category": cat})
+        rising.sort(key=lambda r: -r["monthly_searches"])
     asks = ""
     if vidiq.configured():
         # What viewers of movie/TV countdown channels keep asking for (5 credits, refreshed weekly).
         raw = vidiq.safe("vidiq_comment_insights", {"mode": "discover", "niche": "movie and TV top 10 countdown and ranking videos",
                                                     "language": "en"}, cache_hours=168, purpose="countdown viewer requests")
         asks = (raw if isinstance(raw, str) else json.dumps(raw))[:1800] if raw else ""
-    return {**ctx, "month": month_titles[:25], "videos": videos[:20], "month_name": today.strftime("%B %Y"), "asks": asks}
+    return {**ctx, "month": month_titles[:25], "videos": videos[:20], "month_name": today.strftime("%B %Y"), "asks": asks,
+            "rising": rising[:25]}
 
 
 def _prompt(sig_: dict[str, Any], avoid: list[str]) -> str:
     vids = "\n".join(f"- \"{v['title']}\" — {v.get('views') or 0:,} views" + (f", breakout ×{round(v['breakout'])}" if v.get("breakout") else "")
                      for v in sig_["videos"]) or "- (none available)"
+    rising = "\n".join(f"- \"{r['keyword']}\" — {r['monthly_searches']:,}/month, +{r['change_pct']}% ({r['category']})"
+                       for r in sig_.get("rising") or [])
     return f"""You plan Top 5 / Top 10 / Top 15 COUNTDOWN videos for the YouTube channel "Screen Central"
 (movies and TV). Today is {sig_['today']}; this month is {sig_['month_name']}.
 
@@ -120,11 +134,15 @@ Signals (real data):
 {vids}
 - What viewers of countdown channels keep asking for in comments (vidIQ):
 {sig_.get('asks') or '(not available)'}
+- Searches rising fastest on YouTube this week (vidIQ, monthly searches, % change):
+{rising or '- (none available)'}
 
-Propose 18 distinct countdown topics viewers are searching for NOW:
-- 6 tied to this month (new releases, streaming arrivals, seasonal/holiday, anniversaries) → "group": "month"
-- 6 riding what's breaking out on YouTube (same angle, our own take) → "group": "trend"
-- 6 evergreen (genre bests, underrated, director/actor rankings) → "group": "evergreen"
+Propose 15 distinct countdown topics with HIGH search demand right now (thousands of searches a month), new and timely:
+- 5 tied to this month (new releases, streaming arrivals, seasonal/holiday, anniversaries) → "group": "month"
+- 5 riding what's breaking out or rising on YouTube (same angle, our own take) → "group": "trend"
+- 5 evergreen with big search volume (genre bests, underrated, director/actor rankings) → "group": "evergreen"
+For "keyword", use the phrase people actually type into YouTube search (broad and popular, e.g. "best horror movies",
+"new movies october 2026", "best netflix series") — prefer phrases from the rising searches above when they fit.
 Rules: every candidate must be a real MOVIE or TV SHOW (never scenes, theories, characters or moments).
 Do not repeat or lightly reword these already-made topics: {', '.join(avoid[:40]) or 'none'}.
 
@@ -183,38 +201,41 @@ def build() -> dict[str, Any]:
                        "why_now": (t.get("why_now") or "")[:300], "debate": max(1, min(10, int(t.get("debate") or 5))),
                        "best_format": t.get("best_format") if t.get("best_format") in ("top5", "top10", "top15") else "top10",
                        "titles": real, "sizes": sizes})
-    # Demand from vidIQ for the most promising ones (others show "not checked").
-    prelim = sorted(topics, key=lambda x: (x["group"] != "evergreen", x["debate"], len(x["titles"])), reverse=True)
-    for t in prelim[:DEMAND_CHECKS]:
+    # Demand from vidIQ for every topic (phrases cached 7 days).
+    for t in topics:
         control.check()
         control.progress(f"vidIQ demand: {t['keyword']}")
-        m = vidiq.keyword_metrics(t["keyword"], purpose="countdown topic demand")
+        m = vidiq.keyword_metrics(t["keyword"], purpose="countdown topic demand", cache_hours=DEMAND_CACHE_H)
         if m:
             t["demand"] = {k: m[k] for k in ("overall", "volume", "competition", "monthly_searches", "growth_pct")}
             t["keywords"] = [r["keyword"] for r in m["related"][:12]]
     for t in topics:
         d = t.get("demand")
-        demand = d["overall"] if d else 50.0
+        searches = (d or {}).get("monthly_searches", 0)
+        # 0 at 1K searches/month, 50 at ~17K, 100 at 300K (log scale)
+        search_score = max(0.0, min(100.0, (math.log10(max(searches, 1)) - 3) / (math.log10(300_000) - 3) * 100)) if d else 35.0
         growth = min(max((d or {}).get("growth_pct", 0), -50), 100)
         timely = {"month": 100, "trend": 90, "evergreen": 45}[t["group"]]
         t["checks"] = {
             "new": {"status": "pass", "why": "Never made or skipped"},
             "titles": {"status": "pass" if 15 in t["sizes"] else "warn",
                        "why": f"{len(t['titles'])} real titles on TMDB — can make Top {', Top '.join(str(n) for n in t['sizes'])}"},
-            "demand": ({"status": "pass" if demand >= 55 else "warn" if demand >= 35 else "fail",
-                        "why": f"vidIQ: {d['monthly_searches']:,} searches/month, competition {d['competition']:.0f}/100, "
-                               f"{'+' if d['growth_pct'] >= 0 else ''}{d['growth_pct']:.0f}% vs last month"}
-                       if d else {"status": "warn", "why": "Not checked with vidIQ this round"}),
+            "demand": ({"status": "pass" if searches >= STRONG else "warn" if searches >= WEAK else "fail",
+                        "why": f"vidIQ: {searches:,} searches/month for “{t['keyword']}”, competition {d['competition']:.0f}/100, "
+                               f"{'+' if d['growth_pct'] >= 0 else ''}{d['growth_pct']:.0f}% vs last month"
+                               + ("" if searches >= STRONG else f" (✓ needs {STRONG:,}+)")}
+                       if d else {"status": "warn", "why": "Not checked with vidIQ (cap reached or vidIQ off)"}),
             "timely": {"status": "pass" if t["group"] != "evergreen" else "warn",
-                       "why": {"month": "Tied to this month", "trend": "Riding what's breaking out on YouTube",
+                       "why": {"month": "Tied to this month", "trend": "Riding what's breaking out or rising on YouTube",
                                "evergreen": "Evergreen — not tied to this week"}[t["group"]]},
             "debate": {"status": "pass" if t["debate"] >= 7 else "warn", "why": f"Comment-debate potential {t['debate']}/10"},
         }
-        t["score"] = round(0.40 * demand + 0.10 * (50 + growth / 2) + 0.25 * timely + 0.15 * t["debate"] * 10
+        t["score"] = round(0.45 * search_score + 0.10 * (50 + growth / 2) + 0.20 * timely + 0.15 * t["debate"] * 10
                            + 0.10 * min(100, len(t["titles"]) / 15 * 100), 1)
     topics.sort(key=lambda x: -x["score"])
     data = {"built_at": datetime.datetime.now(UTC).isoformat(), "month": sig_["month_name"], "topics": topics,
-            "videos": sig_["videos"][:12], "vidiq": vidiq.configured(), "asks": sig_.get("asks") or ""}
+            "videos": sig_["videos"][:12], "vidiq": vidiq.configured(), "asks": sig_.get("asks") or "",
+            "rising": sig_.get("rising") or []}
     with SessionLocal() as s:
         row = s.get(AppSetting, KEY)
         if row:
@@ -223,7 +244,8 @@ def build() -> dict[str, Any]:
             s.add(AppSetting(key=KEY, value=data))
         s.commit()
     logbus.log("info", "countdown_topics_built", f"Countdown topics rebuilt: {len(topics)} topics "
-                                                 f"({sum(1 for t in topics if t.get('demand'))} checked with vidIQ)")
+                                                 f"({sum(1 for t in topics if t.get('demand'))} checked with vidIQ, "
+                                                 f"{sum(1 for t in topics if (t.get('demand') or {}).get('monthly_searches', 0) >= STRONG)} with {STRONG:,}+ searches/month)")
     return {"topics": len(topics)}
 
 
@@ -258,7 +280,8 @@ def listing() -> dict[str, Any]:
     topics = [{**t, "pinned": t["sig"] in pinned} for t in data.get("topics") or [] if t["sig"] not in gone]
     topics.sort(key=lambda t: (not t["pinned"], -t["score"]))
     return {"built_at": data.get("built_at"), "month": data.get("month"), "topics": topics,
-            "videos": data.get("videos") or [], "asks": data.get("asks") or "", "building": bool(control.running("countdown_topics")),
+            "videos": data.get("videos") or [], "asks": data.get("asks") or "", "rising": data.get("rising") or [],
+            "building": bool(control.running("countdown_topics")),
             "skipped": [t for t in data.get("topics") or [] if t["sig"] in set(led["skipped"])],
             "vidiq": vidiq.configured()}
 

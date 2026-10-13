@@ -331,6 +331,7 @@ def generate_countdown(
     topic: str,
     format_type: str = "top10",
     custom_instructions: str = "",
+    market: str = "",
 ) -> dict[str, Any]:
     """STEPS 2–5: Researched Countdown Generation & Scripting.
 
@@ -348,6 +349,8 @@ Your task is to build a high-retention, fully researched countdown for:
 TOPIC: "{topic}"
 FORMAT: {format_type.upper()} ({count} ranked entries + 2-3 honorable mentions)
 ADDITIONAL NOTES: {custom_instructions or "None"}
+{("SEARCH & COMPETITION DATA (vidIQ, real YouTube numbers) — use it: favour titles people search for, answer what they ask, "
+  "and make our list clearly different from the top existing videos (don't copy their order or picks wholesale):" + chr(10) + market) if market else ""}
 
 Follow the 5-Step Methodology strictly:
 
