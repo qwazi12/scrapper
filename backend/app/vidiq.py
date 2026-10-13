@@ -391,3 +391,23 @@ def put_settings(req: VidIQSettingsIn) -> dict[str, Any]:
         s.commit()
     logbus.log("info", "vidiq_settings", f"vidIQ settings: {patch}")
     return status()
+
+
+class CallIn(BaseModel):
+    tool: str
+    args: dict[str, Any] = {}
+    cache_hours: float | None = None
+
+
+@router.post("/call")
+def run_tool(req: CallIn) -> dict[str, Any]:
+    """Run one vidIQ tool (credit-capped, cached, logged) — for checks and research."""
+    if not req.tool.startswith("vidiq_"):
+        raise HTTPException(400, "unknown tool")
+    try:
+        return {"tool": req.tool, "credits": cost_of(req.tool),
+                "result": call(req.tool, req.args, cache_hours=req.cache_hours, purpose="manual")}
+    except CreditCapReached as exc:
+        raise HTTPException(429, str(exc))
+    except VidIQError as exc:
+        raise HTTPException(502, str(exc))
