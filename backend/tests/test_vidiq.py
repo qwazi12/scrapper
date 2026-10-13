@@ -87,3 +87,12 @@ def test_not_configured(monkeypatch):
     with pytest.raises(vidiq.VidIQError):
         vidiq.call("vidiq_keyword_research", {})
     assert vidiq.status()["configured"] is False
+
+
+def test_longform_tags_put_vidiq_searches_first_and_cap_at_15(monkeypatch):
+    from backend.app.studio import routes
+    monkeypatch.setattr(vidiq, "configured", lambda: True)
+    monkeypatch.setattr(vidiq, "keyword_metrics", lambda kw, **k: {"related": [{"keyword": "wildwood trailer 2026"}, {"keyword": "wildwood movie"}]})
+    tags = routes.longform_tags("Wildwood", [f"tag {i}" for i in range(20)] + ["Wildwood Movie"])
+    parts = tags.split()
+    assert parts[:2] == ["#wildwoodtrailer2026", "#wildwoodmovie"] and len(parts) == 15

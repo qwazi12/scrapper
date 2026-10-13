@@ -532,7 +532,7 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
     if not p.render or not (root / p.render["file"]).exists():
         raise HTTPException(400, "Render the video first")
     sc = p.script or {}
-    tags = " ".join("#" + "".join(ch for ch in t if ch.isalnum()) for t in sc.get("tags", []) if t.strip())
+    tags = longform_tags(p.title, sc.get("tags", []))
     primary_date = (p.facts or {}).get("primary_date")
     fields = dict(
         pipeline="LongForm", video_name=f"{p.title} — Trailer Breakdown",
@@ -580,6 +580,23 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
     if (p.drive or {}).get("rendered_at") != p.render.get("rendered_at") or (p.drive or {}).get("status") != "saved":
         drive_job = _start_drive(p)
     return {"queue_item_id": item.id, "status": item.status, "drive_job_id": drive_job}
+
+
+def longform_tags(title: str, script_tags: list[str]) -> str:
+    """Hashtags for a breakdown: vidIQ's top related searches for "<title> trailer" first
+    (5 credits, cached 3 days; skipped if vidIQ is off), then the script's tags. At most 15 —
+    YouTube ignores every hashtag in a description that has more (owner: use vidIQ for tags)."""
+    from .. import vidiq
+    m = vidiq.keyword_metrics(f"{title} trailer", purpose=f"tags: {title[:40]}") if vidiq.configured() else None
+    phrases = [r["keyword"] for r in (m or {}).get("related", [])[:5]]
+    out: list[str] = []
+    for t in [*phrases, *script_tags]:
+        tag = "#" + "".join(ch for ch in str(t) if ch.isalnum())
+        if len(tag) > 2 and tag.lower() not in {x.lower() for x in out}:
+            out.append(tag)
+        if len(out) >= 15:
+            break
+    return " ".join(out)
 
 
 def _start_drive(p: StudioProject) -> str | None:

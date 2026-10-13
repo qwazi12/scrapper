@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 import logging
 import re
 from typing import Any
@@ -95,7 +96,13 @@ def _signals() -> dict[str, Any]:
             if LISTY.search(t) and SCREEN.search(t) and t not in {x["title"] for x in videos}:
                 videos.append(v)
     videos.sort(key=lambda v: -(v.get("views") or 0))
-    return {**ctx, "month": month_titles[:25], "videos": videos[:20], "month_name": today.strftime("%B %Y")}
+    asks = ""
+    if vidiq.configured():
+        # What viewers of movie/TV countdown channels keep asking for (5 credits, refreshed weekly).
+        raw = vidiq.safe("vidiq_comment_insights", {"mode": "discover", "niche": "movie and TV top 10 countdown and ranking videos",
+                                                    "language": "en"}, cache_hours=168, purpose="countdown viewer requests")
+        asks = (raw if isinstance(raw, str) else json.dumps(raw))[:1800] if raw else ""
+    return {**ctx, "month": month_titles[:25], "videos": videos[:20], "month_name": today.strftime("%B %Y"), "asks": asks}
 
 
 def _prompt(sig_: dict[str, Any], avoid: list[str]) -> str:
@@ -111,6 +118,8 @@ Signals (real data):
 - TV airing now: {', '.join(sig_['tv_airing']) or 'n/a'}
 - Countdown/list videos breaking out on YouTube right now:
 {vids}
+- What viewers of countdown channels keep asking for in comments (vidIQ):
+{sig_.get('asks') or '(not available)'}
 
 Propose 18 distinct countdown topics viewers are searching for NOW:
 - 6 tied to this month (new releases, streaming arrivals, seasonal/holiday, anniversaries) → "group": "month"
@@ -205,7 +214,7 @@ def build() -> dict[str, Any]:
                            + 0.10 * min(100, len(t["titles"]) / 15 * 100), 1)
     topics.sort(key=lambda x: -x["score"])
     data = {"built_at": datetime.datetime.now(UTC).isoformat(), "month": sig_["month_name"], "topics": topics,
-            "videos": sig_["videos"][:12], "vidiq": vidiq.configured()}
+            "videos": sig_["videos"][:12], "vidiq": vidiq.configured(), "asks": sig_.get("asks") or ""}
     with SessionLocal() as s:
         row = s.get(AppSetting, KEY)
         if row:
@@ -249,7 +258,7 @@ def listing() -> dict[str, Any]:
     topics = [{**t, "pinned": t["sig"] in pinned} for t in data.get("topics") or [] if t["sig"] not in gone]
     topics.sort(key=lambda t: (not t["pinned"], -t["score"]))
     return {"built_at": data.get("built_at"), "month": data.get("month"), "topics": topics,
-            "videos": data.get("videos") or [], "building": bool(control.running("countdown_topics")),
+            "videos": data.get("videos") or [], "asks": data.get("asks") or "", "building": bool(control.running("countdown_topics")),
             "skipped": [t for t in data.get("topics") or [] if t["sig"] in set(led["skipped"])],
             "vidiq": vidiq.configured()}
 

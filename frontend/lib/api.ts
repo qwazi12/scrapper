@@ -679,6 +679,7 @@ export type CountdownTopic = {
 export type CountdownTopics = {
   built_at?: string | null; month?: string; topics: CountdownTopic[]; skipped: CountdownTopic[]; building: boolean; vidiq: boolean;
   videos: { title: string; views?: number; breakout?: number; vph?: number; channel?: string; id?: string }[];
+  asks?: string;
 };
 export type CountdownAuto = {
   settings: { enabled: boolean; per_day: number; paused_until?: string | null };

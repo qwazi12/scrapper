@@ -513,8 +513,9 @@ def publish(s, c: CountdownProject) -> QueueItem:
 
 
 def seo_tags(c: CountdownProject, entries: list[dict[str, Any]]) -> str:
-    """YouTube tags: vidIQ's best related searches for the topic (when available), then
-    the titles and the basics. Max 500 characters."""
+    """Hashtags (the queue's format: "#tag #tag", used as YouTube tags and at the end of the
+    description): vidIQ's best related searches for the topic first, then #1–#3 titles and
+    the basics. At most 12 — YouTube ignores every hashtag when there are more than 15."""
     from .. import vidiq
     kw = (c.review or {}).get("keyword") or c.topic
     related = list((c.review or {}).get("keywords") or [])
@@ -525,15 +526,16 @@ def seo_tags(c: CountdownProject, entries: list[dict[str, Any]]) -> str:
             rv = dict(c.review or {})
             rv["keywords"], rv["demand"] = related, {k: m[k] for k in ("overall", "monthly_searches", "growth_pct")}
             c.review = rv
-    parts = [kw, *related, *[(e.get("title") or "") for e in reversed(entries)][:8],
-             f"top {len(entries)}", "countdown", "ranked", "screen central"]
-    out, seen = [], set()
+    by_rank = sorted(entries, key=lambda e: int(e.get("rank") or 99))
+    parts = [kw, *related[:6], *[(e.get("title") or "") for e in by_rank[:3]], f"top {len(entries)}", "countdown", "screen central"]
+    out: list[str] = []
     for p in parts:
-        p = p.strip().lower()
-        if p and p not in seen and len(", ".join([*out, p])) <= 500:
-            out.append(p)
-            seen.add(p)
-    return ", ".join(out)
+        tag = "#" + "".join(ch for ch in p.lower() if ch.isalnum())
+        if len(tag) > 2 and tag not in out:
+            out.append(tag)
+        if len(out) >= 12:
+            break
+    return " ".join(out)
 
 
 # --- ☁️ Drive copy (like LongForm: a "Countdowns" folder inside the LongForm Studio folder) ---------

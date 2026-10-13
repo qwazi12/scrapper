@@ -490,6 +490,12 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
               <b>Breaking out now:</b> {(d!.videos || []).slice(0, 6).map((v) => `“${v.title}” (${short(v.views)} views)`).join(" · ")}
             </div>
           )}
+          {tab === "trend" && d?.asks && (
+            <details style={{ ...muted, marginBottom: 8 }}>
+              <summary style={{ cursor: "pointer" }}>💬 What viewers of countdown channels are asking for (vidIQ, weekly)</summary>
+              <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", marginTop: 4 }}>{d.asks.slice(0, 1200)}</div>
+            </details>
+          )}
           {!d ? <div style={muted}>Loading topics…</div> : topics.length === 0 ? (
             <div style={muted}>{d.building ? "Building the list…" : "Nothing here yet — ↻ Refresh topics."}</div>
           ) : (

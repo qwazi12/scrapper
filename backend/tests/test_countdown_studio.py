@@ -268,8 +268,8 @@ def test_seo_tags_use_vidiq_keywords_then_titles():
     c = CountdownProject(topic="Top 3 horror", fmt="top5",
                          review={"keyword": "best horror movies", "keywords": ["scariest horror movies", "horror movies 2026"]})
     tags = countdown.seo_tags(c, [{"title": "Alien", "rank": 2}, {"title": "The Shining", "rank": 1}])
-    assert tags.startswith("best horror movies, scariest horror movies, horror movies 2026, the shining, alien")
-    assert len(tags) <= 500
+    assert tags.startswith("#besthorrormovies #scariesthorrormovies #horrormovies2026 #theshining #alien")
+    assert len(tags.split()) <= 12
 
 
 def test_batch_and_segment_length(client):
