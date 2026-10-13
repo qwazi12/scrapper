@@ -262,3 +262,23 @@ def test_countdowns_queue_posts_at_midday_once():
     assert countdown.ensure_midday_schedule() is False                      # never put back over the owner's choice
     with SessionLocal() as s:
         qm.save_schedule(s, None)
+
+
+def test_seo_tags_use_vidiq_keywords_then_titles():
+    c = CountdownProject(topic="Top 3 horror", fmt="top5",
+                         review={"keyword": "best horror movies", "keywords": ["scariest horror movies", "horror movies 2026"]})
+    tags = countdown.seo_tags(c, [{"title": "Alien", "rank": 2}, {"title": "The Shining", "rank": 1}])
+    assert tags.startswith("best horror movies, scariest horror movies, horror movies 2026, the shining, alien")
+    assert len(tags) <= 500
+
+
+def test_batch_and_segment_length(client):
+    cid, segs = _confirmed(client)
+    c = client.put(f"/api/countdowns/{cid}/settings", json={"segment_minutes": 1.2}).json()
+    assert c["segment_minutes"] == 1.2
+    with SessionLocal() as s:
+        assert all(s.get(StudioProject, p).target_minutes == 1.2 for p in segs if not s.get(StudioProject, p).script)
+    r = client.post("/api/countdowns/batch", json={"action": "render", "ids": [cid]}).json()
+    assert r["done"] == 0 and "segments" in r["results"][0]["why"]
+    r = client.post("/api/countdowns/batch", json={"action": "archive", "ids": [cid]}).json()
+    assert r["done"] == 1 and client.get(f"/api/countdowns/{cid}").json()["review"]["delete_after"]

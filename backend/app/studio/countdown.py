@@ -119,6 +119,8 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         "posters": posters, "entry_count": len(entries), "unmatched": len(unmatched),
         "segments_made": made, "segments_total": len(segs),
         "est_minutes": round((est + 40) / 60, 1),                     # + intro/outro and the #N cards
+        "segment_minutes": float((c.review or {}).get("segment_minutes") or SEGMENT_MINUTES.get(c.fmt, 1.0)),
+        "auto": bool((c.review or {}).get("auto")),
         "cost_usd": _cost(c),
         "has": {"ranking": bool(entries), "titles": bool(c.segment_ids), "segments": bool(segs) and made == len(segs),
                 "script": bool(c.script), "render": bool(c.render)},
@@ -214,7 +216,7 @@ def confirm_titles(s, c: CountdownProject) -> None:
                                  + ", ".join(bad) + ". Swap or remove them first.")
     if len(entries) < 2:
         raise HTTPException(400, "A countdown needs at least 2 titles")
-    minutes = SEGMENT_MINUTES.get(c.fmt, 1.0)
+    minutes = float((c.review or {}).get("segment_minutes") or SEGMENT_MINUTES.get(c.fmt, 1.0))
     total = len(entries)
     ids = []
     for e in _ordered(entries):
@@ -281,7 +283,7 @@ def fix_lengths(s, c: CountdownProject) -> int:
     """Segments made for this countdown that have no script yet get the format's
     length (reused LongForm breakdowns and finished segments are never changed)."""
     reused = {int(e["segment_id"]) for e in entries_of(c) if e.get("reused") and e.get("segment_id")}
-    want, n = SEGMENT_MINUTES.get(c.fmt, 1.0), 0
+    want, n = float((c.review or {}).get("segment_minutes") or SEGMENT_MINUTES.get(c.fmt, 1.0)), 0
     for pid in c.segment_ids or []:
         p = s.get(StudioProject, int(pid))
         if p is None or int(pid) in reused or p.script or p.stage_status == "running":
@@ -386,6 +388,7 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
             logbus.log("info", "countdown_segment", f"Countdown #{c.id}: “{p.title}” from step '{stage}' ({state})",
                        project=p.id)
         sweep_archived(s)
+        sweep_posted(s)
     return did
 
 
@@ -445,6 +448,10 @@ def render_job(cid: int) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         _set(cid, stage_status="error", stage_message=f"Render failed: {str(exc)[:300]}")
         raise
+    try:   # the stitch copied every segment into its folder; the final video is made, drop the copies
+        shutil.rmtree(stitch.compilations_dir() / str(res["compilation_id"]) / "segments", ignore_errors=True)
+    except Exception:  # noqa: BLE001
+        pass
     thumbs = {"poster": "thumb_option_1_poster.jpg", "action": "thumb_option_2_action.jpg", "split": "thumb_option_3_split.jpg"}
     render = {"compilation_id": res["compilation_id"], "file": res["video_path"], "thumbnail": res["primary_thumb"],
               "thumbnails": thumbs, "selected_thumbnail": "poster", "chapters": res["chapters"],
@@ -475,9 +482,7 @@ def publish(s, c: CountdownProject) -> QueueItem:
     entries = _ordered(entries_of(c))
     lines = [f"{ch['time_formatted']} {ch['title']}" for ch in (c.render or {}).get("chapters", [])]
     ranking = {**(c.ranking or {}), "topic": c.topic, "hook_script": sc.get("intro"), "closing_question": sc.get("outro")}
-    tags = f"countdown, top {len(entries)}, {c.topic.lower()}, movies, tv, ranking, screen central"
-    for e in entries[-6:]:
-        tags += f", {(e.get('title') or '').lower()}"
+    tags = seo_tags(c, entries)
     fields = dict(pipeline=PIPELINE, source=SOURCE, video_name=f"Top {len(entries)} — {c.topic[:80]}",
                   video_path=c.render["file"], thumb_path=c.render.get("thumbnail"), title=(sc.get("title") or c.topic)[:100],
                   description=engine.countdown_description(ranking, entries, lines), tags=tags[:500],
@@ -501,7 +506,103 @@ def publish(s, c: CountdownProject) -> QueueItem:
     from ..social import queue_manager
     queue_manager.wake()
     logbus.log("info", "countdown_published", f"Countdown #{c.id}: sent to the Countdowns queue as #{item.id} (ready)")
+    d = (c.render or {}).get("drive") or {}
+    if d.get("status") != "saved" or d.get("rendered_at") != c.render.get("rendered_at"):
+        start_drive(c.id)
     return item
+
+
+def seo_tags(c: CountdownProject, entries: list[dict[str, Any]]) -> str:
+    """YouTube tags: vidIQ's best related searches for the topic (when available), then
+    the titles and the basics. Max 500 characters."""
+    from .. import vidiq
+    kw = (c.review or {}).get("keyword") or c.topic
+    related = list((c.review or {}).get("keywords") or [])
+    if not related:
+        m = vidiq.keyword_metrics(kw, purpose=f"countdown #{c.id} tags")
+        if m:
+            related = [r["keyword"] for r in m["related"][:12]]
+            rv = dict(c.review or {})
+            rv["keywords"], rv["demand"] = related, {k: m[k] for k in ("overall", "monthly_searches", "growth_pct")}
+            c.review = rv
+    parts = [kw, *related, *[(e.get("title") or "") for e in reversed(entries)][:8],
+             f"top {len(entries)}", "countdown", "ranked", "screen central"]
+    out, seen = [], set()
+    for p in parts:
+        p = p.strip().lower()
+        if p and p not in seen and len(", ".join([*out, p])) <= 500:
+            out.append(p)
+            seen.add(p)
+    return ", ".join(out)
+
+
+# --- ☁️ Drive copy (like LongForm: a "Countdowns" folder inside the LongForm Studio folder) ---------
+def drive_job(cid: int) -> dict[str, Any]:
+    from ..drive_sync import get_drive_service
+    from . import archive, drive_store
+    with SessionLocal() as s:
+        c = s.get(CountdownProject, cid)
+        if not c or not c.render:
+            raise ValueError("Render the video first")
+        video, thumb = comp_dir(c) / "final_compilation.mp4", comp_dir(c) / "thumbnails" / "thumbnail.jpg"
+        rendered_at = c.render.get("rendered_at")
+        title = drive_store._safe_name((c.script or {}).get("title") or c.topic)
+        segs = list(c.segment_ids or [])
+        reused = {int(e["segment_id"]) for e in entries_of(c) if e.get("reused") and e.get("segment_id")}
+    _set_drive(cid, {"status": "uploading", "error": None})
+    try:
+        service = get_drive_service()
+        parent = drive_store.folder_id(service)
+        q = (f"name = 'Countdowns' and '{parent}' in parents and mimeType = 'application/vnd.google-apps.folder' "
+             "and trashed = false")
+        found = service.files().list(q=q, fields="files(id)", includeItemsFromAllDrives=True,
+                                     **drive_store.ALL).execute().get("files", [])
+        folder = found[0]["id"] if found else service.files().create(
+            body={"name": "Countdowns", "mimeType": "application/vnd.google-apps.folder", "parents": [parent]},
+            fields="id", **drive_store.ALL).execute()["id"]
+        stamp = _now().strftime("%Y-%m-%d")
+        v = drive_store._upload(service, video, folder, f"{title} ({stamp}).mp4")
+        t = drive_store._upload(service, thumb, folder, f"{title} — Thumbnail ({stamp}).jpg") if thumb.exists() else None
+    except control.Cancelled:
+        _set_drive(cid, {"status": "stopped", "error": "stopped"})
+        raise
+    except Exception as exc:  # noqa: BLE001
+        why = drive_store._explain(exc) if not isinstance(exc, drive_store.DriveStoreError) else str(exc)
+        _set_drive(cid, {"status": "error", "error": why})
+        logbus.log("error", "countdown_drive_failed", f"Countdown #{cid}: {why}")
+        raise
+    info = {"status": "saved", "error": None, "link": v.get("webViewLink"), "file_id": v["id"],
+            "thumb_link": t.get("webViewLink") if t else None, "rendered_at": rendered_at, "saved_at": _now().isoformat()}
+    _set_drive(cid, info)
+    with SessionLocal() as s:
+        c = s.get(CountdownProject, cid)
+        if c.queue_item_id and (item := s.get(QueueItem, c.queue_item_id)) and item.status not in ("posted", "archived"):
+            item.drive_link = info["link"]
+            s.commit()
+    for pid in segs:                      # the video is safe in Drive: free each segment's trailer footage
+        if int(pid) not in reused:
+            try:
+                archive.free_footage(int(pid))
+            except Exception:  # noqa: BLE001
+                pass
+    logbus.log("info", "countdown_drive_saved", f"Countdown #{cid}: saved to Drive (LongForm Studio / Countdowns)")
+    return info
+
+
+def _set_drive(cid: int, info: dict[str, Any]) -> None:
+    with SessionLocal() as s:
+        c = s.get(CountdownProject, cid)
+        if c and c.render:
+            r = dict(c.render)
+            r["drive"] = {**(r.get("drive") or {}), **info}
+            c.render = r
+            s.commit()
+
+
+def start_drive(cid: int) -> str | None:
+    if control.running("countdown_drive", cid):
+        return None
+    return control.start_thread("countdown_drive", f"Countdown #{cid}: save to Drive", "countdown", drive_job, cid, ref=cid)
 
 
 # --- delete / archive -----------------------------------------------------------------
@@ -528,6 +629,34 @@ def delete_now(s, c: CountdownProject, reason: str) -> None:
         if (p.facts or {}).get("origin") == "countdown" and not p.queue_item_id:
             delete_project_now(s, p, f"segment of deleted countdown #{cid}")
     logbus.log("info", "countdown_deleted", f"Countdown #{cid} deleted ({reason})")
+
+
+def sweep_posted(s) -> None:
+    """Like LongForm: note when a countdown posts; N days later (studio archive setting), once
+    its Drive copy is confirmed, delete the local video (thumbnails, titles and script stay)."""
+    from . import archive
+    cfg = archive.settings_dict(s)
+    now = _now()
+    for c in s.query(CountdownProject).filter(CountdownProject.queue_item_id.isnot(None)).all():
+        rv = dict(c.review or {})
+        if not rv.get("posted_at"):
+            q = s.get(QueueItem, c.queue_item_id)
+            if q is not None and q.status in ("posted", "archived"):
+                rv["posted_at"] = (q.published_at or now).isoformat()
+                c.review = rv
+                s.commit()
+            continue
+        r = c.render or {}
+        if not cfg.get("enabled") or r.get("archived_at") or (r.get("drive") or {}).get("status") != "saved":
+            continue
+        posted = datetime.datetime.fromisoformat(rv["posted_at"])
+        posted = posted if posted.tzinfo else posted.replace(tzinfo=UTC)
+        if now - posted >= datetime.timedelta(days=int(cfg.get("days") or 14)):
+            (comp_dir(c) / "final_compilation.mp4").unlink(missing_ok=True)
+            c.render = {**r, "archived_at": now.isoformat()}
+            s.commit()
+            logbus.log("info", "countdown_archived", f"Countdown #{c.id}: local video removed {cfg.get('days')} days after "
+                                                     f"posting (the copy is in Drive)")
 
 
 def sweep_archived(s) -> None:
@@ -948,6 +1077,176 @@ def start_topic(req: TopicStart) -> dict[str, Any]:
         return out(s, s.get(CountdownProject, cid))
 
 
+class BatchIn(BaseModel):
+    action: str            # render | publish | review | archive | unarchive | delete
+    ids: list[int]
+
+
+class SettingsIn(BaseModel):
+    segment_minutes: float | None = None
+
+
+@router.post("/batch")
+def batch(req: BatchIn) -> dict[str, Any]:
+    """Like LongForm's Your videos: one action on many countdowns; one result each."""
+    results = []
+    for cid in req.ids:
+        try:
+            with SessionLocal() as s:
+                c = _get(s, cid)
+                title = (c.script or {}).get("title") or c.topic
+                if req.action == "render":
+                    if not out(s, c, full=False)["has"]["segments"]:
+                        raise ValueError("segments aren't all made yet")
+                    if _running(c):
+                        raise ValueError("busy")
+                elif req.action == "publish":
+                    publish(s, c)
+                elif req.action == "review":
+                    c.review = {**(c.review or {}), "reviewed_at": _now().isoformat()}
+                    s.commit()
+                elif req.action in ("archive", "unarchive"):
+                    rv = dict(c.review or {})
+                    if req.action == "archive":
+                        rv["delete_after"] = (_now() + datetime.timedelta(days=ARCHIVE_DAYS)).isoformat()
+                    else:
+                        rv.pop("delete_after", None)
+                    c.review = rv
+                    s.commit()
+                elif req.action == "delete":
+                    delete_now(s, c, "deleted by owner (batch)")
+                else:
+                    raise ValueError("unknown action")
+            if req.action == "render":
+                start_render(cid)
+            results.append({"id": cid, "title": title, "ok": True})
+        except (ValueError, HTTPException) as exc:
+            results.append({"id": cid, "ok": False, "why": getattr(exc, "detail", None) or str(exc)})
+    return {"results": results, "done": sum(1 for r in results if r["ok"])}
+
+
+@router.post("/{cid}/resume")
+def resume(cid: int) -> dict[str, Any]:
+    """▶ Resume a stopped, failed or paused countdown from the step it was on."""
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        stage = c.stage
+    if stage in ("new", "research"):
+        start_research(cid)
+    elif stage == "segments":
+        return make_segments(cid)
+    elif stage == "render":
+        start_render(cid)
+    with SessionLocal() as s:
+        return out(s, _get(s, cid))
+
+
+@router.post("/{cid}/move-up")
+def move_up(cid: int) -> dict[str, Any]:
+    """⏫ Put this countdown's waiting segment at the front of Studio's line."""
+    from . import runner
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        queued = [x for x in _segments(s, c) if x["stage_status"] == "queued"]
+    if not queued or not runner.move_to_front(queued[0]["id"]):
+        raise HTTPException(409, "nothing of this countdown is waiting in Studio's line")
+    return {"ok": True}
+
+
+@router.put("/{cid}/settings")
+def put_settings(cid: int, req: SettingsIn) -> dict[str, Any]:
+    """Segment length (minutes) for segments not written yet."""
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        if req.segment_minutes is not None:
+            if not 0.4 <= req.segment_minutes <= 3:
+                raise HTTPException(400, "segment length must be 0.4–3 minutes")
+            c.review = {**(c.review or {}), "segment_minutes": round(req.segment_minutes, 2)}
+            fix_lengths(s, c)
+        s.commit()
+        return out(s, c)
+
+
+@router.post("/{cid}/drive")
+def drive(cid: int) -> dict[str, Any]:
+    with SessionLocal() as s:
+        if not _get(s, cid).render:
+            raise HTTPException(400, "Render the video first")
+    return {"job_id": start_drive(cid)}
+
+
+@router.post("/{cid}/thumbnails/refresh")
+def refresh_thumbnails(cid: int) -> dict[str, Any]:
+    """🔄 New thumbnail options (different titles' posters and stills each press)."""
+    from .compilations import stitch
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        if not c.render:
+            raise HTTPException(400, "Render the video first")
+        projects = [p for p in (s.get(StudioProject, int(x)) for x in c.segment_ids or []) if p is not None]
+        rnd = int(c.render.get("thumb_round") or 0) + 1
+        k = rnd % max(len(projects), 1)
+        rotated = projects[k:] + projects[:k]
+        title = (c.script or {}).get("thumbnail_text") or (c.script or {}).get("title") or c.topic
+        d = comp_dir(c) / "thumbnails"
+        stitch.generate_compilation_thumbnails(rotated, title, d)
+        sel = c.render.get("selected_thumbnail") or "poster"
+        shutil.copyfile(d / c.render["thumbnails"][sel], d / "thumbnail.jpg")
+        c.render = {**c.render, "thumb_round": rnd, "thumb_v": _now().timestamp()}
+        s.commit()
+        return out(s, c)
+
+
+@router.post("/{cid}/titles/score")
+def score_titles(cid: int) -> dict[str, Any]:
+    """vidIQ click-through score (0–100) for each title option (5 credits each, cached)."""
+    from .. import vidiq
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        sc = dict(c.script or default_script(c))
+        opts = list(dict.fromkeys([sc.get("title") or "", *(sc.get("title_options") or [])]))[:4]
+    scores = {}
+    for t in [o for o in opts if o]:
+        r = vidiq.score_title(t, purpose=f"countdown #{cid} title")
+        if r:
+            scores[t] = r
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        c.script = {**(c.script or default_script(c)), "title_scores": scores}
+        s.commit()
+        return out(s, c)
+
+
+@router.post("/{cid}/titles/suggest")
+def suggest_titles(cid: int) -> dict[str, Any]:
+    """vidIQ scored title ideas for this countdown (one call)."""
+    from .. import vidiq
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        sc = dict(c.script or default_script(c))
+        names = ", ".join(e.get("title", "") for e in sorted(entries_of(c), key=lambda e: e.get("rank", 99))[:10])
+    raw = vidiq.safe("vidiq_generate_titles", {"title": sc.get("title") or c.topic, "numTitles": 5, "type": "long",
+                                               "description": f"Countdown video: {c.topic}. Ranked: {names}",
+                                               "language": "en"}, cache_hours=72, purpose=f"countdown #{cid} titles")
+    if raw is None:
+        raise HTTPException(502, "vidIQ couldn't suggest titles right now")
+    data = raw if isinstance(raw, (dict, list)) else vidiq._embedded_json(raw) or raw
+    items = data.get("titles") if isinstance(data, dict) else data
+    found = []
+    for it in items if isinstance(items, list) else []:
+        t = it.get("title") if isinstance(it, dict) else str(it)
+        if t:
+            found.append(t[:100])
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        sc = dict(c.script or default_script(c))
+        sc["title_options"] = list(dict.fromkeys([*(sc.get("title_options") or []), *found]))[:10]
+        sc["vidiq_titles"] = data if isinstance(data, (dict, list)) else str(data)[:2000]
+        c.script = sc
+        s.commit()
+        return out(s, c)
+
+
 @router.get("/{cid}")
 def get_one(cid: int) -> dict[str, Any]:
     with SessionLocal() as s:
@@ -972,6 +1271,8 @@ def put_entries(cid: int, req: EntriesIn) -> dict[str, Any]:
         c = _get(s, cid)
         if c.stage in ("segments", "render") and _running(c):
             raise HTTPException(409, "Segments are being made — Stop first to change the titles")
+        from .. import undo
+        undo.record(s, f"countdown:{cid}", "Edit titles", rows=[c])
         save_entries(c, req.entries)
         s.commit()
         return out(s, c)
@@ -1028,6 +1329,8 @@ def stop(cid: int) -> dict[str, Any]:
 def put_script(cid: int, req: ScriptIn) -> dict[str, Any]:
     with SessionLocal() as s:
         c = _get(s, cid)
+        from .. import undo
+        undo.record(s, f"countdown:{cid}", "Edit script", rows=[c])
         sc = dict(c.script or default_script(c))
         for k in ("title", "intro", "outro"):
             v = getattr(req, k)

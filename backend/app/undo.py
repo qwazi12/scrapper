@@ -20,9 +20,10 @@ from typing import Any, Iterable
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from .models import AppSetting, QueueItem, StudioProject, UndoEntry
+from .models import AppSetting, CountdownProject, QueueItem, StudioProject, UndoEntry
 
-MODELS = {"queue_items": QueueItem, "studio_projects": StudioProject, "app_settings": AppSetting}
+MODELS = {"queue_items": QueueItem, "studio_projects": StudioProject, "app_settings": AppSetting,
+          "countdown_projects": CountdownProject}
 KEEP = 50  # undo steps kept per scope
 
 
