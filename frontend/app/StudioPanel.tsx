@@ -15,6 +15,7 @@ import {
 } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
+import { readHash, writeHash } from "../lib/hashnav";
 import { AutomationCard, deleteProject, RankedTrending, VideosList } from "./StudioAuto";
 import { MomentumBadge } from "./MomentumBadge";
 
@@ -54,7 +55,11 @@ function fmtDate(iso: string): string {
 export function StudioPanel() {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [projects, setProjects] = useState<StudioProject[]>([]);
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<number | null>(() => {
+    const [tab, id] = readHash();
+    return tab === "longform" && /^\d+$/.test(id || "") ? Number(id) : null;        // refresh keeps the open breakdown
+  });
+  useEffect(() => { writeHash(["longform", openId]); }, [openId]);
   const [err, setErr] = useState("");
 
   async function loadList() {

@@ -16,6 +16,7 @@ import {
 import { PublishModal } from "./PublishModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { QueuePanel } from "./QueuePanel";
+import { readHash, writeHash } from "../lib/hashnav";
 import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
@@ -109,12 +110,14 @@ export default function Page() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
   }, [refresh]);
 
-  // Sync hash with active tab if set in URL
+  // Sync hash with active tab if set in URL (#tab or #tab/sub; open projects add /id)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const hash = window.location.hash.replace("#", "");
-      if (["scraper", "socialpilot", "longform", "comps", "logs", "settings"].includes(hash)) {
+      const [hash, sub] = readHash();
+      const SUBS = ["queue", "longform", "countdowns", "scheduler", "ingest", "drive"];
+      if (["scraper", "socialpilot", "longform", "countdowns", "comps", "logs", "settings"].includes(hash)) {
         setActiveTab(hash as NavTab);
+        if (hash === "socialpilot" && SUBS.includes(sub)) setSocialPilotTab(sub as typeof socialPilotTab);
       } else if (hash === "queue") {
         setActiveTab("socialpilot");
         setSocialPilotTab("queue");
@@ -124,6 +127,11 @@ export default function Page() {
       }
     }
   }, []);
+
+  // Keep the SocialPilot sub-tab in the address too.
+  useEffect(() => {
+    if (activeTab === "socialpilot") writeHash(["socialpilot", socialPilotTab]);
+  }, [activeTab, socialPilotTab]);
 
   function handleTabSelect(tab: NavTab) {
     setActiveTab(tab);

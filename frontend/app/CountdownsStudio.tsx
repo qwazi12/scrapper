@@ -15,6 +15,7 @@ import {
   VidIQStatus,
 } from "../lib/api";
 import { askConfirm, notify } from "../lib/dialogs";
+import { readHash, writeHash } from "../lib/hashnav";
 import { ProjectView } from "./StudioPanel";
 import { UndoButton } from "./UndoButton";
 
@@ -108,7 +109,11 @@ function Chips({ checks }: { checks: Record<string, { status: string; why: strin
 // --- the page ---------------------------------------------------------------------------------
 export function CountdownsStudio() {
   const [list, setList] = useState<CountdownProject[]>([]);
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useState<number | null>(() => {
+    const [tab, id] = readHash();
+    return tab === "countdowns" && /^\d+$/.test(id || "") ? Number(id) : null;      // refresh keeps the open countdown
+  });
+  useEffect(() => { writeHash(["countdowns", openId]); }, [openId]);
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [vq, setVq] = useState<VidIQStatus | null>(null);
   const [err, setErr] = useState("");
