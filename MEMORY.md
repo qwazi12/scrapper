@@ -1048,3 +1048,18 @@ Owner: "there's an issue with the audio for countdown; LongForm works fine."
 - Then found: **silent intro (18 s) and outro (24 s)** — the intro/outro voice-over was refused by the daily cap and the code silently used silence. Now a refused voice stops the render (cap → paused, resumes after midnight).
 - And **~11 s of dead air between entries** — each segment kept LongForm's 8 s silent subscribe end screen. Now each segment's silent tail is detected and trimmed (keeps 0.5 s); chapters follow the trimmed lengths.
 - #1 re-render queued; today's cap reached ($4.01/$4.00) → it pauses and finishes after midnight ET by itself.
+
+## PROPOSAL (not approved, no code) — 2026-10-13 — "Screen Central" studio-logo intro for compilations (Marvel-style)
+Owner sent a 29 s Marvel Studios intro: rapid comic-page flips in warm washes → hero artwork montage with colour washes + typed names → fire flash → camera flies through giant 3D letters whose faces play footage → lands on the red chrome "MARVEL STUDIOS" bar. Asked: replace the current 18 s countdown intro with something like it, using Screen Central and the movie posters.
+**Shape (≈ 8–10 s, not 29 — long logo intros lose viewers):**
+1. 0–3.5 s **Poster storm** — this video's own posters/backdrops flip and slide fast, each washed in a colour (Screen Central red → orange → blue → purple), light leaks, motion blur, the titles typed over them (#10 … #1 names).
+2. 3.5–4.5 s **Flash** — fire/light burst transition.
+3. 4.5–7.5 s **Fly-through** — 3D "SCREEN CENTRAL" letters, chrome edges, each letter face filled with moving poster/trailer footage from this countdown; camera pulls back.
+4. 7.5–9.5 s **Lock-up** — red metallic "SCREEN CENTRAL" bar on the red gradient (+ small "TOP 10 · {topic}" under it), held, then straight into the video.
+**Sound:** an original, royalty-free sting (never Marvel's music/logo) — made once and reused; whooshes on the flips.
+**How it's built (recommended — hybrid, no AI cost per video):**
+- Made **once** as reusable assets: the 3D letters as an alpha matte + chrome/shine pass, the flash, the final lock-up, and the music sting (rendered offline, e.g. Blender/Remotion; stored in the repo/volume).
+- **Per video** (ffmpeg, ~30–60 s of render): the poster storm from that countdown's posters, and the letter-fill footage composited through the matte. Every countdown gets a different intro with the same brand finish.
+- Alternative: build it as a new HyperFrames piece (the motion system LongForm already uses) — easier to tweak, but true 3D chrome letters are limited in HTML; the flat/2.5D version is weaker.
+**Where it goes:** replaces the current intro of every **countdown** (and optionally the multi-clip compilations under Compilations & Exports). The 10 s hook stays: either as a **cold open before the sting** (recommended: hook line over the #1 tease → sting → #N), or voiced over the poster storm.
+**Decisions for the owner:** length (8–10 s recommended), hook before vs over the sting, music source (YouTube Audio Library / commissioned / vidIQ music ≈ 20 credits once), whether LongForm breakdowns and the short-form compilations get a shorter 3–4 s version too.
