@@ -171,6 +171,21 @@ def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
                 entry["interval_hours"] = ih
             if v.get("times"):
                 entry["times"] = clean_times(v["times"], k)
+            if isinstance(v.get("platforms"), dict):
+                # Owner (2026-10-13): different daily numbers per platform, e.g. YouTube 1, Facebook 3, Instagram 3.
+                plats: dict[str, int] = {}
+                for net, n in v["platforms"].items():
+                    if n is None or n == "":
+                        continue
+                    net = str(net).strip().lower()
+                    if not net.isalnum():
+                        raise ValueError(f"Override for {k}: unknown platform '{net}'")
+                    n = int(n)
+                    if not (0 <= n <= 48):
+                        raise ValueError(f"Override for {k}: {net} posts/day must be 0-48")
+                    plats[net] = n
+                if plats:
+                    entry["platforms"] = plats
             if entry:
                 cleaned[str(k)] = entry
         return cleaned
@@ -287,6 +302,8 @@ def resolve_pacing(
     if override:
         if override.get("posts_per_day") is not None:
             ppd = int(override["posts_per_day"])
+        if override.get("platforms") and not override.get("times"):
+            ppd = max(override["platforms"].values()) or ppd      # the queue runs at its busiest platform's rate
         if override.get("start_hour") is not None:
             start = int(override["start_hour"])
         if override.get("end_hour") is not None:
@@ -404,6 +421,33 @@ def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
     return sum(1 for it in rows if pipeline_group(it) == group)
 
 
+def platform_limits(group: str) -> dict[str, int]:
+    """Daily posts per platform for this queue ({} = every post goes everywhere)."""
+    return dict(((_schedule_cfg.get("pipelines") or {}).get(group) or {}).get("platforms") or {})
+
+
+def platform_posts_today(s: Session, group: str, now: datetime.datetime) -> dict[str, int]:
+    """Regular (scheduled, not pinned) posts each platform already got today from this queue."""
+    tz = ZoneInfo(_schedule_cfg["timezone"])
+    local = now.astimezone(tz)
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    end = start + datetime.timedelta(days=1)
+    counts: dict[str, int] = {}
+    rows = (s.query(QueueItem)
+            .filter(QueueItem.scheduled_at >= start, QueueItem.scheduled_at < end)
+            .filter(QueueItem.status.in_(["posting", "posted", "archived", "retry", "error"]))
+            .filter(QueueItem.pinned_at.is_(None)).all())
+    for it in rows:
+        if pipeline_group(it) != group:
+            continue
+        for e in it.publish_requests or []:
+            if e.get("error") or e.get("skipped"):
+                continue
+            for net in e.get("platforms") or []:
+                counts[net] = counts.get(net, 0) + 1
+    return counts
+
+
 def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
     at = _aware(item.scheduled_at)
     return at is not None and now - DUE_GRACE < at <= now
@@ -508,8 +552,10 @@ async def submit_upload(
     tags: list[str],
     scheduled_date: str | None = None,
     thumbnail: pathlib.Path | None = None,
+    allow: dict[str, bool] | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
+    `allow` (network -> False) leaves out platforms that reached their daily number.
 
     Returns one entry per profile — {"profile", "request_id", "submitted_at"} or
     {"profile", "error"} — so a failed profile is retried later on its own.
@@ -521,6 +567,13 @@ async def submit_upload(
 
     now = datetime.datetime.now(UTC).isoformat()
     entries: list[dict[str, Any]] = []
+    if allow:
+        skipped = [a for a in accounts if allow.get(upload_post.split_account(a)[1]) is False]
+        accounts = [a for a in accounts if a not in skipped]
+        if skipped:
+            entries.append({"skipped": skipped, "reason": "daily number for that platform reached", "at": now})
+        if not accounts:
+            return entries
     for profile, platforms in upload_post.group_by_profile(accounts).items():
         try:
             rid = await upload_post.upload_video(
@@ -605,7 +658,7 @@ def strip_blocked_accounts(s: Session) -> int:
     return changed
 
 
-async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
+async def publish_queue_item(item_id: int, s: Session, regular: bool = False) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
     if not item:
@@ -666,18 +719,33 @@ async def publish_queue_item(item_id: int, s: Session) -> QueueItem:
     try:
         description = "\n\n".join(p.strip() for p in (item.description, item.tags) if p and p.strip())
         thumb = pathlib.Path(item.thumb_path) if item.thumb_path and not item.thumb_path.startswith("http") else None
+        allow = None
+        group = pipeline_group(item)
+        limits = platform_limits(group) if regular else {}
+        if limits:      # owner (2026-10-13): e.g. YouTube 1/day, Facebook 3, Instagram 3
+            counts = platform_posts_today(s, group, datetime.datetime.now(UTC))
+            allow = {net: counts.get(net, 0) < lim for net, lim in limits.items()}
         entries = await submit_upload(
             video_path, list(item.accounts), title=item.title or item.video_name,
-            description=description, tags=_hashtags(item.tags), thumbnail=thumb,
+            description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
         )
+        skipped = [a for e in entries for a in e.get("skipped", [])]
+        if skipped and not any(e.get("request_id") or e.get("error") for e in entries):
+            # Every platform already had today's number: nothing to send now.
+            item.status = "ready"
+            item.notes = f"Waiting: {', '.join(skipped)} already had today's posts (per-platform limits)."
+            s.commit()
+            logbus.log("info", "queue_platform_limits", f"Item #{item.id}: all platforms at today's number — not sent")
+            return item
         if not any(e.get("request_id") for e in entries):
-            raise upload_post.UploadPostError("; ".join(e.get("error", "") for e in entries))
+            raise upload_post.UploadPostError("; ".join(e.get("error", "") for e in entries if e.get("error")))
         # Accepted is not published: stay "posting" until reconcile_posting()
         # reads every platform's real result. Only then "posted" (4-day clock).
         item.publish_requests = entries
         item.published_at = None
         item.notes = (f"Submitted to Upload-Post for {', '.join(item.accounts)}; "
-                      "waiting for the platforms to confirm.")
+                      "waiting for the platforms to confirm."
+                      + (f" Not sent to {', '.join(skipped)} — that platform's daily number was reached." if skipped else ""))
         s.commit()
         logbus.log("info", "queue_submitted", f"Item #{item.id} submitted to Upload-Post",
                    requests=[e.get("request_id") for e in entries])
@@ -716,6 +784,8 @@ def resolve_results(
     accounts = [f"{e['profile']}:{net}" for e in entries for net in e.get("platforms", [])]
     outcome: dict[str, tuple[bool, str]] = {}
     for e in entries:
+        if e.get("skipped"):            # left out on purpose (platform's daily number reached)
+            continue
         if "error" in e:
             for net in e.get("platforms", []):
                 outcome[f"{e['profile']}:{net}"] = (False, f"upload not accepted: {e['error']}")
@@ -904,7 +974,7 @@ def run_scheduler_tick():
                                f"{group}: today's {limit} post(s) already went out — #{item.id} waits for tomorrow's slot")
                 continue
             try:
-                asyncio.run(publish_queue_item(item.id, s))
+                asyncio.run(publish_queue_item(item.id, s, regular=item.pinned_at is None))
                 scheduler_status["last_submitted"] = {"id": item.id, "at": now.isoformat()}
             except Exception as exc:
                 logger.error("Error executing scheduled queue item #%s: %s", item.id, exc)

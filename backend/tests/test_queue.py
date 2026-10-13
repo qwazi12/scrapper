@@ -93,7 +93,7 @@ def test_tick_posts_one_per_pipeline(session, monkeypatch):
     session.commit()
     posted = []
 
-    async def fake_publish(item_id, s):
+    async def fake_publish(item_id, s, regular=False):
         posted.append(item_id)
         s.get(QueueItem, item_id).status = "posted"
         s.commit()
@@ -775,7 +775,7 @@ def test_tick_never_posts_more_than_the_daily_limit(session, reset_schedule, mon
     session.commit()
     posted = []
 
-    async def fake_publish(item_id, s):
+    async def fake_publish(item_id, s, regular=False):
         posted.append(item_id)
 
     monkeypatch.setattr(qm, "publish_queue_item", fake_publish)
@@ -966,3 +966,39 @@ def test_post_next_beats_release_date_order(session, reset_schedule):
     session.commit()
     qm.plan_schedule(session, now)
     assert mine.scheduled_at < urgent.scheduled_at          # the owner's choice wins
+
+
+def test_per_platform_daily_numbers(session, reset_schedule, monkeypatch, tmp_path):
+    """Owner (2026-10-13): more posts on Facebook/Instagram, fewer on YouTube."""
+    import asyncio
+    from backend.app.social import upload_post as up
+    cfg = qm.load_schedule(session)
+    qm.save_schedule(session, {**cfg, "pipelines": {"Movie Clips": {"platforms": {"youtube": 1, "facebook": 3, "instagram": 3}}}})
+    assert qm.slots_per_day(pipeline="Movie Clips") == 3                     # runs at the busiest platform's rate
+    accounts = [{"id": f"default:{n}", "profile": "default"} for n in ("youtube", "facebook", "instagram")]
+
+    async def list_accounts():
+        return accounts
+    sent = []
+
+    async def upload_video(path, *, profile, platforms, **kw):
+        sent.append(sorted(platforms))
+        return f"req{len(sent)}"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    now = datetime.datetime.now(UTC)
+    rows = add(session, 2, accounts=["default:*"], video_path=str(video))
+    for it in rows:
+        it.scheduled_at = now
+    session.commit()
+    asyncio.run(qm.publish_queue_item(rows[0].id, session, regular=True))
+    asyncio.run(qm.publish_queue_item(rows[1].id, session, regular=True))
+    assert sent == [["facebook", "instagram", "youtube"], ["facebook", "instagram"]]   # YouTube only its 1 a day
+    session.refresh(rows[1])
+    assert "Not sent to default:youtube" in rows[1].notes
+    assert qm.platform_posts_today(session, "Movie Clips", now) == {"youtube": 1, "facebook": 2, "instagram": 2}
+    (pinned,) = add(session, 1, accounts=["default:*"], video_path=str(video))
+    asyncio.run(qm.publish_queue_item(pinned.id, session, regular=False))          # Post now / pinned: everywhere
+    assert sent[-1] == ["facebook", "instagram", "youtube"]

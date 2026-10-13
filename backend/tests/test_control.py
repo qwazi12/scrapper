@@ -116,7 +116,7 @@ def test_autopost_pause_blocks_new_submissions(client, monkeypatch):
         s.commit()
     called = []
 
-    async def fake_publish(item_id, s):
+    async def fake_publish(item_id, s, regular=False):
         called.append(item_id)
 
     monkeypatch.setattr(qm, "publish_queue_item", fake_publish)
