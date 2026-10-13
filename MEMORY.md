@@ -903,3 +903,46 @@ Owner decision pending (not done without a yes): delete the two Spider-Man "theo
 ### Pending (owner)
 - Delete duplicates #3, #4, #5 in Countdowns Studio; decide on #2 (Spider-Man theories: swap in real titles or delete; its 5 placeholder projects #65–69 are hidden).
 - #1 (Top 15 horror): ▶ Make segments to start (15 segments of AI spend under the daily cap).
+
+## PLAN (for owner review — NOT approved yet) — 2026-10-13 — Countdowns Studio "exactly like LongForm"
+Owner: "why am I getting '⏳ Making segments: 0 of 15 done — waiting for Studio to be free'… still not quite like LongForm Studio, buttons and automated generations are missing; I want it exactly like LongForm but creating videos for the countdowns… draw up the plan and recommendations and log it so I can review before approving."
+
+### Why "waiting for Studio to be free" (checked live 2026-10-13 03:05 UTC)
+- It isn't stuck: #1 (Top 15 horror) has 2 of 15 segments made (The Ring 138 s, The Descent 112 s), $0.24 spent, ~6 min of work per segment.
+- Studio makes one thing at a time. The countdown only starts a segment on the 5-minute scheduler check, and only if nothing else is running or waiting — so it sits idle up to 5 min between segments, and waits behind any LongForm breakdown. The message doesn't say what it's waiting for.
+- Found while checking: a Top 15 should have ~40 s segments, but these were created by the old auto-queue at 1.5 min, so this video would run ~30 min, not 8–12. Confirm only sets the length on new segments.
+
+### What LongForm has that Countdowns lacks (gap list)
+| LongForm | Countdowns today |
+|---|---|
+| 🤖 Automation card: on/off, daily limits, Next pick, ⏭ Skip next, ⏸ Pause today, last started, today's count, budget check | none — every countdown is started by hand |
+| 🔥 Checked & ranked list: checks as chips (New, Trailer, Facts, Release, Interest), score, Make / + Add to line / Pin / Skip / Preview | plain "Topic ideas" cards, no checks, no pin/skip, no never-repeat |
+| Studio's waiting line: "waiting in line", ⏫ Move up, starts the moment Studio is free | polls every 5 min, only when Studio is idle |
+| Your videos: Select all shown, 🎞 Render selected, 📤 Send to queue (batch), ✓ Reviewed, ▶ Resume, ⏫ Move up, urgency filters, cost bars | single-card actions only |
+| Project page: Run / Re-run / ↻ from here per step, ▶ Continue to step 5, Undo, target length | only one button per step, no Undo, no length control |
+| Script editor with fact-check list; shot plan with swap | intro/outro text boxes; segments can't be opened or edited |
+| Video: 3 thumbnails + 🔄 Refresh Options, motion graphics panel, Drive copy, archive/footage clean-up after posting | 3 fixed thumbnails, no Drive copy, no post-posting clean-up |
+| Daily cap pause → resumes first; restart-safe jobs | research/render jobs aren't resumable |
+
+### How it would work after the update
+1. **🤖 Countdown automation card** (top of Countdowns Studio, same look as LongForm's): ON/OFF; daily limit (default **1 countdown started per day**, editable); Next pick + why; ⏭ Skip next; ⏸ Pause for today; last started; today's count; only starts when the whole countdown's estimated cost fits today's cap (~$0.12 per segment + research ≈ $0.70 Top 5, $1.30 Top 10, $1.90 Top 15).
+   It runs **steps 1–3 by itself** (research → automatic title check → segments) and **stops before render**, card marked "👀 Ready for your review" — exactly like LongForm stops before render. Titles that aren't real movies/shows are replaced automatically from the honorable mentions (or the slot is dropped); if fewer than the format needs remain, it stops at step 2 for you.
+2. **🔥 Checked & ranked topics** (replaces "Topic ideas"): top 15 topics, rebuilt every 3 days (free), each with chips — **New** (never made; never-repeat ledger), **Titles** (≥ N real titles found on TMDB), **Trailers** (IMDb trailers for most titles), **Demand**, **Timing** — a 0–100 score, and buttons **Make countdown**, **+ Add to line**, **👁 Preview titles**, **⭐ Pin**, **✕ Skip**. Search/your own topic stays.
+3. **Real waiting line:** a countdown's segments go into Studio's line (after LongForm work, before nothing else is idle) and the next one starts the moment the previous finishes — no 5-minute gaps. Cards say exactly what they wait for ("Studio is rendering LongForm #46 — your segment is next"), with ⏫ Move up.
+4. **Your countdowns = LongForm's Your videos:** filters (Needs review · Reviewed · Rendered · In queue · Archived), Select all shown, 🎞 Render selected, 📤 Send to queue, 🗄 Archive, 🗑 Delete, ✓ Reviewed, ▶ Resume, ⏫ Move up, cost per countdown, amber/blue highlights.
+5. **Project page = LongForm's:** per-step Run / Re-run / ↻ from here; ▶ Continue to step 3 (stops before render); ■ Stop; ↶ Undo (titles, script); Delete; **segment length** picker (default by format: Top 5 1.6 min, Top 10 0.9, Top 15 0.6 — applied to every segment it made, never to a reused LongForm breakdown).
+6. **Segments are editable:** each segment opens the same editor as a LongForm breakdown (script with fact-check list, shot plan with swap, re-render) and "← back to the countdown".
+7. **Script step:** title options, intro hook, closing question, plus 🔊 voice preview; chapter times shown.
+8. **Video step = LongForm's Video section:** player, 3 thumbnails + 🔄 Refresh Options, motion-graphics on/off, Send to Countdowns queue, ☁️ Drive copy to a "Countdowns" folder in the LongForm Shared Drive, archive/free-space rules after posting.
+9. **Restart-safe:** research and render resume after a deploy; daily-cap pauses resume first (same as LongForm).
+10. **Fix now (part of this):** set existing countdown-made segments to the format's length, so #1 comes out ~10–12 min (the 2 made at 1.5 min would need a re-run: ~$0.25), and the "waiting" message names the reason.
+
+### Build order (each its own commit + test + live check, mobile-checked at 390 px)
+A. Segment length fix + clear waiting reason + real waiting line (items 3, 10). B. Project page parity (5, 6, 7, 9). C. Your countdowns batch actions (4). D. Checked & ranked topics + never-repeat (2). E. Automation card (1). F. Video/Drive/archive parity (8). G. Handbook v7 + RUNBOOK.
+
+### Decisions for the owner
+1. Automation stops **before render** (recommended, like LongForm) — or after step 2 (titles) so nothing is spent on segments until you've seen the list?
+2. Daily limit: **1 countdown a day** (recommended; ≈ $1–2/day) — or 1 every 2–3 days?
+3. Should countdown segments wait behind LongForm (recommended, today's behaviour) or alternate with it?
+4. #1 Top 15 horror: re-run The Ring and The Descent at the shorter length (~$0.25) so the video is ~10–12 min — or keep them long (≈ 30 min video)?
+5. Drive copies of countdowns: yes (recommended) / no.
