@@ -638,7 +638,8 @@ export type CountdownProject = {
   title: string;
   queue_item_id?: number | null;
   queue_status?: string | null;
-  review: { reviewed_at?: string | null; delete_after?: string | null };
+  review: { reviewed_at?: string | null; delete_after?: string | null; auto?: boolean; keyword?: string; keywords?: string[];
+            demand?: { overall?: number; monthly_searches?: number; growth_pct?: number } };
   created_at: string;
   updated_at: string;
   posters: string[];
@@ -647,19 +648,51 @@ export type CountdownProject = {
   segments_made: number;
   segments_total: number;
   est_minutes: number;
+  segment_minutes: number;
+  auto: boolean;
   cost_usd: number;
   has: { ranking: boolean; titles: boolean; segments: boolean; script: boolean; render: boolean };
   render?: {
     compilation_id: number; file: string; thumbnail: string; thumbnails: Record<string, string>;
     selected_thumbnail: string; chapters: { time_formatted: string; title: string }[];
-    seconds: number; minutes: number; rendered_at: string; thumb_v?: number;
+    seconds: number; minutes: number; rendered_at: string; thumb_v?: number; archived_at?: string;
+    drive?: { status?: string; error?: string | null; link?: string; saved_at?: string };
   } | null;
   // full view only
   ranking?: { entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
               why_now?: string; honorable_mentions?: string[] } | null;
   notes?: string | null;
-  script?: { title?: string; title_options?: string[]; intro?: string; outro?: string; thumbnail_text?: string } | null;
+  script?: { title?: string; title_options?: string[]; intro?: string; outro?: string; thumbnail_text?: string;
+             title_scores?: Record<string, any> } | null;
   segments?: CountdownSegment[];
+};
+
+export type CountdownCheck = { status: "pass" | "warn" | "fail"; why: string };
+export type CountdownTopic = {
+  sig: string; topic: string; keyword: string; group: "month" | "trend" | "evergreen"; why_now: string;
+  debate: number; best_format: string; sizes: number[]; score: number; pinned?: boolean;
+  titles: { title: string; year?: number; tmdb_id: number; media_type: string; poster?: string | null }[];
+  demand?: { overall: number; volume: number; competition: number; monthly_searches: number; growth_pct: number };
+  keywords?: string[];
+  checks: Record<string, CountdownCheck>;
+};
+export type CountdownTopics = {
+  built_at?: string | null; month?: string; topics: CountdownTopic[]; skipped: CountdownTopic[]; building: boolean; vidiq: boolean;
+  videos: { title: string; views?: number; breakout?: number; vph?: number; channel?: string; id?: string }[];
+};
+export type CountdownAuto = {
+  settings: { enabled: boolean; per_day: number; paused_until?: string | null };
+  state: { last_check_at?: string | null; last_result?: string | null;
+           last_started?: { countdown_id: number; topic: string; fmt: string; score: number; at: string } | null };
+  today: number;
+  next: { topic: string; fmt: string; score: number; sig: string; estimate_usd: number } | null;
+  waiting: string | null;
+  topics_built_at?: string | null;
+};
+export type VidIQStatus = {
+  configured: boolean; connected?: boolean; error?: string; last_error?: string | null;
+  settings: { enabled: boolean; daily_credits: number; monthly_credits: number; cache_hours: number };
+  usage: { today: number; month: number; calls_today: number };
 };
 
 export type CountdownTopicCandidate = {
@@ -1284,6 +1317,35 @@ export const api = {
     req<CountdownProject>(`/api/countdowns/${id}/archive`, { method: "PUT", headers: headers(), body: JSON.stringify({ on }) }),
   countdownDelete: (id: number) =>
     req<{ deleted: number }>(`/api/countdowns/${id}`, { method: "DELETE", headers: headers(false) }),
+  countdownAuto: () => req<CountdownAuto>("/api/countdowns/auto", { headers: headers(false) }),
+  countdownAutoSet: (patch: { enabled?: boolean; per_day?: number }) =>
+    req<CountdownAuto>("/api/countdowns/auto", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  countdownAutoPauseToday: (on: boolean) =>
+    req<CountdownAuto>("/api/countdowns/auto/pause-today", { method: "POST", headers: headers(), body: JSON.stringify({ on }) }),
+  countdownAutoSkipNext: () =>
+    req<CountdownAuto>("/api/countdowns/auto/skip-next", { method: "POST", headers: headers(false) }),
+  countdownTopicList: () => req<CountdownTopics>("/api/countdowns/topics", { headers: headers(false) }),
+  countdownTopicsRefresh: () =>
+    req<{ started: boolean }>("/api/countdowns/topics/refresh", { method: "POST", headers: headers(false) }),
+  countdownTopicMark: (sig: string, kind: "pinned" | "skipped", on: boolean) =>
+    req<CountdownTopics>(`/api/countdowns/topics/${encodeURIComponent(sig)}/mark`, { method: "PUT", headers: headers(), body: JSON.stringify({ kind, on }) }),
+  countdownTopicStart: (sig: string, fmt: string) =>
+    req<CountdownProject>("/api/countdowns/topics/start", { method: "POST", headers: headers(), body: JSON.stringify({ sig, fmt }) }),
+  countdownBatch: (action: string, ids: number[]) =>
+    req<{ results: { id: number; title?: string; ok: boolean; why?: string }[]; done: number }>("/api/countdowns/batch",
+      { method: "POST", headers: headers(), body: JSON.stringify({ action, ids }) }),
+  countdownResume: (id: number) => req<CountdownProject>(`/api/countdowns/${id}/resume`, { method: "POST", headers: headers(false) }),
+  countdownMoveUp: (id: number) => req<{ ok: boolean }>(`/api/countdowns/${id}/move-up`, { method: "POST", headers: headers(false) }),
+  countdownSettings: (id: number, patch: { segment_minutes?: number }) =>
+    req<CountdownProject>(`/api/countdowns/${id}/settings`, { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
+  countdownDrive: (id: number) => req<{ job_id: string | null }>(`/api/countdowns/${id}/drive`, { method: "POST", headers: headers(false) }),
+  countdownThumbRefresh: (id: number) =>
+    req<CountdownProject>(`/api/countdowns/${id}/thumbnails/refresh`, { method: "POST", headers: headers(false) }),
+  countdownScoreTitles: (id: number) =>
+    req<CountdownProject>(`/api/countdowns/${id}/titles/score`, { method: "POST", headers: headers(false) }),
+  countdownSuggestTitles: (id: number) =>
+    req<CountdownProject>(`/api/countdowns/${id}/titles/suggest`, { method: "POST", headers: headers(false) }),
+  vidiqStatus: () => req<VidIQStatus>("/api/vidiq/status", { headers: headers(false) }),
   countdownFileUrl: (id: number, path = "video", bust?: string | number) =>
     mediaUrl(`/api/countdowns/${id}/file?path=${encodeURIComponent(path)}${bust ? `&v=${bust}` : ""}`),
 

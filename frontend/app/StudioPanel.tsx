@@ -133,7 +133,7 @@ export function StudioPanel() {
   );
 }
 
-function KeyChips({ status }: { status: StudioStatus }) {
+export function KeyChips({ status }: { status: StudioStatus }) {
   const chip = (ok: boolean, label: string, missing: string) => (
     <span
       title={ok ? `${label} connected` : `${missing} is not set on the server (Railway)`}
@@ -319,7 +319,7 @@ function NewVideo({ status, onCreated }: { status: StudioStatus | null; onCreate
 }
 
 // --- one project ------------------------------------------------------------------
-function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus | null; onBack: () => void }) {
+export function ProjectView({ id, status, onBack, backLabel = "← All videos" }: { id: number; status: StudioStatus | null; onBack: () => void; backLabel?: string }) {
   const [p, setP] = useState<StudioProject | null>(null);
   const [err, setErr] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -381,7 +381,7 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ ...card, display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <button onClick={onBack} style={{ fontSize: 11 }}>← All videos</button>
+        <button onClick={onBack} style={{ fontSize: 11 }}>{backLabel}</button>
         {p.poster && <img src={p.poster.replace("/original/", "/w154/")} alt="" style={{ width: 70, borderRadius: 6 }} />}
         <div style={{ flex: 1, minWidth: 240 }}>
           <h1 style={{ margin: 0, fontSize: 18 }}>{p.title || `TMDB ${p.tmdb_id}`}</h1>
@@ -393,7 +393,9 @@ function ProjectView({ id, status, onBack }: { id: number; status: StudioStatus 
               onChange={async (e) => setP(await api.studioPatch(id, { target_minutes: Number(e.target.value) }))}
               style={{ width: "auto", padding: "1px 4px", fontSize: 11 }}
             >
-              {[2, 2.5, 3, 3.5, 4].map((m) => <option key={m} value={m}>{m} min</option>)}
+              {Array.from(new Set([2, 2.5, 3, 3.5, 4, p.target_minutes])).sort((a, b) => a - b).map((m) => (
+                <option key={m} value={m}>{m < 1 ? `${Math.round(m * 60)} s` : `${m} min`}</option>   // countdown segments are shorter
+              ))}
             </select>
           </div>
           <div style={{ marginTop: 6 }}>
@@ -1031,7 +1033,7 @@ function MotionPanel({ p }: { p: StudioProject }) {
 }
 
 /** The 14-day archive rule: switch, day count, and a dry-run preview. */
-function ArchiveRule() {
+export function ArchiveRule() {
   const [a, setA] = useState<StudioArchive | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
