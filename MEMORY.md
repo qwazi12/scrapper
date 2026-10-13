@@ -946,3 +946,45 @@ A. Segment length fix + clear waiting reason + real waiting line (items 3, 10). 
 3. Should countdown segments wait behind LongForm (recommended, today's behaviour) or alternate with it?
 4. #1 Top 15 horror: re-run The Ring and The Descent at the shorter length (~$0.25) so the video is ~10–12 min — or keep them long (≈ 30 min video)?
 5. Drive copies of countdowns: yes (recommended) / no.
+
+## PLAN v2 (for owner review — NOT approved yet) — 2026-10-13 — Countdowns Studio = LongForm Studio, for countdowns (+ vidIQ)
+Supersedes the earlier 2026-10-13 plan. Owner: "it should also auto generate the videos and await a user to approve the render just like how longform works. also the topic ideas should be fresh and updated and needs to work for Top 5 / Top 10 / Top 15 / Research & rank… i want count down to work like [LongForm Studio page pasted]… also connected vidIQ so we can use it to do more research and better seo."
+Answered by the owner: the automation makes everything up to the final video and **waits for the owner to approve the render** (LongForm rule).
+
+### The page, section by section (mirrors LongForm Studio top to bottom)
+1. **Header** — "🏆 Countdowns Studio · Top 5 / 10 / 15 countdowns (8–12 min): research → titles → segments → script → video → Countdowns queue" + status chips ● TMDB ● Gemini ● Voice ● vidIQ.
+2. **📦 Archive rule line** — same switch and days as LongForm (deletes working files N days after posting once the Drive copy is confirmed; video stays in Drive).
+3. **🤖 Countdown automation card** — identical layout to LongForm's:
+   ON/OFF · "Today: 1 of 1 started" · **Next:** the topic it will start (or exactly what it waits for, e.g. "Studio is busy with #49") · **Last started** · **Last check** · ⏭ Skip next pick · ⏸ Pause for today · Undo · **Per day** limit (default 1; counts manual countdowns too) · Save limits.
+   What it does by itself: picks the top topic → research (format from the topic, or a default Top 10) → **automatic title check** (non-titles swapped for honorable mentions or real TMDB titles; if it can't fill the list it stops at step 2 for you) → confirms titles → makes every segment (Studio's waiting line, after LongForm work) → fills the script (title, intro hook, closing question) → **stops before the final render: card "👀 Ready for your review"**. You review titles/script/segments, then press Render (or 🎞 Render selected). Budget check like LongForm: it only starts when the whole countdown's estimate fits today's cap (≈ $0.12 per segment + research: Top 5 ≈ $0.70, Top 10 ≈ $1.30, Top 15 ≈ $1.90).
+4. **Your countdowns (N)** — same as "Your videos": "👀 N ready for your review" / "📤 N rendered, not in the queue yet" lines; filters All · 🔥 Timely (topic tied to this week/month) · Needs review · Reviewed · Rendered · In queue · 🗄 Archived; Select all shown · 🎞 Render selected · 📤 Send to queue · 🗄 Archive · 🗑 Delete; each card: poster strip, title, step line ("3. Segments — 6 of 10", "4. Script — done"), spent $, 👀/📤 highlight, 🤖 auto, ▶ Resume, ⏫ Move up, 🗄 Archive, 🗑, ✓ Reviewed.
+5. **Start a new countdown** — same shape as "Start a new breakdown":
+   - **Topic box + Top 5 / Top 10 / Top 15 + Research & rank** (kept; the format chosen is the one used).
+   - Tabs: **🔥 Top topics (checked & ranked)** · **📅 This month** (topics built from this month's releases and streaming arrivals) · **Evergreen** — each topic card shows its best format and buttons **Top 5 · Top 10 · Top 15** (start it at that size), **+ Add to line**, **👁 Preview titles**, **⭐ Pin**, **✕ Skip**, and check chips: **New** (never made — never-repeat ledger), **Titles** (enough real TMDB titles with trailers for that size: 5/10/15 — a topic that can't fill a Top 15 doesn't offer it), **Demand** (vidIQ search volume/competition), **Timely**, **Debate**.
+   - **Fresh:** rebuilt automatically every 3 days and on ↻ Refresh; never shows a topic already made or skipped; "This month" rebuilds on the 1st.
+6. **Project page** — same as a breakdown's: header with Stop / Undo / Delete / segment length; step boxes with Run · Re-run · ↻ from here; "▶ Continue to review (from …)"; sections in LongForm order: **Video first** (player, 3 thumbnails + 🔄 Refresh Options, motion graphics, ☁️ Drive copy, Send to Countdowns queue), **Titles** (reorder/swap/remove/add), **Segments** (each opens the full breakdown editor — script with fact-check list, shot swap, re-render — with "← back to countdown"), **Script** (title options with vidIQ scores, intro hook, closing question, 🔊 voice preview, chapters).
+7. **Posting** — SocialPilot → 🏆 Countdowns queue (done) with its own ⏰ Schedule; Send = Ready to Post on Screen Central (LongForm rule).
+
+### Engine fixes included
+- Segments join **Studio's real waiting line** (no 5-minute gaps); the card names what it waits for.
+- Segment length follows the format (Top 5 1.6 min · Top 10 0.9 · Top 15 0.6) for every segment it made — fixes #1 Top 15 horror, whose segments were created at 1.5 min (≈ 30-min video).
+- Research and render are restart-safe and pause/resume on the daily cap, like LongForm.
+
+### vidIQ (checked 2026-10-13)
+- Status: **vidIQ is connected to your Claude account** (claude.ai connector, `https://mcp.vidiq.com/mcp` ✔). Its tools load in a new Claude Code session. I have not run any vidIQ tool (calls use credits).
+- vidIQ's MCP also accepts an **API key** (created on your vidIQ MCP settings page) — so the Scrapper server can use it, not just Claude. Credits: most research calls ≈ 5 credits, shared with your vidIQ AI balance.
+- Proposed use (server, all optional per switch, with a **daily credit cap**, cached, never blocking a video if vidIQ is down):
+  1. **Topic scoring** — search demand/competition for each topic idea (the Demand chip) and trending searches to seed fresh topics.
+  2. **SEO before posting** — vidIQ keywords + title scoring for countdown and LongForm titles/descriptions/tags (suggestions shown in the Script step; you pick).
+  3. Optional later: competitor countdown benchmarks for the topic.
+- Needs from you: create a vidIQ MCP API key and add it in Railway as `VIDIQ_API_KEY` (I never handle the key), and pick a daily credit cap (suggest 50 credits ≈ 10 calls/day).
+
+### Build order (one commit each, tested, checked live at 390 px)
+A. Engine fixes (waiting line, segment length, restart-safe, budget pause). B. Project page parity. C. Your countdowns parity (batch + filters + highlights). D. Start a new countdown: fresh checked & ranked topics with Top 5/10/15 per topic, never-repeat. E. Automation card (runs to "ready for review"). F. Video/Drive/archive parity. G. vidIQ client + Demand chip + SEO suggestions (after the key is in Railway). H. Handbook v7 + RUNBOOK.
+
+### Decisions still open
+1. Daily limit: **1 countdown a day** (recommended) or one every 2–3 days?
+2. Countdown segments wait behind LongForm work (recommended) or take turns?
+3. #1 Top 15 horror (4 of 15 made at the long length, $0.70 so far): stop it now and re-make the 4 at the right length (~$0.50), or keep long (~30 min video)?
+4. Drive copies of countdowns: yes (recommended)?
+5. vidIQ: use it on the server (create the API key) — and daily credit cap?
