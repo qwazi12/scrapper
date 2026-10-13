@@ -1,0 +1,89 @@
+"""vidIQ client: credit guard, cache, MCP parsing (no real calls)."""
+
+import json
+
+import httpx
+import pytest
+
+from backend.app import vidiq
+from backend.app.config import settings
+from backend.app.db import SessionLocal
+from backend.app.models import AppSetting
+
+
+class FakeResp:
+    def __init__(self, payload, sse=False, status=200, sid=None):
+        self.status_code = status
+        self.headers = {"content-type": "text/event-stream" if sse else "application/json"}
+        if sid:
+            self.headers["mcp-session-id"] = sid
+        self.text = ("event: message\ndata: " + json.dumps(payload)) if sse else json.dumps(payload)
+        self._p = payload
+
+    def json(self):
+        return self._p
+
+
+@pytest.fixture()
+def fake(monkeypatch):
+    monkeypatch.setattr(settings, "vidiq_api_key", "test-key")
+    with SessionLocal() as s:
+        for k in ("vidiq_settings", "vidiq_ledger", "vidiq_cache"):
+            row = s.get(AppSetting, k)
+            if row:
+                s.delete(row)
+        s.commit()
+    vidiq._session.update(id=None, at=0.0)
+    vidiq._state.update(down_until=0.0, last_error=None, tools=None, tools_at=0.0)
+    calls = []
+
+    def post(url, headers=None, json=None, timeout=None):
+        calls.append(json)
+        m = json["method"]
+        assert headers["Authorization"] == "Bearer test-key"
+        if m == "initialize":
+            return FakeResp({"jsonrpc": "2.0", "id": json["id"], "result": {"protocolVersion": "2025-06-18"}}, sid="S1")
+        if m == "notifications/initialized":
+            return FakeResp({}, status=202)
+        if m == "tools/list":
+            return FakeResp({"jsonrpc": "2.0", "id": json["id"], "result": {"tools": [
+                {"name": "keyword_research"}, {"name": "get_credit_balance"}]}}, sse=True)
+        if m == "tools/call":
+            return FakeResp({"jsonrpc": "2.0", "id": json["id"], "result": {
+                "content": [{"type": "text", "text": '{"volume": 9000}'}]}}, sse=True)
+        raise AssertionError(m)
+
+    monkeypatch.setattr(httpx, "post", post)
+    return calls
+
+
+def test_call_parses_sse_charges_credits_and_caches(fake):
+    assert vidiq.call("keyword_research", {"q": "horror movies"}) == {"volume": 9000}
+    assert vidiq.usage()["today"] == 5
+    assert vidiq.call("keyword_research", {"q": "horror movies"}) == {"volume": 9000}      # cached: no new call
+    assert sum(1 for c in fake if c["method"] == "tools/call") == 1 and vidiq.usage()["today"] == 5
+
+
+def test_free_tools_cost_nothing_and_daily_cap_blocks(fake):
+    vidiq.call("get_credit_balance", {}, cache_hours=0)
+    assert vidiq.usage()["today"] == 0
+    with SessionLocal() as s:
+        s.add(AppSetting(key="vidiq_settings", value={**vidiq.DEFAULTS, "daily_credits": 7}))
+        s.commit()
+    vidiq.call("keyword_research", {"q": "a"}, cache_hours=0)
+    with pytest.raises(vidiq.CreditCapReached):
+        vidiq.call("keyword_research", {"q": "b"}, cache_hours=0)
+    assert vidiq.safe("keyword_research", {"q": "c"}, cache_hours=0) is None
+
+
+def test_tools_list_and_find_tool(fake):
+    assert vidiq.find_tool("keyword") == "keyword_research"
+    assert vidiq.find_tool("nothing") is None
+
+
+def test_not_configured(monkeypatch):
+    monkeypatch.setattr(settings, "vidiq_api_key", "")
+    vidiq._state.update(down_until=0.0)
+    with pytest.raises(vidiq.VidIQError):
+        vidiq.call("keyword_research", {})
+    assert vidiq.status()["configured"] is False

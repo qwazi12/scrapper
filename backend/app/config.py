@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     # TMDB's default method; the v3 API key is the fallback. Railway names:
     # API_Read_Access_Token and TMDB_API_KEY.
     tmdb_api_key: str = ""
+    # vidIQ MCP API key (optional): topic demand, keywords, tags/descriptions, trends.
+    vidiq_api_key: str = ""
+    vidiq_mcp_url: str = "https://mcp.vidiq.com/mcp"
     # YouTube Data API v3 key: trailer view/like counts for ranking breakdown
     # candidates (read-only stats; downloads never go through it). Optional.
     youtube_api_key: str = ""

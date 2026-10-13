@@ -70,6 +70,8 @@ from .studio import batch as studio_batch  # noqa: E402,F401  (registers the ren
 app.include_router(studio_routes.router)
 from .studio import countdown as countdown_studio  # noqa: E402  (Countdowns Studio, 2026-10-12)
 app.include_router(countdown_studio.router)
+from . import vidiq  # noqa: E402  (vidIQ: topics, keywords, tags, trends — 2026-10-13)
+app.include_router(vidiq.router)
 
 
 @app.middleware("http")
