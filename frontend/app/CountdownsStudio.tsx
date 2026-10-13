@@ -112,6 +112,7 @@ export function CountdownsStudio() {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [vq, setVq] = useState<VidIQStatus | null>(null);
   const [err, setErr] = useState("");
+  const [lineV, setLineV] = useState(0);
 
   async function load() {
     try { setList(await api.countdowns()); setErr(""); } catch (e: any) { setErr(errText(e)); }
@@ -150,9 +151,9 @@ export function CountdownsStudio() {
       </div>
       <CountdownArchiveRule />
       {err && <div style={{ ...card, color: "var(--red)", fontSize: 12 }}>{err}</div>}
-      <AutomationCard onChange={load} />
+      <AutomationCard key={lineV} onChange={load} />
       <CountdownsList list={list} onOpen={setOpenId} onReload={load} />
-      <NewCountdown onCreated={(c) => setOpenId(c.id)} />
+      <NewCountdown onCreated={(c) => setOpenId(c.id)} onLined={() => setLineV((v) => v + 1)} />
     </div>
   );
 }
@@ -222,7 +223,7 @@ function AutomationCard({ onChange }: { onChange: () => void }) {
           <b>Next:</b>{" "}
           {!a.settings.enabled ? <span style={muted}>nothing — automation is off</span>
             : a.waiting ? <span style={{ color: "var(--yellow)" }}>waiting — {a.waiting}</span>
-            : a.next ? <>{a.next.topic} <span style={muted}>({FMT[a.next.fmt]}, score {a.next.score}, ~${a.next.estimate_usd.toFixed(2)}) at the next check (every 5 min)</span></>
+            : a.next ? <>{a.next.topic} <span style={muted}>({FMT[a.next.fmt]}{a.next.from_line ? ", from your line" : `, score ${a.next.score}`}, ~${a.next.estimate_usd.toFixed(2)}) at the next check (every 5 min)</span></>
             : <span style={{ color: "var(--yellow)" }}>no topic passes the checks — ↻ Refresh topics below</span>}
           {a.settings.enabled && a.waiting && a.next && <div style={muted}>Then: {a.next.topic} ({FMT[a.next.fmt]})</div>}
         </div>
@@ -246,6 +247,30 @@ function AutomationCard({ onChange }: { onChange: () => void }) {
           )}
         </div>
         <div style={muted}>Undo: switch it off — nothing new starts. A countdown already being made carries on; press ■ Stop on it to halt it.</div>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700 }}>Up next — your line ({a.line.length})</div>
+        {a.line.length === 0 ? (
+          <div style={muted}>Empty. Press “+ Add to line” on a topic (or next to Research &amp; rank) to have it made before the automation's own pick.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+            {a.line.map((it, i) => (
+              <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", background: "var(--row)", borderRadius: 6, padding: "4px 6px", fontSize: 12 }}>
+                <b style={{ color: "var(--accent)" }}>{i + 1}.</b>
+                <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}>{it.topic} <span style={muted}>· {FMT[it.fmt]}</span></span>
+                <button style={{ fontSize: 10, padding: "1px 6px" }} disabled={saving || i === 0} onClick={() => run(() => api.countdownLineUp(it.id))}>↑</button>
+                <button className="primary" style={{ fontSize: 10, padding: "1px 6px" }} disabled={saving} title="Start it now instead of waiting for the daily slot"
+                        onClick={async () => {
+                          if (!(await askConfirm(`Make "${it.topic}" now? It starts research right away (paid) and counts toward today's limit.`))) return;
+                          setSaving(true);
+                          try { const c = await api.countdownLineStart(it.id); notify(`✓ Started countdown #${c.id}.`); load(); onChange(); }
+                          catch (e: any) { notify(errText(e)); } finally { setSaving(false); }
+                        }}>▶ Make now</button>
+                <button className="danger" style={{ fontSize: 10, padding: "1px 6px" }} disabled={saving} onClick={() => run(() => api.countdownLineRemove(it.id))}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8, fontSize: 11 }}>
         <span style={muted}>Per day (counts countdowns you start too):</span>
@@ -409,7 +434,7 @@ async function deleteCountdown(c: CountdownProject): Promise<boolean> {
 }
 
 // --- start a new countdown (same shape as "Start a new breakdown") --------------------------------
-function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void }) {
+function NewCountdown({ onCreated, onLined }: { onCreated: (c: CountdownProject) => void; onLined: () => void }) {
   const [tab, setTab] = useState<"top" | "month" | "trend" | "evergreen" | "breakdowns">("top");
   const [topic, setTopic] = useState("");
   const [fmt, setFmt] = useState("top10");
@@ -420,6 +445,9 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
   const [mine, setMine] = useState<StudioProject[] | null>(null);
   const [picked, setPicked] = useState<number[]>([]);
   const [showOut, setShowOut] = useState(false);
+  const [picked1, setPicked1] = useState<CountdownTopic | null>(null);      // the topic the box was filled from
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const fromTopic = picked1 && picked1.topic === topic.trim() ? picked1 : null;
 
   const load = () => api.countdownTopicList().then((x) => { setD(x); setErr(""); }).catch((e) => setErr(errText(e)));
   useEffect(() => { load(); }, []);
@@ -435,11 +463,26 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
   async function research() {
     if (!topic.trim()) return setErr("Type a topic, e.g. “Top 10 horror movies on Netflix right now”.");
     setBusy(true); setErr("");
-    try { onCreated(await api.countdownCreate({ topic: topic.trim(), fmt, notes })); } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
+    try {
+      onCreated(fromTopic ? await api.countdownTopicStart(fromTopic.sig, fmt) : await api.countdownCreate({ topic: topic.trim(), fmt, notes }));
+    } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
   }
-  async function startTopic(t: CountdownTopic, f: string) {
+  async function addToLine(t?: CountdownTopic, f?: string) {
+    const name = t ? t.topic : topic.trim();
+    if (!name) return setErr("Type a topic (or pick one below) first.");
     setBusy(true); setErr("");
-    try { onCreated(await api.countdownTopicStart(t.sig, f)); } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
+    try {
+      const sig = t ? t.sig : fromTopic?.sig;
+      await api.countdownLineAdd({ topic: name, fmt: f || fmt, sig: sig || undefined, notes });
+      notify(`✓ Added to your line: “${name}” (${FMT[f || fmt]}). It's made before the automation's own pick.`);
+      if (!t || t.sig === fromTopic?.sig) { setTopic(""); setPicked1(null); }
+      onLined();
+      load();
+    } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
+  }
+  function pickTopic(t: CountdownTopic, f: string) {
+    setTopic(t.topic); setFmt(f); setPicked1(t); setErr("");
+    boxRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   async function mark(t: CountdownTopic, kind: "pinned" | "skipped", on: boolean) {
     try { setD(await api.countdownTopicMark(t.sig, kind, on)); } catch (e: any) { notify(errText(e)); }
@@ -452,7 +495,7 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
   }
   const topics = (d?.topics || []).filter((t) => tab === "top" || t.group === tab);
   return (
-    <div style={card}>
+    <div style={card} ref={boxRef}>
       <h2 style={h2}>Start a new countdown</h2>
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Type a topic, e.g. Top 10 horror movies on Netflix right now" style={{ flex: "1 1 220px", minWidth: 0 }} />
@@ -460,9 +503,13 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
       {tab !== "breakdowns" && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           {(["top5", "top10", "top15"] as const).map((f) => (
-            <button key={f} onClick={() => setFmt(f)} style={{ ...small, background: fmt === f ? "var(--chip)" : "transparent" }}>{FMT[f]}</button>
+            <button key={f} onClick={() => setFmt(f)} disabled={!!fromTopic && !fromTopic.sizes.includes(Number(f.slice(3)))}
+                    style={{ ...small, background: fmt === f ? "var(--chip)" : "transparent" }}>{FMT[f]}</button>
           ))}
-          <button className="primary" style={{ fontSize: 12 }} disabled={busy} onClick={research}>{busy ? "Starting…" : "Research & rank"}</button>
+          <button className="primary" style={{ fontSize: 12 }} disabled={busy} onClick={research} title="Start it now: research (one paid AI call), then you check the titles">
+            {busy ? "Starting…" : "Research & rank"}
+          </button>
+          <button style={{ fontSize: 12 }} disabled={busy} onClick={() => addToLine()} title="Have the automation make it next (within the daily limit)">+ Add to line</button>
           <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional: extra instructions (e.g. only 2010s films)" style={{ flex: "1 1 200px", minWidth: 0, fontSize: 11 }} />
         </div>
       )}
@@ -472,6 +519,15 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
           <button key={k} onClick={() => setTab(k)} style={{ fontSize: 11, padding: "3px 10px", background: tab === k ? "var(--chip)" : "transparent" }}>{label}</button>
         ))}
       </div>
+      {fromTopic && tab !== "breakdowns" && (
+        <div style={{ fontSize: 11, background: "var(--row)", borderRadius: 6, padding: "6px 8px", marginBottom: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ overflowWrap: "anywhere" }}>
+            From the topic list: its {fromTopic.titles.length} checked titles are used
+            {fromTopic.demand ? ` · vidIQ ${short(fromTopic.demand.monthly_searches)} searches/mo` : ""}. Nothing is spent until you press Research &amp; rank or + Add to line.
+          </span>
+          <button style={{ fontSize: 10, padding: "1px 6px" }} onClick={() => { setPicked1(null); setTopic(""); }}>✕ Clear</button>
+        </div>
+      )}
       {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
 
       {tab !== "breakdowns" && (
@@ -479,7 +535,7 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
             <span style={muted}>
               Fresh topics from this month's releases and what's breaking out on YouTube, each checked: real titles on TMDB (which of Top 5/10/15 it can fill),
-              search demand from vidIQ, timing and debate. Topics already made never come back. Rebuilt every 3 days and on the 1st —
+              searches per month from vidIQ (✓ at 20K+), timing and debate. Topics already made never come back. Rebuilt every day —
               updated {d?.built_at ? new Date(d.built_at).toLocaleString() : "never"}{d?.building ? " — rebuilding…" : ""}.
             </span>
             <button style={{ fontSize: 11, padding: "2px 8px" }} disabled={d?.building}
@@ -488,6 +544,11 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
           {tab === "trend" && (d?.videos || []).length > 0 && (
             <div style={{ ...muted, marginBottom: 8 }}>
               <b>Breaking out now:</b> {(d!.videos || []).slice(0, 6).map((v) => `“${v.title}” (${short(v.views)} views)`).join(" · ")}
+            </div>
+          )}
+          {tab === "trend" && (d?.rising || []).length > 0 && (
+            <div style={{ ...muted, marginBottom: 8, overflowWrap: "anywhere" }}>
+              <b>Rising searches this week:</b> {(d!.rising || []).slice(0, 10).map((r) => `“${r.keyword}” ${short(r.monthly_searches)}/mo (+${r.change_pct}%)`).join(" · ")}
             </div>
           )}
           {tab === "trend" && d?.asks && (
@@ -500,7 +561,8 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
             <div style={muted}>{d.building ? "Building the list…" : "Nothing here yet — ↻ Refresh topics."}</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 8 }}>
-              {topics.map((t) => <TopicCard key={t.sig} t={t} busy={busy} onStart={startTopic} onMark={mark} />)}
+              {topics.map((t) => <TopicCard key={t.sig} t={t} busy={busy} selected={fromTopic?.sig === t.sig} onPick={pickTopic}
+                                             onLine={(tt, f) => addToLine(tt, f)} onMark={mark} />)}
             </div>
           )}
           {(d?.skipped || []).length > 0 && (
@@ -545,14 +607,15 @@ function NewCountdown({ onCreated }: { onCreated: (c: CountdownProject) => void 
   );
 }
 
-function TopicCard({ t, busy, onStart, onMark }: {
-  t: CountdownTopic; busy: boolean; onStart: (t: CountdownTopic, fmt: string) => void; onMark: (t: CountdownTopic, k: "pinned" | "skipped", on: boolean) => void;
+function TopicCard({ t, busy, selected, onPick, onLine, onMark }: {
+  t: CountdownTopic; busy: boolean; selected: boolean; onPick: (t: CountdownTopic, fmt: string) => void;
+  onLine: (t: CountdownTopic, fmt: string) => void; onMark: (t: CountdownTopic, k: "pinned" | "skipped", on: boolean) => void;
 }) {
   const [preview, setPreview] = useState(false);
   const posters = t.titles.map((x) => x.poster).filter(Boolean) as string[];
   return (
     <div style={{ background: "var(--row)", borderRadius: 8, padding: 8, display: "flex", flexDirection: "column", gap: 4, minWidth: 0,
-                  border: t.pinned ? "1px solid var(--accent)" : "1px solid transparent" }}>
+                  border: selected ? "2px solid var(--accent)" : t.pinned ? "1px solid var(--accent)" : "1px solid transparent" }}>
       <div style={{ display: "flex", gap: 8, minWidth: 0 }}>
         <Posters urls={posters.slice(0, 3)} size={26} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -573,9 +636,11 @@ function TopicCard({ t, busy, onStart, onMark }: {
         {[5, 10, 15].map((n) => (
           <button key={n} className={t.sizes.includes(n) && `top${n}` === t.best_format ? "primary" : undefined}
                   style={tiny} disabled={busy || !t.sizes.includes(n)}
-                  title={t.sizes.includes(n) ? `Make a Top ${n} (research, then you check the titles)` : `Only ${t.titles.length} real titles found`}
-                  onClick={() => onStart(t, `top${n}`)}>Top {n}</button>
+                  title={t.sizes.includes(n) ? `Put it in “Start a new countdown” as a Top ${n} (nothing is spent yet)` : `Only ${t.titles.length} real titles found`}
+                  onClick={() => onPick(t, `top${n}`)}>Top {n}</button>
         ))}
+        <button style={tiny} disabled={busy} title="Have the automation make it next, at its best size"
+                onClick={() => onLine(t, t.sizes.includes(Number(t.best_format.slice(3))) ? t.best_format : `top${Math.max(...t.sizes)}`)}>+ Add to line</button>
         <button style={tiny} onClick={() => setPreview(!preview)}>{preview ? "Hide titles" : "👁 Preview titles"}</button>
         <button style={tiny} onClick={() => onMark(t, "pinned", !t.pinned)}>{t.pinned ? "Unpin" : "⭐ Pin"}</button>
         <button style={tiny} onClick={() => onMark(t, "skipped", true)}>✕ Skip</button>
@@ -799,6 +864,18 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
   return (
     <Part title={`2. Titles (${entries.length})${c.unmatched ? ` — ${c.unmatched} to fix` : ""}`} open={!c.has.render}>
       {c.ranking?.why_now && <div style={{ ...muted, marginBottom: 8 }}>Why now: {c.ranking.why_now}</div>}
+      {c.ranking?.market && (c.ranking.market.related?.length || c.ranking.market.competitors?.length) ? (
+        <details style={{ ...muted, marginBottom: 8 }}>
+          <summary style={{ cursor: "pointer" }}>
+            🔎 What people search (vidIQ){c.ranking.market.demand ? ` — “${c.ranking.market.keyword}” ${short(c.ranking.market.demand.monthly_searches)}/mo` : ""}
+          </summary>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4, overflowWrap: "anywhere" }}>
+            {!!c.ranking.market.related?.length && <div><b>Related searches:</b> {c.ranking.market.related.map((r) => `${r.keyword} (${short(r.monthly_searches)})`).join(" · ")}</div>}
+            {!!c.ranking.market.questions?.length && <div><b>People ask:</b> {c.ranking.market.questions.map((q) => q.question).join(" · ")}</div>}
+            {!!c.ranking.market.competitors?.length && <div><b>Top existing videos:</b> {c.ranking.market.competitors.map((v) => `“${v.title}” (${short(v.views)} views)`).join(" · ")}</div>}
+          </div>
+        </details>
+      ) : null}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {entries.map((e, i) => (
           <div key={`${e.rank}-${e.title}`} style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "var(--row)", borderRadius: 8, padding: 8, minWidth: 0,

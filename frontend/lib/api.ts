@@ -660,7 +660,10 @@ export type CountdownProject = {
   } | null;
   // full view only
   ranking?: { entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
-              why_now?: string; honorable_mentions?: string[] } | null;
+              why_now?: string; honorable_mentions?: string[];
+              market?: { keyword?: string; demand?: { monthly_searches: number; competition: number; growth_pct: number } | null;
+                         related?: { keyword: string; monthly_searches: number }[]; questions?: { question: string; monthly_searches: number }[];
+                         competitors?: { title: string; views?: number; channel?: string; published?: string; id?: string }[] } } | null;
   notes?: string | null;
   script?: { title?: string; title_options?: string[]; intro?: string; outro?: string; thumbnail_text?: string;
              title_scores?: Record<string, any> } | null;
@@ -680,14 +683,16 @@ export type CountdownTopics = {
   built_at?: string | null; month?: string; topics: CountdownTopic[]; skipped: CountdownTopic[]; building: boolean; vidiq: boolean;
   videos: { title: string; views?: number; breakout?: number; vph?: number; channel?: string; id?: string }[];
   asks?: string;
+  rising?: { keyword: string; monthly_searches: number; change_pct: number; category: string }[];
 };
 export type CountdownAuto = {
   settings: { enabled: boolean; per_day: number; paused_until?: string | null };
   state: { last_check_at?: string | null; last_result?: string | null;
            last_started?: { countdown_id: number; topic: string; fmt: string; score: number; at: string } | null };
   today: number;
-  next: { topic: string; fmt: string; score: number; sig: string; estimate_usd: number } | null;
+  next: { topic: string; fmt: string; score: number | null; sig: string; estimate_usd: number; from_line?: boolean } | null;
   waiting: string | null;
+  line: { id: string; topic: string; fmt: string; sig: string; from_topics: boolean; notes?: string; added_at: string }[];
   topics_built_at?: string | null;
 };
 export type VidIQStatus = {
@@ -1326,6 +1331,11 @@ export const api = {
   countdownAutoSkipNext: () =>
     req<CountdownAuto>("/api/countdowns/auto/skip-next", { method: "POST", headers: headers(false) }),
   countdownTopicList: () => req<CountdownTopics>("/api/countdowns/topics", { headers: headers(false) }),
+  countdownLineAdd: (data: { topic: string; fmt: string; sig?: string; notes?: string }) =>
+    req<CountdownAuto>("/api/countdowns/line", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  countdownLineRemove: (id: string) => req<CountdownAuto>(`/api/countdowns/line/${encodeURIComponent(id)}`, { method: "DELETE", headers: headers(false) }),
+  countdownLineUp: (id: string) => req<CountdownAuto>(`/api/countdowns/line/${encodeURIComponent(id)}/up`, { method: "POST", headers: headers(false) }),
+  countdownLineStart: (id: string) => req<CountdownProject>(`/api/countdowns/line/${encodeURIComponent(id)}/start`, { method: "POST", headers: headers(false) }),
   countdownTopicsRefresh: () =>
     req<{ started: boolean }>("/api/countdowns/topics/refresh", { method: "POST", headers: headers(false) }),
   countdownTopicMark: (sig: string, kind: "pinned" | "skipped", on: boolean) =>
