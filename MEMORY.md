@@ -99,6 +99,11 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Shorts (Movie Clips) posting cut to 2/day (owner)
+- Live config via PUT /api/schedule/config (undo snapshot taken by the route). Movie Clips: YT 09:00 + 16:20,
+  FB/IG 08:00 + 17:20 ET (kept the 1st and 3rd existing times). LongForm + Countdowns unchanged. Verified in
+  GET /api/schedule: Movie Clips 4 slots/day (2 YT + 2 FB/IG times), next 16:20 ET today. No code change.
+
 ### Log — 2026-10-14 — Gemini TTS verified live
 - 04:06 UTC: real interactions call (gemini-3.8-flash-tts, Charon, recap-host style) → 5.89 s WAV. VERIFIED.
 - Countdown #1 (Top 15 horror) render resumed after the cap reset and finished 04:04 UTC: 16.58 min,
