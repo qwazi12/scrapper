@@ -18,6 +18,7 @@ flash whoosh and the logo impact are synthesised here.
 
 from __future__ import annotations
 
+import functools
 import math
 import pathlib
 import random
@@ -36,6 +37,20 @@ WASHES = [(229, 9, 20), (255, 120, 0), (30, 90, 255), (140, 40, 220), (0, 170, 1
 RED = (196, 12, 22)
 A_END, B_END, C_END, D_END = 3.6, 4.4, 7.4, 9.4
 LENGTH = D_END
+# End-of-intro colours (owner, 2026-10-14: the dark-red-on-darker-red lock-up read muddy). The letters zoom in
+# on `bg` and hold there with the countdown title under them — no separate red plate any more.
+PALETTES = {
+    "crimson": {"bg": ((150, 10, 20), (22, 0, 4)), "extrude": ((70, 4, 8), (190, 20, 30)), "rim": (255, 255, 255),
+                "sub": (255, 255, 255), "rule": (255, 255, 255), "fill": 1.25},
+    "noir_gold": {"bg": ((46, 36, 18), (4, 4, 6)), "extrude": ((60, 40, 8), (190, 140, 40)), "rim": (250, 214, 120),
+                  "sub": (250, 214, 120), "rule": (250, 214, 120), "fill": 1.2},
+    "black_red": {"bg": ((70, 4, 10), (0, 0, 0)), "extrude": ((40, 0, 4), (160, 8, 18)), "rim": (255, 46, 56),
+                  "sub": (255, 255, 255), "rule": (229, 9, 20), "fill": 1.3},
+    "steel": {"bg": ((52, 58, 72), (8, 9, 13)), "extrude": ((30, 32, 40), (120, 126, 140)), "rim": (235, 238, 245),
+              "sub": (235, 238, 245), "rule": (229, 9, 20), "fill": 1.25},
+}
+PALETTE = "crimson"
+LIFT = 70          # the word sits this far above centre so the title fits under it
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
@@ -135,34 +150,61 @@ def _flash_frames(last: Image.Image) -> Iterable[Image.Image]:
         glow = glow.filter(ImageFilter.GaussianBlur(40 + 40 * e))
         frame = ImageChops.screen(last, glow)
         if t > 0.55:                                      # fade to the deep red the letters sit on
-            frame = Image.blend(frame, Image.new("RGB", (W, H), (60, 4, 8)), (t - 0.55) / 0.45)
+            frame = Image.blend(frame, _backdrop(W, H), (t - 0.55) / 0.45)
         yield frame
 
 
 # --- C + D: letters, then the lock-up ----------------------------------------------------------
+def _pal() -> dict:
+    return PALETTES.get(PALETTE, PALETTES["crimson"])
+
+
+def _backdrop(w: int, h: int) -> Image.Image:
+    """Radial glow from the palette's centre colour out to its edge colour."""
+    return _backdrop_for(w, h, PALETTE).copy()
+
+
+@functools.lru_cache(maxsize=8)
+def _backdrop_for(w: int, h: int, name: str) -> Image.Image:
+    centre, edge = PALETTES.get(name, PALETTES["crimson"])["bg"]
+    sw, sh = w // 8, h // 8
+    glow = Image.new("L", (sw, sh), 0)
+    ImageDraw.Draw(glow).ellipse((sw * 0.12, sh * 0.05, sw * 0.88, sh * 0.85), fill=255)   # behind the logo
+    glow = glow.filter(ImageFilter.GaussianBlur(sw // 9)).resize((w, h), Image.BILINEAR)
+    return Image.composite(Image.new("RGB", (w, h), centre), Image.new("RGB", (w, h), edge), glow)
+
+
 def _letters_layers(imgs: list[Image.Image], scale: int) -> tuple[Image.Image, Image.Image, Image.Image]:
     """At `scale`× resolution: the poster strip, the letter mask and the extruded-edge layer."""
+    pal = _pal()
     cw, ch = W * scale, H * scale
     font = _font(int(255 * scale))                        # fits the frame with a margin at the end
     text = "SCREEN CENTRAL"
     tmp = ImageDraw.Draw(Image.new("L", (10, 10)))
     x0, y0, x1, y1 = tmp.textbbox((0, 0), text, font=font)
     tw, th = x1 - x0, y1 - y0
-    ox, oy = (cw - tw) // 2 - x0, (ch - th) // 2 - y0
+    ox, oy = (cw - tw) // 2 - x0, (ch - th) // 2 - y0 - LIFT * scale
     mask = Image.new("L", (cw, ch), 0)
     ImageDraw.Draw(mask).text((ox, oy), text, font=font, fill=255)
     edge = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
     depth = int(28 * scale)
-    for i in range(depth, 0, -2):                         # extrusion: stacked darker reds down-right
-        shade = int(90 - 60 * i / depth)
-        layer = Image.new("RGBA", (cw, ch), (shade + 40, 6, 10, 255))
-        edge.paste(layer, (i, i), mask)
-    rim = mask.filter(ImageFilter.MaxFilter(5)).point(lambda v: 255 if v > 0 else 0)
+    dark, light = pal["extrude"]
+    for i in range(depth, 0, -2):                         # extrusion: dark at the back, lighter at the face
+        k = 1 - i / depth
+        col = tuple(int(dark[c] + (light[c] - dark[c]) * k) for c in range(3))
+        edge.paste(Image.new("RGBA", (cw, ch), (*col, 255)), (i, i), mask)
+    rim = mask.filter(ImageFilter.MaxFilter(7)).point(lambda v: 255 if v > 0 else 0)
     rim = ImageChops.subtract(rim, mask)
-    silver = Image.new("RGBA", (cw, ch), (225, 228, 235, 255))
-    edge.paste(silver, (0, 0), rim)
+    edge.paste(Image.new("RGBA", (cw, ch), (*pal["rim"], 255)), (0, 0), rim)
     strip_h = ch
-    tiles = [_wash(_cover(im, int(strip_h * 0.68), strip_h), WASHES[i % len(WASHES)], 0.25) for i, im in enumerate(imgs)]
+    # Posters inside the letters, lifted so dark posters still read, with a light sheen from the top
+    sheen = Image.linear_gradient("L").resize((int(strip_h * 0.68), strip_h)).point(lambda v: int(150 - v * 0.55))
+    face = Image.new("RGB", sheen.size, pal["rim"])
+    tiles = []
+    for i, im in enumerate(imgs):
+        t = ImageOps.autocontrast(_wash(_cover(im, int(strip_h * 0.68), strip_h), WASHES[i % len(WASHES)], 0.25), cutoff=1)
+        t = ImageEnhance.Brightness(t).enhance(pal["fill"])
+        tiles.append(Image.composite(face, t, sheen))
     strip = Image.new("RGB", (sum(t.width for t in tiles) * 2 + cw, strip_h), (40, 6, 8))
     x = 0
     while x < strip.width:
@@ -178,7 +220,7 @@ def _letters_frames(imgs: list[Image.Image]) -> Iterable[Image.Image]:
     scale = 2
     strip, mask, edge = _letters_layers(imgs, scale)
     cw, ch = W * scale, H * scale
-    bg = Image.new("RGB", (cw, ch), (50, 4, 8))
+    bg = _backdrop(cw, ch)
     n = round((C_END - B_END) * FPS)
     travel = max(1, strip.width - cw)
     for f in range(n):
@@ -192,54 +234,49 @@ def _letters_frames(imgs: list[Image.Image]) -> Iterable[Image.Image]:
         cx, cy = cw * (0.30 + 0.20 * _ease(t)), ch * 0.5
         box = (int(cx - vw / 2), int(cy - vh / 2), int(cx + vw / 2), int(cy + vh / 2))
         frame = full.crop(box).resize((W, H), Image.BILINEAR)
-        yield frame.rotate(-6 * (1 - _ease(t)), resample=Image.BILINEAR, fillcolor=(50, 4, 8))
+        yield frame.rotate(-6 * (1 - _ease(t)), resample=Image.BILINEAR, fillcolor=_pal()["bg"][1])
 
 
-def _lockup(subtitle: str) -> Image.Image:
-    img = Image.new("RGB", (W, H), RED)
-    glow = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(glow).ellipse((-300, -200, W + 300, H + 200), fill=255)
-    img = Image.composite(img, Image.new("RGB", (W, H), (70, 3, 8)), glow.filter(ImageFilter.GaussianBlur(260)))
-    d = ImageDraw.Draw(img)
-    f1 = _font(250)
-    a, b = "SCREEN", "CENTRAL"
-    wa = d.textlength(a, font=f1)
-    wb = d.textlength(b, font=f1)
-    gap = 40
-    total = wa + wb + gap + 80
-    x = (W - total) / 2
-    y = H / 2 - 190
-    # "SCREEN" in a red block with a silver frame (the Marvel-style plate), "CENTRAL" in silver
-    d.rectangle((x - 24, y - 6, x + wa + 44, y + 312), fill=(150, 8, 16), outline=(230, 232, 238), width=12)
-    d.text((x + 10, y), a, font=f1, fill=(255, 255, 255))
-    xb = x + wa + 60 + gap
-    d.text((xb + 6, y + 6), b, font=f1, fill=(90, 4, 10))
-    d.text((xb, y), b, font=f1, fill=(232, 234, 240))
-    d.line((xb, y + 318, xb + wb, y + 318), fill=(232, 234, 240), width=8)
-    if subtitle:
-        f2 = _font(64)
-        sub_txt = subtitle.upper()
-        while d.textlength(sub_txt, font=f2) > W - 200 and len(sub_txt) > 10:
-            sub_txt = sub_txt[:-4].rstrip() + "…"
-        sw = d.textlength(sub_txt, font=f2)
-        d.text(((W - sw) / 2, y + 370), sub_txt, font=f2, fill=(255, 225, 225))
-    return img
+def _subtitle_layer(subtitle: str) -> Image.Image:
+    """The countdown title under the held logo: spaced capitals between two short rules."""
+    pal = _pal()
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    if not subtitle:
+        return layer
+    d = ImageDraw.Draw(layer)
+    f2 = _font(62)
+    txt = subtitle.upper()
+    while d.textlength(txt, font=f2) > W - 420 and len(txt) > 10:
+        txt = txt[:-4].rstrip() + "…"
+    sw = d.textlength(txt, font=f2)
+    y = H / 2 + 215 - LIFT
+    d.text(((W - sw) / 2 + 3, y + 3), txt, font=f2, fill=(0, 0, 0, 160))
+    d.text(((W - sw) / 2, y), txt, font=f2, fill=(*pal["sub"], 255))
+    for x0, x1 in (((W - sw) / 2 - 150, (W - sw) / 2 - 30), ((W + sw) / 2 + 30, (W + sw) / 2 + 150)):
+        d.line((x0, y + 40, x1, y + 40), fill=(*pal["rule"], 255), width=6)
+    return layer
 
 
 def _lockup_frames(last: Image.Image, subtitle: str) -> Iterable[Image.Image]:
-    logo = _lockup(subtitle)
+    """Hold the finished letters (owner, 2026-10-14) and bring the title in underneath."""
+    sub = _subtitle_layer(subtitle)
     n = round((D_END - C_END) * FPS)
     for f in range(n):
         t = f / max(1, n - 1)
-        z = 1.0 + 0.04 * t
+        z = 1.0 + 0.03 * t                                # slow push-in on the held logo
         cw, ch = int(W / z), int(H / z)
-        frame = logo.crop(((W - cw) // 2, (H - ch) // 2, (W + cw) // 2, (H + ch) // 2)).resize((W, H), Image.BILINEAR)
-        if t < 0.25:
-            frame = Image.blend(last, frame, t / 0.25)
-        sx = int(-600 + (W + 1200) * min(1.0, t / 0.7))     # shine sweep
+        frame = last.crop(((W - cw) // 2, (H - ch) // 2, (W + cw) // 2, (H + ch) // 2)).resize((W, H), Image.BILINEAR)
+        sx = int(-600 + (W + 1200) * min(1.0, t / 0.6))     # shine sweep
         shine = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(shine).polygon([(sx, 0), (sx + 140, 0), (sx - 160, H), (sx - 300, H)], fill=70)
+        ImageDraw.Draw(shine).polygon([(sx, 0), (sx + 140, 0), (sx - 160, H), (sx - 300, H)], fill=55)
         frame = Image.composite(Image.new("RGB", (W, H), (255, 255, 255)), frame, shine.filter(ImageFilter.GaussianBlur(30)))
+        a = _ease((t - 0.08) / 0.35)                      # title fades and rises in
+        if a > 0:
+            lay = sub.copy()
+            lay.putalpha(lay.getchannel("A").point(lambda v: int(v * a)))
+            frame = frame.convert("RGBA")
+            frame.alpha_composite(lay, (0, int(24 * (1 - a))))
+            frame = frame.convert("RGB")
         yield frame
 
 

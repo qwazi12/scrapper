@@ -387,7 +387,7 @@ STEP 5 — OUTPUT JSON FORMAT ONLY (Do not wrap in markdown or explanation):
     "Catchy YouTube Title 3 (Under 60 chars)"
   ],
   "thumbnail_text": "3-4 word explosive thumbnail text (e.g. #1 WILL SHOCK YOU)",
-  "hook_script": "The exact script for the first 10-15 seconds that hooks the viewer, teases the #1 pick, and establishes the stakes.",
+  "hook_script": "The exact spoken cold open: ONE or TWO punchy sentences, at most 20 words (about 6-8 seconds), that hook the viewer and tease the #1 pick.",
   "entries": [
     {{
       "rank": {count},

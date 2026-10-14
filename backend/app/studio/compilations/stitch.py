@@ -139,10 +139,7 @@ def create_intro_clip(
     """Generate an energetic 15–22s Intro teaser clip with voiceover."""
     count = len(projects)
     script_text = custom_text or (
-        f"Welcome back to Screen Central! Today, we're breaking down the top {count} "
-        f"must-watch movies and shows. Every single entry on this list delivers an unforgettable experience. "
-        f"Make sure to stay tuned for our number one pick, because it completely steals the show. "
-        f"Let's dive right in!"
+        f"The top {count} must-watch picks, counted down. Stay for number one, it steals the show!"
     )
 
     work_dir = dest_mp4.parent / "_intro_work"
@@ -154,7 +151,8 @@ def create_intro_clip(
     tts.synth(script_text, voice_mp3)
     voice_dur = media.duration(voice_mp3)
 
-    intro_dur = max(voice_dur + 0.4, 12.0)        # 2026-10-14: was +1.2 s and 1 s pad — 2 s of dead air before the sting
+    # Owner (2026-10-14): ~20 s before the channel intro was too long — the hook runs only as long as its line.
+    intro_dur = voice_dur + 0.4
 
     # Pick top backdrops or posters for the intro montage
     slides = []
@@ -172,6 +170,7 @@ def create_intro_clip(
         Image.new("RGB", (W, H), (15, 15, 20)).save(slate)
         slides = [slate]
 
+    slides = slides[:max(1, int(intro_dur / 1.4))]     # a short hook: ~1.4 s a picture, not 15 flashes
     slide_dur = intro_dur / len(slides)
     slide_clips = []
     for idx, slide_path in enumerate(slides):
@@ -196,14 +195,13 @@ def create_intro_clip(
     media.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(video_track)])
 
     # Add text overlay and voiceover
-    title_upper = title.upper()
     media.run([
         "ffmpeg", "-v", "error", "-y",
         "-i", str(video_track),
         "-i", str(voice_mp3),
         "-filter_complex",
-        f"[0:v]drawtext=text='COUNTDOWN':fontcolor=white:fontsize=44:box=1:boxcolor=red@0.85:boxborderw=14:x=(w-text_w)/2:y=180,"
-        f"drawtext=text='{title_upper}':fontcolor=white:fontsize=52:x=(w-text_w)/2:y=270:shadowcolor=black:shadowx=3:shadowy=3[v];"
+        # Owner (2026-10-14): no "COUNTDOWN" / title text on the hook — not now, not ever.
+        f"[0:v]null[v];"
         f"[1:a]apad[a]",
         "-map", "[v]", "-map", "[a]",
         "-t", f"{intro_dur:.3f}",
