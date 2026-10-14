@@ -139,6 +139,12 @@ class Settings(BaseSettings):
     # Google Cloud Text-to-Speech API key (same one manhwa uses).
     tts_api_key: str = ""
     tts_voice: str = "en-US-Chirp3-HD-Charon"
+    # Narration for breakdowns + countdowns (owner, 2026-10-13): Gemini TTS, voice Charon, one style
+    # on every line. TTS_ENGINE=chirp switches back to the Chirp 3 HD voice above.
+    tts_engine: str = "gemini"
+    narration_tts_model: str = "gemini-3.8-flash-tts"
+    narration_voice: str = "Charon"
+    narration_style: str = "energetic, fast-paced YouTube recap host"
     studio_region: str = "US"            # release dates / calendar region
     studio_channel_name: str = "Screen Central"  # said in the closing call to action
     # Finished breakdowns are kept in a "LongForm Studio" Drive folder. A service

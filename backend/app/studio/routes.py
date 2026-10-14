@@ -17,7 +17,7 @@ from ..config import settings
 from ..db import get_session
 from ..models import StudioProject
 from .. import control, costs, undo
-from . import momentum, runner, tmdb
+from . import momentum, runner, tmdb, tts
 
 # What a Studio undo restores (text/plan level; footage and shots are files).
 UNDO_FIELDS = ["script", "plan", "render", "target_minutes"]
@@ -73,8 +73,8 @@ def status() -> dict[str, Any]:
     return {
         "tmdb": tmdb.configured(),
         "gemini": bool(settings.gemini_api_key),
-        "tts": bool(settings.tts_api_key),
-        "voice": settings.tts_voice,
+        "tts": tts.configured(),
+        "voice": tts.voice_label(),
         "region": settings.studio_region,
         "stages": runner.ORDER,
         "busy": runner.busy(),

@@ -316,6 +316,7 @@ def test_plan_voices_sentences_and_places_poster_on_release_line(monkeypatch, th
 
 def test_tts_requires_key_and_caches(monkeypatch, tmp_path):
     monkeypatch.setattr(tts.settings, "tts_api_key", "")
+    monkeypatch.setattr(tts.settings, "tts_engine", "chirp")       # the older Chirp voice path
     with pytest.raises(tts.TTSError, match="TTS_API_KEY"):
         tts.synth("A brand new sentence nobody voiced.", tmp_path / "a.mp3")
     assert tts.speakable('He said "run" — what the fuck') == "He said run — what the hell"

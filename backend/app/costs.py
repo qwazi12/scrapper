@@ -53,6 +53,9 @@ DEFAULTS: dict[str, Any] = {
         "gemini-3.7-flash": {"in": 0.75, "out": 3.75, "in_2027": 1.50, "out_2027": 7.50},
         "gemini-3.5-flash-lite": {"in": 0.30, "out": 2.50},
         "gemini-3.5-flash": {"in": 1.50, "out": 9.00},
+        # TTS: text in, audio out (25 audio tokens/s). ESTIMATE from Gemini's published Flash TTS
+        # rates — not confirmed for 3.8 (2026-10-13); correct it here if the bill differs.
+        "gemini-3.8-flash-tts": {"in": 0.50, "out": 10.0},
     },
     "grounding_free_per_month": 5000,
     "grounding_usd_per_1000": 14.0,
@@ -249,6 +252,19 @@ def record_gemini(model: str, usage: dict, grounded: bool = False, batch: bool =
     _record("gemini-batch" if batch else "gemini", cost, model=model, input_tokens=inp, output_tokens=out, requests=1)
     if grounded:
         _record("gemini-search", 0.0, model=model, requests=1)
+    return cost
+
+
+def record_gemini_tts(model: str, usage: dict, seconds: float, chars: int) -> float:
+    """Gemini text-to-speech: text tokens in, audio tokens out. Uses the response's token counts
+    when given; otherwise estimates (≈ 4 characters per text token, 25 audio tokens per second)."""
+    with SessionLocal() as s:
+        cfg = settings_dict(s)
+    p = cfg["gemini"].get(model) or DEFAULTS["gemini"].get(model) or {"in": 0.50, "out": 10.0}
+    inp = int(usage.get("input_tokens") or usage.get("promptTokenCount") or 0) or max(1, chars // 4)
+    out = int(usage.get("output_tokens") or usage.get("candidatesTokenCount") or 0) or int(seconds * 25)
+    cost = inp / 1e6 * p["in"] + out / 1e6 * p["out"]
+    _record("gemini-tts", cost, model=model, input_tokens=inp, output_tokens=out, chars=chars, requests=1)
     return cost
 
 
