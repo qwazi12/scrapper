@@ -445,6 +445,13 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
+- [PLAN 2026-10-14] (owner) 1) Per-platform CATCH-UP: a video skipped on a platform (slot belongs to other
+  platforms) waits for that platform's next slot instead of never going there. Slot planning becomes
+  platform-aware (a slot only takes a video that still owes one of its platforms); rows/files are kept until
+  every platform is done. 2) New staggered times (ET): FB/IG Shorts 8:00/11:00/15:00/19:00, LongForm
+  9:30/13:30/17:00/21:00, Countdowns 12:00; YT Shorts 9:00/17:00, LongForm 15:00/20:00, Countdowns 12:00.
+  3) Countdown #1: check + fix audio and the Screen Central intro, re-render for owner review (re-voice the
+  15 segments in Gemini Charon so the whole video uses one voice).
 1. Owner: add GitHub secret `VERCEL_API_TOKEN` (Vercel → Account Settings → Tokens) so pushes deploy the frontend again.
 2. Owner: move "LongForm Studio" Drive folder into a Shared Drive (robot as Content manager); Drive copies fail until then.
 3. Owner: switch on automation when ready; watch the first run (card shows next title and why it's waiting).
