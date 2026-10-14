@@ -99,6 +99,10 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Correction: Shorts 2/day on YouTube only (owner)
+- Owner meant YouTube only. Restored FB/IG Shorts to 08:00, 12:40, 17:20, 22:00 ET (and posts_per_day 4,
+  hours 9–20 as before); YouTube Shorts stays 09:00 + 16:20. Verified via GET /api/schedule. No code change.
+
 ### Log — 2026-10-14 — Shorts (Movie Clips) posting cut to 2/day (owner)
 - Live config via PUT /api/schedule/config (undo snapshot taken by the route). Movie Clips: YT 09:00 + 16:20,
   FB/IG 08:00 + 17:20 ET (kept the 1st and 3rd existing times). LongForm + Countdowns unchanged. Verified in
