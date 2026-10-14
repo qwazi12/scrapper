@@ -698,6 +698,56 @@ def blocked_accounts(accounts: list[str] | None) -> list[str]:
     return [a for a in (accounts or []) if str(a).split(":", 1)[0].strip() in BLOCKED_PROFILES]
 
 
+# Default "Posts To" (owner, 2026-10-14): every connected Upload-Post profile except blocked ones
+# (today "Cinama:*" — YouTube, Facebook, Instagram). New rows get it, and the scheduler fills any row
+# left with no destination or only disconnected profiles (the old "default" profile is gone).
+DEST_TTL = 600
+_dest_cache: dict[str, Any] = {"at": 0.0, "profiles": None}
+
+
+def connected_profiles() -> list[str] | None:
+    """Connected, non-blocked profiles (cached 10 min). None if Upload-Post can't be reached."""
+    now = time.monotonic()
+    if _dest_cache["profiles"] is not None and now - _dest_cache["at"] < DEST_TTL:
+        return _dest_cache["profiles"]
+    try:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(1) as ex:      # works inside or outside an event loop
+            accs = ex.submit(asyncio.run, upload_post.list_accounts()).result(timeout=30)
+    except Exception as exc:  # noqa: BLE001 — keep the last known list
+        logger.warning("Upload-Post accounts unavailable: %s", exc)
+        return _dest_cache["profiles"]
+    profiles = sorted({a["profile"] for a in accs if a.get("profile") and a["profile"] not in BLOCKED_PROFILES})
+    _dest_cache.update(at=now, profiles=profiles)
+    return profiles
+
+
+def default_destination(fallback: list[str] | None = None) -> list[str]:
+    profiles = connected_profiles()
+    return [f"{p}:*" for p in profiles] if profiles else list(fallback or [])
+
+
+def fill_destinations(s: Session) -> int:
+    """Rows waiting to post with no destination (or only disconnected profiles) get the default."""
+    profiles = connected_profiles()
+    if not profiles:
+        return 0
+    dest = [f"{p}:*" for p in profiles]
+    changed = 0
+    for it in s.query(QueueItem).filter(QueueItem.status.in_(["review", "ready", "retry"])).all():
+        accs = list(it.accounts or [])
+        live = [a for a in accs if str(a).partition(":")[0] in profiles]
+        if accs and live == accs:
+            continue
+        it.accounts = live or dest
+        changed += 1
+    if changed:
+        s.commit()
+        logbus.log("info", "queue_destination_filled",
+                   f"{changed} queued video(s) set to post to {', '.join(dest)} (no destination or a disconnected profile)")
+    return changed
+
+
 def archive_posted_rows(s: Session) -> int:
     """Startup: rows confirmed posted before 2026-10-04 move to the Posted Archive
     too (posting now archives directly). published_at — the clean-up clock — stays."""
@@ -1056,6 +1106,10 @@ def run_scheduler_tick():
     with SessionLocal() as s:
         load_schedule(s)  # pick up changes made on the Settings page
         reconcile_posting(s, now)
+        try:
+            fill_destinations(s)
+        except Exception as exc:
+            logger.error("Error filling queue destinations: %s", exc)
         plan_schedule(s, now)
 
         due = (

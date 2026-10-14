@@ -534,16 +534,17 @@ def publish(s, c: CountdownProject) -> QueueItem:
                   video_path=c.render["file"], thumb_path=c.render.get("thumbnail"), title=(sc.get("title") or c.topic)[:100],
                   description=engine.countdown_description(ranking, entries, lines), tags=tags[:500],
                   research={"countdown_id": c.id, "chapters": c.render.get("chapters")})
+    from ..social import queue_manager
     item = s.get(QueueItem, c.queue_item_id) if c.queue_item_id else None
     if item and item.status in ("review", "ready", "retry", "error"):
         undo.record(s, "queue", f"Update countdown '{c.topic[:40]}'", rows=[item])
         for k, v in fields.items():
             setattr(item, k, v)
         if not item.accounts:
-            item.accounts = list(DESTINATION)
+            item.accounts = queue_manager.default_destination(DESTINATION)
         item.status = "ready"
     else:
-        item = QueueItem(**fields, status="ready", accounts=list(DESTINATION),
+        item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(DESTINATION),
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
         s.add(item)
         s.flush()

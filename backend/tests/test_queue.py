@@ -1103,3 +1103,32 @@ def test_startup_backfill_sends_skipped_platforms_later(session):
     assert it.status == "ready" and it.accounts == ["default:youtube"] and it.published_at is None
     assert it.catchup["done"] == [["default:facebook", "https://fb/9"]]
     assert qm.start_catchup_backfill(session, et(2026, 10, 14, 12)) == 0      # once only
+
+
+# --- default "Posts To" (owner, 2026-10-14) ----------------------------------
+def test_rows_without_a_live_destination_get_the_connected_profiles(session, monkeypatch):
+    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama"])
+    (empty,) = add(session, 1, accounts=[])
+    (dead,) = add(session, 1, accounts=["default:*"])                         # profile no longer exists
+    (mixed,) = add(session, 1, accounts=["default:*", "Cinama:youtube"])
+    (mine,) = add(session, 1, accounts=["Cinama:facebook"])                   # owner's own pick stays
+    (done,) = add(session, 1, status="archived", accounts=[])
+    assert qm.fill_destinations(session) == 3
+    assert empty.accounts == ["Cinama:*"] and dead.accounts == ["Cinama:*"]
+    assert mixed.accounts == ["Cinama:youtube"] and mine.accounts == ["Cinama:facebook"]
+    assert done.accounts == []
+
+
+def test_default_destination_skips_blocked_profiles_and_falls_back(monkeypatch):
+    async def accounts():
+        return [{"id": "mk:youtube", "profile": "mk"}, {"id": "Cinama:youtube", "profile": "Cinama"},
+                {"id": "Cinama:instagram", "profile": "Cinama"}]
+    monkeypatch.setattr(qm.upload_post, "list_accounts", accounts)
+    monkeypatch.setattr(qm, "_dest_cache", {"at": 0.0, "profiles": None})
+    assert qm.default_destination() == ["Cinama:*"]
+
+    async def down():
+        raise RuntimeError("Upload-Post down")
+    monkeypatch.setattr(qm.upload_post, "list_accounts", down)
+    monkeypatch.setattr(qm, "_dest_cache", {"at": 0.0, "profiles": None})
+    assert qm.default_destination(["x:*"]) == ["x:*"]

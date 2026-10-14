@@ -28,6 +28,13 @@ LOCAL_KEY_CANDIDATES = [
 DEFAULT_PARENT_FOLDER = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo"  # Movie Clips
 
 
+def _default_destination() -> list:
+    """The connected Upload-Post channels new Shorts post to (empty if Upload-Post is unreachable;
+    the scheduler fills it in later)."""
+    from .social import queue_manager
+    return queue_manager.default_destination()
+
+
 def extract_folder_id(url_or_id: str) -> str:
     """Extract folder ID whether user passed full URL or bare ID."""
     raw = (url_or_id or "").strip()
@@ -321,6 +328,7 @@ def sync_drive_to_queue(
                   tags=tags,
                   status=item_status,
                   position=next_position,
+                  accounts=_default_destination(),   # owner (2026-10-14): new Shorts post to the connected channels
               )
               db_session.add(new_item)
               new_rows.append(new_item)
@@ -463,6 +471,7 @@ def ingest_channel_to_drive(
                 description=title,
                 tags=tags,
                 status=item_status,
+                accounts=_default_destination(),
             )
             db_session.add(item)
             db_session.commit()  # per file: a Stop never leaves a Drive upload without its queue row

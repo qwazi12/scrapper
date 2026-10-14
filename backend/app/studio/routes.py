@@ -553,18 +553,19 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
             "source": f"https://www.themoviedb.org/{p.media_type}/{p.tmdb_id}",
         },
     )
+    from ..social import queue_manager
     item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
     if item and item.status in ("review", "ready", "retry", "error"):
         undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
         for k, v in fields.items():          # re-publishing a re-render updates the same row
             setattr(item, k, v)
         if not item.accounts:
-            item.accounts = list(LONGFORM_DESTINATION)
+            item.accounts = queue_manager.default_destination(LONGFORM_DESTINATION)
         item.status = "ready"
     else:
         # Owner (2026-10-04): a sent breakdown is approved by sending it — straight to
         # Ready to Post on profile "default" (Screen Central), next LongForm slot.
-        item = QueueItem(**fields, status="ready", accounts=list(LONGFORM_DESTINATION),
+        item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(LONGFORM_DESTINATION),
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
         s.add(item)
         s.flush()
