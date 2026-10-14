@@ -99,6 +99,16 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Posts To defaults to Cinama; Charon voice everywhere (bff9cfb, dbacf4d, 98e87e5)
+- Cause: Drive Shorts were imported with no accounts; LongForm/Countdowns/compilations hard-coded "default:*"
+  (profile gone; connected = Cinama yt/fb/ig, mk blocked). queue_manager.default_destination()/fill_destinations():
+  connected non-blocked profiles ("Cinama:*"), used at creation + every scheduler tick. VERIFIED live: 659 ready
+  rows, 0 on "default", 0 empty; sweep fixed 1 row at 23:44 UTC.
+- Voice: Voice Studio, hook voice-overs, TTS check default to Charon + "energetic, fast-paced YouTube recap host"
+  (were Puck). Live /api/tts default_voice = Charon; narration = gemini-3.8-flash-tts · Charon.
+- Countdown #1 re-rendered (16.48 min): no 3 s gaps left (~1 s breaths), -13.9 LUFS, intro verified visually
+  (no hook text, crimson held logo + title, "RELEASED 2002"). Hook→intro trimmed further in dbacf4d (not re-rendered).
+
 ### Log — 2026-10-14 — LongForm freshness rule confirmed (owner)
 - Owner: no content from before Oct 2026, BUT a show with a new season airing now is acceptable.
   candidates.check already does this (movies: US release current month → ≤15 d ago / ≤90 d ahead; TV: an
@@ -478,7 +488,7 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
-- [PLAN 2026-10-14c] (owner) Queued videos must get the connected channels automatically. Causes: Drive-imported
+- [DONE 2026-10-14c bff9cfb/dbacf4d] Queued videos must get the connected channels automatically. Causes: Drive-imported
   Shorts are created with no accounts; LongForm/Countdowns/compilations hard-code profile "default:*", which no
   longer exists (connected: Cinama yt/fb/ig; mk blocked). Fix: default destination = every connected, non-blocked
   Upload-Post profile ("Cinama:*"), cached; used at creation and by a scheduler sweep that fills rows with no
