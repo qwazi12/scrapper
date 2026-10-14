@@ -254,7 +254,13 @@ def _sound(dest: pathlib.Path) -> pathlib.Path:
         "sine=f=48:r=48000:d=2.2,afade=t=out:st=0.05:d=2.1,volume=2.5[bo];"
         "anoisesrc=d=0.4:c=brown:r=48000:a=0.6,lowpass=f=300,afade=t=out:d=0.4[hit];"
         f"[bo][hit]amix=inputs=2:normalize=0,adelay={int(C_END * 1000)}|{int(C_END * 1000)}[im];"
-        f"[fl][wh][im]amix=inputs=3:normalize=0:duration=longest,apad,atrim=0:{LENGTH},"
+        # Riser under the letter zoom (2026-10-14: phase C was 3 s of silence): rising tone + air into the impact.
+        f"aevalsrc='0.35*sin(2*PI*(70*t+45*t*t))':d={C_END - B_END}:s=48000,"
+        f"afade=t=in:d=0.8[rt];"
+        f"anoisesrc=d={C_END - B_END}:c=pink:r=48000:a=0.4,highpass=f=500,"
+        f"afade=t=in:d=0.8,volume='min(1,0.35+0.65*t/{C_END - B_END})':eval=frame[ra];"
+        f"[rt][ra]amix=inputs=2:normalize=0,adelay={int(B_END * 1000)}|{int(B_END * 1000)},volume=0.6[ri];"
+        f"[fl][wh][im][ri]amix=inputs=4:normalize=0:duration=longest,apad,atrim=0:{LENGTH},"
         "aformat=sample_fmts=fltp:channel_layouts=stereo,loudnorm=I=-16:TP=-2[a]"
     )
     media.run(["ffmpeg", "-v", "error", "-y", *flips, "-filter_complex", graph, "-map", "[a]",

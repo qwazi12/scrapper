@@ -104,6 +104,20 @@ def uniform_audio(src: pathlib.Path, dst: pathlib.Path, keep: float | None = Non
     return dst
 
 
+def voice_bumper(video: pathlib.Path, voice: pathlib.Path, dur: float) -> pathlib.Path:
+    """Put a whoosh and the narrator's "Number N. Title." under a silent #N card."""
+    out = video.with_name(video.stem + "_v.mp4")
+    graph = ("anoisesrc=d=0.7:c=pink:r=48000:a=0.5,bandpass=f=1500:w=1200,afade=t=in:d=0.3,"
+             "afade=t=out:st=0.3:d=0.4,volume=0.6,aformat=sample_fmts=fltp:channel_layouts=stereo[wh];"
+             "[1:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=350|350[vo];"
+             f"[wh][vo]amix=inputs=2:normalize=0:duration=longest,apad,atrim=0:{dur:.3f}[a]")
+    media.run(["ffmpeg", "-v", "error", "-y", "-i", str(video), "-i", str(voice), "-filter_complex", graph,
+               "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+               "-ar", str(AUDIO_RATE), "-ac", "2", "-t", f"{dur:.3f}", str(out)])
+    video.unlink(missing_ok=True)
+    return out
+
+
 def _format_time(seconds: float) -> str:
     m = int(seconds) // 60
     s = int(seconds) % 60
@@ -140,7 +154,7 @@ def create_intro_clip(
     tts.synth(script_text, voice_mp3)
     voice_dur = media.duration(voice_mp3)
 
-    intro_dur = max(voice_dur + 1.2, 12.0)
+    intro_dur = max(voice_dur + 0.4, 12.0)        # 2026-10-14: was +1.2 s and 1 s pad — 2 s of dead air before the sting
 
     # Pick top backdrops or posters for the intro montage
     slides = []
@@ -190,7 +204,7 @@ def create_intro_clip(
         "-filter_complex",
         f"[0:v]drawtext=text='COUNTDOWN':fontcolor=white:fontsize=44:box=1:boxcolor=red@0.85:boxborderw=14:x=(w-text_w)/2:y=180,"
         f"drawtext=text='{title_upper}':fontcolor=white:fontsize=52:x=(w-text_w)/2:y=270:shadowcolor=black:shadowx=3:shadowy=3[v];"
-        f"[1:a]apad=pad_dur=1.0[a]",
+        f"[1:a]apad[a]",
         "-map", "[v]", "-map", "[a]",
         "-t", f"{intro_dur:.3f}",
         "-c:a", "aac", "-b:a", "192k",
@@ -476,10 +490,16 @@ def stitch_countdown_compilation(
                 badge = f"RELEASING {rel['date'][:4]}"
         if not badge and p.facts.get("primary_date"):
             badge = f"RELEASE: {p.facts['primary_date'][:4]}"
+        if badge.startswith("RELEASING ") and badge[10:].isdigit() and int(badge[10:]) < datetime.date.today().year:
+            badge = f"RELEASED {badge[10:]}"         # 2026-10-14: "RELEASING 2002" on The Ring
 
-        # Render countdown bumper clip
+        # Render countdown bumper clip — with the narrator calling the entry (was 2.5 s of silence)
         bumper_mp4 = segs_dir / f"{idx + 1:02d}_bumper_{rank}.mp4"
-        bumper.render_bumper_clip(rank, p.title, bumper_mp4, badge=badge, backdrop=backdrop_path, duration=2.5)
+        call_mp3 = segs_dir / f"{idx + 1:02d}_call_{rank}.mp3"
+        tts.synth(f"Number {rank}. {p.title}.", call_mp3)
+        bumper_dur = max(2.5, media.duration(call_mp3) + 0.8)
+        bumper.render_bumper_clip(rank, p.title, bumper_mp4, badge=badge, backdrop=backdrop_path, duration=bumper_dur)
+        bumper_mp4 = voice_bumper(bumper_mp4, call_mp3, bumper_dur)
         ordered_segments.append(bumper_mp4)
 
         # Record chapter start at the bumper
@@ -489,7 +509,7 @@ def stitch_countdown_compilation(
             "title": f"#{rank}: {p.title}",
             "project_id": p.id,
         })
-        cur_time += 2.5
+        cur_time += bumper_dur
 
         # Item video segment
         p_video = resolve_project_render(p.id, p.render)
