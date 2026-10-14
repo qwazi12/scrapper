@@ -463,6 +463,10 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
+- [PLAN 2026-10-14b] (owner, screenshots) Countdown intro: 1) remove the "COUNTDOWN" + title text from the
+  hook — never on screen again; 2) end of the Screen Central intro: hold the textured SCREEN CENTRAL letters and
+  add the subtitle under them, with better colours (show owner options before building); 3) hook ~20 s → short
+  (~6–8 s) so the channel intro comes sooner.
 - [DONE 2026-10-14, see log] 1) Per-platform CATCH-UP: a video skipped on a platform (slot belongs to other
   platforms) waits for that platform's next slot instead of never going there. Slot planning becomes
   platform-aware (a slot only takes a video that still owes one of its platforms); rows/files are kept until
