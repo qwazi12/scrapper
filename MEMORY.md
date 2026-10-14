@@ -478,6 +478,11 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
+- [PLAN 2026-10-14c] (owner) Queued videos must get the connected channels automatically. Causes: Drive-imported
+  Shorts are created with no accounts; LongForm/Countdowns/compilations hard-code profile "default:*", which no
+  longer exists (connected: Cinama yt/fb/ig; mk blocked). Fix: default destination = every connected, non-blocked
+  Upload-Post profile ("Cinama:*"), cached; used at creation and by a scheduler sweep that fills rows with no
+  accounts or only disconnected profiles. Also trim the 1.2 s gap between hook and sting.
 - [DONE 2026-10-14b ca8d875, palette pick pending] Countdown intro: 1) remove the "COUNTDOWN" + title text from the
   hook — never on screen again; 2) end of the Screen Central intro: hold the textured SCREEN CENTRAL letters and
   add the subtitle under them, with better colours (show owner options before building); 3) hook ~20 s → short
