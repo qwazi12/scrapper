@@ -132,3 +132,26 @@ def test_trailing_silence_finds_the_end_screen(tmp_path):
                     "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-af", "apad", "-t", "10",
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(f)], check=True)
     assert 3.5 < stitch.trailing_silence(f) < 4.5          # 6 s of sound, 4 s silent tail
+
+
+def test_screen_central_intro_renders_with_sound(tmp_path, monkeypatch):
+    """The studio-logo intro (owner, 2026-10-13): right length, video + 48 kHz stereo sound."""
+    import json
+    import subprocess
+    from PIL import Image
+    from backend.app.studio.compilations import sting
+    monkeypatch.setattr(sting, "W", 480)
+    monkeypatch.setattr(sting, "H", 270)
+    posters = []
+    for i, c in enumerate([(200, 30, 30), (30, 60, 200), (40, 160, 60)]):
+        p = tmp_path / f"p{i}.jpg"
+        Image.new("RGB", (300, 450), c).save(p)
+        posters.append(p)
+    out, secs = sting.make_sting(posters, ["Alien", "The Thing", "Psycho"], "Top 3 · Test", tmp_path / "s.mp4",
+                                 ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-r", "30"],
+                                 "format=yuv420p")
+    probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,sample_rate,channels,duration",
+                                       "-of", "json", str(out)], capture_output=True, text=True).stdout)
+    st = {s["codec_type"]: s for s in probe["streams"]}
+    assert secs == sting.LENGTH and abs(float(st["video"]["duration"]) - sting.LENGTH) < 0.2
+    assert st["audio"]["sample_rate"] == "48000" and st["audio"]["channels"] == 2

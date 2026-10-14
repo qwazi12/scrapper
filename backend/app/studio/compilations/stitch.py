@@ -441,6 +441,20 @@ def stitch_countdown_compilation(
     ]
     cur_time = intro_dur
 
+    # Screen Central studio-logo intro (owner, 2026-10-13): after the hook (cold open), before #N.
+    from . import sting
+    control.progress("Screen Central intro")
+    art: list[pathlib.Path] = []
+    for p in projects:
+        local = (p.facts or {}).get("local") or {}
+        for path in [local.get("poster"), *(local.get("backdrops") or [])[:1]]:
+            if path and pathlib.Path(path).exists():
+                art.append(pathlib.Path(path))
+    sting_path, sting_dur = sting.make_sting(art, [p.title for p in projects], title,
+                                             segs_dir / "00b_sting.mp4", ENC, NORM)
+    ordered_segments.append(sting_path)
+    cur_time += sting_dur
+
     # 2. Generate Bumpers & Collect Video Segments
     # projects list is ordered lowest rank (#5 / #10) to #1!
     total_count = len(projects)
