@@ -99,6 +99,13 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Countdown line visible where you add to it
+- Owner's 3 "+ Add to line" topics were safe in countdown_line (1. Top 15 Modern Scary Movies of the 2020s,
+  2. Top 10 1980s Horror, 3. Top 10 Claustrophobic Survival Thrillers); they leave the topic list by design
+  but the line only showed in the automation card. New YourLine box in "Start a new countdown" shows the order
+  and when #1 starts. Automation ON 1/day, waiting on countdown #5 (5/10 segments; Studio busy with LongForm).
+  Frontend type-checked; not visually verified on a phone.
+
 ### Log — 2026-10-14 — Posts To defaults to Cinama; Charon voice everywhere (bff9cfb, dbacf4d, 98e87e5)
 - Cause: Drive Shorts were imported with no accounts; LongForm/Countdowns/compilations hard-coded "default:*"
   (profile gone; connected = Cinama yt/fb/ig, mk blocked). queue_manager.default_destination()/fill_destinations():
