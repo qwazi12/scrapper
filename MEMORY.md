@@ -99,6 +99,24 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Catch-up posting, staggered times, countdown dead-air fix (486ea83, 15f5559)
+- Schedule (live config, verified via GET /api/schedule), ET: Shorts YT 09:00/17:00, FB+IG 08:00/11:00/15:00/19:00;
+  LongForm YT 15:00/20:00, FB+IG 09:30/13:30/17:00/21:00; Countdowns 12:00 all three. No two queues share a time.
+- Catch-up (486ea83): QueueItem.catchup JSON {slots, done}. plan_schedule is platform-aware when a queue has
+  per-platform times (fits_slot): a slot only takes a video that still owes one of its platforms. apply_result:
+  skipped platforms → back to Ready with accounts = skipped, links kept; archives when every platform is done.
+  Used slots remembered (slot_used / posted_today) so a slot is never handed out twice. Startup backfill
+  re-queues archived rows that had skipped platforms (today: #514, #734, #678, #736 and any since 10-13).
+  NOTE: YouTube has 2 slots/day per queue vs 4 on FB/IG, so the YouTube catch-up line grows ~2/day per queue;
+  videos reach YouTube in order, later and later. Owner decision pending: cap the wait or accept.
+  Tests 296 passed; planning 650 items ≈0.15 s.
+- Countdown #1 review (downloaded the 16.6 min render): loudness even (≈-14 LUFS) but dead air: 3 s at every
+  #N card (silent 2.5 s bumper + tail) ×15, 3 s silent during the sting's letter zoom, ~2 s after the hook.
+  15f5559: voiced #N cards ("Number N. Title." Gemini Charon over a whoosh), riser under the sting letters,
+  hook tail 0.4 s, badge "RELEASED <year>" for past years. Re-render of #1 started after deploy.
+- Not done (owner's call): re-voice the 15 entries in Gemini Charon (they're Chirp Charon; ~1–2 h Studio time,
+  ~$0.45); entries carry a "TRAILER BREAKDOWN" tag from the shared LongForm segment render.
+
 ### Log — 2026-10-14 — Correction: Shorts 2/day on YouTube only (owner)
 - Owner meant YouTube only. Restored FB/IG Shorts to 08:00, 12:40, 17:20, 22:00 ET (and posts_per_day 4,
   hours 9–20 as before); YouTube Shorts stays 09:00 + 16:20. Verified via GET /api/schedule. No code change.
@@ -445,7 +463,7 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
-- [PLAN 2026-10-14] (owner) 1) Per-platform CATCH-UP: a video skipped on a platform (slot belongs to other
+- [DONE 2026-10-14, see log] 1) Per-platform CATCH-UP: a video skipped on a platform (slot belongs to other
   platforms) waits for that platform's next slot instead of never going there. Slot planning becomes
   platform-aware (a slot only takes a video that still owes one of its platforms); rows/files are kept until
   every platform is done. 2) New staggered times (ET): FB/IG Shorts 8:00/11:00/15:00/19:00, LongForm
