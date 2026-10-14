@@ -1,10 +1,10 @@
 """Narration for LongForm breakdowns and countdowns, cached by text.
 
 Owner (2026-10-13): Google Gemini text-to-speech — model gemini-3.8-flash-tts, prebuilt voice
-Charon, every line carrying the style "energetic, fast-paced YouTube recap host" — through the
-Gemini v1beta/interactions endpoint:
-  generation_config.speech_config = [{"voice": "Charon"}]
-  the line's text carries an annotation {"type": "speech_metadata", "style": "<style>"}.
+Charon, every line carrying the style "energetic, fast-paced YouTube recap host".
+Google's model page lists generateContent as the supported API (Interactions: not supported), so
+that is tried first — parts[].speechMetadata.style + speechConfig.voiceConfig.voice — with the
+owner's v1beta/interactions form (speech_config=[{"voice"}], speech_metadata annotation) as fallback.
 The older Chirp 3 HD voice stays available with TTS_ENGINE=chirp.
 
 Cache key = sha1(engine | model | voice | style | spoken text), so editing one sentence
@@ -29,6 +29,11 @@ from ..config import settings
 
 URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
 INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+# Google's model page for gemini-3.8-flash-tts (owner, 2026-10-14): generateContent is the supported
+# API; the Interactions API is listed as NOT supported for this model. Both are tried (generateContent
+# first) and whichever the API key works with is remembered.
+GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+_working_api: dict[str, str] = {}
 
 # What the narrator SAYS (manhwa speech_text policy): no quote marks; harsher
 # words softened; slurs dropped. The script keeps its words; only audio changes.
@@ -78,6 +83,18 @@ def _cache_key(spoken: str) -> str:
     return hashlib.sha1(ident.encode()).hexdigest()
 
 
+def generate_payload(spoken: str) -> dict:
+    """generateContent (Google's documented form): style on the line's part, voice in speechConfig."""
+    part: dict = {"text": spoken}
+    if settings.narration_style.strip():
+        part["speechMetadata"] = {"style": settings.narration_style.strip()}
+    return {
+        "contents": [{"role": "user", "parts": [part]}],
+        "generationConfig": {"responseModalities": ["AUDIO"],
+                             "speechConfig": {"voiceConfig": {"voice": settings.narration_voice}}},
+    }
+
+
 def gemini_payload(spoken: str) -> dict:
     """The interactions request: Charon via speech_config, the style on the line's text."""
     item = {"type": "text", "text": spoken}
@@ -92,7 +109,12 @@ def gemini_payload(spoken: str) -> dict:
 
 
 def _audio_from(data: dict) -> str | None:
-    for step in data.get("steps") or []:
+    for cand in data.get("candidates") or []:              # generateContent
+        for part in (cand.get("content") or {}).get("parts") or []:
+            inline = part.get("inlineData") or part.get("inline_data") or {}
+            if inline.get("data"):
+                return inline["data"]
+    for step in data.get("steps") or []:                   # interactions
         if step.get("type") == "model_output":
             for item in step.get("content") or []:
                 if item.get("type") == "audio" and item.get("data"):
@@ -112,15 +134,12 @@ def _to_mp3(audio: bytes, dest: pathlib.Path) -> float:
     return float(out or 0)
 
 
-def _gemini(spoken: str, dest: pathlib.Path) -> None:
-    from .. import costs
-    if not settings.gemini_api_key:
-        raise TTSError("GEMINI_API_KEY is not set on the server (Gemini text-to-speech)")
-    payload = gemini_payload(spoken)
+def _post(url: str, payload: dict) -> httpx.Response | None:
+    """POST with bounded retries + jitter on rate limits / server errors."""
     res = None
-    for attempt in range(4):                              # bounded retries with jitter on rate limits / server errors
+    for attempt in range(4):
         try:
-            res = httpx.post(INTERACTIONS_URL, json=payload, timeout=90,
+            res = httpx.post(url, json=payload, timeout=90,
                              headers={"x-goog-api-key": settings.gemini_api_key, "content-type": "application/json"})
         except httpx.HTTPError as exc:
             if attempt == 3:
@@ -131,16 +150,36 @@ def _gemini(spoken: str, dest: pathlib.Path) -> None:
             time.sleep(2 ** (attempt + 1) + random.random())
             continue
         break
-    if res is None or not res.is_success:
+    return res
+
+
+def _gemini(spoken: str, dest: pathlib.Path) -> None:
+    from .. import costs
+    if not settings.gemini_api_key:
+        raise TTSError("GEMINI_API_KEY is not set on the server (Gemini text-to-speech)")
+    model = settings.narration_tts_model
+    routes = {"generate": (GENERATE_URL.format(model=model), generate_payload(spoken)),
+              "interactions": (INTERACTIONS_URL, gemini_payload(spoken))}
+    order = [_working_api["api"]] if _working_api.get("api") else ["generate", "interactions"]
+    errors = []
+    for api in order:
+        url, payload = routes[api]
+        res = _post(url, payload)
+        if res is not None and res.is_success:
+            data = res.json()
+            b64 = _audio_from(data)
+            if b64:
+                _working_api["api"] = api
+                seconds = _to_mp3(base64.b64decode(b64), dest)
+                costs.record_gemini_tts(model, data.get("usageMetadata") or data.get("usage") or {}, seconds, len(spoken))
+                return
+            errors.append(f"{api}: no audio in the response")
+            continue
         # The key is in a header, never in the URL or this message.
-        raise TTSError(f"Gemini text-to-speech failed ({getattr(res, 'status_code', '?')}): {getattr(res, 'text', '')[:300]}")
-    data = res.json()
-    b64 = _audio_from(data)
-    if not b64:
-        raise TTSError("Gemini text-to-speech returned no audio")
-    seconds = _to_mp3(base64.b64decode(b64), dest)
-    costs.record_gemini_tts(settings.narration_tts_model, data.get("usage") or data.get("usageMetadata") or {},
-                            seconds, len(spoken))
+        errors.append(f"{api}: HTTP {getattr(res, 'status_code', '?')} {getattr(res, 'text', '')[:200]}")
+        if res is not None and res.status_code in (401, 403, 429):
+            break                                           # key/quota problem: the other form won't help
+    raise TTSError("Gemini text-to-speech failed — " + " | ".join(errors))
 
 
 def _chirp(spoken: str, dest: pathlib.Path) -> None:

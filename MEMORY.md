@@ -99,6 +99,16 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Gemini TTS: generateContent first (owner pasted Google's model doc)
+- Doc: gemini-3.8-flash-tts → Interactions API "Not supported"; generateContent supported (Vertex example).
+- studio/tts.py now calls `v1beta/models/gemini-3.8-flash-tts:generateContent` with the API key (header):
+  parts[].speechMetadata.style + generationConfig.responseModalities=[AUDIO] + speechConfig.voiceConfig.voice=Charon;
+  reads candidates[0].content.parts[].inlineData.data. Falls back to the interactions form on a non-auth error;
+  remembers whichever works. Auth/quota errors (401/403/429) stop without trying the other.
+- Tests: 292 passed. NOT yet verified live (daily cap until 04:00 UTC). If the API-key endpoint rejects the
+  model, the only documented path is Vertex (needs GCP project id + service account in env) — owner decision.
+- Voice Studio (social/tts.py, /api/tts/generate) still uses interactions only — untouched (surgical); same doc applies.
+
 ### 1. Reactive Studio Sidebar & Dedicated Views
 - Replaced the stacked single-page feed with a responsive left navigation sidebar featuring live item badges:
   - 📋 **Posting Queue & Schedule** (`X items`) — Dedicated full-width Google Sheets spreadsheet view.
