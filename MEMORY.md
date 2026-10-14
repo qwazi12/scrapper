@@ -99,6 +99,12 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Gemini TTS verified live
+- 04:06 UTC: real interactions call (gemini-3.8-flash-tts, Charon, recap-host style) → 5.89 s WAV. VERIFIED.
+- Countdown #1 (Top 15 horror) render resumed after the cap reset and finished 04:04 UTC: 16.58 min,
+  intro/outro voiced via studio/tts.py (no silent fallback exists, so the narration path worked). Awaiting
+  owner watch + thumbnail + Send. Segments 1–15 still Chirp voice unless step 5 is re-run (owner choice).
+
 ### Log — 2026-10-14 — Gemini TTS: interactions is primary again (Gemini API guide)
 - Owner pasted the Gemini API (API-key) speech-generation guide: v1beta/interactions IS the documented call
   for gemini-3.8-flash-tts; the earlier "Interactions not supported" note was the Vertex/Enterprise page.
