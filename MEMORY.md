@@ -99,6 +99,12 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — LongForm freshness rule confirmed (owner)
+- Owner: no content from before Oct 2026, BUT a show with a new season airing now is acceptable.
+  candidates.check already does this (movies: US release current month → ≤15 d ago / ≤90 d ahead; TV: an
+  episode this month). Audit of all 40 LongForm projects: none breaks it (Ted Lasso = new episode 2026-10-06).
+- Gap offered, not built: manual starts (POST /api/studio/projects) skip the release check.
+
 ### Log — 2026-10-14 — Countdown intro rework (ca8d875)
 - Hook: "COUNTDOWN" + title overlay removed for good; length = its line + 0.4 s (was min 12 s, ~20 s);
   AI hook_script now max 20 words; ~1.4 s per picture. Countdown #1 hook shortened via PUT script
