@@ -1074,3 +1074,10 @@ Defaults taken (owner didn't pick): ~9 s, countdowns only, hook as a cold open b
 - Countdown order now: hook (cold open voice-over) → intro → #N entries → outro. Chapters include it in "Intro & Preview".
 - Assets: `backend/assets/intro/page_flips.wav` (from the owner's Marvel reference — ⚠ copyrighted, Content ID risk; swap this one file for a royalty-free flip sound to remove it), `Anton-Regular.ttf` + OFL licence.
 - Test render sent to the owner; test added (287 pass). The horror countdown's paused re-render resumes after midnight ET and will include the intro.
+
+## Log — 2026-10-14 — Narration voice → Gemini TTS (4a4f9ec)
+Owner: use Gemini text-to-speech, model gemini-3.8-flash-tts, prebuilt voice Charon, style "energetic, fast-paced YouTube recap host" on every line, via v1beta/interactions (speech_config [{"voice":"Charon"}], text annotation {"type":"speech_metadata","style":…}).
+- `studio/tts.py` `synth()` (the one function every breakdown sentence, countdown intro and outro use) now calls Gemini by default: exactly that payload, WAV→MP3, bounded retries with jitter on 429/5xx, per-line cache keyed by model|voice|style|text (so everything re-voices once in the new voice), fails loudly without GEMINI_API_KEY. `TTS_ENGINE=chirp` keeps the old Chirp 3 HD voice. Settings: TTS_ENGINE, NARRATION_TTS_MODEL, NARRATION_VOICE, NARRATION_STYLE (defaults in code).
+- Cost: `costs.record_gemini_tts` from the response's token counts, else estimated (≈4 chars/text token, 25 audio tokens/s). Price $0.50/M in, $10/M out is an ESTIMATE from Gemini's published Flash TTS rates — not confirmed for 3.8; ≈ $0.015 per minute of voice.
+- Tests 291 pass (payload, cache, retry, missing key, cost). Live test of one line scheduled after the daily cap resets (04:00 UTC); today was at the cap.
+- Note: breakdowns already rendered keep the Chirp voice; the next step-5 run (voice + shots) re-voices them in Gemini Charon. The horror countdown's paused re-render will get Gemini intro/outro but its 15 segments keep Chirp voice unless their step 5 is re-run.
