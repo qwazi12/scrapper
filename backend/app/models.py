@@ -147,6 +147,9 @@ class QueueItem(Base):
     published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     outstand_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)  # history (pre-Upload-Post)
     publish_requests: Mapped[list | None] = mapped_column(JSON, nullable=True)  # Upload-Post request_ids
+    # Per-platform catch-up (owner, 2026-10-14): {"slots": [slot ISO times it posted in],
+    # "done": [[account, url], ...]} while the video still owes a platform whose slot it missed.
+    catchup: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     media_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 

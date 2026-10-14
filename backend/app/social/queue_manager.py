@@ -428,7 +428,38 @@ def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
             .filter(QueueItem.status.in_(["posting", "posted", "archived", "retry", "error"]))
             .filter(QueueItem.pinned_at.is_(None))      # pinned posts are extra, by the owner's choice
             .all())
-    return sum(1 for it in rows if pipeline_group(it) == group)
+    used = {(it.id, _slot_iso(it.scheduled_at)) for it in rows if pipeline_group(it) == group}
+    # A catch-up video already used a slot today even though it's back in Ready with no slot.
+    for it in s.query(QueueItem).filter(QueueItem.catchup.isnot(None)).all():
+        if pipeline_group(it) != group:
+            continue
+        for iso in (it.catchup or {}).get("slots") or []:
+            if start <= datetime.datetime.fromisoformat(iso) < end:
+                used.add((it.id, iso))
+    return len(used)
+
+
+def _slot_iso(dt: datetime.datetime | None) -> str:
+    return _aware(dt).astimezone(UTC).isoformat() if dt else ""
+
+
+def timed_platforms(group: str) -> dict[str, list[str]]:
+    """Platforms of this queue that post at their own times (e.g. YouTube 09:00, 17:00)."""
+    return {n: lim for n, lim in platform_limits(group).items() if isinstance(lim, list)}
+
+
+def fits_slot(item: QueueItem, group: str, slot: datetime.datetime) -> bool:
+    """Does this slot belong to at least one platform the video still has to go to?
+    (A video that already went to Facebook/Instagram only fits a YouTube time.)"""
+    timed = timed_platforms(group)
+    if not timed:
+        return True
+    hhmm = slot.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M")
+    for acc in item.accounts or []:
+        net = str(acc).partition(":")[2]
+        if net == "*" or net not in timed or hhmm in timed[net]:
+            return True
+    return False
 
 
 def platform_limits(group: str) -> dict[str, Any]:
@@ -505,6 +536,9 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         its own pacing (Movie Clips 3/day 10–22 → 16:00) never saw its slot as
         used and every 5-min tick handed the same slot to the next video —
         8 posts in one 16:00 slot, YouTube's daily upload limit hit at 22:00."""
+        if any(pipeline_group(it) == group and _slot_iso(cur) in ((it.catchup or {}).get("slots") or [])
+               for it in ready):
+            return True                           # a catch-up video posted in this slot, then went back to Ready
         return any(pipeline_group(it) == group for it in (
             s.query(QueueItem)
             .filter(QueueItem.scheduled_at == cur)
@@ -537,6 +571,30 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
 
         primary_accs = items[0].accounts if items else None
         cur = current_slot(now, pipeline=group, accounts=primary_accs)
+        if timed_platforms(group):
+            # Catch-up (owner, 2026-10-14): each slot takes the first video (posting order)
+            # that still owes one of that slot's platforms. Enough slots that even a run of
+            # videos owing only one platform all get one of its times.
+            want = len(items) * max(1, slots_per_day(pipeline=group, accounts=primary_accs))
+            slots = slots_after(now, want, pipeline=group, accounts=primary_accs)
+            if cur is not None and group not in due_groups and not slot_used(group, cur):
+                slots = [cur] + slots
+            left = list(items)
+            plan: dict[int, datetime.datetime] = {}
+            for slot in slots:
+                if not left:
+                    break
+                for it in left:
+                    if fits_slot(it, group, slot):
+                        plan[it.id] = slot
+                        left.remove(it)
+                        break
+            for it in items:
+                slot = plan.get(it.id)
+                if _aware(it.scheduled_at) != slot:
+                    it.scheduled_at = slot
+                    changed += 1
+            continue
         slots = slots_after(now, len(items), pipeline=group, accounts=primary_accs)
         if cur is not None and group not in due_groups and not slot_used(group, cur):
             slots = [cur] + slots[:-1] if slots else [cur]
@@ -756,6 +814,10 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
         # reads every platform's real result. Only then "posted" (4-day clock).
         item.publish_requests = entries
         item.published_at = None
+        if regular and item.scheduled_at is not None:      # catch-up: this slot is used even if it returns to Ready
+            cu = dict(item.catchup or {})
+            cu["slots"] = (list(cu.get("slots") or []) + [_slot_iso(item.scheduled_at)])[-20:]
+            item.catchup = cu
         item.notes = (f"Submitted to Upload-Post for {', '.join(item.accounts)}; "
                       "waiting for the platforms to confirm."
                       + (f" Not sent to {', '.join(skipped)} — that platform's daily number was reached." if skipped else ""))
@@ -833,18 +895,54 @@ def _fetch_statuses(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -> None:
-    parts = [f"✓ {a} {url}".strip() for a, url in res["ok"]]
+    # Platforms left out because this slot wasn't theirs still get the video (catch-up, owner 2026-10-14).
+    skipped = [a for e in item.publish_requests or [] for a in e.get("skipped", [])]
+    cu = dict(item.catchup or {})
+    done = [list(d) for d in cu.get("done") or []] + [[a, url] for a, url in res["ok"]]
+    parts = [f"✓ {a} {url}".strip() for a, url in done]
     parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
-    if not res["failed"]:
+    if res["failed"]:
+        # Retry only what failed (and what's still owed), so a retry never double-posts.
+        item.status = "retry"
+        item.accounts = list(res["failed"]) + [a for a in skipped if a not in res["failed"]]
+        item.published_at = None
+    elif skipped:
+        # Posted where this slot allowed; back to Ready for the other platforms' next slot.
+        item.status = "ready"
+        item.accounts = skipped
+        item.scheduled_at = None
+        item.published_at = None
+        parts.append(f"⏳ catch-up: waiting for the next {', '.join(sorted({a.partition(':')[2] for a in skipped}))} slot")
+    else:
         # Confirmed on every platform: straight to the Posted Archive (owner, 2026-10-04).
         item.status = "archived"
         item.published_at = now
-    else:
-        # Retry only what failed, so a retry never double-posts.
-        item.status = "retry"
-        item.accounts = list(res["failed"])
-        item.published_at = None
+    if done or skipped:
+        item.catchup = {**cu, "done": done}
     item.notes = " | ".join(parts)[:1000]
+
+
+def start_catchup_backfill(s: Session, now: datetime.datetime) -> int:
+    """Startup, once per row: videos archived after a per-platform skip (before catch-up existed,
+    still within the archive window) go back to Ready for the platforms they missed."""
+    moved = 0
+    for it in s.query(QueueItem).filter(QueueItem.status == "archived").all():
+        if it.catchup:
+            continue
+        skipped = [a for e in it.publish_requests or [] for a in e.get("skipped", [])]
+        if not skipped:
+            continue
+        done = [ln[2:].split(" ", 1) for ln in (it.notes or "").split(" | ") if ln.startswith("✓ ")]
+        it.catchup = {"slots": [_slot_iso(it.scheduled_at)] if it.scheduled_at else [],
+                      "done": [[d[0], d[1] if len(d) > 1 else ""] for d in done]}
+        it.status, it.accounts, it.scheduled_at, it.published_at = "ready", skipped, None, None
+        it.notes = ((it.notes or "") + " | ⏳ catch-up: waiting for the next "
+                    f"{', '.join(sorted({a.partition(':')[2] for a in skipped}))} slot")[:1000]
+        moved += 1
+    if moved:
+        s.commit()
+        logbus.log("info", "queue_catchup_backfill", f"{moved} posted video(s) now wait for the platforms they skipped")
+    return moved
 
 
 def reconcile_posting(s: Session, now: datetime.datetime) -> int:

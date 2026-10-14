@@ -1045,3 +1045,61 @@ def test_schedule_api_keeps_platform_settings(session, client, reset_schedule):
     r = client.put("/api/schedule/config", json=body)
     assert r.status_code == 200, r.text
     assert r.json()["pipeline_overrides"]["LongForm"]["platforms"] == {"youtube": ["11:00", "19:00"], "facebook": 4}
+
+
+# --- per-platform catch-up (owner, 2026-10-14) -------------------------------
+def _timed(session):
+    cfg = qm.load_schedule(session)
+    qm.save_schedule(session, {**cfg, "timezone": "America/New_York", "pipelines": {"Movie Clips": {"platforms": {
+        "youtube": ["09:00", "17:00"], "facebook": ["08:00", "11:00", "15:00", "19:00"],
+        "instagram": ["08:00", "11:00", "15:00", "19:00"]}}}})
+
+
+def test_catch_up_video_only_takes_a_slot_of_the_platform_it_owes(session, reset_schedule):
+    _timed(session)
+    (owed,) = add(session, 1, accounts=["default:youtube"])                    # already on FB/IG
+    (fresh,) = add(session, 1, accounts=["default:youtube", "default:facebook", "default:instagram"])
+    qm.plan_schedule(session, et(2026, 10, 15, 7, 0))
+    assert qm._aware(owed.scheduled_at) == et(2026, 10, 15, 9)                 # first YouTube time
+    assert qm._aware(fresh.scheduled_at) == et(2026, 10, 15, 8)                # FB/IG time, not YouTube's
+
+
+def test_skipped_platform_goes_back_to_ready_then_archives_when_all_done(session):
+    (it,) = add(session, 1, status="posting", accounts=["default:youtube", "default:facebook"])
+    it.scheduled_at = et(2026, 10, 15, 8)
+    it.publish_requests = [{"skipped": ["default:youtube"]},
+                           {"profile": "default", "platforms": ["facebook"], "request_id": "r1"}]
+    session.commit()
+    now = et(2026, 10, 15, 8, 10)
+    qm.apply_result(it, {"ok": [("default:facebook", "https://fb/1")], "failed": {}}, now)
+    assert it.status == "ready" and it.accounts == ["default:youtube"] and it.scheduled_at is None
+    assert it.published_at is None and "catch-up" in it.notes and "https://fb/1" in it.notes
+    it.publish_requests = [{"profile": "default", "platforms": ["youtube"], "request_id": "r2"}]
+    qm.apply_result(it, {"ok": [("default:youtube", "https://yt/1")], "failed": {}}, et(2026, 10, 15, 9, 10))
+    assert it.status == "archived" and it.published_at is not None
+    assert "https://fb/1" in it.notes and "https://yt/1" in it.notes          # both links kept
+
+
+def test_slot_a_catch_up_video_used_is_not_handed_out_again(session, reset_schedule):
+    _timed(session)
+    (back,) = add(session, 1, accounts=["default:youtube"])
+    back.catchup = {"slots": [qm._slot_iso(et(2026, 10, 15, 8))], "done": [["default:facebook", "u"]]}
+    (nxt,) = add(session, 1, accounts=["default:youtube", "default:facebook"])
+    session.commit()
+    qm.plan_schedule(session, et(2026, 10, 15, 8, 5))
+    assert qm._aware(nxt.scheduled_at) != et(2026, 10, 15, 8)                  # 8:00 already went out
+    assert qm.posted_today(session, "Movie Clips", et(2026, 10, 15, 8, 5)) == 1
+
+
+def test_startup_backfill_sends_skipped_platforms_later(session):
+    (it,) = add(session, 1, status="archived", accounts=["default:facebook"])
+    it.scheduled_at = et(2026, 10, 14, 8)
+    it.published_at = et(2026, 10, 14, 8, 6)
+    it.publish_requests = [{"skipped": ["default:youtube"]},
+                           {"profile": "default", "platforms": ["facebook"], "request_id": "r"}]
+    it.notes = "✓ default:facebook https://fb/9"
+    session.commit()
+    assert qm.start_catchup_backfill(session, et(2026, 10, 14, 12)) == 1
+    assert it.status == "ready" and it.accounts == ["default:youtube"] and it.published_at is None
+    assert it.catchup["done"] == [["default:facebook", "https://fb/9"]]
+    assert qm.start_catchup_backfill(session, et(2026, 10, 14, 12)) == 0      # once only

@@ -120,6 +120,7 @@ def _startup() -> None:
         with SessionLocal() as s:
             queue_manager.archive_posted_rows(s)      # posted rows live in the Posted Archive now
             queue_manager.strip_blocked_accounts(s)   # owner rule: profile "mk" never posts queue videos
+            queue_manager.start_catchup_backfill(s, datetime.datetime.now(datetime.timezone.utc))
     except Exception as exc:  # noqa: BLE001
         logbus.log("error", "startup_blocked_profile_cleanup_failed", str(exc))
     if settings.worker_mode != "web_only":
