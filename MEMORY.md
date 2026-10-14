@@ -99,6 +99,15 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Countdown intro rework (ca8d875)
+- Hook: "COUNTDOWN" + title overlay removed for good; length = its line + 0.4 s (was min 12 s, ~20 s);
+  AI hook_script now max 20 words; ~1.4 s per picture. Countdown #1 hook shortened via PUT script
+  (undo recorded): "Think you are immune to fear? … caused real mass hysteria." (~7 s).
+- Screen Central end: poster-filled letters hold, title fades in under them (flat red plate removed).
+  sting.PALETTES crimson (default) / noir_gold / black_red / steel; previews sent to owner, awaiting pick.
+- Countdown #1 re-render is paused on the $2.00 daily cap (spent $2.03); resumes after 00:00 ET, or sooner if
+  the owner adds extra budget today. Not visually verified in a full render yet.
+
 ### Log — 2026-10-14 — Catch-up posting, staggered times, countdown dead-air fix (486ea83, 15f5559)
 - Schedule (live config, verified via GET /api/schedule), ET: Shorts YT 09:00/17:00, FB+IG 08:00/11:00/15:00/19:00;
   LongForm YT 15:00/20:00, FB+IG 09:30/13:30/17:00/21:00; Countdowns 12:00 all three. No two queues share a time.
@@ -463,7 +472,7 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
-- [PLAN 2026-10-14b] (owner, screenshots) Countdown intro: 1) remove the "COUNTDOWN" + title text from the
+- [DONE 2026-10-14b ca8d875, palette pick pending] Countdown intro: 1) remove the "COUNTDOWN" + title text from the
   hook — never on screen again; 2) end of the Screen Central intro: hold the textured SCREEN CENTRAL letters and
   add the subtitle under them, with better colours (show owner options before building); 3) hook ~20 s → short
   (~6–8 s) so the channel intro comes sooner.
