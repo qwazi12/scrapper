@@ -99,6 +99,13 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Gemini TTS: interactions is primary again (Gemini API guide)
+- Owner pasted the Gemini API (API-key) speech-generation guide: v1beta/interactions IS the documented call
+  for gemini-3.8-flash-tts; the earlier "Interactions not supported" note was the Vertex/Enterprise page.
+- studio/tts.py: interactions first (owner's original shape), generateContent kept only as fallback;
+  audio = the LAST steps[].content[] audio block, per the guide. Test made robust to a background thread
+  sharing the faked httpx.post. 292 passed (x2). Live call still unverified until the 04:00 UTC cap reset.
+
 ### Log — 2026-10-14 — Gemini TTS: generateContent first (owner pasted Google's model doc)
 - Doc: gemini-3.8-flash-tts → Interactions API "Not supported"; generateContent supported (Vertex example).
 - studio/tts.py now calls `v1beta/models/gemini-3.8-flash-tts:generateContent` with the API key (header):

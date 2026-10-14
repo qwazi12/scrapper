@@ -2,9 +2,10 @@
 
 Owner (2026-10-13): Google Gemini text-to-speech — model gemini-3.8-flash-tts, prebuilt voice
 Charon, every line carrying the style "energetic, fast-paced YouTube recap host".
-Google's model page lists generateContent as the supported API (Interactions: not supported), so
-that is tried first — parts[].speechMetadata.style + speechConfig.voiceConfig.voice — with the
-owner's v1beta/interactions form (speech_config=[{"voice"}], speech_metadata annotation) as fallback.
+Gemini API (API key) speech-generation guide: v1beta/interactions is the documented call —
+generation_config.speech_config=[{"voice"}], speech_metadata annotation on the line's text; the
+audio is the last steps[].content[] audio block (WAV). The "Interactions: not supported" note is
+the Vertex/Enterprise page, so generateContent is only a fallback.
 The older Chirp 3 HD voice stays available with TTS_ENGINE=chirp.
 
 Cache key = sha1(engine | model | voice | style | spoken text), so editing one sentence
@@ -29,9 +30,8 @@ from ..config import settings
 
 URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
 INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
-# Google's model page for gemini-3.8-flash-tts (owner, 2026-10-14): generateContent is the supported
-# API; the Interactions API is listed as NOT supported for this model. Both are tried (generateContent
-# first) and whichever the API key works with is remembered.
+# Interactions is the Gemini API's documented TTS call; generateContent (the Vertex page's form) is
+# the fallback. Whichever the API key works with is remembered.
 GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _working_api: dict[str, str] = {}
 
@@ -114,12 +114,13 @@ def _audio_from(data: dict) -> str | None:
             inline = part.get("inlineData") or part.get("inline_data") or {}
             if inline.get("data"):
                 return inline["data"]
-    for step in data.get("steps") or []:                   # interactions
+    last = None                                            # interactions: the LAST audio block
+    for step in data.get("steps") or []:
         if step.get("type") == "model_output":
             for item in step.get("content") or []:
                 if item.get("type") == "audio" and item.get("data"):
-                    return item["data"]
-    return (data.get("output_audio") or {}).get("data")
+                    last = item["data"]
+    return last or (data.get("output_audio") or {}).get("data")
 
 
 def _to_mp3(audio: bytes, dest: pathlib.Path) -> float:
@@ -160,7 +161,7 @@ def _gemini(spoken: str, dest: pathlib.Path) -> None:
     model = settings.narration_tts_model
     routes = {"generate": (GENERATE_URL.format(model=model), generate_payload(spoken)),
               "interactions": (INTERACTIONS_URL, gemini_payload(spoken))}
-    order = [_working_api["api"]] if _working_api.get("api") else ["generate", "interactions"]
+    order = [_working_api["api"]] if _working_api.get("api") else ["interactions", "generate"]
     errors = []
     for api in order:
         url, payload = routes[api]

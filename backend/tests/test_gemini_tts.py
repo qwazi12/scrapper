@@ -48,46 +48,49 @@ def gem(monkeypatch, tmp_path):
             return Resp(429, {"error": "rate"})
         audio = base64.b64encode(_wav()).decode()
         if url.endswith(":generateContent"):
-            if getattr(post, "no_generate", False):
-                return Resp(400, {"error": {"message": "model not supported"}})
             return Resp(200, {"candidates": [{"content": {"parts": [{"inlineData": {"data": audio}}]}}],
                               "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 300}})
-        return Resp(200, {"steps": [{"type": "model_output", "content": [{"type": "audio", "data": audio}]}]})
+        if getattr(post, "no_interactions", False):
+            return Resp(400, {"error": {"message": "not supported"}})
+        return Resp(200, {"steps": [{"type": "model_output", "content": [
+            {"type": "audio", "data": "bm90LWF1ZGlv"}, {"type": "audio", "data": audio}]}]})
     monkeypatch.setattr(httpx, "post", post)
     return calls, post
 
 
-def test_documented_generate_content_request(gem, tmp_path):
+def test_interactions_request_is_charon_with_the_style(gem, tmp_path):
     calls, _ = gem
-    out = tts.synth("Number 4: Alien.", tmp_path / "a.mp3")
+    out = tts.synth("Number 4: Alien.", tmp_path / "a.mp3")   # also proves the LAST audio block is used
     assert out.exists() and out.stat().st_size > 0
     req = calls[0]
-    assert req["url"].endswith("/models/gemini-3.8-flash-tts:generateContent")
+    assert req["url"].endswith("/v1beta/interactions")
     assert req["headers"]["x-goog-api-key"] == "test-gemini"
     body = req["json"]
-    assert body["generationConfig"] == {"responseModalities": ["AUDIO"], "speechConfig": {"voiceConfig": {"voice": "Charon"}}}
-    assert body["contents"][0]["parts"][0] == {"text": "Number 4: Alien.",
-                                               "speechMetadata": {"style": "energetic, fast-paced YouTube recap host"}}
+    assert body["model"] == "gemini-3.8-flash-tts"
+    assert body["generation_config"]["speech_config"] == [{"voice": "Charon"}]
+    assert body["input"][0]["content"][0] == {"type": "text", "text": "Number 4: Alien.", "annotations": [
+        {"type": "speech_metadata", "style": "energetic, fast-paced YouTube recap host"}]}
     tts.synth("Number 4: Alien.", tmp_path / "b.mp3")            # cached: no second request
-    assert len(calls) == 1
+    # only TTS requests (a background scheduler thread may hit the same fake with a text call)
+    assert len([c for c in calls if c["url"].endswith("/interactions") or "-tts:" in c["url"]]) == 1
 
 
-def test_falls_back_to_interactions_with_charon_and_style(gem, tmp_path):
+def test_falls_back_to_generate_content(gem, tmp_path):
     calls, post = gem
-    post.no_generate = True
+    post.no_interactions = True
     tts.synth("Number 3: The Thing.", tmp_path / "c.mp3")
     body = calls[-1]["json"]
-    assert calls[-1]["url"].endswith("/v1beta/interactions")
-    assert body["generation_config"]["speech_config"] == [{"voice": "Charon"}]
-    assert body["input"][0]["content"][0]["annotations"] == [{"type": "speech_metadata", "style": "energetic, fast-paced YouTube recap host"}]
-    assert tts._working_api["api"] == "interactions"
+    assert calls[-1]["url"].endswith("/models/gemini-3.8-flash-tts:generateContent")
+    assert body["generationConfig"]["speechConfig"] == {"voiceConfig": {"voice": "Charon"}}
+    assert body["contents"][0]["parts"][0]["speechMetadata"] == {"style": "energetic, fast-paced YouTube recap host"}
+    assert tts._working_api["api"] == "generate"
 
 
 def test_rate_limit_is_retried(gem, tmp_path):
     calls, post = gem
     post.first_429 = True
     tts.synth("Retry me.", tmp_path / "r.mp3")
-    assert len(calls) == 2 and calls[1]["url"].endswith(":generateContent")
+    assert len(calls) == 2 and calls[1]["url"].endswith("/interactions")
 
 
 def test_missing_key_fails_loudly(monkeypatch, tmp_path):
