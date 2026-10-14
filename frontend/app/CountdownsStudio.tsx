@@ -158,7 +158,7 @@ export function CountdownsStudio() {
       {err && <div style={{ ...card, color: "var(--red)", fontSize: 12 }}>{err}</div>}
       <AutomationCard key={lineV} onChange={load} />
       <CountdownsList list={list} onOpen={setOpenId} onReload={load} />
-      <NewCountdown onCreated={(c) => setOpenId(c.id)} onLined={() => setLineV((v) => v + 1)} />
+      <NewCountdown lineV={lineV} onCreated={(c) => setOpenId(c.id)} onLined={() => setLineV((v) => v + 1)} />
     </div>
   );
 }
@@ -439,7 +439,51 @@ async function deleteCountdown(c: CountdownProject): Promise<boolean> {
 }
 
 // --- start a new countdown (same shape as "Start a new breakdown") --------------------------------
-function NewCountdown({ onCreated, onLined }: { onCreated: (c: CountdownProject) => void; onLined: () => void }) {
+// --- 📋 your line, shown where you add to it (owner, 2026-10-14: "how am I supposed to see what's queued?") ---
+function YourLine({ version, onChange }: { version: number; onChange: () => void }) {
+  const [a, setA] = useState<CountdownAuto | null>(null);
+  const [saving, setSaving] = useState(false);
+  const load = () => api.countdownAuto().then(setA).catch(() => {});
+  useEffect(() => { load(); }, [version]);
+  useEffect(() => {
+    const t = setInterval(() => !document.hidden && load(), 30000);
+    return () => clearInterval(t);
+  }, []);
+  if (!a) return null;
+  async function run(fn: () => Promise<CountdownAuto>) {
+    setSaving(true);
+    try { setA(await fn()); onChange(); } catch (e: any) { notify(errText(e)); } finally { setSaving(false); }
+  }
+  const first = !a.settings.enabled ? "won't start — countdown automation is off (switch it on above)"
+    : a.settings.paused_until && new Date(a.settings.paused_until) > new Date() ? "paused for today — starts tomorrow"
+    : a.today >= a.settings.per_day ? `starts tomorrow (today's ${a.settings.per_day} already started)`
+    : a.waiting ? `starts after this: ${a.waiting}`
+    : "starts at the next check (within 5 min)";
+  return (
+    <div style={{ background: "var(--row)", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700 }}>📋 Your line — queued to be made ({a.line.length})</div>
+      {a.line.length === 0 ? (
+        <div style={muted}>Empty. “+ Add to line” on a topic puts it here; the automation makes them in this order, {a.settings.per_day} a day.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+          {a.line.map((it, i) => (
+            <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}>
+              <b style={{ color: "var(--accent)" }}>{i + 1}.</b>
+              <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}>
+                {it.topic} <span style={muted}>· {FMT[it.fmt]} · {i === 0 ? first : `after #${i}`}</span>
+              </span>
+              <button style={{ fontSize: 10, padding: "1px 6px" }} disabled={saving || i === 0} title="Move up" onClick={() => run(() => api.countdownLineUp(it.id))}>↑</button>
+              <button className="danger" style={{ fontSize: 10, padding: "1px 6px" }} disabled={saving} title="Take it out of the line (it goes back to the topic list)"
+                      onClick={() => run(() => api.countdownLineRemove(it.id))}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated: (c: CountdownProject) => void; onLined: () => void }) {
   const [tab, setTab] = useState<"top" | "month" | "trend" | "evergreen" | "breakdowns">("top");
   const [topic, setTopic] = useState("");
   const [fmt, setFmt] = useState("top10");
@@ -479,7 +523,7 @@ function NewCountdown({ onCreated, onLined }: { onCreated: (c: CountdownProject)
     try {
       const sig = t ? t.sig : fromTopic?.sig;
       await api.countdownLineAdd({ topic: name, fmt: f || fmt, sig: sig || undefined, notes });
-      notify(`✓ Added to your line: “${name}” (${FMT[f || fmt]}). It's made before the automation's own pick.`);
+      notify(`✓ Added to your line: “${name}” (${FMT[f || fmt]}). It's in “📋 Your line” at the top of this box.`);
       if (!t || t.sig === fromTopic?.sig) { setTopic(""); setPicked1(null); }
       onLined();
       load();
@@ -502,6 +546,7 @@ function NewCountdown({ onCreated, onLined }: { onCreated: (c: CountdownProject)
   return (
     <div style={card} ref={boxRef}>
       <h2 style={h2}>Start a new countdown</h2>
+      <YourLine version={lineV} onChange={onLined} />
       <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Type a topic, e.g. Top 10 horror movies on Netflix right now" style={{ flex: "1 1 220px", minWidth: 0 }} />
       </div>
