@@ -285,7 +285,7 @@ def _sound(dest: pathlib.Path) -> pathlib.Path:
     """Page flips (A) + synthesised whoosh (B) and impact (D), 48 kHz stereo."""
     flips = ["-i", str(FLIPS)] if FLIPS.exists() else ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=4"]
     graph = (
-        "[0:a]atrim=0:4.2,adelay=500|500,volume=1.0[fl];"
+        "[0:a]atrim=0:4.2,adelay=150|150,volume=1.0[fl];"
         "anoisesrc=d=1.2:c=pink:r=48000:a=0.5,bandpass=f=1200:w=900,afade=t=in:d=0.5,afade=t=out:st=0.6:d=0.6,"
         f"adelay={int((A_END - 0.4) * 1000)}|{int((A_END - 0.4) * 1000)},volume=0.8[wh];"
         "sine=f=48:r=48000:d=2.2,afade=t=out:st=0.05:d=2.1,volume=2.5[bo];"

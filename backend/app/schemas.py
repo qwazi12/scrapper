@@ -238,8 +238,8 @@ class DriveSyncRequest(BaseModel):
 
 class TTSGenerateRequest(BaseModel):
     text: str
-    voice: str = "Puck"
-    style: str | None = None
+    voice: str = "Charon"                                        # owner (2026-10-14): Charon + recap-host style
+    style: str | None = "energetic, fast-paced YouTube recap host"
     model: str = "gemini-3.8-flash-tts"
 
 
@@ -254,8 +254,8 @@ class TTSGenerateResponse(BaseModel):
 
 
 class HookVoiceoverRequest(BaseModel):
-    voice: str = "Puck"
-    style: str = "high energy and enthusiastic"
+    voice: str = "Charon"
+    style: str = "energetic, fast-paced YouTube recap host"
     model: str = "gemini-3.8-flash-tts"
 
 

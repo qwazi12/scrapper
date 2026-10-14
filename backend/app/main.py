@@ -1520,15 +1520,15 @@ async def check_tts() -> dict:
         sample_text = "Gemini 3.8 Flash text to speech is online! <gasp> Natural emotions and audio hooks are fully wired in."
         wav_bytes, filename, duration = await tts.synthesize_speech(
             text=sample_text,
-            voice="Puck",
-            style="cheerful and enthusiastic",
+            voice=settings.narration_voice,
+            style=settings.narration_style,
             model="gemini-3.8-flash-tts",
             save_file=True,
         )
         return {
             "ok": True,
             "model": "gemini-3.8-flash-tts",
-            "voice": "Puck",
+            "voice": settings.narration_voice,
             "audio_url": f"/api/tts/audio/{filename}",
             "duration": duration,
             "sample_text": sample_text,

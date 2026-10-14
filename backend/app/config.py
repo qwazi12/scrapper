@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     # Gemini 3.8 Flash TTS for voiceover hooks & studio speech synthesis
     gemini_tts_model: str = "gemini-3.8-flash-tts"
-    gemini_tts_voice: str = "Puck"
+    gemini_tts_voice: str = "Charon"   # owner (2026-10-14): every voice line is Charon, energetic recap host
 
     # --- LongForm Studio (trailer breakdowns) ----------------------------
     # TMDB (hobby / non-commercial use). The Read Access Token (Bearer) is

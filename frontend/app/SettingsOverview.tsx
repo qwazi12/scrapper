@@ -477,8 +477,8 @@ export function SettingsOverview() {
 
   // Gemini 3.8 Flash TTS Studio State
   const [ttsVoices, setTtsVoices] = useState<TTSVoice[]>([]);
-  const [ttsVoice, setTtsVoice] = useState("Puck");
-  const [ttsStyle, setTtsStyle] = useState("high energy and enthusiastic");
+  const [ttsVoice, setTtsVoice] = useState("Charon");                       // owner (2026-10-14): house voice
+  const [ttsStyle, setTtsStyle] = useState("energetic, fast-paced YouTube recap host");
   const [ttsModel, setTtsModel] = useState("gemini-3.8-flash-tts");
   const [ttsText, setTtsText] = useState("You will NOT believe what happened next! <gasp> Watch till the very end.");
   const [ttsAudioUrl, setTtsAudioUrl] = useState<string | null>(null);
@@ -844,6 +844,7 @@ export function SettingsOverview() {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
           <span style={{ fontSize: 10, color: "var(--muted)" }}>Quick Styles:</span>
           {[
+            "energetic, fast-paced YouTube recap host",
             "urgent and dramatic build-up",
             "high energy and enthusiastic",
             "whispered urgently",

@@ -126,6 +126,7 @@ STUDIO_VOICES = [
 ]
 
 RECOMMENDED_STYLES = [
+    "energetic, fast-paced YouTube recap host",   # the house style (owner, 2026-10-14)
     "urgent and dramatic build-up",
     "high energy and enthusiastic",
     "whispered urgently",
@@ -185,8 +186,8 @@ def _check_budget() -> None:
 
 async def synthesize_speech(
     text: str,
-    voice: str = "Puck",
-    style: str | None = None,
+    voice: str = "Charon",
+    style: str | None = "energetic, fast-paced YouTube recap host",
     model: str = "gemini-3.8-flash-tts",
     save_file: bool = True,
 ) -> tuple[bytes, str | None, float]:
@@ -398,8 +399,8 @@ async def synthesize_dialogue(
 async def generate_hook_voiceover(
     title: str,
     description: str | None = None,
-    voice: str = "Puck",
-    style: str = "high energy and enthusiastic",
+    voice: str = "Charon",
+    style: str = "energetic, fast-paced YouTube recap host",
     model: str = "gemini-3.8-flash-tts",
 ) -> tuple[str, str, float]:
     """Generate a viral 4-6 second spoken hook from title/description and synthesize it.

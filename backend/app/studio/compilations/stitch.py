@@ -152,7 +152,7 @@ def create_intro_clip(
     voice_dur = media.duration(voice_mp3)
 
     # Owner (2026-10-14): ~20 s before the channel intro was too long — the hook runs only as long as its line.
-    intro_dur = voice_dur + 0.4
+    intro_dur = voice_dur + 0.15
 
     # Pick top backdrops or posters for the intro montage
     slides = []
