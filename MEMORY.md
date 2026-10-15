@@ -495,6 +495,10 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
+- [PLAN 2026-10-14d] (owner) Countdown topics must follow the Top 5/10/15 buttons. Cause: topic wording fixed
+  ("Top 10 …"), AI gives ~10 titles ("up to 15") so only 1/15 topics can fill Top 15, and the buttons only set the
+  box. Fix: ask for 18 real titles per topic; buttons filter the list to topics that can fill that size and reword
+  "Top N" to match; best_format clamped to what the titles can fill; rebuild the list once.
 - [DONE 2026-10-14c bff9cfb/dbacf4d] Queued videos must get the connected channels automatically. Causes: Drive-imported
   Shorts are created with no accounts; LongForm/Countdowns/compilations hard-code profile "default:*", which no
   longer exists (connected: Cinama yt/fb/ig; mk blocked). Fix: default destination = every connected, non-blocked
