@@ -34,6 +34,15 @@ UTC = datetime.timezone.utc
 KEY, LEDGER = "countdown_topics_v2", "countdown_topic_ledger"
 STALE = datetime.timedelta(days=1)          # owner (2026-10-13): fresh every day
 SIZES = (5, 10, 15)
+ASK_TITLES = 18     # owner (2026-10-14): ask for 15 + spares so most topics can fill a Top 15 once checked
+_TOP_N = re.compile(r"\b(the\s+)?top\s+\d+\b", re.I)
+
+
+def sized(topic: str, n: int) -> str:
+    """The topic worded for the size picked: "Top 10 Scary Movies…" → "Top 15 Scary Movies…"."""
+    if _TOP_N.search(topic):
+        return _TOP_N.sub(lambda m: ("The " if m.group(1) else "") + f"Top {n}", topic, count=1)
+    return f"Top {n} {topic}"
 DEMAND_CACHE_H = 168              # vidIQ demand per search phrase, cached 7 days (5 credits each)
 # Broad seeds: one vidIQ call each returns ~20 real search phrases with their monthly searches.
 # Cached a week (≈ 30 credits/week), so every topic can be built on a phrase with known demand.
@@ -172,13 +181,14 @@ Return JSON array, each item:
   "keyword": "2-5 word search phrase people type (e.g. 'best horror movies 2026')",
   "group": "month|trend|evergreen", "why_now": "one sentence",
   "debate": 1-10, "best_format": "top5|top10|top15",
-  "titles": [{{"title": "Real Title", "year": 2024}}, ... up to 15, strongest first]}}"""
+  "titles": [{{"title": "Real Title", "year": 2024}}, ... EXACTLY 18 real titles, strongest first]}}
+Every topic needs 18 real, distinct titles (so it can be made as a Top 5, Top 10 OR Top 15) — pick angles broad enough for that."""
 
 
 def _resolve_all(titles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from .compilations import engine
     out = []
-    for t in titles[:15]:
+    for t in titles[:ASK_TITLES]:
         if not isinstance(t, dict) or not t.get("title"):
             continue
         r = engine._resolve_title({"title": t["title"], "year": t.get("year")})
@@ -186,6 +196,12 @@ def _resolve_all(titles: list[dict[str, Any]]) -> list[dict[str, Any]]:
             out.append({"title": r.get("title") or t["title"], "year": t.get("year"), "tmdb_id": r["tmdb_id"],
                         "media_type": r.get("media_type", "movie"), "poster": r.get("poster")})
     return out
+
+
+def _best(fmt: Any, sizes: list[int]) -> str:
+    """The AI's preferred size, but never one the real titles can't fill."""
+    want = int(str(fmt)[3:]) if fmt in ("top5", "top10", "top15") else 10
+    return f"top{max([n for n in sizes if n <= want] or [min(sizes)])}"
 
 
 def build() -> dict[str, Any]:
@@ -220,7 +236,7 @@ def build() -> dict[str, Any]:
         topics.append({"sig": sg, "topic": t["topic"][:200], "keyword": (t.get("keyword") or t["topic"])[:80],
                        "group": t.get("group") if t.get("group") in ("month", "trend", "evergreen") else "evergreen",
                        "why_now": (t.get("why_now") or "")[:300], "debate": max(1, min(10, int(t.get("debate") or 5))),
-                       "best_format": t.get("best_format") if t.get("best_format") in ("top5", "top10", "top15") else "top10",
+                       "best_format": _best(t.get("best_format"), sizes),
                        "titles": real, "sizes": sizes})
     # Demand for every topic: from the phrase pool (already known), else a few individual lookups.
     pool = {p["keyword"].lower().strip(): p for p in sig_.get("pool") or []}

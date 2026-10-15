@@ -917,11 +917,11 @@ def _wait_reason(s, cfg: dict[str, Any], pick: dict[str, Any] | None) -> str | N
 
 def create_from_topic(topic: dict[str, Any], fmt: str, auto: bool = False) -> int:
     from . import countdown_topics
-    titles = ", ".join(t["title"] for t in (topic.get("titles") or [])[:15])
+    titles = ", ".join(t["title"] for t in (topic.get("titles") or [])[:countdown_topics.ASK_TITLES])
     notes = " ".join(x for x in ((f"Rank from these real titles where they fit (checked on TMDB): {titles}." if titles else ""),
                                  topic.get("notes") or "") if x)
     with SessionLocal() as s:
-        c = CountdownProject(topic=topic["topic"][:255], fmt=fmt, notes=notes or None,
+        c = CountdownProject(topic=countdown_topics.sized(topic["topic"], COUNTS.get(fmt, 10))[:255], fmt=fmt, notes=notes or None,
                              review={"auto": auto, "topic_sig": topic.get("sig"), "keyword": topic.get("keyword"),
                                      "keywords": topic.get("keywords") or [], "demand": topic.get("demand")})
         s.add(c)

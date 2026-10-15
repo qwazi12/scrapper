@@ -439,6 +439,12 @@ async function deleteCountdown(c: CountdownProject): Promise<boolean> {
 }
 
 // --- start a new countdown (same shape as "Start a new breakdown") --------------------------------
+// Topic worded for the size picked: "Top 10 Scary Movies" → "Top 15 Scary Movies" (owner, 2026-10-14).
+function sized(topic: string, n: number): string {
+  const rx = /\b(the\s+)?top\s+\d+\b/i;
+  return rx.test(topic) ? topic.replace(rx, (_m, the) => `${the ? "The " : ""}Top ${n}`) : `Top ${n} ${topic}`;
+}
+
 // --- 📋 your line, shown where you add to it (owner, 2026-10-14: "how am I supposed to see what's queued?") ---
 function YourLine({ version, onChange }: { version: number; onChange: () => void }) {
   const [a, setA] = useState<CountdownAuto | null>(null);
@@ -496,7 +502,8 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
   const [showOut, setShowOut] = useState(false);
   const [picked1, setPicked1] = useState<CountdownTopic | null>(null);      // the topic the box was filled from
   const boxRef = useRef<HTMLDivElement | null>(null);
-  const fromTopic = picked1 && picked1.topic === topic.trim() ? picked1 : null;
+  const size = Number(fmt.slice(3));
+  const fromTopic = picked1 && sized(picked1.topic, size) === topic.trim() ? picked1 : null;
 
   const load = () => api.countdownTopicList().then((x) => { setD(x); setErr(""); }).catch((e) => setErr(errText(e)));
   useEffect(() => { load(); }, []);
@@ -517,7 +524,7 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
     } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
   }
   async function addToLine(t?: CountdownTopic, f?: string) {
-    const name = t ? t.topic : topic.trim();
+    const name = t ? sized(t.topic, Number((f || fmt).slice(3))) : topic.trim();
     if (!name) return setErr("Type a topic (or pick one below) first.");
     setBusy(true); setErr("");
     try {
@@ -530,7 +537,7 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
     } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
   }
   function pickTopic(t: CountdownTopic, f: string) {
-    setTopic(t.topic); setFmt(f); setPicked1(t); setErr("");
+    setTopic(sized(t.topic, Number(f.slice(3)))); setFmt(f); setPicked1(t); setErr("");
     boxRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   async function mark(t: CountdownTopic, kind: "pinned" | "skipped", on: boolean) {
@@ -542,7 +549,17 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
     setBusy(true); setErr("");
     try { onCreated(await api.countdownFromBreakdowns({ topic: topic.trim(), project_ids: picked })); } catch (e: any) { setErr(errText(e)); } finally { setBusy(false); }
   }
-  const topics = (d?.topics || []).filter((t) => tab === "top" || t.group === tab);
+  // The Top 5 / 10 / 15 buttons pick the size: only topics with enough real titles for it, worded for it.
+  const inTab = (d?.topics || []).filter((t) => tab === "top" || t.group === tab);
+  const topics = inTab.filter((t) => t.sizes.includes(size));
+  function pickSize(f: string) {
+    setFmt(f);
+    const n = Number(f.slice(3));
+    if (fromTopic) {
+      if (fromTopic.sizes.includes(n)) setTopic(sized(fromTopic.topic, n));
+      else { setPicked1(null); setTopic(""); }
+    } else if (/\btop\s+\d+\b/i.test(topic)) setTopic(sized(topic, n));   // a typed "Top 10 …" follows the button too
+  }
   return (
     <div style={card} ref={boxRef}>
       <h2 style={h2}>Start a new countdown</h2>
@@ -553,7 +570,7 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
       {tab !== "breakdowns" && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           {(["top5", "top10", "top15"] as const).map((f) => (
-            <button key={f} onClick={() => setFmt(f)} disabled={!!fromTopic && !fromTopic.sizes.includes(Number(f.slice(3)))}
+            <button key={f} onClick={() => pickSize(f)}
                     style={{ ...small, background: fmt === f ? "var(--chip)" : "transparent" }}>{FMT[f]}</button>
           ))}
           <button className="primary" style={{ fontSize: 12 }} disabled={busy} onClick={research} title="Start it now: research (one paid AI call), then you check the titles">
@@ -607,11 +624,13 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
               <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", marginTop: 4 }}>{d.asks.slice(0, 1200)}</div>
             </details>
           )}
+          {d && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Showing {topics.length} topic{topics.length === 1 ? "" : "s"} that can fill a Top {size}
+            {inTab.length > topics.length ? <span style={muted}> · {inTab.length - topics.length} more don't have {size} real titles</span> : null}</div>}
           {!d ? <div style={muted}>Loading topics…</div> : topics.length === 0 ? (
-            <div style={muted}>{d.building ? "Building the list…" : "Nothing here yet — ↻ Refresh topics."}</div>
+            <div style={muted}>{d.building ? "Building the list…" : inTab.length ? `No topic here has ${size} real titles yet — try another size or ↻ Refresh topics.` : "Nothing here yet — ↻ Refresh topics."}</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 8 }}>
-              {topics.map((t) => <TopicCard key={t.sig} t={t} busy={busy} selected={fromTopic?.sig === t.sig} onPick={pickTopic}
+              {topics.map((t) => <TopicCard key={t.sig} t={t} size={size} busy={busy} selected={fromTopic?.sig === t.sig} onPick={pickTopic}
                                              onLine={(tt, f) => addToLine(tt, f)} onMark={mark} />)}
             </div>
           )}
@@ -657,8 +676,8 @@ function NewCountdown({ lineV, onCreated, onLined }: { lineV: number; onCreated:
   );
 }
 
-function TopicCard({ t, busy, selected, onPick, onLine, onMark }: {
-  t: CountdownTopic; busy: boolean; selected: boolean; onPick: (t: CountdownTopic, fmt: string) => void;
+function TopicCard({ t, size, busy, selected, onPick, onLine, onMark }: {
+  t: CountdownTopic; size: number; busy: boolean; selected: boolean; onPick: (t: CountdownTopic, fmt: string) => void;
   onLine: (t: CountdownTopic, fmt: string) => void; onMark: (t: CountdownTopic, k: "pinned" | "skipped", on: boolean) => void;
 }) {
   const [preview, setPreview] = useState(false);
@@ -670,7 +689,7 @@ function TopicCard({ t, busy, selected, onPick, onLine, onMark }: {
         <Posters urls={posters.slice(0, 3)} size={26} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-            <b style={{ fontSize: 12, overflowWrap: "anywhere" }}>{t.pinned ? "⭐ " : ""}{t.topic}</b>
+            <b style={{ fontSize: 12, overflowWrap: "anywhere" }}>{t.pinned ? "⭐ " : ""}{sized(t.topic, size)}</b>
             <span style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)" }} title="Score: vidIQ demand 40%, growth 10%, timing 25%, debate 15%, titles 10%">{t.score}</span>
           </div>
           <span style={{ ...muted, overflowWrap: "anywhere" }}>{t.why_now}</span>
@@ -684,13 +703,13 @@ function TopicCard({ t, busy, selected, onPick, onLine, onMark }: {
       <Chips checks={t.checks} />
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         {[5, 10, 15].map((n) => (
-          <button key={n} className={t.sizes.includes(n) && `top${n}` === t.best_format ? "primary" : undefined}
+          <button key={n} className={n === size ? "primary" : undefined}
                   style={tiny} disabled={busy || !t.sizes.includes(n)}
                   title={t.sizes.includes(n) ? `Put it in “Start a new countdown” as a Top ${n} (nothing is spent yet)` : `Only ${t.titles.length} real titles found`}
                   onClick={() => onPick(t, `top${n}`)}>Top {n}</button>
         ))}
-        <button style={tiny} disabled={busy} title="Have the automation make it next, at its best size"
-                onClick={() => onLine(t, t.sizes.includes(Number(t.best_format.slice(3))) ? t.best_format : `top${Math.max(...t.sizes)}`)}>+ Add to line</button>
+        <button style={tiny} disabled={busy} title={`Have the automation make it as a Top ${size}`}
+                onClick={() => onLine(t, `top${size}`)}>+ Add to line (Top {size})</button>
         <button style={tiny} onClick={() => setPreview(!preview)}>{preview ? "Hide titles" : "👁 Preview titles"}</button>
         <button style={tiny} onClick={() => onMark(t, "pinned", !t.pinned)}>{t.pinned ? "Unpin" : "⭐ Pin"}</button>
         <button style={tiny} onClick={() => onMark(t, "skipped", true)}>✕ Skip</button>
