@@ -105,6 +105,7 @@ python3 scrape.py https://x.com/user/status/123...
   "Top N" (countdown_topics.sized); AI asked for 18 titles (ASK_TITLES); best size clamped (_best); countdowns made
   from a topic are worded for their size. Tests 300 passed; frontend type-checked, not visually verified.
 - Topic list rebuild deferred to 04:10 UTC 2026-10-15: vidIQ was at 95/100 daily credits (day = ET).
+- 2026-10-15 04:12 UTC rebuild VERIFIED: 15 topics, all 15 can fill Top 5/10/15, all with vidIQ demand; vidIQ 20/100 used.
 
 ### Log — 2026-10-14 — Countdown line visible where you add to it
 - Owner's 3 "+ Add to line" topics were safe in countdown_line (1. Top 15 Modern Scary Movies of the 2020s,
