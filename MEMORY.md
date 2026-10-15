@@ -99,6 +99,13 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-14 — Top 5/10/15 drive the topic list (ecf7792)
+- Before: 13/15 topics "Top 10", only 1 could fill a Top 15 (AI gave ~10 titles), buttons only set the box,
+  "Top 15 Best Movies of All Time" had 10 titles. Now: buttons filter to topics that can fill that size and reword
+  "Top N" (countdown_topics.sized); AI asked for 18 titles (ASK_TITLES); best size clamped (_best); countdowns made
+  from a topic are worded for their size. Tests 300 passed; frontend type-checked, not visually verified.
+- Topic list rebuild deferred to 04:10 UTC 2026-10-15: vidIQ was at 95/100 daily credits (day = ET).
+
 ### Log — 2026-10-14 — Countdown line visible where you add to it
 - Owner's 3 "+ Add to line" topics were safe in countdown_line (1. Top 15 Modern Scary Movies of the 2020s,
   2. Top 10 1980s Horror, 3. Top 10 Claustrophobic Survival Thrillers); they leave the topic list by design
@@ -495,7 +502,7 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
-- [PLAN 2026-10-14d] (owner) Countdown topics must follow the Top 5/10/15 buttons. Cause: topic wording fixed
+- [DONE 2026-10-14d ecf7792; topic rebuild scheduled 04:10 UTC 10-15] Countdown topics must follow the Top 5/10/15 buttons. Cause: topic wording fixed
   ("Top 10 …"), AI gives ~10 titles ("up to 15") so only 1/15 topics can fill Top 15, and the buttons only set the
   box. Fix: ask for 18 real titles per topic; buttons filter the list to topics that can fill that size and reword
   "Top N" to match; best_format clamped to what the titles can fill; rebuild the list once.
