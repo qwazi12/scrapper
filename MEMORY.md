@@ -99,6 +99,15 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-17 — Per-platform caption limits (a3fce00)
+- #749 (horror countdown) failed at its 12:00 slot: Instagram refused the 3,723-char description (max 2,200),
+  which failed YouTube + Facebook too (one request per profile). upload_post.upload_video now fits per platform:
+  youtube_description ≤5000, no < >, tags ≤500 chars; facebook_description = full text; shared description
+  (Instagram's) = fit_instagram(): ≤2200 chars / ≤30 hashtags, timestamps + chapter headings dropped, cut at a
+  whole line, rank markers (#15) not counted as hashtags. #749's real caption → 2,158 chars, 12 hashtags.
+  Tests 304 passed. #749 set back to Ready → next Countdowns slot Sun Oct 18 12:00 PM ET (not posted yet, so the
+  fix is not yet verified against Upload-Post itself).
+
 ### Log — 2026-10-14 — Top 5/10/15 drive the topic list (ecf7792)
 - Before: 13/15 topics "Top 10", only 1 could fill a Top 15 (AI gave ~10 titles), buttons only set the box,
   "Top 15 Best Movies of All Time" had 10 titles. Now: buttons filter to topics that can fill that size and reword
@@ -503,7 +512,7 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
-- [PLAN 2026-10-17] (owner) Posting failed: "Instagram description is too long (3723). Maximum 2200" (#749, the
+- [DONE 2026-10-17 a3fce00] Posting failed: "Instagram description is too long (3723). Maximum 2200" (#749, the
   horror countdown). Fix in upload_post.upload_video for every post: per-platform caption limits — YouTube keeps the
   full text (≤5000, no < >, tags ≤500 chars) in youtube_description, Facebook full in facebook_description, the
   shared description (what Instagram uses) fitted to 2200 chars / 30 hashtags (intro + hashtags, no timestamps).
