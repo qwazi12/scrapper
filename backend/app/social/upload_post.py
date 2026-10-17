@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -28,6 +29,61 @@ from ..config import settings
 logger = logging.getLogger("scrapper.social.upload_post")
 
 API_BASE = "https://api.upload-post.com/api"
+
+# Platform caption limits (2026-10-17: a countdown's 3,723-char description — mostly YouTube chapters —
+# was refused for Instagram, and with it the whole post). Every upload is fitted per platform.
+IG_CAPTION_MAX, IG_HASHTAGS_MAX = 2200, 30
+YT_DESCRIPTION_MAX, YT_TAGS_MAX_CHARS = 5000, 500
+_HASHTAG = re.compile(r"(?<!\w)#\w*[^\W\d_]\w*")      # "#15" is a rank, not a hashtag
+_CHAPTER_HEADING = re.compile(r"(TIMESTAMPS|CHAPTERS)\s*:?\s*$", re.I)
+_TIMESTAMP_LINE = re.compile(r"^\s*\(?\d{1,2}:\d{2}(:\d{2})?\)?\s*[-–—:|]?\s*\S")
+
+
+def _cut(text: str, limit: int) -> str:
+    """Shorten to `limit`, ending on a whole line where possible (else a whole word)."""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    nl = cut.rfind("\n")
+    if nl >= len(cut) - 400:
+        return cut[:nl].rstrip()
+    return (cut[: cut.rfind(" ")] if " " in cut[-40:] else cut).rstrip(" ,.;:-–—") + "…"
+
+
+def fit_youtube(description: str) -> str:
+    """YouTube: at most 5,000 characters and no angle brackets."""
+    return _cut(description.replace("<", "‹").replace(">", "›"), YT_DESCRIPTION_MAX)
+
+
+def fit_youtube_tags(tags: list[str]) -> list[str]:
+    """YouTube refuses tags adding up to more than 500 characters (spaces count as quotes)."""
+    out, total = [], 0
+    for t in tags:
+        t = t.strip()
+        cost = len(t) + (2 if " " in t else 0) + (1 if out else 0)
+        if not t or total + cost > YT_TAGS_MAX_CHARS:
+            continue
+        out.append(t)
+        total += cost
+    return out
+
+
+def fit_instagram(description: str) -> str:
+    """Instagram: at most 2,200 characters and 30 hashtags. Keeps the intro and the hashtags; drops
+    chapter timestamps and whatever doesn't fit."""
+    tags: list[str] = []
+    for h in _HASHTAG.findall(description):
+        if h.lower() not in {t.lower() for t in tags}:
+            tags.append(h)
+    tags = tags[:IG_HASHTAGS_MAX]
+    if len(description) <= IG_CAPTION_MAX and len(_HASHTAG.findall(description)) <= IG_HASHTAGS_MAX:
+        return description
+    lines = [ln for ln in _HASHTAG.sub("", description).splitlines() if not _TIMESTAMP_LINE.match(ln)]
+    lines = [ln.rstrip() for ln in lines if not _CHAPTER_HEADING.search(ln.strip())]
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    tail = " ".join(tags)
+    room = IG_CAPTION_MAX - (len(tail) + 2 if tail else 0)
+    return (_cut(body, room) + ("\n\n" + tail if tail else "")).strip()
 TIMEOUT = 30.0
 UPLOAD_TIMEOUT = 1200.0  # multipart body carries the whole video
 MANAGE_URL = "https://app.upload-post.com/manage-users"
@@ -168,17 +224,20 @@ async def upload_video(
         "platform[]": platforms,
     }
     if description:
-        data["description"] = description
+        # The shared description is what Instagram uses; YouTube and Facebook get their own full copies.
+        data["description"] = fit_instagram(description) if "instagram" in platforms else description
+        if "facebook" in platforms:
+            data["facebook_description"] = description
     if scheduled_date:
         data["scheduled_date"] = scheduled_date
     if "youtube" in platforms:
         data["youtube_title"] = title[:100]  # YouTube's title limit
-        data["youtube_description"] = description
+        data["youtube_description"] = fit_youtube(description)
         data["privacyStatus"] = privacy
         data["selfDeclaredMadeForKids"] = "false"
         data["containsSyntheticMedia"] = "false"
         if tags:
-            data["tags[]"] = tags
+            data["tags[]"] = fit_youtube_tags(tags)
     if "tiktok" in platforms:
         data["tiktok_title"] = title
         data["privacy_level"] = "SELF_ONLY" if privacy == "private" else "PUBLIC_TO_EVERYONE"
