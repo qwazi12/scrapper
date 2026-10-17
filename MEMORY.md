@@ -503,6 +503,11 @@ E (cap) → A (list) → B (switch) → C (mass render) → D (mass queue). Test
 - Not verified: automation actually starting a breakdown on prod (it's off until the owner switches it on); render batch on prod.
 
 ### Pending / Next
+- [PLAN 2026-10-17] (owner) Posting failed: "Instagram description is too long (3723). Maximum 2200" (#749, the
+  horror countdown). Fix in upload_post.upload_video for every post: per-platform caption limits — YouTube keeps the
+  full text (≤5000, no < >, tags ≤500 chars) in youtube_description, Facebook full in facebook_description, the
+  shared description (what Instagram uses) fitted to 2200 chars / 30 hashtags (intro + hashtags, no timestamps).
+  Then put #749 back in Ready for the next Countdowns slot.
 - [DONE 2026-10-14d ecf7792; topic rebuild scheduled 04:10 UTC 10-15] Countdown topics must follow the Top 5/10/15 buttons. Cause: topic wording fixed
   ("Top 10 …"), AI gives ~10 titles ("up to 15") so only 1/15 topics can fill Top 15, and the buttons only set the
   box. Fix: ask for 18 real titles per topic; buttons filter the list to topics that can fill that size and reword
