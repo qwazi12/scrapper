@@ -60,6 +60,12 @@ def _finish_test_jobs(monkeypatch):
     """
     import threading
     import time
+    from backend.app.models import BudgetReservation, WorkerLease, CreditReservation
+    from backend.app import resume
+    resume._claims.clear()
+    resume._active_rids.clear()
+    with SessionLocal() as s:
+        s.query(BudgetReservation).delete(); s.query(CreditReservation).delete(); s.query(WorkerLease).delete(); s.commit()
     yield
     deadline = time.monotonic() + 10
     while True:

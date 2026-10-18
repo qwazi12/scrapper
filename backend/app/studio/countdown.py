@@ -220,8 +220,14 @@ def market_text(mk: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _leased_job(fn, cid):
+    from ..worker_leases import scope
+    with scope(f"countdown:{cid}"):
+        return fn(cid)
+
+
 def start_research(cid: int) -> str:
-    return control.start_thread("countdown", f"Countdown #{cid}: research", "countdown", research_job, cid, ref=cid)
+    return control.start_thread("countdown", f"Countdown #{cid}: research", "countdown", _leased_job, research_job, cid, ref=cid)
 
 
 # --- 2. titles ---------------------------------------------------------------------
@@ -489,7 +495,9 @@ def recover() -> None:
     with SessionLocal() as s:
         cut = [(c.id, c.stage) for c in s.query(CountdownProject).filter(
             CountdownProject.stage.in_(["research", "render"]), CountdownProject.stage_status == "running").all()]
+    from ..worker_leases import live
     for cid, stage in cut:
+        if live(f"countdown:{cid}"): continue
         logbus.log("info", "countdown_resumed", f"Countdown #{cid}: {stage} was cut off by a restart — starting it again")
         (start_research if stage == "research" else start_render)(cid)
 
@@ -567,7 +575,7 @@ def render_job(cid: int) -> dict[str, Any]:
 
 
 def start_render(cid: int) -> str:
-    return control.start_thread("countdown", f"Countdown #{cid}: render", "countdown", render_job, cid, ref=cid)
+    return control.start_thread("countdown", f"Countdown #{cid}: render", "countdown", _leased_job, render_job, cid, ref=cid)
 
 
 def comp_dir(c: CountdownProject):
@@ -1574,6 +1582,8 @@ def stop(cid: int) -> dict[str, Any]:
             if p is not None and p.stage_status in ("running", "queued"):
                 runner.stop(p.id)
         control.stop_jobs_for("countdown", cid)
+        from ..worker_leases import revoke
+        revoke(s, f"countdown:{cid}")
         c.stage_status = "stopped"
         c.stage_message = "Stopped. Finished segments are kept; ▶ Make segments carries on."
         s.commit()

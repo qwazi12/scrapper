@@ -330,3 +330,34 @@ test("studio project fragments, back/forward and reload keep the intended projec
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(evidence, "same-studio-navigation.png"), fullPage: true });
 });
+
+
+test("independent source review UI retains records and invalidates checked narration", async ({ page, request }) => {
+  await page.goto("/#longform");
+  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 18");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await expect(page.getByTestId("script-editor")).toBeVisible();
+  const pid = Number(new URL(page.url()).hash.split("/")[1]);
+  await page.getByText("Research — facts & sources", { exact: true }).click();
+  await expect(page.getByText("Unverified — excluded from narrated web facts", { exact: true })).toBeVisible();
+  await page.getByText("Review independent evidence", { exact: true }).click();
+  await page.getByRole("button", { name: "Retrieve Synthetic offline article", exact: true }).click();
+  await page.getByLabel("Exact supporting or conflicting excerpt").fill("Original colored shapes change through six scenes.");
+  await page.getByLabel("Verdict", { exact: true }).selectOption("supported");
+  await page.getByLabel("Why the source supports or contradicts this claim").fill("The offline synthetic record directly describes these original scenes; the title, medium, year and territory were checked.");
+  await page.getByRole("checkbox", { name: /I checked the exact context/ }).check();
+  await page.getByRole("button", { name: "Save evidence review", exact: true }).click();
+  await expect(page.getByText(/Owner verdict: supported/)).toBeVisible();
+  await expect(page.getByTestId("research-blocked")).toContainText("Source evidence changed");
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Check saved script", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
+  await page.reload();
+  const project = await (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
+  expect(project.script.storyboard.R).toHaveLength(1);
+  expect(project.research.claims[0].evidence.scope).toBe("independently_retrieved_owner_reviewed");
+  await page.getByText("Research — facts & sources", { exact: true }).click();
+  await expect(page.getByText(/Owner verdict: supported/)).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "independent-source-review.png"), fullPage: true });
+});

@@ -80,6 +80,8 @@ def adopt(j: Job | None) -> None:
 
 def check() -> None:
     """Between steps: stop here if Stop was pressed."""
+    from .worker_leases import guard
+    guard()
     j = current()
     if j is not None:
         j.heartbeat = time.time()

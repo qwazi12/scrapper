@@ -255,14 +255,15 @@ function DailyCap({ data, saving, onSave, onReload }: { data: CostSummary; savin
   return (
     <div style={{ marginBottom: 14, padding: 10, background: "var(--row)", borderRadius: 8, fontSize: 11 }}>
       {t.cap_usd > 0 ? (
-        <Meter label={`Today (daily cap, ${t.timezone})`} used={t.spent_usd} limit={t.cap_usd} fmt={usd} />
+        <Meter label={`Today (daily cap, ${t.timezone})`} used={t.spent_usd + (t.held_usd || 0)} limit={t.cap_usd} fmt={usd} />
       ) : (
         <div style={{ color: "var(--yellow)" }}>No daily cap — today so far {usd(t.spent_usd)}.</div>
       )}
+      {!!t.held_usd && <div role="status">Reserved for pending or uncertain calls: {usd(t.held_usd)}. These holds remain across midnight until usage is reconciled.</div>}
       {t.reached && (
         <div style={{ color: "var(--red)", marginTop: 4 }}>
-          ⚠ Daily cap reached — every AI, voice-over and research call on the site is paused until {resets}.
-          Paused work resumes first, from where it stopped.
+          ⚠ Daily budget is committed. The day resets at {resets}; uncertain charges stay reserved.
+          Paused work resumes when the remaining budget can cover its next request.
         </div>
       )}
       {t.paused_jobs.length > 0 && (

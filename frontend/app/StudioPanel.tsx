@@ -499,7 +499,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
 
       {/* Owner (2026-10-05): the finished video first, above Research. */}
       <VideoSection p={p} onChange={load} />
-      <FactsSection p={p} />
+      <FactsSection p={p} onChange={setP} />
       <FootageSection p={p} onChange={setP} running={running} />
       <ScriptSection p={p} onChange={setP} running={running} />
       <PlanSection p={p} onChange={setP} running={running} />
@@ -516,7 +516,7 @@ function Section({ title, children, open = true }: { title: string; children: Re
   );
 }
 
-function FactsSection({ p }: { p: StudioProject }) {
+function FactsSection({ p, onChange }: { p: StudioProject; onChange: (p: StudioProject) => void }) {
   const f = p.facts;
   if (!f) return <Section title="Research">Run step 1 to gather facts and sources.</Section>;
   const r = p.research;
@@ -539,12 +539,14 @@ function FactsSection({ p }: { p: StudioProject }) {
           <a href={f.source} target="_blank" rel="noreferrer" style={{ fontSize: 11 }}>TMDB page ↗</a>
         </div>
         <div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>From the web (each line has its sources)</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Web suggestions — unresolved until independently retrieved and reviewed</div>
           {r?.claims?.length ? (
             <ul style={{ margin: 0, paddingLeft: 16 }}>
               {r.claims.map((c, i) => (
                 <li key={i} style={{ marginBottom: 4 }}>
                   {c.text}{" "}
+                  <div style={muted}>{c.evidence?.scope === "independently_retrieved_owner_reviewed" ? `Owner verdict: ${c.evidence.verdict} (freshness and context rechecked when scripting)` : "Unverified — excluded from narrated web facts"}</div>
+                  <SourceReview p={p} index={i} onChange={onChange} />
                   {c.sources.map((k) => r.sources[k] && (
                     <a key={k} href={r.sources[k].url} target="_blank" rel="noreferrer" style={{ fontSize: 10, marginLeft: 4 }}>
                       [{r.sources[k].title}]
@@ -1303,4 +1305,35 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
       </div>
     </Section>
   );
+}
+
+
+function SourceReview({ p, index, onChange }: { p: StudioProject; index: number; onChange: (p: StudioProject) => void }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.studioSources>> | null>(null);
+  const [record, setRecord] = useState("");
+  const [excerpt, setExcerpt] = useState("");
+  const [rationale, setRationale] = useState("");
+  const [verdict, setVerdict] = useState("unresolved");
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const claim = p.research?.claims[index];
+  async function act(fn: () => Promise<void>) {
+    setBusy(true); setError("");
+    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  }
+  if (!claim) return null;
+  const cited = claim.sources.map(i => p.research?.sources[i]).filter(Boolean);
+  return <details style={{ margin: "6px 0" }}><summary onClick={() => { if (!data) void act(async () => setData(await api.studioSources(p.id))); }}>Review independent evidence</summary>
+    <p>Read the retrieved page in context. A matching phrase, quotation, rumor or denial does not establish support. Check contradictory sources and distinguish release territory, year and medium.</p>
+    {cited.map((s, i) => s && <button key={i} disabled={busy} onClick={() => void act(async () => { const r = await api.studioFetchSource(p.id, s.url); setData(await api.studioSources(p.id)); setRecord(r.id); })}>Retrieve {s.title}</button>)}
+    <label>Retrieved record <select aria-label="Retrieved source record" style={{ maxWidth: "100%" }} value={record} onChange={e => { setRecord(e.target.value); setConfirmed(false); }}><option value="">Choose record</option>{data?.records.filter(r => cited.some(s => s?.url === r.requested_url)).map(r => <option key={r.id} value={r.id}>{r.url} · {r.retrieved_at}</option>)}</select></label>
+    {record && <pre style={{ maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap" }}>{data?.records.find(r => r.id === record)?.text}</pre>}
+    <label>Exact supporting or conflicting excerpt<textarea value={excerpt} onChange={e => setExcerpt(e.target.value)} /></label>
+    <label>Verdict<select aria-label="Verdict" value={verdict} onChange={e => setVerdict(e.target.value)}><option value="unresolved">Unresolved</option><option value="contradicted">Contradicted</option><option value="supported">Supported after review</option></select></label>
+    <label>Why the source supports or contradicts this claim<textarea value={rationale} onChange={e => setRationale(e.target.value)} /></label>
+    <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I checked the exact context: {JSON.stringify(data?.context)} and found no unresolved conflicting evidence for a supported verdict.</label>
+    <button disabled={busy || !record || !confirmed || rationale.trim().length < 20 || !excerpt.trim()} onClick={() => void act(async () => onChange(await api.studioReviewClaim(p.id, index, { record_id: record, excerpt, context: data?.context, verdict, rationale, conflicts: [] })))}>Save evidence review</button>
+    {error && <div role="alert" style={{ color: "var(--red)" }}>{error}</div>}
+  </details>;
 }

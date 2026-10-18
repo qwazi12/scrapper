@@ -1201,6 +1201,7 @@ class CostSettingsIn(BaseModel):
     upload_post_plan: str | None = None
     fixed_costs: list[dict] | None = None
     gemini: dict | None = None
+    request_bounds: dict[str, float] | None = None
     tts_usd_per_million_chars: float | None = None
     grounding_usd_per_1000: float | None = None
 
@@ -1230,6 +1231,13 @@ def put_cost_settings(req: CostSettingsIn, s: Session = Depends(get_session)) ->
     from . import costs
     from .models import AppSetting
     patch = {k: v for k, v in req.model_dump().items() if v is not None}
+    from .budget_reservations import micros, lock
+    for key, value in (patch.get("request_bounds") or {}).items():
+        try:
+            if not key.strip() or micros(value) <= 0: raise ValueError()
+        except ValueError:
+            raise HTTPException(400, "Request bounds need a service:model and a finite positive USD ceiling")
+    lock(s)
     if "budget_usd" in patch and patch["budget_usd"] < 0:
         raise HTTPException(400, "budget must be 0 or more")
     if "daily_usd" in patch and patch["daily_usd"] < 0:
@@ -1737,3 +1745,26 @@ def _start_drive_sync(p: dict, rid: int | None = None) -> str:
 
 
 resume.launcher("drive_sync")(lambda p, cp, rid: _start_drive_sync(p, rid))
+
+
+@app.get("/api/costs/reservations", dependencies=_AUTH)
+def cost_reservations(s: Session = Depends(get_session)):
+    from .models import BudgetReservation
+    return [{"id": r.id, "service": r.service, "state": r.state, "ref": r.ref,
+             "reserved_usd": r.reserved_micros/1e6, "actual_usd": r.actual_micros/1e6 if r.actual_micros is not None else None,
+             "created_at": r.created_at} for r in s.query(BudgetReservation).filter(
+                 BudgetReservation.state.in_(("reserved","dispatched","unknown","breach"))).order_by(BudgetReservation.created_at).all()]
+
+
+class BudgetResolutionIn(BaseModel):
+    actual_usd: float
+    receipt: str
+    rationale: str
+
+
+@app.post("/api/costs/reservations/{rid}/resolve", dependencies=_AUTH)
+def resolve_cost_reservation(rid: str, req: BudgetResolutionIn):
+    from . import budget_reservations as br
+    try: br.resolve(rid,req.actual_usd,req.receipt,req.rationale)
+    except ValueError as exc: raise HTTPException(409,str(exc))
+    return {"resolved": rid}

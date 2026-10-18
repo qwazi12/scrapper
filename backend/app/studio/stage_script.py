@@ -22,7 +22,7 @@ from .runner import stage
 WPM = 180
 
 
-def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
+def storyboard(facts: dict, research: dict | None, shots: list | None, project_id: int | None = None) -> dict:
     F: list[str] = []
     f = facts
     kind = "TV series" if f.get("media_type") == "tv" else "movie"
@@ -58,7 +58,7 @@ def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
         text = (c.get("text") or "").strip()
         if not text:
             continue
-        if not srcq.usable(c, srcs):
+        if not srcq.usable(c, srcs, facts=facts, project_id=project_id):
             skipped += 1
             continue
         R.append({"text": text, "sources": [srcs[i] for i in c.get("sources", [])
@@ -71,7 +71,7 @@ def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
     good = [x for x in srcs if x.get("tier") in ("official", "trusted") or "tier" not in x]
     ctx = f.get("countdown") if isinstance(f.get("countdown"), dict) else None
     C = [f"Ranked #{ctx.get('rank')} of {ctx.get('total')} in {ctx.get('topic')}"] if ctx else []
-    return {"F": F, "R": R, "T": T, "C": C, "sources": good, "skipped_findings": skipped}
+    return {"F": F, "R": R, "T": T, "C": C, "sources": good, "skipped_findings": skipped, "project_id": project_id, "identity": {k: f.get(k) for k in ("title", "primary_date", "media_type", "region")}}
 
 
 def _board_text(b: dict) -> str:
@@ -205,7 +205,7 @@ def script(project_id: int) -> str:
         facts, research, shots, minutes = p.facts, p.research, p.shots, p.target_minutes
     if not facts:
         raise RuntimeError("Run 'gather' first")
-    board = storyboard(facts, research, shots)
+    board = storyboard(facts, research, shots, project_id)
     board_txt = _board_text(board)
     channel = settings.studio_channel_name
 
@@ -289,7 +289,7 @@ def verify_saved(project_id: int) -> str:
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         sc, facts = dict(p.script or {}), p.facts or {}
-        board = storyboard(facts, p.research, p.shots)
+        board = storyboard(facts, p.research, p.shots, project_id)
     if not sc.get("sentences"):
         raise gemini.GeminiError("Write the script first")
     verdicts = gemini.ask_json(check_prompt(_board_text(board), sc["sentences"]), temperature=0.1)

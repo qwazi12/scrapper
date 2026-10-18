@@ -80,6 +80,10 @@ def _deletable(p: StudioProject) -> list[pathlib.Path]:
     parts = [root / "stills", root / "render", root / "render_new", root / "segcache"]
     if not uploaded:
         parts.append(root / "footage")
+    for attempt in (root / "_attempts").glob("*"):
+        if attempt.is_dir():
+            parts.extend(attempt / name for name in ("stills", "thumbs", "render", "render_new", "segcache"))
+            if not uploaded: parts.append(attempt / "footage")
     return [x for x in parts if x.exists()]
 
 

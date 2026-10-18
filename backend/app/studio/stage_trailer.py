@@ -18,7 +18,7 @@ from ..models import Clip, StudioProject, Status
 from ...core.scraper import platform_of
 from .. import control
 from . import imdb
-from .runner import AwaitingWorker, project_dir, stage
+from .runner import AwaitingWorker, attempt_dir, project_dir, stage
 
 EXTRA_TYPES = ("Clip", "Teaser", "Promo", "Featurette", "Trailer")
 MAX_EXTRA_SECONDS = 300   # extra footage beyond the main trailer
@@ -87,7 +87,7 @@ def trailer(project_id: int) -> str:
             s.commit()
         return msg
 
-    footage = project_dir(project_id) / "footage"
+    footage = attempt_dir(project_id) / "footage"
     footage.mkdir(exist_ok=True)
     result: dict | None = None
     note = ""

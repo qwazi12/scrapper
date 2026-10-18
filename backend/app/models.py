@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import enum
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -331,3 +331,74 @@ class UsageEvent(Base):
     chars: Mapped[int] = mapped_column(Integer, default=0)
     requests: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class ResearchSourceRecord(Base):
+    """Immutable independently fetched text; model output never creates these rows."""
+    __tablename__ = "research_source_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[int] = mapped_column(Integer, index=True)
+    url: Mapped[str] = mapped_column(Text)
+    requested_url: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    retrieved_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ResearchClaimReview(Base):
+    __tablename__ = "research_claim_reviews"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[int] = mapped_column(Integer, index=True)
+    record_id: Mapped[str] = mapped_column(String(36))
+    claim: Mapped[str] = mapped_column(Text)
+    excerpt: Mapped[str] = mapped_column(Text)
+    context: Mapped[dict] = mapped_column(JSON)
+    verdict: Mapped[str] = mapped_column(String(16))
+    rationale: Mapped[str] = mapped_column(Text)
+    conflicts: Mapped[list] = mapped_column(JSON, default=list)
+    reviewed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BudgetMutex(Base):
+    __tablename__ = "budget_mutex"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class BudgetReservation(Base):
+    __tablename__ = "budget_reservations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service: Mapped[str] = mapped_column(String(64))
+    operation: Mapped[str] = mapped_column(String(64))
+    ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reserved_micros: Mapped[int] = mapped_column(BigInteger)
+    actual_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), index=True)  # reserved/dispatched/unknown/settled/released
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class WorkerLease(Base):
+    __tablename__ = "worker_leases"
+    resource: Mapped[str] = mapped_column(String(160), primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CreditReservation(Base):
+    __tablename__ = "credit_reservations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tool: Mapped[str] = mapped_column(String(100))
+    credits: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16), index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BudgetResolution(Base):
+    __tablename__ = "budget_resolutions"
+    reservation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actual_micros: Mapped[int] = mapped_column(BigInteger)
+    receipt: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)

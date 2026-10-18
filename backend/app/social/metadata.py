@@ -67,7 +67,7 @@ async def generate_social_metadata(
 
     if not settings.gemini_api_key:
         return fail("GEMINI_API_KEY is not set on the server")
-    from .. import costs
+    from .. import costs, budget_reservations as br
     try:
         costs.check_budget()
     except costs.BudgetExceeded as exc:
@@ -117,13 +117,12 @@ async def generate_social_metadata(
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
             # Key in a header, not the URL, so it can't leak into logged URLs.
-            res = await client.post(url, json=payload, headers={"x-goog-api-key": settings.gemini_api_key})
+            res = await br.post_json_async(client, url, body=payload, model=settings.gemini_model, headers={"x-goog-api-key": settings.gemini_api_key})
             if not res.is_success:
                 logger.warning("Gemini API call failed (%s): %s", res.status_code, res.text)
                 return fail(f"Gemini {settings.gemini_model} returned HTTP {res.status_code}: {res.text[:300]}")
 
             data = res.json()
-            costs.record_gemini(settings.gemini_model, data.get("usageMetadata") or {})
             candidates = data.get("candidates", [])
             if not candidates:
                 return fail("Gemini returned no candidates")

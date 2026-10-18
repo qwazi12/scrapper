@@ -22,7 +22,7 @@ from backend.app.main import app
 from backend.app.db import SessionLocal, init_db
 from backend.app.models import AppSetting
 from backend.app.studio import (auto, candidates, gemini, imdb, media, stage_gather,
-                                stage_render, tmdb, tts, countdown_topics, countdown)
+                                stage_render, tmdb, tts, countdown_topics, countdown, fact_verification)
 from backend.app.studio.compilations import engine
 from backend.app.social import upload_post
 
@@ -158,7 +158,15 @@ tmdb.search = lambda q: [title(int(re.search(r"\d+", q)[0]) if re.search(r"\d+",
 tmdb.calendar = lambda: {"upcoming_movies": [title()], "trending": [title()], "on_the_air_tv": []}
 stage_gather._download = lambda url, dest: str(shutil.copy(ASSETS / "poster.jpg", dest)) if url else None
 gemini.ask_json = ask
-gemini.research = lambda prompt: {"text": "Synthetic test research", "sources": [], "claims": [], "queries": []}
+SOURCE_URL = "https://apnews.com/article/screen-central-offline-fixture"
+SOURCE_TEXT = "Original colored shapes change through six scenes. This is original synthetic test footage for Screen Central, not real film news."
+gemini.research = lambda prompt: {"text": "Synthetic test research", "sources": [{"title": "Synthetic offline article", "url": SOURCE_URL}],
+    "claims": [{"text": "Original colored shapes change through six scenes.", "sources": [0]}], "queries": []}
+def fetch_source(url):
+    import hashlib
+    if url != SOURCE_URL: raise IsolationError("Unexpected fixture source")
+    return {"url": url, "requested_url": url, "text": SOURCE_TEXT, "sha256": hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()}
+fact_verification.fetch = fetch_source
 imdb.list_videos = lambda imdb_id: [{"id": "synthetic-trailer", "name": "Original fixture", "type": "Trailer", "seconds": 12}]
 imdb.download = lambda video, dest: shutil.copy(TRAILER, dest)
 tts.synth = synth

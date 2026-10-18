@@ -140,8 +140,15 @@ def _post(url: str, payload: dict) -> httpx.Response | None:
     res = None
     for attempt in range(4):
         try:
-            res = httpx.post(url, json=payload, timeout=90,
-                             headers={"x-goog-api-key": settings.gemini_api_key, "content-type": "application/json"})
+            from .. import costs, budget_reservations as br
+            model = payload.get("model") or settings.narration_tts_model
+            with br.attempt("gemini-tts", br.request_bound("gemini-tts", payload, model)):
+                res = httpx.post(url, json=payload, timeout=90,
+                                 headers={"x-goog-api-key": settings.gemini_api_key, "content-type": "application/json"})
+                if res.is_success:
+                    data = res.json()
+                    costs.record_gemini_tts(model, data.get("usageMetadata") or data.get("usage") or {}, 0, 0)
+
         except httpx.HTTPError as exc:
             if attempt == 3:
                 raise TTSError(f"Gemini text-to-speech unreachable: {exc}") from exc
@@ -172,7 +179,6 @@ def _gemini(spoken: str, dest: pathlib.Path) -> None:
             if b64:
                 _working_api["api"] = api
                 seconds = _to_mp3(base64.b64decode(b64), dest)
-                costs.record_gemini_tts(model, data.get("usageMetadata") or data.get("usage") or {}, seconds, len(spoken))
                 return
             errors.append(f"{api}: no audio in the response")
             continue
@@ -188,15 +194,18 @@ def _chirp(spoken: str, dest: pathlib.Path) -> None:
     if not settings.tts_api_key:
         raise TTSError("TTS_API_KEY is not set on the server (Google Text-to-Speech key)")
     lang = "-".join(settings.tts_voice.split("-")[:2])
-    res = httpx.post(URL, params={"key": settings.tts_api_key}, timeout=60, json={
-        "input": {"text": spoken},
-        "voice": {"languageCode": lang, "name": settings.tts_voice},
-        "audioConfig": {"audioEncoding": "MP3"},
-    })
+    from .. import budget_reservations as br
+    bound = len(spoken) / 1e6 * costs.settings_dict()["tts_usd_per_million_chars"]
+    with br.attempt("tts", bound):
+        res = httpx.post(URL, params={"key": settings.tts_api_key}, timeout=60, json={
+            "input": {"text": spoken},
+            "voice": {"languageCode": lang, "name": settings.tts_voice},
+            "audioConfig": {"audioEncoding": "MP3"},
+        })
+        if res.is_success: costs.record_tts(len(spoken), settings.tts_voice)
     if not res.is_success:
         # Never echo the URL (it carries the key) — body only.
         raise TTSError(f"Text-to-Speech failed ({res.status_code}): {res.text[:300]}")
-    costs.record_tts(len(spoken), settings.tts_voice)  # only real synthesis is billed, never a cache hit
     dest.write_bytes(base64.b64decode(res.json()["audioContent"]))
 
 
@@ -212,8 +221,13 @@ def synth(text: str, dest: pathlib.Path) -> pathlib.Path:
             costs.check_budget()
         except costs.BudgetExceeded as exc:
             raise TTSError(str(exc)) from exc
-        tmp = cached.with_suffix(".tmp.mp3")
-        (_gemini if engine() == "gemini" else _chirp)(spoken, tmp)
-        tmp.replace(cached)  # atomic: no half-written cache entries
+        import uuid
+        tmp = cached.with_suffix(f".{uuid.uuid4().hex}.tmp.mp3")
+        try:
+            (_gemini if engine() == "gemini" else _chirp)(spoken, tmp)
+            control.check()
+            tmp.replace(cached)
+        finally:
+            tmp.unlink(missing_ok=True)  # atomic: no half-written cache entries
     shutil.copyfile(cached, dest)
     return dest

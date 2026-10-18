@@ -56,7 +56,7 @@ def test_evidence_requires_exact_record_excerpt_date_and_url():
                 "retrieved_at": datetime.now(timezone.utc).isoformat(), "entity": "synthetic",
                 "verdict": "supported", "confidence": "high", "conflicts": []}
     claim = {"text": record, "sources": [0], "evidence": evidence}
-    assert sources.usable(claim, [{"url": url}])
+    assert not sources.usable(claim, [{"url": url}])  # model-provided records cannot authorize facts
     evidence["excerpt"] = "This was never retrieved"
     assert not sources.usable(claim, [{"url": url}])
 

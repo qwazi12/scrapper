@@ -73,6 +73,14 @@ def script_issues(script: dict | None) -> list[str]:
     for i, sentence in enumerate(script["sentences"], 1):
         if sentence.get("check") != "ok":
             issues.append(f"Sentence {i} needs a storyboard check")
+    board = script.get("storyboard") or {}
+    if board.get("R"):
+        from .sources import usable
+        for i, finding in enumerate(board["R"], 1):
+            refs = finding.get("sources") or []
+            claim = {**finding, "sources": list(range(len(refs)))}
+            if not usable(claim, refs, facts=board.get("identity") or {}, project_id=board.get("project_id")):
+                issues.append(f"Web finding R{i} evidence expired or no longer matches; review sources again")
     return list(dict.fromkeys(issues))
 
 

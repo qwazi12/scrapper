@@ -150,7 +150,7 @@ def start(ids: list[int], rid: int | None = None, already_done: list[int] | None
                        f"AI rewrite: {status['done']}/{status['total']} done, {status['failed']} failed"
                        + (f" (stopped: {status['aborted']})" if status["aborted"] else ""))
 
-    threading.Thread(target=work, daemon=True, name="bulk_ai").start()
+    threading.Thread(target=resume.bind_work(rid, work), daemon=True, name="bulk_ai").start()
     return dict(status)
 
 

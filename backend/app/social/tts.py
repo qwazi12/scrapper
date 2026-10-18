@@ -243,9 +243,10 @@ async def synthesize_speech(
 
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:
-            res = await client.post(
+            from .. import budget_reservations as br
+            res = await br.post_json_async(client,
                 url,
-                json=payload,
+                body=payload, model=model, service="gemini-tts",
                 headers={
                     "x-goog-api-key": settings.gemini_api_key,
                     "content-type": "application/json",
@@ -354,9 +355,10 @@ async def synthesize_dialogue(
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            res = await client.post(
+            from .. import budget_reservations as br
+            res = await br.post_json_async(client,
                 INTERACTIONS_URL,
-                json=payload,
+                body=payload, model=model, service="gemini-tts",
                 headers={
                     "x-goog-api-key": settings.gemini_api_key,
                     "content-type": "application/json",
@@ -434,7 +436,8 @@ async def generate_hook_voiceover(
     }
 
     async with httpx.AsyncClient(timeout=20.0) as client:
-        res = await client.post(url, json=payload, headers={"x-goog-api-key": settings.gemini_api_key})
+        from .. import budget_reservations as br
+        res = await br.post_json_async(client, url, body=payload, model=settings.gemini_model, headers={"x-goog-api-key": settings.gemini_api_key})
         if not res.is_success:
             raise TTSError(f"LLM hook generation failed: {res.text[:200]}")
 

@@ -117,39 +117,43 @@ def create_campaign(req: CampaignIn, s: Session = Depends(get_session)):
 
 @router.post("/campaigns/{cid}/render/{fmt}")
 def render_campaign(cid: int, fmt: NATIVE, s: Session = Depends(get_session)):
-    from . import native
-    row = get_campaign(s, cid)
-    if fmt not in row.brief["formats"]: raise HTTPException(409, "This format is not selected for this campaign")
-    frozen = inputs(s, row)
-    token = uuid.uuid4().hex
-    claimed = s.execute(update(CreativeCampaign).where(CreativeCampaign.id == cid,
-        CreativeCampaign.stage_status != "running").values(stage_status="running", work_token=token,
-        stage_message=f"Rendering {fmt}; each export is kept as a separate version"), execution_options={"synchronize_session": False}).rowcount
-    s.commit()
-    if not claimed: raise HTTPException(409, "Campaign is already rendering; wait for the result")
-    export_id = uuid.uuid4().hex
-    root = settings.data_path / "editorial" / "campaigns" / str(cid) / export_id
+    from ..worker_leases import scope, LeaseLost
     try:
-        with control.job("native", f"Campaign #{cid}: {fmt}", scope="editorial", ref=cid):
-            paths = {int(aid): Path(s.get(MediaAsset, int(aid)).file_path) for aid in frozen["assets"]}
-            manifest = native.render(root, row.brief, fmt, paths)
-        # Inputs are checked again after long-running render, before promotion.
-        s.expire_all(); row = get_campaign(s, cid)
-        if row.work_token != token or digest(inputs(s, row)) != digest(frozen): raise HTTPException(409, "Campaign inputs changed while rendering; this version was not promoted")
-        manifest.update(input_sha256=digest(frozen), inputs=frozen)
-        item = CreativeExport(id=export_id, campaign_id=cid, format=fmt, manifest=manifest)
-        s.add(item)
-        row.stage_status, row.stage_message, row.work_token = "ready", f"{fmt} rendered; inspect every card, captions and sound before approval", None
-        s.commit()
-        return export_out(item)
-    except BaseException as exc:
-        s.rollback()
-        s.execute(update(CreativeCampaign).where(CreativeCampaign.id == cid, CreativeCampaign.work_token == token)
-                  .values(stage_status="error", stage_message=str(exc)[:500], work_token=None))
-        s.commit()
-        if isinstance(exc, HTTPException): raise
-        if isinstance(exc, Exception): raise HTTPException(409, f"Native render stopped: {str(exc)[:300]}") from exc
-        raise
+        with scope(f"native:{cid}"):
+            from . import native
+            row = get_campaign(s, cid)
+            if fmt not in row.brief["formats"]: raise HTTPException(409, "This format is not selected for this campaign")
+            frozen = inputs(s, row)
+            token = uuid.uuid4().hex
+            claimed = s.execute(update(CreativeCampaign).where(CreativeCampaign.id == cid).values(stage_status="running", work_token=token,
+                stage_message=f"Rendering {fmt}; each export is kept as a separate version"), execution_options={"synchronize_session": False}).rowcount
+            s.commit()
+            if not claimed: raise HTTPException(409, "Campaign is already rendering; wait for the result")
+            export_id = uuid.uuid4().hex
+            root = settings.data_path / "editorial" / "campaigns" / str(cid) / export_id
+            try:
+                with control.job("native", f"Campaign #{cid}: {fmt}", scope="editorial", ref=cid):
+                    paths = {int(aid): Path(s.get(MediaAsset, int(aid)).file_path) for aid in frozen["assets"]}
+                    manifest = native.render(root, row.brief, fmt, paths)
+                # Inputs are checked again after long-running render, before promotion.
+                s.expire_all(); row = get_campaign(s, cid)
+                if row.work_token != token or digest(inputs(s, row)) != digest(frozen): raise HTTPException(409, "Campaign inputs changed while rendering; this version was not promoted")
+                manifest.update(input_sha256=digest(frozen), inputs=frozen)
+                item = CreativeExport(id=export_id, campaign_id=cid, format=fmt, manifest=manifest)
+                s.add(item)
+                row.stage_status, row.stage_message, row.work_token = "ready", f"{fmt} rendered; inspect every card, captions and sound before approval", None
+                s.commit()
+                return export_out(item)
+            except BaseException as exc:
+                s.rollback()
+                s.execute(update(CreativeCampaign).where(CreativeCampaign.id == cid, CreativeCampaign.work_token == token)
+                          .values(stage_status="error", stage_message=str(exc)[:500], work_token=None))
+                s.commit()
+                if isinstance(exc, HTTPException): raise
+                if isinstance(exc, Exception): raise HTTPException(409, f"Native render stopped: {str(exc)[:300]}") from exc
+                raise
+    except LeaseLost as exc:
+        raise HTTPException(409, str(exc))
 
 
 def exact_export(s, eid):

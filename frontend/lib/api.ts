@@ -503,7 +503,7 @@ export type StudioProject = {
   script_ready?: boolean;
   research_issues?: string[];
   facts?: any;
-  research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[] }[] } | null;
+  research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[]; evidence?: { verdict: string; scope?: string; excerpt?: string; rationale?: string } }[] } | null;
   trailer?: any;
   shots?: StudioShot[] | null;
   plan?: StudioPlanItem[] | null;
@@ -913,6 +913,7 @@ export type CostSummary = {
     base_cap_usd?: number;
     extra_today_usd?: number;
     spent_usd: number;
+    held_usd?: number;
     remaining_usd: number | null;
     reached: boolean;
     resets_at: string;
@@ -1269,6 +1270,9 @@ export const api = {
       "/api/studio/calendar", { headers: headers(false) }),
   studioSearch: (q: string) =>
     req<StudioTitle[]>(`/api/studio/search?q=${encodeURIComponent(q)}`, { headers: headers(false) }),
+  studioSources: (id: number) => req<{ context: Record<string, string>; records: { id: string; url: string; requested_url: string; text: string; sha256: string; retrieved_at: string }[] }>(`/api/studio/projects/${id}/source-records`, { headers: headers(false) }),
+  studioFetchSource: (id: number, url: string) => req<{ id: string }>(`/api/studio/projects/${id}/source-records`, { method: "POST", headers: headers(), body: JSON.stringify({ url }) }),
+  studioReviewClaim: (id: number, index: number, data: object) => req<StudioProject>(`/api/studio/projects/${id}/claims/${index}/review`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   studioProjects: () => req<StudioProject[]>("/api/studio/projects", { headers: headers(false) }),
   studioProject: (id: number) => req<StudioProject>(`/api/studio/projects/${id}`, { headers: headers(false) }),
   studioCandidates: () => req<StudioCandidates>("/api/studio/candidates", { headers: headers(false) }),

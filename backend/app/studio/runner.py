@@ -15,7 +15,7 @@ import threading
 import traceback
 from typing import Callable
 
-from .. import control, logbus
+from .. import control, logbus, worker_leases
 from ..config import settings
 from ..db import SessionLocal
 from ..models import StudioProject
@@ -47,6 +47,18 @@ def project_dir(project_id: int) -> pathlib.Path:
     p = settings.data_path / "studio" / str(project_id)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def attempt_dir(project_id: int) -> pathlib.Path:
+    """Immutable attempt namespace: stale workers never share writable outputs."""
+    import uuid
+    from ..worker_leases import current, guard
+    guard()
+    h=current()
+    ident=f"{h.owner}-{h.generation}" if h else uuid.uuid4().hex
+    dest=project_dir(project_id) / "_attempts" / ident
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
 
 
 def _set(project_id: int, **fields) -> None:
@@ -82,6 +94,7 @@ def stop(project_id: int) -> bool:
             if int((r.params or {}).get("project_id", -1)) == project_id:
                 r.status = "stopped"
                 r.last_error = "Stopped by user"
+        worker_leases.revoke(s, f"studio:{project_id}")
         s.commit()
     _set(project_id, stage_status="stopped", stage_message="Stopped by user — re-run it when ready")
     logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: stopped by user", project=project_id)
@@ -124,6 +137,8 @@ def run_one(project_id: int, name: str, stop_event: threading.Event | None = Non
             summary = STAGES[name](project_id) or "done"
             if ev and ev.is_set():
                 raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
+    except worker_leases.LeaseLost:
+        raise
     except AwaitingWorker as exc:
         _set(project_id, stage_status="awaiting_worker", stage_message=str(exc))
         logbus.log("info", "studio_stage_waiting", f"Studio #{project_id}: {exc}",
@@ -194,13 +209,18 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
         raise RuntimeError(f"Studio is busy with #{_current['project_id']} ({_current['stage']}); try again shortly")
     stop_event = threading.Event()
     _stop_events[project_id] = stop_event
-    _set(project_id, stage=name, stage_status="running",
-         stage_message=message or (f"{name} resumed after a server restart…" if rid else f"{name} queued…"))
-    if rid:
-        resume.reopen(rid)
-    else:
-        rid = resume.begin("studio", f"Studio #{project_id}: {name}" + (" + following steps" if auto else ""),
-                           {"project_id": project_id, "stage": name, "auto": auto, "until": until})
+    try:
+        if rid:
+            resume.reopen(rid)
+        else:
+            rid = resume.begin("studio", f"Studio #{project_id}: {name}" + (" + following steps" if auto else ""),
+                               {"project_id": project_id, "stage": name, "auto": auto, "until": until})
+        with resume.leases.bind(resume._claims[rid]):
+            _set(project_id, stage=name, stage_status="running", stage_message=message or f"{name} queued…")
+    except BaseException:
+        _stop_events.pop(project_id, None)
+        _lock.release()
+        raise
 
     def work() -> None:
         from .. import costs
@@ -255,7 +275,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
             except Exception as exc:  # noqa: BLE001 — the scheduler tick tries again
                 logger.warning("could not start the next waiting Studio job: %s", exc)
 
-    threading.Thread(target=work, daemon=True, name=f"studio-{project_id}-{name}").start()
+    threading.Thread(target=resume.bind_work(rid, work), daemon=True, name=f"studio-{project_id}-{name}").start()
 
 
 def start_or_queue(project_id: int, name: str, auto: bool = False, until: str = "script") -> str:

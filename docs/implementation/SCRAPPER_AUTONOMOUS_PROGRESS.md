@@ -232,3 +232,12 @@ Frontend explicit final tsc8 passed. No application changes after these checks.
 ## Continued local roadmap — 2026-10-18
 
 Owner requested independent fact verification first, then atomic budgets and worker leases. Latest instruction keeps all work local; no GitHub push. Added first revival checkpoint to root MEMORY.md, preserving historical entries. Previous revival work was saved in local Git and this ledger, not synchronized to GitHub.
+
+
+## Local roadmap contracts — 2026-10-18
+
+- Added independently fetched, immutable source records and explicit owner semantic reviews. HTTPS source retrieval pins public DNS addresses and checks redirects, content type, size and deadline. Claim words appearing in a denial are not automatically support. Project, title/year/medium/territory, exact excerpt/hash and seven-day freshness are checked. Grounding/model-provided evidence remains excluded. Reviews invalidate saved narration/plan/export approval; the model check remains storyboard-only.
+- Added integer micro-dollar reservations serialized by a database mutex; provider attempts reserve before dispatch and settle usage in the same transaction. Missing receipts/timeouts retain holds across calendar resets. Unknown models/multimodal/grounding/TTS price bounds fail closed until explicitly configured. Receipt reconciliation is owner-authenticated and audited. vidIQ credits also reserve atomically; uncertain paid tool calls are not automatically retried.
+- Added resource leases with increasing generations, expiry, renewal, stale-write/payment/checkpoint/completion fencing and owner-stop revocation. Applied to resumable jobs, Countdown research/render and native campaigns. Studio output folders are isolated per attempt; committed segment caches are copied for reuse. Native crash recovery preserves earlier export versions. Legacy scrape/compile workers and residential handoff still need full lease integration.
+- Checks so far: full backend baseline after first integration 384 passed /1 optional skip; expanded focused contracts 37 passed; production frontend build passed. First six-scenario browser run: five passed; new source-review scenario exposed a dropdown accessible-label selector issue. Fixed its explicit label; fresh full browser rerun pending. Failed trace retained.
+- All work local on the feature branch. No GitHub push, deploy, public post, live account mutation or paid API request. External spend remains $0. Full roadmap remains partial; see completion report for release gaps.

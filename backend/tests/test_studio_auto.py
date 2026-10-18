@@ -332,6 +332,8 @@ def test_cut_off_job_waits_in_line_when_studio_is_busy(monkeypatch):
     resume.checkpoint(rid, stage="shots")
     with SessionLocal() as s:
         r = s.get(ResumableJob, rid)
+        from backend.app.models import WorkerLease
+        s.get(WorkerLease, resume.leases.resource(r.kind,r.params)).expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)
         r.owner = "dead-server"
         r.updated_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
         s.commit()

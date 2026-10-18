@@ -127,3 +127,18 @@ def test_photo_transport_uses_ordered_multipart_and_persistable_request_key(tmp_
     assert asyncio.run(upload_post.upload_images(paths, profile="default", platforms=["instagram"], title="Synthetic",
         description="Original test slides", idempotency_key="synthetic-key")) == "synthetic-key"
     assert len(requests) == 1
+
+
+def test_expired_native_render_can_recover_without_overwriting_old_export(client):
+    from backend.app.models import WorkerLease
+    from backend.app import worker_leases as leases
+    from datetime import timedelta
+    oid,cid,first=rendered(client)
+    with SessionLocal() as s:
+        row=s.get(CreativeCampaign,cid); row.stage_status='running'; row.work_token='dead-process'
+        lease=s.get(WorkerLease,f'native:{cid}'); lease.expires_at=datetime.now(timezone.utc)-timedelta(seconds=1)
+        s.commit()
+    result=client.post(f'/api/editorial/campaigns/{cid}/render/carousel')
+    assert result.status_code==200, result.text
+    assert result.json()['id']!=first['id']
+    assert Path(first['manifest']['cards'][0]['file']).is_file()

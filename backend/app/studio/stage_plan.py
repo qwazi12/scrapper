@@ -29,7 +29,7 @@ from ..db import SessionLocal
 from ..models import StudioProject
 from .. import control
 from . import gemini, media, tts
-from .runner import project_dir, stage
+from .runner import attempt_dir, project_dir, stage
 
 GAP, PARA_GAP = 0.35, 0.6
 LOOK_ALIKE = 10       # max differing bits (of 64) for two stills to count as the same picture
@@ -234,7 +234,7 @@ def plan(project_id: int) -> str:
     if len(catalog) < 5:
         raise RuntimeError(f"Only {len(catalog)} usable shots — add footage (upload or more trailers)")
     root = project_dir(project_id)
-    tts_dir = root / "tts"
+    tts_dir = attempt_dir(project_id) / "tts"
     tts_dir.mkdir(exist_ok=True)
 
     # 1. Voice every sentence; its real length drives the timeline.

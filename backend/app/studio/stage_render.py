@@ -25,7 +25,7 @@ from ..models import StudioProject
 from .. import control
 from . import media
 from . import motion
-from .runner import project_dir, stage
+from .runner import attempt_dir, project_dir, stage
 
 W, H, FPS = 1920, 1080, 30
 # Fit the whole picture inside 16:9, centred, black where it doesn't reach (never crop).
@@ -211,6 +211,7 @@ def render(project_id: int) -> str:
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         facts, script, plan, shots = p.facts or {}, p.script or {}, p.plan, p.shots or []
+        previous_render = dict(p.render or {})
     if not plan:
         raise RuntimeError("Run 'plan' first")
     with SessionLocal() as s:
@@ -227,7 +228,8 @@ def render(project_id: int) -> str:
     root = project_dir(project_id)
     # Build in render_new/ and swap it in only when finished: a stopped or failed
     # re-render must never delete the last good video (it did until 2026-10-02).
-    out_dir = root / "render_new"
+    attempt = attempt_dir(project_id)
+    out_dir = attempt / "render_new"
     if out_dir.exists():
         shutil.rmtree(out_dir)
     segs_dir = out_dir / "segments"
@@ -243,8 +245,15 @@ def render(project_id: int) -> str:
     mode = motion_mode()
     want_motion = mode in ("on", "compare")
     clean_poster = poster_frame(poster, backdrop, "", out_dir / "poster_clean.jpg", card_room=True) if want_motion else None
-    cache = root / "segcache"
+    cache = attempt / "segcache"
     cache.mkdir(exist_ok=True)
+    # Copy only immutable, previously committed cache entries into this attempt.
+    # Each generation owns its writable cache; no shared .part or pruning races.
+    previous_cache = (root / previous_render["file"]).parent.parent / "segcache" if previous_render.get("file") else root / "segcache"
+    if previous_cache != cache and previous_cache.is_dir():
+        for entry in previous_cache.glob("*.mp4"):
+            if not entry.name.endswith(".part.mp4"):
+                shutil.copy2(entry, cache / entry.name)
     seg_files, motion_segs, poster_slots, jobs, keys = [], [], [], [], set()
 
     def job(kind: str, src: pathlib.Path, params: tuple, dest: pathlib.Path, make) -> None:
@@ -405,7 +414,7 @@ def render(project_id: int) -> str:
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
     video.unlink(missing_ok=True)
     cleanup.cleanup_render_intermediates(out_dir)
-    live = root / "render"
+    live = attempt / "render"
     if live.exists():
         shutil.rmtree(live)
     out_dir.rename(live)
@@ -459,7 +468,7 @@ def _parallel(tasks: list, workers: int = RENDER_WORKERS, progress: str | None =
         return task_fn()
 
     with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as ex:
-        futs = {ex.submit(_run_task, t): i for i, t in enumerate(tasks)}
+        futs = {ex.submit(contextvars.copy_context().run, _run_task, t): i for i, t in enumerate(tasks)}
         try:
             for f in as_completed(futs):
                 results[futs[f]] = f.result()
@@ -679,7 +688,7 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
         facts, shots, render_info = p.facts or {}, p.shots or [], dict(p.render or {})
 
     root = project_dir(project_id)
-    render_dir = root / "render"
+    render_dir = (root / render_info["file"]).parent
     render_dir.mkdir(exist_ok=True)
 
     title = facts.get("title", "") or p.title or "Trailer Breakdown"
@@ -742,7 +751,8 @@ def select_project_thumbnail(project_id: int, thumb_id: str) -> dict[str, Any]:
             raise RuntimeError("A step is running on this project; wait for it to finish")
 
     root = project_dir(project_id)
-    render_dir = root / "render"
+    with SessionLocal() as s:
+        render_dir = (root / s.get(StudioProject, project_id).render["file"]).parent
     target = render_dir / f"thumbnail_{thumb_id}.jpg"
     if not target.exists():
         generate_thumbnails_for_project(project_id)

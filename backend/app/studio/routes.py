@@ -226,7 +226,8 @@ def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_s
         new = [x.get("text") for x in req.script.get("sentences", [])]
         # Checks are server-owned. Preserve them only for exactly unchanged
         # sentences; a client cannot copy an old green verdict onto new words.
-        sc = dict(req.script)
+        sc = {**req.script, "storyboard": (p.script or {}).get("storyboard"),
+              "check_scope": (p.script or {}).get("check_scope")}
         previous = {(x.get("paragraph"), x.get("text")): x for x in (p.script or {}).get("sentences", [])}
         sc["sentences"] = [dict(previous[(x.get("paragraph"), x.get("text"))])
                            if (x.get("paragraph"), x.get("text")) in previous
@@ -808,3 +809,82 @@ def publish_batch(req: IdsIn, s: Session = Depends(get_session)) -> dict[str, An
 
 from .compilations.routes import router as compilations_router
 router.include_router(compilations_router)
+
+
+class SourceFetch(BaseModel):
+    url: str
+
+
+class ClaimReviewIn(BaseModel):
+    record_id: str
+    excerpt: str
+    context: dict
+    verdict: str
+    rationale: str
+    conflicts: list[str] = []
+
+
+def _research_mutable(p):
+    if p.stage_status in ("running", "queued") or p.queue_item_id:
+        raise HTTPException(409, "Stop work and remove the queued export before changing research")
+
+
+@router.get("/projects/{project_id}/source-records")
+def source_records(project_id: int, s: Session = Depends(get_session)):
+    from ..models import ResearchSourceRecord
+    from .fact_verification import context
+    p = _get(s, project_id)
+    return {"context": context(p.facts or {}), "records": [
+        {"id": r.id, "url": r.url, "requested_url": r.requested_url, "text": r.text,
+         "sha256": r.sha256, "retrieved_at": r.retrieved_at}
+        for r in s.query(ResearchSourceRecord).filter_by(project_id=project_id).all()]}
+
+
+@router.post("/projects/{project_id}/source-records")
+def fetch_source_record(project_id: int, req: SourceFetch, s: Session = Depends(get_session)):
+    from . import fact_verification as fv
+    p = _get(s, project_id); _research_mutable(p)
+    urls = [x.get("url") for x in (p.research or {}).get("sources", [])]
+    if req.url not in urls: raise HTTPException(400, "Choose a source attached to this research")
+    try:
+        row = fv.save_record(s, project_id, req.url)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(422, f"Source could not be retrieved: {exc}")
+    s.commit()
+    return {"id": row.id, "url": row.url, "text": row.text, "sha256": row.sha256,
+            "retrieved_at": row.retrieved_at}
+
+
+@router.post("/projects/{project_id}/claims/{claim_index}/review")
+def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Session = Depends(get_session)):
+    import copy
+    import uuid
+    from ..models import ResearchClaimReview, ResearchSourceRecord
+    from . import fact_verification as fv
+    p = _get(s, project_id); _research_mutable(p)
+    research = copy.deepcopy(p.research or {})
+    claims = research.get("claims", [])
+    if not 0 <= claim_index < len(claims): raise HTTPException(404, "Claim not found")
+    claim = claims[claim_index]
+    record = s.get(ResearchSourceRecord, req.record_id)
+    urls = [research["sources"][i].get("url") for i in claim.get("sources", [])
+            if type(i) is int and 0 <= i < len(research.get("sources", []))]
+    if not record or record.project_id != project_id or record.requested_url not in urls:
+        raise HTTPException(422, "Choose an independently retrieved record cited by this claim")
+    if req.context != fv.context(p.facts or {}) or not all(req.context.values()):
+        raise HTTPException(422, "Confirm the exact title, release year, medium and territory")
+    if (req.verdict not in ("supported", "unresolved", "contradicted") or len(req.rationale.strip()) < 20
+            or not req.excerpt.strip() or req.excerpt not in record.text):
+        raise HTTPException(422, "Provide a verdict, exact excerpt and a substantive semantic rationale")
+    if req.verdict == "supported" and req.conflicts:
+        raise HTTPException(422, "Resolve or reject conflicting evidence before marking support")
+    review = ResearchClaimReview(id=str(uuid.uuid4()), project_id=project_id, record_id=record.id,
+        claim=claim["text"], excerpt=req.excerpt, context=req.context, verdict=req.verdict,
+        rationale=req.rationale.strip(), conflicts=req.conflicts)
+    s.add(review)
+    claim["evidence"] = {"review_id": review.id, "verdict": req.verdict, "excerpt": req.excerpt,
+        "record_sha256": record.sha256, "retrieved_at": record.retrieved_at.isoformat(),
+        "context": req.context, "rationale": req.rationale, "conflicts": req.conflicts,
+        "scope": "independently_retrieved_owner_reviewed"}
+    p.research = research; fv.invalidate(p); s.commit()
+    return _out(p)
