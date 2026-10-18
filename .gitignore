@@ -21,6 +21,10 @@ frontend/.next/
 frontend/out/
 *.tsbuildinfo
 .vercel/
+artifacts/
+output/playwright/
+test-results/
+playwright-report/
 
 # macOS
 .DS_Store
