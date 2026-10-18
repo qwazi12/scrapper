@@ -68,11 +68,11 @@ def guard(s=None, handle=None):
     if n != 1: raise LeaseLost(f"Worker lease expired or superseded: {h.resource} generation {h.generation}")
 
 
-def renew(s, h):
+def renew(s, h, ttl=TTL):
     now=dt.datetime.now(UTC)
     return s.execute(update(WorkerLease).where(WorkerLease.resource == h.resource, WorkerLease.owner == h.owner,
         WorkerLease.generation == h.generation, WorkerLease.expires_at > now)
-        .values(expires_at=now+dt.timedelta(seconds=TTL))).rowcount == 1
+        .values(expires_at=now+dt.timedelta(seconds=ttl))).rowcount == 1
 
 
 def release(s, h):

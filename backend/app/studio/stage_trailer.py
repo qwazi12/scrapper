@@ -48,7 +48,10 @@ def _from_worker(project_id: int, facts: dict, trailer: dict | None) -> tuple[di
         cid = (trailer or {}).get("pending_clip_id")
         if cid:
             clip = s.get(Clip, cid)
-            if clip and clip.file_path and pathlib.Path(clip.file_path).exists():
+            from ..worker_transfers import same_media
+            if clip and not same_media(clip.source_url,(trailer or {}).get("page")):
+                raise RuntimeError("Worker clip identity changed; inspect the handoff before continuing")
+            if clip and clip.status == Status.done and clip.file_path and pathlib.Path(clip.file_path).is_file():
                 main = {"id": f"yt-clip-{cid}", "name": "Official Trailer (YouTube)", "type": "Trailer",
                         "origin": "youtube-worker", "file": clip.file_path, "page": clip.source_url}
                 return {"file": clip.file_path, "origin": "youtube-worker", "sources": [main]}, \

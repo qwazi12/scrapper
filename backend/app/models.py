@@ -402,3 +402,15 @@ class BudgetResolution(Base):
     receipt: Mapped[str] = mapped_column(Text)
     rationale: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WorkerTransfer(Base):
+    """Residential handoff protocol v2; immutable completion receipt per claim."""
+    __tablename__ = "worker_transfers"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    clip_id: Mapped[int] = mapped_column(Integer, index=True)
+    worker_id: Mapped[str] = mapped_column(String(80))
+    generation: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="claimed", index=True)
+    receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)

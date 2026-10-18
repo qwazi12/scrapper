@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.db import SessionLocal
 from backend.app.main import app
-from backend.app.models import AppSetting, Clip, QueueItem, ResumableJob, StudioProject
+from backend.app.models import AppSetting, Clip, QueueItem, ResumableJob, Status, StudioProject
 from backend.app.studio import runner, stage_trailer
 
 
@@ -36,7 +36,9 @@ def test_auto_chain_stops_at_worker_handoff_then_collects_same_clip(monkeypatch,
     with SessionLocal() as s:
         assert s.query(Clip).count() == count
         path = tmp_path / "worker-upload.mp4"; path.write_bytes(b"transport fixture")
-        s.get(Clip, cid).file_path = str(path); s.commit()
+        clip=s.get(Clip,cid)
+        clip.file_path,clip.status=str(path),Status.done
+        s.commit()
     assert "received" in runner.run_one(pid, "trailer")
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)

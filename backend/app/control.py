@@ -144,6 +144,7 @@ def _prune() -> None:
 def run(cmd: list[str], timeout: int = 3600, text: bool = True) -> subprocess.CompletedProcess:
     """subprocess.run that Stop can kill. Output goes through temp files so a
     long ffmpeg log can never fill a pipe and hang the process."""
+    check()
     j = current()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(cmd, stdout=out, stderr=err)
@@ -156,6 +157,9 @@ def run(cmd: list[str], timeout: int = 3600, text: bool = True) -> subprocess.Co
                     proc.wait(timeout=0.5)
                     break
                 except subprocess.TimeoutExpired:
+                    try: check()
+                    except BaseException:
+                        proc.kill();proc.wait();raise
                     if j is not None and j.stop.is_set():
                         proc.kill()
                         proc.wait()

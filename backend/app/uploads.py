@@ -33,6 +33,11 @@ async def save_video(file: UploadFile, destination: Path) -> tuple[int, dict]:
                 raise ValueError("Invalid video dimensions/duration")
         except Exception as exc:
             raise HTTPException(400, "Upload is not a valid playable video") from exc
+        try:
+            media.run(["ffmpeg", "-v", "error", "-xerror", "-err_detect", "explode", "-i", name,
+                       "-map", "0:v:0", "-map", "0:a?", "-f", "null", "-"], timeout=120)
+        except Exception as exc:
+            raise HTTPException(400,"Upload failed complete media decoding") from exc
         if destination.is_symlink():
             raise HTTPException(400, "Unsafe destination")
         os.replace(name, destination)

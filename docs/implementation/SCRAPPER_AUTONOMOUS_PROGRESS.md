@@ -251,3 +251,12 @@ Owner requested independent fact verification first, then atomic budgets and wor
 - Final isolation: zero external attempts, zero scheduler threads, five explicit fake posting receipts and $0 external spend. Owned test servers stopped; synthetic evidence retained.
 - Root MEMORY.md and the detailed ledger are updated. Changes are committed locally on the feature branch; no GitHub push, PR, deploy, publication, live account change or paid request. Latest owner instruction remains LOCAL ONLY.
 - New return package: `outputs/scrapper-roadmap-contracts` in the chat workspace. Full remaining limits, architecture and configuration are in `docs/implementation/LOCAL_CONTRACTS_20261018.md`; M1–M5 remain partial.
+
+
+## Continued roadmap: worker ownership and residential protocol v2
+
+- Owner requested continuing all remaining local roadmap work, starting with unfinished worker integrations. Local-only/no push/deploy/publication remains in force.
+- Legacy ingest/compile now acquire generation leases before rechecking queued state; stale scans do not replay completed jobs, and recovery skips live leases and never marks arbitrary nonempty partial files complete. Outputs and download-archive snapshots are attempt-owned. Compilation requires every selected clip and final-file QA. Subprocess loops check lease loss.
+- Residential protocol v2 adds server-issued claims, renewal, expiry, identity checks, bounded fully decoded uploads and durable hash-bound completion receipts. Local client streams multipart content, renews ownership, cancels on lease loss and checks receipts before any retry. Older unclaimed worker uploads fail closed. No actual external download or upload was run.
+- Focused worker media/API tests: eight passed (real FFmpeg synthetic uploads and actual compilation; fake remote downloader). Expanded control/waiting regression results are recorded in artifacts/worker-contracts5.txt. Earlier harness GET-method and fixture status issues were corrected without loosening the stale-worker protections. Full regression follows the next integration checkpoint.
+- Next: append-only publication evidence/manual uncertainty resolution, then orphan budget/credit recovery and remaining data/asset contracts. Continue autonomously; do not represent blocked external/production lanes as complete.

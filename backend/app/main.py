@@ -262,6 +262,10 @@ def rescan_now(s: Session = Depends(get_session)) -> dict:
     return rescan.rescan_library(s)
 
 
+from .worker_transfers import router as worker_transfer_router
+app.include_router(worker_transfer_router)
+
+
 # --- hybrid local worker (Reliability Layer 5) -------------------------------
 # YouTube/TikTok refuse this container's datacenter IP outright. A worker on a
 # residential connection (the user's Mac) claims those blocked URLs, downloads
@@ -274,7 +278,7 @@ def blocked_clips(s: Session = Depends(get_session)) -> list[dict]:
         # Only links the server was blocked from (marked when handed over); a post
         # that is suspended/deleted/private fails the same way at home too.
         .filter(Clip.status == Status.failed, Clip.file_path.is_(None),
-                Clip.error.like("Transferred to Mac worker%"))
+                (Clip.error.like("Transferred to Mac worker%") | Clip.error.like("%queued for the home Mac worker%")))
         .order_by(Clip.id)
         .all()
     )
@@ -292,13 +296,24 @@ async def upload_clip(
     # Must be Form(...) — a bare `str` default is read as a query param, which
     # silently drops the multipart field and loses all the metadata.
     meta: str = Form(default="{}"),
+    worker_token: str = Form(default=""),
+    worker_id: str = Form(default=""),
+    worker_generation: int = Form(default=0),
     s: Session = Depends(get_session),
 ) -> dict:
     """Accept a video downloaded by a local worker and attach it to its clip."""
+    from . import worker_transfers as transfers, worker_leases as leases
+    from .studio.media_quality import file_hash
+    claim=transfers.get_transfer(s,worker_token,worker_id,worker_generation,allow_done=True)
+    if claim.clip_id != clip_id: raise HTTPException(409,"Claim belongs to another clip")
+    if claim.status=='done': return claim.receipt
+    # Do not hold the lease row lock while a potentially slow upload streams.
+    s.rollback()
     clip = s.get(Clip, clip_id)
-    if not clip:
-        raise HTTPException(404, "clip not found")
+    if not clip or not transfers.pending(clip): raise HTTPException(409,"Clip no longer awaits this upload")
 
+
+    if len(meta.encode()) > 65536: raise HTTPException(413,"Metadata exceeds 64 KiB")
     try:
         info = json.loads(meta) if meta else {}
     except json.JSONDecodeError:
@@ -309,7 +324,7 @@ async def upload_clip(
     import re
     import uuid
     platform = re.sub(r"[^a-zA-Z0-9_-]", "_", str(clip.platform or info.get("extractor") or "other"))[:64] or "other"
-    dest_dir = settings.downloads_path / platform
+    dest_dir = settings.downloads_path / platform / "_transfers" / worker_token
     dest_dir.mkdir(parents=True, exist_ok=True)
     safe_name = f"clip_{clip_id}_{uuid.uuid4().hex}.mp4"
     dest = dest_dir / safe_name
@@ -327,33 +342,49 @@ async def upload_clip(
             raise HTTPException(413, "Thumbnail exceeds 5 MB")
         try:
             with Image.open(io.BytesIO(content)) as image:
+                if image.width * image.height > 20_000_000: raise ValueError("Thumbnail exceeds pixel limit")
                 image.convert("RGB").save(thumb_dest, "JPEG")
         except Exception as exc:
             dest.unlink(missing_ok=True)
             thumb_dest.unlink(missing_ok=True)
             raise HTTPException(400, "Invalid thumbnail") from exc
-        clip.thumb_path = str(thumb_dest)
 
     if info:
         dest.with_suffix(".info.json").write_text(json.dumps(info))
 
-    clip.file_path = str(dest)
-    clip.size_bytes = size
-    clip.video_id = info.get("id") or clip.video_id
-    clip.uploader = info.get("uploader") or info.get("uploader_id") or clip.uploader
-    clip.title = info.get("title") or clip.title
-    clip.duration = info.get("duration") or clip.duration
-    clip.width = info.get("width") or clip.width
-    clip.height = info.get("height") or clip.height
-    clip.status = Status.done
-    clip.error = None
-    clip.selected = True
-    s.commit()
+    try:
+        claim=transfers.get_transfer(s,worker_token,worker_id,worker_generation)
+        clip=s.get(Clip,clip_id,populate_existing=True)
+        if not transfers.pending(clip): raise HTTPException(409,"Clip changed during upload")
+        for field in ("webpage_url","original_url"):
+            if info.get(field) and not transfers.same_media(clip.source_url,info[field]):
+                raise HTTPException(422,"Downloaded media identity does not match the requested URL")
+        if thumb is not None: clip.thumb_path = str(dest.with_suffix(".jpg"))
+        result={"clip_id":clip_id,"size_bytes":size,"status":"done","sha256":file_hash(dest),
+                "transfer_id":worker_token,"generation":worker_generation}
+        clip.file_path = str(dest)
+        clip.size_bytes = size
+        clip.video_id = info.get("id") or clip.video_id
+        clip.uploader = info.get("uploader") or info.get("uploader_id") or clip.uploader
+        clip.title = info.get("title") or clip.title
+        stream=next(x for x in probe["streams"] if x.get("codec_type")=="video")
+        clip.duration = float(probe["format"]["duration"])
+        clip.width, clip.height = stream["width"], stream["height"]
+        clip.status = Status.done
+        clip.error = None
+        clip.selected = True
+        claim.status, claim.receipt = "done", result
+        leases.release(s, transfers.handle(claim))
+        s.commit()
+    except BaseException:
+        s.rollback()
+        for path in (dest,dest.with_suffix(".jpg"),dest.with_suffix(".info.json")): path.unlink(missing_ok=True)
+        raise
 
     logbus.log("info", "local_upload",
                f"{clip.title or clip.source_url} ({round(size / 1e6)} MB) via local worker",
                source=clip.platform)
-    return {"clip_id": clip_id, "size_bytes": size, "status": "done"}
+    return result
 
 
 @app.get("/api/debug/storage", dependencies=_AUTH)
@@ -1396,8 +1427,10 @@ def stop_job(job_id: str, s: Session = Depends(get_session)) -> dict:
     if job_id.startswith(("ingest:", "compile:")):
         kind, _, num = job_id.partition(":")
         row = s.get(IngestJob if kind == "ingest" else Compilation, int(num))
-        if not row or row.status != Status.queued:
-            raise HTTPException(409, "not queued any more — stop it from the running list")
+        if not row or row.status not in (Status.queued,Status.running):
+            raise HTTPException(409,"Job is no longer queued or running")
+        from .worker_leases import revoke
+        revoke(s,f"{kind}:{row.id}")
         row.status = Status.failed
         if kind == "compile":
             row.error = "stopped before it started"
@@ -1406,6 +1439,14 @@ def stop_job(job_id: str, s: Session = Depends(get_session)) -> dict:
         return {"id": job_id, "status": "cancelled"}
     try:
         j = control.request_stop(job_id)
+        if j.kind in ("ingest","compile") and j.ref is not None:
+            from .worker_leases import revoke
+            revoke(s,f"{j.kind}:{int(j.ref)}")
+            row=s.get(IngestJob if j.kind=="ingest" else Compilation,int(j.ref))
+            if row:
+                row.status=Status.failed
+                if j.kind=="compile": row.error="Stopped by owner"
+            s.commit()
         if j.scope == "studio" and j.ref is not None:
             import contextlib
             with contextlib.suppress(Exception):
