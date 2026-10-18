@@ -11,6 +11,9 @@ class IsolationError(RuntimeError):
     pass
 
 
+blocked_network_attempts = 0
+
+
 def validate_storage(data_dir: str, database_url: str, root: str) -> None:
     if any(os.environ.get(k) for k in ("RAILWAY_ENVIRONMENT", "VERCEL")):
         raise IsolationError("SAFE_E2E_MODE cannot run in a deployed environment")
@@ -33,6 +36,7 @@ def install_network_guard() -> None:
     if getattr(socket, "_scrapper_e2e_guard", False):
         return
     def check(address):
+        global blocked_network_attempts
         if isinstance(address, tuple):
             host = address[0]
             if host == "localhost":
@@ -42,6 +46,7 @@ def install_network_guard() -> None:
                     return
             except ValueError:
                 pass
+            blocked_network_attempts += 1
             raise IsolationError("SAFE_E2E_MODE blocked external network destination")
     for name in ("connect", "connect_ex"):
         original = getattr(socket.socket, name)

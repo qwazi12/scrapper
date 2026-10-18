@@ -1,0 +1,161 @@
+import { test, expect } from "@playwright/test";
+import { readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+
+const evidence = path.resolve(__dirname, "../../artifacts/e2e");
+const stack = JSON.parse(readFileSync(path.join(evidence, "stack.json"), "utf8"));
+if (!stack.api.startsWith("http://127.0.0.1:") || !stack.web.startsWith("http://127.0.0.1:")) throw new Error("Local E2E only");
+const headers = { "x-access-token": stack.token };
+
+test.beforeEach(async ({ page, context, request }) => {
+  const isolation = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(isolation.safe_e2e_mode).toBe(true);
+  expect(isolation.real_publish_disabled).toBe(true);
+  expect(isolation.worker_mode).toBe("web_only");
+  expect(isolation.scheduler_threads).toEqual([]);
+  await context.route("**/*", route => {
+    const hostname = new URL(route.request().url()).hostname;
+    return ["127.0.0.1", "localhost"].includes(hostname) ? route.continue() : route.abort("blockedbyclient");
+  });
+  await page.addInitScript(({ api, token }) => {
+    localStorage.setItem("scrapper_api_base", api);
+    localStorage.setItem("scrapper_token", token);
+  }, { api: stack.api, token: stack.token });
+});
+
+test("LongForm real UI: research, rejected edit, repair, speech, export approval and simulated delivery", async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  page.on("console", msg => { if (msg.type() === "error") errors.push(msg.text()); });
+  await page.goto("/#longform");
+  await expect(page.getByRole("heading", { name: "🎬 LongForm Studio", exact: true })).toBeVisible();
+  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 2");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await expect(page.getByTestId("script-editor")).toBeVisible();
+  const pid = Number(new URL(page.url()).hash.split("/")[1]);
+  const getProject = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
+  const original = await page.getByTestId("script-editor").inputValue();
+  await page.getByTestId("script-editor").fill("INVENTED Robert Pattinson plays Feyd-Rautha.");
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await expect(page.getByTestId("research-blocked")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Check saved script", exact: true }).click();
+  await expect.poll(async () => (await getProject()).stage_status).toBe("error");
+  await expect(page.getByTestId("research-blocked")).toContainText(/unsupported/i);
+  await page.screenshot({ path: path.join(evidence, "research-blocked.png"), fullPage: true });
+  // A malformed checker cannot make the draft green either.
+  await page.getByTestId("script-editor").fill("MALFORMED checker response.");
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await page.getByRole("button", { name: "Check saved script", exact: true }).click();
+  await expect.poll(async () => (await getProject()).script.check_issues.join(" ")).toContain("non-array");
+  await expect(page.getByTestId("research-blocked")).toBeVisible();
+  await page.getByTestId("script-editor").fill(original);
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await page.getByRole("button", { name: "Check saved script", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
+  await page.reload();
+  await expect(page.getByTestId("script-editor")).toHaveValue(original);
+  await page.getByRole("button", { name: "Voice + shots", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Render video", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Render video", exact: true }).click();
+  await expect(page.getByTestId("export-quality")).toContainText("decoded", { timeout: 120_000 });
+  const project = await getProject();
+  expect(project.render.quality.errors).toEqual([]);
+  const actual = path.join(stack.root, "data", "studio", String(pid), project.render.file);
+  const final = path.join(evidence, "longform-final.mp4");
+  copyFileSync(actual, final);
+  const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", final], { encoding: "utf8" }));
+  expect(probe.streams.find((s: any) => s.codec_type === "video").width).toBe(1920);
+  expect(probe.streams.find((s: any) => s.codec_type === "audio")).toBeTruthy();
+  execFileSync("ffmpeg", ["-v", "error", "-xerror", "-i", final, "-f", "null", "-"]);
+  writeFileSync(path.join(evidence, "longform-probe.json"), JSON.stringify(probe, null, 2));
+  writeFileSync(path.join(evidence, "longform-quality.json"), JSON.stringify(project.render.quality, null, 2));
+  await page.screenshot({ path: path.join(evidence, "longform-render-review.png"), fullPage: true });
+  await page.getByRole("button", { name: "Approve inspected export", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Send to Posting Queue", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Send to Posting Queue", exact: true }).click();
+  await expect(page.getByText(/Ready to Post in SocialPilot/)).toBeVisible();
+  const queued = await getProject();
+  await page.getByRole("button", { name: /SocialPilot AI/ }).click();
+  await page.getByRole("button", { name: "🎬 LongForm Breakdowns", exact: true }).click();
+  await page.getByRole("button", { name: /Ready to Post/ }).click();
+  await page.screenshot({ path: path.join(evidence, "queue-before-submit.png"), fullPage: true });
+  await page.getByRole("button", { name: "🚀 Post Now", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  const queueStatus = async () => (await (await request.get(`${stack.api}/api/queue`, { headers })).json()).find((q: any) => q.id === queued.queue_item_id)?.status;
+  await expect.poll(queueStatus).toBe("posting");
+  const duplicate = await request.post(`${stack.api}/api/queue/${queued.queue_item_id}/publish`, { headers });
+  expect(duplicate.status()).toBe(409);
+  await page.getByRole("button", { name: "Reconcile submitted posts", exact: true }).click();
+  await expect.poll(queueStatus).toBe("archived");
+  await page.getByRole("button", { name: /Posted Archive/ }).click();
+  await page.screenshot({ path: path.join(evidence, "queue-reconciled.png"), fullPage: true });
+  writeFileSync(path.join(evidence, "browser-errors.json"), JSON.stringify(errors, null, 2));
+  expect(errors).toEqual([]);
+});
+
+test("all main navigation pages and same-document hash changes render without browser errors", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  await page.goto("/");
+  for (const hash of ["longform", "countdowns", "comps", "logs", "settings", "socialpilot", "scraper"]) {
+    await page.evaluate(hash => { location.hash = hash; }, hash);
+    await expect(page).toHaveURL(new RegExp(`#${hash}`));
+    await expect(page.locator("main")).not.toBeEmpty();
+    await page.screenshot({ path: path.join(evidence, `navigation-${hash}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => { location.hash = "longform"; });
+  await expect(page.getByRole("heading", { name: "🎬 LongForm Studio", exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "mobile-longform.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test("Top 5 real UI: five independent segment pipelines, final stitch, inspection and approval", async ({ page, request }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  page.on("console", msg => { if (msg.type() === "error") errors.push(msg.text()); });
+  await page.goto("/#countdowns");
+  await page.getByPlaceholder("Type a topic, e.g. Top 10 horror movies on Netflix right now").fill("Top 5 Synthetic Animated Films");
+  await page.getByRole("button", { name: "Top 5", exact: true }).click();
+  await page.getByRole("button", { name: "Research & rank", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Confirm titles", exact: true })).toBeEnabled();
+  const cid = Number(new URL(page.url()).hash.split("/")[1]);
+  const getCountdown = async () => (await request.get(`${stack.api}/api/countdowns/${cid}`, { headers })).json();
+  const researched = await getCountdown();
+  expect(researched.entry_count).toBe(5);
+  expect(new Set(researched.ranking.entries.map((e: any) => e.tmdb_id)).size).toBe(5);
+  await page.getByRole("button", { name: "Confirm titles", exact: true }).click();
+  await page.getByRole("button", { name: "▶ Make segments", exact: true }).click();
+  await expect.poll(async () => (await getCountdown()).segments_made, { timeout: 180_000 }).toBe(5);
+  await expect(page.getByRole("button", { name: "Render video", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Render video", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  await expect(page.getByTestId("countdown-export-quality")).toContainText("decoded", { timeout: 120_000 });
+  const completed = await getCountdown();
+  expect(completed.render.quality.errors).toEqual([]);
+  const final = path.join(evidence, "countdown-top5-final.mp4");
+  copyFileSync(completed.render.file, final);
+  const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", final], { encoding: "utf8" }));
+  expect(probe.streams.some((s: any) => s.codec_type === "audio")).toBe(true);
+  expect(probe.streams.find((s: any) => s.codec_type === "video").height).toBe(1080);
+  execFileSync("ffmpeg", ["-v", "error", "-xerror", "-i", final, "-f", "null", "-"]);
+  writeFileSync(path.join(evidence, "countdown-probe.json"), JSON.stringify(probe, null, 2));
+  writeFileSync(path.join(evidence, "countdown-quality.json"), JSON.stringify(completed.render.quality, null, 2));
+  await page.screenshot({ path: path.join(evidence, "countdown-review.png"), fullPage: true });
+  await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
+  await page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  await expect.poll(async () => !!(await getCountdown()).queue_item_id).toBe(true);
+  await page.screenshot({ path: path.join(evidence, "countdown-queued.png"), fullPage: true });
+  writeFileSync(path.join(evidence, "countdown-browser-errors.json"), JSON.stringify(errors, null, 2));
+  const isolation = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  writeFileSync(path.join(evidence, "final-isolation.json"), JSON.stringify(isolation, null, 2));
+  expect(isolation.blocked_network_attempts).toBe(0);
+  expect(isolation.scheduler_threads).toEqual([]);
+  expect(isolation.fake_publish_receipts).toBe(3);  // only the explicit LongForm submit; no auto-posting
+  expect(errors).toEqual([]);
+});

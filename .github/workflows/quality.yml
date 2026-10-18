@@ -1,0 +1,54 @@
+name: Isolated quality checks
+on:
+  pull_request:
+  push:
+    branches: ['codex/**']
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: python -m pytest backend/tests -q --junitxml=artifacts/backend.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: artifacts/backend.xml
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: frontend
+      - run: npx tsc --noEmit
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+        working-directory: frontend
+  offline-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f scripts/e2e/Dockerfile -t scrapper-e2e .
+      - run: mkdir -p artifacts/e2e && docker run --rm --network none -v "$PWD/artifacts:/app/artifacts" scrapper-e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-browser-evidence
+          path: artifacts/e2e
