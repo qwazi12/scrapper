@@ -143,6 +143,15 @@ async def get_status(rid):
              "success": True, "post_url": f"https://example.invalid/{rid}/{p}"} for p in row["platforms"]]}
 
 
+async def upload_images(paths, **kwargs):
+    # The independent fixture ledger records the entire ordered carousel.
+    rid = await upload(paths[0], **kwargs)
+    with (ROOT / "fake-photo-provider.jsonl").open("a") as stream:
+        stream.write(json.dumps({"request_id": rid, "files": [str(p) for p in paths]}) + "\n")
+        stream.flush(); os.fsync(stream.fileno())
+    return rid
+
+
 tmdb.configured = lambda: True
 tmdb.fact_sheet = facts
 tmdb.search = lambda q: [title(int(re.search(r"\d+", q)[0]) if re.search(r"\d+", q) else 1)] if q != "EMPTY" else []
@@ -157,6 +166,7 @@ tts.configured = lambda: True
 upload_post.list_accounts = list_accounts
 upload_post.list_profiles = list_profiles
 upload_post.upload_video = upload
+upload_post.upload_images = upload_images
 upload_post.get_status = get_status
 upload_post.configured = lambda: True
 engine.generate_countdown = lambda **kwargs: {"topic": kwargs["topic"], "format": "top5", "entries": [

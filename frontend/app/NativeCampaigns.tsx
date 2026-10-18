@@ -1,0 +1,120 @@
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+import { api, EditorialOpportunity, IndexedAsset, NativeBeat, NativeCampaign, NativeExport, SocialAccount } from "@/lib/api";
+import { askConfirm } from "@/lib/dialogs";
+
+const box = { border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--panel)" };
+const field = { display: "grid", gap: 5 };
+const blankBeats: NativeBeat[] = ["hook", "body", "payoff"].map(role => ({ role: role as NativeBeat["role"], text: "", source_refs: [1], asset_id: null }));
+
+export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpportunity[] }) {
+  const approved = opportunities.filter(o => o.status === "approved");
+  const [rows, setRows] = useState<NativeCampaign[]>([]);
+  const [assets, setAssets] = useState<IndexedAsset[]>([]);
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [oid, setOid] = useState("");
+  const [title, setTitle] = useState("");
+  const [beats, setBeats] = useState(blankBeats);
+  const [selected, setSelected] = useState(["short", "carousel"]);
+  const [shortCaption, setShortCaption] = useState("");
+  const [carouselCaption, setCarouselCaption] = useState("");
+  const [question, setQuestion] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [attestation, setAttestation] = useState("");
+  const [tags, setTags] = useState("");
+  const [license, setLicense] = useState("owner_created");
+  const [file, setFile] = useState<File | null>(null);
+  const chosen = approved.find(o => String(o.id) === oid);
+  async function load() {
+    const [campaigns, media] = await Promise.all([api.nativeCampaigns(), api.nativeAssets()]);
+    setRows(campaigns); setAssets(media);
+  }
+  useEffect(() => { let alive = true;
+    Promise.all([api.nativeCampaigns(), api.nativeAssets(), api.socialAccounts()]).then(([c, a, ac]) => {
+      if (alive) { setRows(c); setAssets(a); setAccounts(ac.accounts || []); }
+    }).catch(e => alive && setMessage(e.message));
+    return () => { alive = false; };
+  }, []);
+  async function act(fn: () => Promise<unknown>, success: string) {
+    setBusy(true); setMessage("Working…");
+    try { await fn(); await load(); setMessage(success); }
+    catch (e) { setMessage(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    act(() => api.nativeCreate({ opportunity_id: Number(oid), title, formats: selected, beats,
+      short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question }), "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
+  }
+  return <div style={{ display: "grid", gap: 16 }}>
+    <h2>Native campaigns</h2><p>Use reviewed research for a distinct Short/Reel and a swipeable carousel. This first treatment uses original beat cards and optional cleared stills.</p>
+    {message && <p role="status">{message}</p>}
+    <details style={box}><summary>Import a cleared still</summary><form style={{ display: "grid", gap: 10, marginTop: 12 }} onSubmit={e => {
+      e.preventDefault(); if (file) act(() => api.nativeAssetUpload(file, license, attestation, tags), "Still indexed by content hash; duplicate imports reuse the existing asset.");
+    }}>
+      <label style={field}>Still image<input type="file" accept="image/png,image/jpeg,image/webp" required onChange={e => setFile(e.target.files?.[0] || null)} /></label>
+      <label style={field}>Permission<select value={license} onChange={e => setLicense(e.target.value)}><option value="owner_created">I created this asset</option><option value="licensed">I hold a suitable license</option></select></label>
+      <label style={field}>Rights record<textarea minLength={20} required value={attestation} onChange={e => setAttestation(e.target.value)} placeholder="Describe creation or license, permitted use and attribution" /></label>
+      <label style={field}>Scene tags<input value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. original shapes, animation" /></label>
+      <div><button disabled={busy}>Index cleared still</button></div>
+    </form></details>
+    <form onSubmit={create} style={{ ...box, display: "grid", gap: 12 }}>
+      <h3>Draft a treatment</h3>
+      <label style={field}>Approved research<select aria-label="Approved research" required value={oid} onChange={e => {
+        setOid(e.target.value); const row = approved.find(x => String(x.id) === e.target.value);
+        setTitle(row?.title.slice(0, 72) || ""); setSelected(["short", "carousel"].filter(f => row?.formats.includes(f)));
+      }}><option value="">Choose a reviewed brief</option>{approved.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></label>
+      {!approved.length && <p>Approve an opportunity&apos;s research brief first.</p>}
+      <label style={field}>Campaign title<input required maxLength={72} value={title} onChange={e => setTitle(e.target.value)} /></label>
+      <fieldset><legend>Treatments to make</legend>{["short", "reel", "carousel"].filter(f => chosen?.formats.includes(f)).map(f => <label key={f} style={{ marginRight: 16 }}>
+        <input type="checkbox" checked={selected.includes(f)} onChange={e => setSelected(e.target.checked ? [...selected, f] : selected.filter(x => x !== f))} /> {f}</label>)}</fieldset>
+      {beats.map((beat, i) => <fieldset key={i}><legend>{beat.role === "body" ? "Main insight" : beat.role === "hook" ? "Opening hook" : "Final payoff"}</legend>
+        <label style={field}>Beat text {i + 1}<textarea required minLength={12} maxLength={140} value={beat.text} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, text: e.target.value } : b))} /></label>
+        <label style={field}>Research excerpt {i + 1}<select aria-label={`Research excerpt ${i + 1}`} value={beat.source_refs[0]} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, source_refs: [Number(e.target.value)] } : b))}>
+          {(chosen?.evidence || []).map((e, n) => <option key={n} value={n + 1}>{n + 1}: {e.excerpt.slice(0, 80)}</option>)}</select></label>
+        <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null } : b))}>
+          <option value="">Original graphic</option>{assets.map(a => <option key={a.id} value={a.id}>#{a.id}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
+      </fieldset>)}
+      <label style={field}>Short/Reel caption<textarea required minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
+      <label style={field}>Carousel caption<textarea required minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
+      <label style={field}>Community question draft<textarea maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
+      <div><button disabled={busy || !oid || !selected.length}>Create native campaign</button></div>
+    </form>
+    {rows.map(c => <article key={c.id} style={box} data-testid={`campaign-${c.id}`}>
+      <h3>{c.brief.title}</h3><p>Campaign #{c.id} · {c.stage_status} · {c.stage_message}</p>
+      <p><strong>Short/Reel:</strong> {c.brief.short_caption}</p><p><strong>Carousel:</strong> {c.brief.carousel_caption}</p>
+      {c.brief.community_question && <p><strong>Private community draft:</strong> {c.brief.community_question}</p>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{c.brief.formats.map(f => <button key={f} disabled={busy || c.stage_status === "running"}
+        onClick={() => act(() => api.nativeRender(c.id, f), `${f} export rendered. Watch the whole video or inspect every slide before approving.`)}>Render {f}</button>)}</div>
+      {c.exports.map(exported => <ExportReview key={exported.id} item={exported} accounts={accounts} busy={busy} act={act} />)}
+    </article>)}
+  </div>;
+}
+
+function ExportReview({ item, accounts, busy, act }: { item: NativeExport; accounts: SocialAccount[]; busy: boolean;
+  act: (fn: () => Promise<unknown>, success: string) => Promise<void> }) {
+  const [targets, setTargets] = useState<string[]>([]);
+  const q = item.manifest.quality;
+  const available = accounts.filter(a => !a.id.startsWith("mk:") && (item.format !== "carousel" || ["instagram", "facebook"].includes(a.id.split(":").pop() || "")));
+  return <section style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid var(--border)" }} data-testid={`native-export-${item.format}`}>
+    <h4>{item.format} export · {item.id.slice(0, 8)}</h4>
+    <p>Final decode: {q.decode} · {q.width ? `${q.width} × ${q.height}` : "1080 × 1350 slides"}{q.seconds ? ` · ${q.seconds.toFixed(2)}s` : ""}</p>
+    {q.errors.map(e => <p key={e} role="alert">Blocked: {e}</p>)}{q.warnings.map(w => <p key={w}>Review: {w}</p>)}
+    {item.manifest.video && <video controls preload="metadata" style={{ width: "100%", maxWidth: 300, aspectRatio: "9/16", background: "black" }} src={api.nativeFile(item.id, item.manifest.video.file)} />}
+    <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "12px 0" }}>{item.manifest.cards.map((card, i) => <figure key={card.file} style={{ margin: 0, minWidth: 170, maxWidth: 220 }}>
+      <img src={api.nativeFile(item.id, card.file)} alt={card.alt} style={{ width: "100%", borderRadius: 8 }} /><figcaption>Card {i + 1}: {card.alt}</figcaption>
+    </figure>)}</div>
+    <p>Inspect every frame or slide, narration, captions, source support, rights and platform copy. A passed decode does not verify those.</p>
+    <button disabled={busy || !!q.errors.length || !!item.approval} onClick={async () => {
+      if (await askConfirm("Have you inspected the complete export, captions, sound where present, sources, asset permissions and platform copy?"))
+        act(() => api.nativeApprove(item.id), "This exact export was approved. Choose explicit destinations before adding it to review.");
+    }}>Approve inspected {item.format}</button>
+    <fieldset style={{ marginTop: 12 }}><legend>Destinations for this export</legend>{available.map(a => <label key={a.id} style={{ display: "block" }}>
+      <input type="checkbox" checked={targets.includes(a.id)} onChange={e => setTargets(e.target.checked ? [...targets, a.id] : targets.filter(x => x !== a.id))} /> {a.id}
+    </label>)}</fieldset>
+    <button disabled={busy || !item.approval || !targets.length || !!item.queue_item_id} onClick={() => act(() => api.nativeEnqueue(item.id, targets), "Added to the review queue. Posting remains a separate approval.")}>Add {item.format} to review queue</button>
+    {item.queue_item_id && <p>Queue item #{item.queue_item_id}. Open SocialPilot → Posting Queue to review and approve.</p>}
+  </section>;
+}

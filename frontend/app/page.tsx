@@ -22,12 +22,13 @@ import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
 import { CountdownsStudio } from "./CountdownsStudio";
+import { EditorialWorkspace } from "./EditorialWorkspace";
 import { JobsBar } from "./JobsBar";
 import { DialogHost } from "./DialogHost";
 import { SchedulerView } from "./PacingThrottle";
 import { askConfirm, notify } from "@/lib/dialogs";
 
-type NavTab = "scraper" | "socialpilot" | "longform" | "countdowns" | "comps" | "logs" | "settings";
+type NavTab = "scraper" | "socialpilot" | "longform" | "countdowns" | "editorial" | "comps" | "logs" | "settings";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -115,7 +116,7 @@ export default function Page() {
     const syncHash = () => {
       const [hash, sub] = readHash();
       const SUBS = ["queue", "longform", "countdowns", "scheduler", "ingest", "drive"];
-      if (["scraper", "socialpilot", "longform", "countdowns", "comps", "logs", "settings"].includes(hash)) {
+      if (["scraper", "socialpilot", "longform", "countdowns", "editorial", "comps", "logs", "settings"].includes(hash)) {
         setActiveTab(hash as NavTab);
         if (hash === "socialpilot" && SUBS.includes(sub)) setSocialPilotTab(sub as typeof socialPilotTab);
       } else if (hash === "queue") {
@@ -298,6 +299,9 @@ export default function Page() {
             title="Countdowns Studio"
             subtitle="Top 5 / 10 / 15 videos (8–12 min)"
           />
+
+          <NavButton active={activeTab === "editorial"} collapsed={collapsed} onClick={() => handleTabSelect("editorial")}
+            icon="📝" title="Editorial desk" subtitle="Research, calendar & measured learning" />
 
           {/* 3. Compilations & Stitching */}
           <NavButton
@@ -548,6 +552,7 @@ export default function Page() {
 
         {activeTab === "longform" && <StudioPanel />}
         {activeTab === "countdowns" && <CountdownsStudio />}
+        {activeTab === "editorial" && <EditorialWorkspace />}
 
         {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (

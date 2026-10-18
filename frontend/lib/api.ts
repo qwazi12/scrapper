@@ -1,6 +1,38 @@
 // Thin client for the Scrapper backend API.
 // API base + access token come from env (NEXT_PUBLIC_*) or localStorage.
 
+export type EditorialOpportunity = {
+  id: number; title: string; angle: string; audience: string; formats: string[];
+  evidence: { url: string; excerpt: string; entity: string; retrieved_at: string }[];
+  demand: number | null; demand_source: string | null; competition: string; feasibility: string;
+  planned_for: string | null; status: string;
+  feedback_refs?: number[];
+  assessment?: { confidence: string; uncertainty: string[]; evidence_count: number };
+};
+export type EditorialInsights = {
+  adapters: { platform: string; status: string; reason: string; live_metrics: null; imported_observations: number }[];
+  observation_count: number;
+  cohorts: { platform: string; format: string; age_hours: number; n: number; confidence: string;
+    medians: Record<string, number | null>; metric_samples: Record<string, number>; limitations: string }[];
+  next_actions: string[]; claim: string;
+};
+export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null };
+export type NativeExport = { id: string; campaign_id: number; format: string; queue_item_id: number | null;
+  approval: { fingerprint: string; at: string } | null;
+  manifest: { cards: { file: string; alt: string; sha256: string; caption_lines: number }[];
+    video?: { file: string }; cover: { file: string }; quality: { decode: string; errors: string[]; warnings: string[]; seconds?: number; width?: number; height?: number };
+    limitations: string[]; timeline?: { start: number; end: number; text: string }[] } };
+export type NativeCampaign = { id: number; opportunity_id: number; stage_status: string; stage_message: string | null;
+  brief: { title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; carousel_caption: string; community_question: string };
+  exports: NativeExport[] };
+export type IndexedAsset = { id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string } };
+export type AudienceFeedback = { id: number; text: string; category: string; classification: string; reply_draft: string; approved_for_manual_use: boolean; privacy_note: string };
+export type LearningReport = { delivery: string; live_comment_ingestion: string; feedback: AudienceFeedback[];
+  question_groups: { topic_token: string; n: number; suggestion: string; feedback_ids: number[] }[];
+  experiments: { id: number; name: string; hypothesis: string; metric: string; age_hours: number;
+    result: { status: string; design: string; winner: null; relative_median_change_percent: number | null;
+      groups: { control: { n: number; median: number | null }; variant: { n: number; median: number | null } }; next_action: string } }[] };
+
 export type Clip = {
   id: number;
   job_id: number | null;
@@ -92,6 +124,8 @@ export type QueueItem = {
   pipeline: string;
   video_name: string;
   video_path: string | null;
+  media_kind?: "video" | "images";
+  media_files?: string[];
   thumb_path: string | null;
   thumb_version?: number | null;
   drive_link: string | null;
@@ -104,7 +138,8 @@ export type QueueItem = {
   notes: string | null;
   position: number | null;
   research?: {
-    matched: boolean; title?: string; year?: string | null; confidence?: number; reason?: string;
+    native_export_id?: string; approval_fingerprint?: string;
+    matched?: boolean; title?: string; year?: string | null; confidence?: number; reason?: string;
     guess?: string; source?: string; cast?: { actor: string; character: string }[]; keywords?: string[];
   } | null;
   scheduled_at: string | null;
@@ -971,6 +1006,31 @@ export async function downloadBackup(path: string, filename: string): Promise<vo
 }
 
 export const api = {
+  editorialLearning: () => req<LearningReport>("/api/editorial/learning", { headers: headers(false) }),
+  editorialFeedback: (data: unknown) => req<{ created: number[] }>("/api/editorial/feedback/import", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  editorialReply: (id: number, text: string, approved: boolean) => req<AudienceFeedback>(`/api/editorial/feedback/${id}/draft`,
+    { method: "PUT", headers: headers(), body: JSON.stringify({ text, approved_for_manual_use: approved }) }),
+  editorialExperiment: (data: unknown) => req<unknown>("/api/editorial/experiments", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  nativeCampaigns: () => req<NativeCampaign[]>("/api/editorial/campaigns", { headers: headers(false) }),
+  nativeCreate: (data: unknown) => req<NativeCampaign>("/api/editorial/campaigns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  nativeRender: (cid: number, fmt: string) => req<NativeExport>(`/api/editorial/campaigns/${cid}/render/${fmt}`, { method: "POST", headers: headers() }),
+  nativeApprove: (id: string) => req<NativeExport>(`/api/editorial/exports/${id}/approve`,
+    { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true }) }),
+  nativeEnqueue: (id: string, accounts: string[]) => req<{ queue_item_id: number; status: string }>(`/api/editorial/exports/${id}/enqueue`,
+    { method: "POST", headers: headers(), body: JSON.stringify({ accounts }) }),
+  nativeFile: (id: string, file: string) => withToken(`${apiBase()}/api/editorial/exports/${id}/file/${encodeURIComponent(file.split("/").pop() || "")}`),
+  nativeAssets: () => req<IndexedAsset[]>("/api/editorial/assets", { headers: headers(false) }),
+  nativeAssetUpload: (file: File, license: string, attestation: string, tags: string) => {
+    const body = new FormData(); body.append("file", file); body.append("license", license); body.append("attestation", attestation); body.append("tags", tags);
+    return req<{ id: number; duplicate: boolean }>("/api/editorial/assets", { method: "POST", headers: headers(false), body });
+  },
+  editorialOpportunities: () => req<EditorialOpportunity[]>("/api/editorial/opportunities", { headers: headers(false) }),
+  editorialSave: (data: unknown, id?: number) => req<EditorialOpportunity>(`/api/editorial/opportunities${id ? `/${id}` : ""}`,
+    { method: id ? "PUT" : "POST", headers: headers(), body: JSON.stringify(data) }),
+  editorialApprove: (id: number) => req<EditorialOpportunity>(`/api/editorial/opportunities/${id}/approve`, { method: "POST", headers: headers() }),
+  editorialInsights: () => req<EditorialInsights>("/api/editorial/insights", { headers: headers(false) }),
+  editorialObservation: (data: unknown) => req<{ key: string; created: boolean }>("/api/editorial/observations",
+    { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   base: apiBase,
   thumbUrl: (id: number) => withToken(`${apiBase()}/api/clips/${id}/thumb`),
   downloadUrl: (id: number) => withToken(`${apiBase()}/api/compilations/${id}/download`),

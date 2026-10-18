@@ -76,6 +76,7 @@ def test_actual_carousel_approval_enqueue_and_simulated_photo_receipts(client, m
     first = client.post(f"/api/editorial/exports/{eid}/enqueue", json=data).json()
     second = client.post(f"/api/editorial/exports/{eid}/enqueue", json=data).json()
     assert first["created"] and not second["created"] and first["queue_item_id"] == second["queue_item_id"]
+    assert client.patch(f"/api/queue/{first['queue_item_id']}", json={"description": "Changed after approval"}).status_code == 409
     calls = []
     async def accounts(): return [{"id": "default:instagram", "profile": "default"}]
     async def upload(paths, **kwargs):

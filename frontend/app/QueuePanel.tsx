@@ -1139,7 +1139,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
                         {item.title || "Untitled Video"}
                       </div>
-                      {item.research && (
+                      {item.research && !item.research.native_export_id && (
                         item.research.matched ? (
                           <a href={item.research.source} target="_blank" rel="noreferrer"
                              title={`AI matched this clip on TMDB (${Math.round((item.research.confidence || 0) * 100)}% sure): ${item.research.reason || ""}`}
