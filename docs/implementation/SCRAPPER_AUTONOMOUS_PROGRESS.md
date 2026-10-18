@@ -18,15 +18,15 @@
 
 | ID | Root cause / files | State | Evidence / risk / next |
 |---|---|---|---|
-| M1-01 | script checker accepts missing/unknown verdicts | IN_PROGRESS | Reconfirmed stage_script.py; add strict coverage and repair recheck |
-| M1-02 | trusted domain accepted without claim support | PLANNED | sources.py/storyboard; strict references, evidence records |
-| M1-03 | all Writing jobs labeled screenplay | PLANNED | tmdb.py; typed crew roles |
-| M1-04 | general media pass includes backup | PLANNED | auth.py; authenticated blob download |
-| M1-05 | Drive metadata controls shared temp filename | PLANNED | drive_sync.py; private unique staging |
-| M1-06 | countdown test helper omits new vidIQ calls | PLANNED | test_countdown_auto.py; mock all external boundaries |
-| M2-01 | E2E can escape to scheduler/provider | PLANNED | enforced safe mode and OS network isolation |
-| M2-02 | publish intent recorded after submission | PLANNED | queue_manager.py; durable intent/unknown states |
-| M2-03 | stale render survives edits, weak final QA | PLANNED | routes.py, stage_render.py; hash and decode validation |
+| M1-01 | script checker accepts missing/unknown verdicts | VERIFIED_LOCAL | Strict coverage, malformed response and repair recheck; independent verification remains open |
+| M1-02 | trusted domain accepted without claim support | PARTIAL | Strict evidence predicate; retrieval and semantic verification remain open |
+| M1-03 | all Writing jobs labeled screenplay | VERIFIED_LOCAL | Typed crew roles preserved |
+| M1-04 | general media pass includes backup | VERIFIED_LOCAL | Owner-header-only backup; authenticated browser blob |
+| M1-05 | Drive metadata controls shared temp filename | VERIFIED_LOCAL | Private unique staging and contained promotion |
+| M1-06 | countdown test helper omits new vidIQ calls | VERIFIED_LOCAL | All external boundaries mocked, socket guard |
+| M2-01 | E2E can escape to scheduler/provider | VERIFIED_LOCAL | Safe mode + OS network isolation; no scheduler threads |
+| M2-02 | publish intent recorded after submission | PARTIAL | Durable intent/unknown states, atomic enqueue; full journal/manual reconciliation remain |
+| M2-03 | stale render survives edits, weak final QA | PARTIAL | Hash/decode/approval gate; immutable exports and creative QA remain |
 | M3-M5 | full product roadmap | NOT_STARTED | dependent on safety foundations; never label complete prematurely |
 
 Next: focused safety regressions and implementation. Full UI+media scenarios
@@ -118,3 +118,27 @@ frames, add manifest/runbook and completion report, run final regressions, commi
 harness. No M3-M5 implementation or native vertical/carousel E2E claimed.
 No pushes, draft PRs, deployments, production reads/writes or paid calls in this
 implementation run. External cost $0.
+
+## Continuation after owner requested keep going
+
+Checkpoint: full backend 343 passed / 1 skipped; latest narrow publisher suite
+90 passed; frontend build/typecheck passed and npm advisory scan zero. Browser
+3 passed (1.5 min): LongForm, main navigation/mobile, Top5. Actual exports decoded:
+6.103s LongForm and 82.296s Top5, 1080p with AAC. No hard QA errors; countdown
+rank cards trigger black-frame review warnings. $0 external spend, zero blocked
+network attempts and no scheduler threads in final isolation evidence. CI/Docker
+remain authored only (local Docker daemon unavailable).
+
+Now continuing beyond that checkpoint, not claiming roadmap completion:
+- Explicit awaiting_worker stops the auto-chain; no false trailer-complete flag,
+  repeated handoff, or error Job banner for a pending dependency.
+- Legacy topic GET reads cache only; refresh is POST. Schedule GET reads only;
+  explicit configuration PUT still replans.
+- Legacy direct compilation publishing retired (410); UI sends to review queue,
+  with atomic compilation queue link instead of pre-record provider calls.
+- New countdown identity is revalidated at confirmation after owner edits.
+- Focused new contracts: 16 passed. Earlier Studio/countdown/worker lane 88 passed.
+  A schedule test exposed reliance on mutating GET; moved planning to config PUT
+  and rerunning that regression before committing.
+- Next: usable M3 editorial evidence/analytics records, then native format workflow
+  and safe UI/media E2E. M1/M2 residuals remain explicit in the checkpoint report.

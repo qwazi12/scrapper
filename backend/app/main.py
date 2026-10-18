@@ -551,47 +551,7 @@ async def generate_metadata(req: MetadataGenerateRequest, s: Session = Depends(g
 
 @app.post("/api/social/publish", response_model=SocialPostOut, dependencies=_AUTH)
 async def publish_social_post(req: SocialPublishRequest, s: Session = Depends(get_session)):
-    comp = s.get(Compilation, req.compilation_id)
-    if not comp or not comp.output_path or not pathlib.Path(comp.output_path).exists():
-        raise HTTPException(404, "compilation video not found or not finished")
-    if not req.account_ids:
-        raise HTTPException(400, "pick at least one account")
-
-    video_path = pathlib.Path(comp.output_path)
-    title, _, rest = req.content.strip().partition("\n")
-    logbus.log("info", "social_upload_start",
-               f"Uploading compilation {comp.id} to Upload-Post for {', '.join(req.account_ids)}")
-    try:
-        entries = await queue_manager.submit_upload(
-            video_path, req.account_ids, title=title or f"Compilation #{comp.id}",
-            description=req.content.strip(), tags=[], scheduled_date=req.scheduled_at,
-        )
-    except upload_post.UploadPostError as exc:
-        raise HTTPException(exc.status_code if exc.status_code < 500 else 502, exc.message)
-    if not any(e.get("request_id") for e in entries):
-        raise HTTPException(502, "Upload-Post rejected the upload: " + "; ".join(e.get("error", "") for e in entries))
-
-    sched_dt = None
-    if req.scheduled_at:
-        try:
-            sched_dt = datetime.datetime.fromisoformat(req.scheduled_at.replace("Z", "+00:00"))
-        except Exception:
-            pass
-
-    # "submitted" until the scheduler reads the real platform result.
-    post_record = SocialPost(
-        compilation_id=comp.id,
-        publish_requests=entries,
-        accounts=req.account_ids,
-        content=req.content,
-        scheduled_at=sched_dt,
-        status="submitted",
-    )
-    s.add(post_record)
-    s.commit()
-    s.refresh(post_record)
-    logbus.log("info", "social_submitted", f"Compilation {comp.id} submitted to Upload-Post (post {post_record.id})")
-    return post_record
+    raise HTTPException(410, "Direct submission has been retired. Add this compilation to the review queue, inspect it, then approve posting there.")
 
 
 @app.get("/api/social/posts", response_model=list[SocialPostOut], dependencies=_AUTH)
@@ -698,6 +658,7 @@ def get_queue_counts(
 
 @app.post("/api/queue", response_model=QueueItemOut, dependencies=_AUTH)
 async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_session)):
+    comp = None
     video_path = None
     thumb_path = None
     video_name = req.title or "Untitled"
@@ -707,6 +668,8 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         comp = s.get(Compilation, req.compilation_id)
         if not comp:
             raise HTTPException(404, "compilation not found")
+        if not comp.output_path or not pathlib.Path(comp.output_path).is_file():
+            raise HTTPException(409, "Render the compilation before adding it to the queue")
         video_path = comp.output_path
         video_name = f"Compilation #{comp.id}"
         if not source:
@@ -772,8 +735,15 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         scheduled_at=sched_dt,
         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1,
     )
-    s.add(item)
-    s.flush()
+    if comp:
+        from .social import enqueue
+        item, created = enqueue.claim(s, comp, item)
+        if not created:
+            s.commit()
+            return item
+    else:
+        s.add(item)
+        s.flush()
     undo.add_created(s, "queue", f"Add '{(item.title or '')[:40]}' to the queue", [item.id])
     s.commit()
     s.refresh(item)
@@ -1452,6 +1422,7 @@ def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_sessi
         queue_manager.save_schedule(s, None if req.reset else dumped)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    queue_manager.plan_schedule(s, datetime.datetime.now(datetime.timezone.utc))
     return get_schedule(s)
 
 
@@ -1624,7 +1595,6 @@ async def queue_item_voiceover(
 def get_schedule(s: Session = Depends(get_session)) -> dict:
     """Posting schedule config + what is lined up next, per pipeline."""
     now = datetime.datetime.now(datetime.timezone.utc)
-    queue_manager.plan_schedule(s, now)  # so the answer matches what will post
     ready = (
         s.query(QueueItem)
         .filter(QueueItem.status == "ready")

@@ -48,6 +48,9 @@ def _migrate() -> None:
 
     insp = inspect(engine)
     tables = insp.get_table_names()
+    if "compilations" in tables and "queue_item_id" not in {c["name"] for c in insp.get_columns("compilations")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE compilations ADD COLUMN queue_item_id INTEGER"))
     if "social_posts" in tables:
         sp_cols = {c["name"] for c in insp.get_columns("social_posts")}
         if "publish_requests" not in sp_cols:

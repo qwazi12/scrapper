@@ -35,6 +35,10 @@ class Cancelled(Exception):
     """Raised inside a job when someone pressed Stop."""
 
 
+class AwaitingDependency(Exception):
+    """Work is safely suspended until an external prerequisite arrives."""
+
+
 @dataclass
 class Job:
     id: str
@@ -108,6 +112,9 @@ def job(kind: str, label: str, scope: str, ref: Any = None) -> Iterator[Job]:
             j.status, j.message = "cancelled", "stopped by user"
             raise Cancelled(f"{label} stopped")
         j.status = "done"
+    except AwaitingDependency as exc:
+        j.status, j.message = "waiting", str(exc)[:300]
+        raise
     except Cancelled:
         j.status, j.message = "cancelled", "stopped by user"
         raise

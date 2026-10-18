@@ -263,6 +263,11 @@ def confirm_titles(s, c: CountdownProject) -> None:
                                  + ", ".join(bad) + ". Swap or remove them first.")
     if len(entries) < 2:
         raise HTTPException(400, "A countdown needs at least 2 titles")
+    if (c.ranking or {}).get("contract_version") == 1:
+        from .compilations import engine
+        for e in entries:
+            if not e.get("year") or not engine._resolve_title(e):
+                raise HTTPException(409, f"Canonical title/year/medium could not be confirmed for #{e.get('rank')} {e.get('title')}. Repair the identity before making segments.")
     minutes = float((c.review or {}).get("segment_minutes") or SEGMENT_MINUTES.get(c.fmt, 1.0))
     total = len(entries)
     ids = []
@@ -406,6 +411,17 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
                 logbus.log("info", "countdown_segments_done", f"Countdown #{c.id}: all {made} segments made — ready for review")
                 continue
             prefix = f"Making segments: {made} of {len(segs)} done"
+            waiting = next((x for x in segs if x["stage_status"] == "awaiting_worker"), None)
+            if waiting:
+                import pathlib
+                from ..models import Clip
+                p = s.get(StudioProject, waiting["id"])
+                clip = s.get(Clip, (p.trailer or {}).get("pending_clip_id")) if p.trailer else None
+                if not clip or not clip.file_path or not pathlib.Path(clip.file_path).is_file():
+                    c.stage_status = "waiting"
+                    c.stage_message = f"{prefix} — “{p.title}” is awaiting footage from the home worker"
+                    s.commit()
+                    continue
             paused = next((x for x in segs if x["stage_status"] == "paused"), None)
             if paused:
                 c.stage_status = "paused"

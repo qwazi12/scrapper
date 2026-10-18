@@ -157,6 +157,16 @@ Return JSON array of 15 candidate objects:
     return _default_candidate_topics()
 
 
+def cached_topics(category_filter: str | None = None) -> list[dict[str, Any]]:
+    """Read cached suggestions, including stale ones; never discover or write."""
+    with SessionLocal() as s:
+        row = s.get(AppSetting, "countdown_candidates")
+        items = (row.value or {}).get("items", []) if row else []
+        if category_filter and category_filter != "all":
+            items = [c for c in items if c.get("trigger") == category_filter]
+        return items
+
+
 def get_or_discover_topics(category_filter: str | None = None, force_refresh: bool = False) -> list[dict[str, Any]]:
     """Return cached candidate topics if available; otherwise discover and cache.
     Ensures Countdown Studio loads instantly without re-scoring every page visit."""

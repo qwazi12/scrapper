@@ -227,10 +227,12 @@ def test_trailer_stage_downloads_from_imdb(monkeypatch, three_scene_video):
 def test_trailer_stage_falls_back_to_home_worker(monkeypatch):
     pid = _new_project(facts={"imdb_id": None, "videos": [
         {"site": "YouTube", "type": "Trailer", "url": "https://www.youtube.com/watch?v=k1"}]})
-    msg = runner.run_one(pid, "trailer")
-    assert "home Mac worker" in msg
+    with pytest.raises(runner.AwaitingWorker, match="home Mac worker"):
+        runner.run_one(pid, "trailer")
     with SessionLocal() as s:
-        t = s.get(StudioProject, pid).trailer
+        p = s.get(StudioProject, pid)
+        assert p.stage_status == "awaiting_worker"
+        t = p.trailer
         clip = s.get(Clip, t["pending_clip_id"])
         assert clip.file_path is None and clip.source_url.endswith("k1")  # what the worker polls for
 

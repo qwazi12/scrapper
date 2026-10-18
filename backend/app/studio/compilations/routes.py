@@ -102,5 +102,12 @@ def get_demand_triggers() -> list[dict[str, Any]]:
 
 @router.get("/topics")
 def get_candidate_topics(trigger: str | None = None, refresh: bool = False) -> list[dict[str, Any]]:
-    """STEP 1: Discover and score 15 candidate topics across the 5 demand triggers (cached for instant load)."""
-    return engine.get_or_discover_topics(category_filter=trigger, force_refresh=refresh)
+    """Read cached topics. Refresh is an explicit POST, never a paid GET."""
+    if refresh:
+        raise HTTPException(405, "Use POST /api/studio/compilations/topics/refresh")
+    return engine.cached_topics(category_filter=trigger)
+
+
+@router.post("/topics/refresh")
+def refresh_candidate_topics(trigger: str | None = None) -> list[dict[str, Any]]:
+    return engine.get_or_discover_topics(category_filter=trigger, force_refresh=True)

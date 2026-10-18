@@ -18,7 +18,7 @@ from ..models import Clip, StudioProject, Status
 from ...core.scraper import platform_of
 from .. import control
 from . import imdb
-from .runner import project_dir, stage
+from .runner import AwaitingWorker, project_dir, stage
 
 EXTRA_TYPES = ("Clip", "Teaser", "Promo", "Featurette", "Trailer")
 MAX_EXTRA_SECONDS = 300   # extra footage beyond the main trailer
@@ -75,6 +75,18 @@ def trailer(project_id: int) -> str:
     if current and current.get("origin") == "upload" and pathlib.Path(current.get("file", "")).exists():
         return "using the uploaded trailer"
 
+    # A retry of a persisted handoff only collects that handoff, rather than
+    # repeating upstream downloads while the Mac is offline.
+    if (current or {}).get("pending_clip_id"):
+        result, msg = _from_worker(project_id, facts, current)
+        if not result.get("file"):
+            raise AwaitingWorker(msg)
+        with SessionLocal() as s:
+            p = s.get(StudioProject, project_id)
+            p.trailer, p.shots = result, None
+            s.commit()
+        return msg
+
     footage = project_dir(project_id) / "footage"
     footage.mkdir(exist_ok=True)
     result: dict | None = None
@@ -112,4 +124,6 @@ def trailer(project_id: int) -> str:
             p.shots = None  # new footage -> old shot list is stale
         p.trailer = result
         s.commit()
+    if result.get("pending_clip_id") and not result.get("file"):
+        raise AwaitingWorker(note.strip())
     return note.strip()

@@ -33,3 +33,20 @@ def test_supplied_id_is_still_checked_and_wrong_year_rejected(monkeypatch):
     monkeypatch.setattr(tmdb, "search", lambda q: RESULTS[:1])
     assert engine._resolve_title({"title": "Same Title", "year": 2026}) is None
     assert engine._resolve_title({"title": "Unrelated invented title", "tmdb_id": 1, "year": 1951}) is None
+
+
+def test_owner_edited_countdown_identity_is_rechecked_at_confirmation(session, monkeypatch):
+    from fastapi import HTTPException
+    from backend.app.models import CountdownProject
+    from backend.app.studio import countdown
+    entries = [{"rank": i, "title": f"Movie {i}", "year": 2026, "tmdb_id": i, "media_type": "movie"} for i in range(1, 6)]
+    c = CountdownProject(topic="Synthetic", fmt="top5", ranking={"contract_version": 1, "entries": entries})
+    session.add(c); session.commit()
+    checked = []
+    def resolve(entry):
+        checked.append(entry["tmdb_id"])
+        return entry if entry["tmdb_id"] != 3 else None
+    monkeypatch.setattr(engine, "_resolve_title", resolve)
+    with pytest.raises(HTTPException, match="Canonical"):
+        countdown.confirm_titles(session, c)
+    assert checked == [1, 2, 3] and not c.segment_ids

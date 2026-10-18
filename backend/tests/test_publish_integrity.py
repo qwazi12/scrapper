@@ -92,3 +92,13 @@ def test_unknown_submission_cannot_be_edited_deleted_or_reapproved_via_api(sessi
     assert client.post("/api/queue/bulk-action", json={"ids": [item_id], "action": "approve"}).status_code == 409
     session.refresh(item)
     assert item.title == "Uncertain" and item.status == "posting"
+
+
+def test_legacy_direct_submit_is_retired_before_any_provider_io(monkeypatch):
+    from backend.app.main import app
+    from fastapi.testclient import TestClient
+    async def forbidden(*a, **kw): raise AssertionError("Must use durable queue")
+    monkeypatch.setattr(qm, "submit_upload", forbidden)
+    response = TestClient(app, headers={"x-access-token": "test-token"}).post("/api/social/publish",
+        json={"compilation_id": 1, "account_ids": ["default:youtube"], "content": "Synthetic"})
+    assert response.status_code == 410 and "review queue" in response.json()["detail"]

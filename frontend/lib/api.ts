@@ -449,7 +449,7 @@ export type StudioProject = {
   title: string;
   target_minutes: number;
   stage: string;
-  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused" | "queued";
+  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused" | "queued" | "awaiting_worker";
   stage_message: string | null;
   queue_item_id: number | null;
   created_at: string;
@@ -804,7 +804,7 @@ export type Job = {
   label: string;
   scope: string;
   ref?: any;
-  status: "queued" | "running" | "stopping" | "cancelled" | "done" | "error";
+  status: "queued" | "running" | "stopping" | "cancelled" | "done" | "error" | "waiting";
   message: string;
   started_at?: string | null;
   finished_at?: string | null;
@@ -1311,9 +1311,9 @@ export const api = {
   countdownTopics: (trigger?: string, refresh?: boolean) => {
     const params = new URLSearchParams();
     if (trigger && trigger !== "all") params.set("trigger", trigger);
-    if (refresh) params.set("refresh", "true");
     const q = params.toString() ? `?${params.toString()}` : "";
-    return req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${q}`, { headers: headers(false) });
+    return req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${refresh ? "/refresh" : ""}${q}`,
+      { method: refresh ? "POST" : "GET", headers: headers(false) });
   },
 
   // --- Countdowns Studio (2026-10-12): a countdown is a project, like a breakdown ---

@@ -78,6 +78,7 @@ class Compilation(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class LogEntry(Base):

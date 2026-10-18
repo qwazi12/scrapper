@@ -100,23 +100,19 @@ export function PublishModal({
     // Name exactly the picked channels — what the server will actually use.
     const names = targetNames(targets, accounts);
     const when = isoScheduled ? `on ${new Date(isoScheduled).toLocaleString()}` : "now";
-    if (!await askConfirm(`Publish this compilation ${when} to ${names} as ${privacy} via Upload-Post?`)) return;
+    if (!await askConfirm(`Add this compilation to the review queue for ${names}${isoScheduled ? ` with requested time ${when}` : ""}? Posting requires approval in the queue.`)) return;
 
     setPublishing(true);
     setError(null);
     setSuccessMsg(null);
 
     try {
-      const res = await api.publishSocial(
-        compilation.id,
-        targets,
-        content.trim(),
-        isoScheduled
-      );
-
-      setSuccessMsg(
-        `Submitted to Upload-Post (post #${res.id}). The real result per channel appears in Live Activity Logs once the platforms confirm.`
-      );
+      const res = await api.createQueueItem({
+        compilation_id: compilation.id, accounts: targets,
+        title: content.trim().split("\n")[0], description: content.trim(),
+        status: "review", scheduled_at: isoScheduled,
+      });
+      setSuccessMsg(`Queue item #${res.id} is ${res.status}. Open SocialPilot to inspect and approve it.`);
       onSuccess();
       setTimeout(() => {
         onClose();
@@ -171,7 +167,7 @@ export function PublishModal({
         >
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 16, fontWeight: 700 }}>🚀 Post & Schedule Compilation</span>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>Prepare Compilation for Review</span>
               <span
                 style={{
                   padding: "2px 8px",
@@ -334,7 +330,7 @@ export function PublishModal({
                   onChange={() => setIsScheduled(false)}
                   style={{ width: 14, height: 14 }}
                 />
-                Publish Now (Immediate)
+                Review before posting
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12 }}>
                 <input
@@ -344,7 +340,7 @@ export function PublishModal({
                   onChange={() => setIsScheduled(true)}
                   style={{ width: 14, height: 14 }}
                 />
-                Schedule for Later
+                Request a posting time after review
               </label>
             </div>
 
@@ -428,8 +424,8 @@ export function PublishModal({
             {publishing
               ? "Uploading to Upload-Post…"
               : isScheduled
-              ? `Schedule (${targets.length} target${targets.length === 1 ? "" : "s"})`
-              : `Publish Now (${targets.length} target${targets.length === 1 ? "" : "s"})`}
+              ? `Add to review (${targets.length} target${targets.length === 1 ? "" : "s"})`
+              : `Add to review (${targets.length} target${targets.length === 1 ? "" : "s"})`}
           </button>
         </div>
       </div>

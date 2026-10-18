@@ -27,6 +27,10 @@ logger = logging.getLogger("scrapper.studio")
 ORDER = ["gather", "trailer", "shots", "script", "plan", "render"]
 STAGES: dict[str, Callable[[int], str]] = {}
 
+
+class AwaitingWorker(control.AwaitingDependency):
+    """A persisted worker handoff is pending; no downstream stage may run."""
+
 _lock = threading.Lock()
 _current: dict[str, object] = {"project_id": None, "stage": None}
 _stop_events: dict[int, threading.Event] = {}
@@ -120,6 +124,11 @@ def run_one(project_id: int, name: str, stop_event: threading.Event | None = Non
             summary = STAGES[name](project_id) or "done"
             if ev and ev.is_set():
                 raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
+    except AwaitingWorker as exc:
+        _set(project_id, stage_status="awaiting_worker", stage_message=str(exc))
+        logbus.log("info", "studio_stage_waiting", f"Studio #{project_id}: {exc}",
+                   project=project_id, stage=name)
+        raise
     except control.Cancelled:
         _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
         logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
@@ -212,6 +221,9 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
                 resume.checkpoint(rid, stage=n)
                 try:
                     run_one(project_id, n, stop_event=stop_event)
+                except AwaitingWorker as exc:
+                    outcome, err = "awaiting_worker", str(exc)
+                    return
                 except control.Cancelled:
                     outcome = "stopped"
                     return

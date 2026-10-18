@@ -59,6 +59,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
         "cost_usd": round(costs.ref_cost(f"studio:{p.id}"), 4),
         "has": {k: bool(getattr(p, k)) for k in ("facts", "research", "trailer", "shots", "script", "plan", "render")},
     }
+    d["has"]["trailer"] = bool((p.trailer or {}).get("file") and pathlib.Path(p.trailer["file"]).is_file())
     if full:
         d.update(facts=p.facts, research=p.research, trailer=p.trailer, shots=p.shots,
                  script=p.script, plan=p.plan, render=p.render)
@@ -373,7 +374,7 @@ def resume_project(project_id: int, s: Session = Depends(get_session)) -> dict[s
     """▶ Resume a stopped / failed / paused project from the step it was on,
     on through step 5 (or through render if it stopped while rendering)."""
     p = _get(s, project_id)
-    if p.stage_status not in ("stopped", "error", "paused") or p.stage in ("new", None):
+    if p.stage_status not in ("stopped", "error", "paused", "awaiting_worker") or p.stage in ("new", None):
         raise HTTPException(409, f"nothing to resume (status {p.stage_status})")
     until = "render" if p.stage == "render" else "plan"
     stage = p.stage if p.stage in runner.ORDER else "gather"
