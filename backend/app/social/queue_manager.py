@@ -497,7 +497,7 @@ def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
 def has_video_source(item: QueueItem) -> bool:
     """Is there anything to upload? (Audit 2026-10-11: Countdown rows were Ready
     with no video, took Screen Central's slots and would have failed at post time.)"""
-    return bool(item.video_path or item.compilation_id or item.clip_id or item.drive_link or item.media_url)
+    return bool(item.video_path or item.media_files or item.compilation_id or item.clip_id or item.drive_link or item.media_url)
 
 
 def plan_schedule(s: Session, now: datetime.datetime) -> int:
@@ -623,6 +623,7 @@ async def submit_upload(
     allow: dict[str, bool] | None = None,
     on_intent=None,
     on_result=None,
+    media_files: list[pathlib.Path] | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -647,15 +648,22 @@ async def submit_upload(
     for account in dict.fromkeys(accounts):
         profile, network = upload_post.split_account(account)
         platforms = [network]
-        intent = {"profile": profile, "platforms": platforms, "state": "intent", "submitted_at": scheduled_date or now}
+        import uuid
+        request_key = uuid.uuid4().hex
+        intent = {"profile": profile, "platforms": platforms, "state": "intent", "submitted_at": scheduled_date or now,
+                  "client_request_id": request_key}
         if on_intent:
             on_intent(intent)
         try:
-            rid = await upload_post.upload_video(
-                video_path, profile=profile, platforms=platforms, title=title,
-                description=description, tags=tags, privacy=settings.publish_privacy,
-                scheduled_date=scheduled_date, thumbnail=thumbnail,
-            )
+            if media_files:
+                rid = await upload_post.upload_images(media_files, profile=profile, platforms=platforms,
+                    title=title, description=description, idempotency_key=request_key)
+            else:
+                rid = await upload_post.upload_video(
+                    video_path, profile=profile, platforms=platforms, title=title,
+                    description=description, tags=tags, privacy=settings.publish_privacy,
+                    scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
+                )
             result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
             # Even a lost response can mean accepted. Never turn uncertainty
@@ -797,6 +805,26 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     if not item.accounts:
         raise upload_post.UploadPostError(
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
+    native_id = (item.research or {}).get("native_export_id")
+    if native_id:
+        from ..editorial.campaigns import exact_export
+        native, fingerprint = exact_export(s, native_id)
+        if (native.approval or {}).get("fingerprint") != fingerprint or item.research.get("approval_fingerprint") != fingerprint:
+            raise upload_post.UploadPostError("Native export approval changed; inspect it before posting", status_code=409)
+        from ..models import CreativeCampaign
+        campaign = s.get(CreativeCampaign, native.campaign_id)
+        expected_caption = campaign.brief["carousel_caption" if native.format == "carousel" else "short_caption"]
+        if (item.title != campaign.brief["title"] or item.description != expected_caption or item.tags
+                or item.thumb_path != native.manifest["cover"]["file"]
+                or item.media_files != ([c["file"] for c in native.manifest["cards"]] if native.format == "carousel" else [])
+                or item.video_path != native.manifest.get("video", {}).get("file")):
+            raise upload_post.UploadPostError("Native queue media/copy differs from its approved export; create and inspect a revised treatment", status_code=409)
+    images = [pathlib.Path(p) for p in (item.media_files or [])] if item.media_kind == "images" else []
+    if item.media_kind == "images":
+        if not native_id or not 1 <= len(images) <= 10 or any(not p.is_file() for p in images):
+            raise upload_post.UploadPostError("Inspect a native image export before submitting photos", status_code=409)
+        if any(a.split(":")[-1] not in ("facebook", "instagram") for a in item.accounts):
+            raise upload_post.UploadPostError("Choose explicit Instagram/Facebook photo destinations", status_code=400)
     if blocked_accounts(item.accounts):
         # Last line of defence: never send to a blocked profile, even if a row slipped through.
         item.accounts = [a for a in item.accounts if a not in blocked_accounts(item.accounts)]
@@ -810,7 +838,9 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     video_path: pathlib.Path | None = None
     is_temp_download = False
 
-    if item.video_path and pathlib.Path(item.video_path).exists():
+    if images:
+        video_path = images[0]  # local transport handle; images go to /upload_photos
+    elif item.video_path and pathlib.Path(item.video_path).exists():
         video_path = pathlib.Path(item.video_path)
     elif item.compilation_id:
         comp = s.get(Compilation, item.compilation_id)
@@ -843,7 +873,7 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     import hashlib
     import json
     from ..studio.media_quality import file_hash
-    artifact_key = hashlib.sha256(json.dumps({"video": file_hash(video_path), "title": item.title,
+    artifact_key = hashlib.sha256(json.dumps({"video": file_hash(video_path), "images": [file_hash(p) for p in images], "title": item.title,
         "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
         "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path},
         sort_keys=True).encode()).hexdigest()
@@ -857,6 +887,7 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
                         QueueItem.title == item.title, QueueItem.description == item.description,
                         QueueItem.tags == item.tags, cast(QueueItem.accounts, String) == json.dumps(item.accounts),
                         QueueItem.video_path == item.video_path, QueueItem.thumb_path == item.thumb_path,
+                        QueueItem.media_kind == item.media_kind, cast(QueueItem.media_files, String) == json.dumps(item.media_files),
                         QueueItem.drive_link == item.drive_link)
                         .values(status="posting", publish_requests=intent),
                         execution_options={"synchronize_session": False}).rowcount
@@ -894,6 +925,7 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             video_path, list(item.accounts), title=item.title or item.video_name,
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
+            **({"media_files": images} if images else {}),
         )
         entries = [{**e, "artifact_key": artifact_key} for e in entries]
         skipped = [a for e in entries for a in e.get("skipped", [])]

@@ -123,6 +123,8 @@ class QueueItem(Base):
     pipeline: Mapped[str] = mapped_column(String(64), default="default", index=True)
     video_name: Mapped[str] = mapped_column(String(255), default="")
     video_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_kind: Mapped[str] = mapped_column(String(16), default="video", server_default="video")
+    media_files: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     thumb_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     drive_link: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -163,6 +165,66 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class EditorialRecord(Base):
+    """Private opportunities, experiments and deidentified audience drafts."""
+    __tablename__ = "editorial_records"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PerformanceObservation(Base):
+    """Owner-imported cumulative measurements; missing metrics remain NULL."""
+    __tablename__ = "performance_observations"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(24), index=True)
+    content_id: Mapped[str] = mapped_column(String(255), index=True)
+    format: Mapped[str] = mapped_column(String(24), index=True)
+    published_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class CreativeCampaign(Base):
+    """Approved research package, selected native treatments and immutable renders."""
+    __tablename__ = "creative_campaigns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(ForeignKey("editorial_records.id"))
+    brief: Mapped[dict] = mapped_column(JSON, default=dict)
+    renders: Mapped[dict] = mapped_column(JSON, default=dict)
+    review: Mapped[dict] = mapped_column(JSON, default=dict)
+    stage_status: Mapped[str] = mapped_column(String(24), default="draft")
+    stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    work_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class MediaAsset(Base):
+    __tablename__ = "media_assets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    file_path: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(24))
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CreativeExport(Base):
+    __tablename__ = "creative_exports"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("creative_campaigns.id"), index=True)
+    format: Mapped[str] = mapped_column(String(24))
+    manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    approval: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class StudioProject(Base):

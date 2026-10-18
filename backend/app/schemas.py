@@ -154,6 +154,8 @@ class QueueItemOut(BaseModel):
     pipeline: str
     video_name: str
     video_path: str | None
+    media_kind: str = "video"
+    media_files: list[str] = []
     thumb_path: str | None
     thumb_version: float | None = None      # file mtime: changes when the thumbnail does (cache-buster)
     drive_link: str | None

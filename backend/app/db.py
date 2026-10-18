@@ -76,6 +76,10 @@ def _migrate() -> None:
         return
     cols = {c["name"] for c in insp.get_columns("queue_items")}
     with engine.begin() as conn:  # one transaction: all or nothing
+        if "media_kind" not in cols:
+            conn.execute(text("ALTER TABLE queue_items ADD COLUMN media_kind VARCHAR(16) NOT NULL DEFAULT 'video'"))
+        if "media_files" not in cols:
+            conn.execute(text("ALTER TABLE queue_items ADD COLUMN media_files JSON NOT NULL DEFAULT '[]'"))
         if "publish_requests" not in cols:
             conn.execute(text("ALTER TABLE queue_items ADD COLUMN publish_requests JSON"))
         if "research" not in cols:

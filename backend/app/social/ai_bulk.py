@@ -40,6 +40,10 @@ def ai_inputs(item: QueueItem, s) -> list[str]:
 
 
 def apply_ai(item: QueueItem, res: dict[str, Any], research: dict[str, Any] | None = None) -> None:
+    if item.status == "posting" or any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
+        raise metadata.MetadataError("Submission unresolved; reconcile before rewriting")
+    if (item.research or {}).get("native_export_id"):
+        raise metadata.MetadataError("Native campaign copy is bound to its inspected export")
     item.title = res.get("title", item.title)
     item.description = res.get("caption", item.description)
     item.tags = " ".join(res.get("hashtags", []))

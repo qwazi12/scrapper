@@ -72,6 +72,12 @@ from .studio import countdown as countdown_studio  # noqa: E402  (Countdowns Stu
 app.include_router(countdown_studio.router)
 from . import vidiq  # noqa: E402  (vidIQ: topics, keywords, tags, trends — 2026-10-13)
 app.include_router(vidiq.router)
+from .editorial import routes as editorial_routes
+app.include_router(editorial_routes.router)
+from .editorial import campaigns as campaign_routes
+app.include_router(campaign_routes.router)
+from .editorial import learning as learning_routes
+app.include_router(learning_routes.router)
 
 
 @app.middleware("http")
@@ -769,6 +775,9 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
+    if (item.research or {}).get("native_export_id") and any(
+            getattr(req, key) is not None and getattr(req, key) != getattr(item, key) for key in ("title", "description", "tags")):
+        raise HTTPException(409, "Native campaign copy is approved with its media; create a revised treatment before changing copy")
     undo.record(s, "queue", f"Edit #{item.id} '{(item.title or '')[:40]}'", rows=[item])
 
     if req.title is not None:
@@ -864,6 +873,8 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
 
     if not settings.gemini_api_key:
         raise HTTPException(502, "AI generation failed: GEMINI_API_KEY is not set on the server")
+    if (item.research or {}).get("native_export_id"):
+        raise HTTPException(409, "Native campaign copy is bound to its export approval; create a revised campaign treatment")
     from . import costs
     try:
         with costs.operation("queue:ai", ref=f"queue:{item.id}"):
@@ -1431,6 +1442,10 @@ def start_bulk_ai(req: QueueBulkAction, s: Session = Depends(get_session)) -> di
     if not settings.gemini_api_key:
         raise HTTPException(400, "GEMINI_API_KEY is not set on the server")
     rows = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
+    for row in rows:
+        _require_queue_editable(row)
+        if (row.research or {}).get("native_export_id"):
+            raise HTTPException(409, "Native campaign copy must be revised in its research treatment")
     ids = [r.id for r in rows]
     if not ids:
         raise HTTPException(400, "No matching queue items")
