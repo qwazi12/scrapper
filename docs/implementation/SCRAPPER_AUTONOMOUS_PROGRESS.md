@@ -6,9 +6,9 @@
 - Main checkout: clean; never edited. GitHub main matches Phase 0 base SHA.
 - Handoff copied from owner attachment; Downloads copy absent.
 - Phase 0 README read; prior session retained all 24 findings and test results.
-  Reopening complete report, milestone plan and reproduction file currently
-  stalls in macOS File Provider (some show compressed,dataless). Do not claim
-  a fresh complete read. These reads are pending; source is rechecked directly.
+  macOS File Provider delayed reopening several evidence files; reads eventually
+  completed. The full audit and reproductions are being reviewed in bounded chunks;
+  application source is independently rechecked before changes.
 - Baseline retained: 301 passed, 3 missing-vidIQ-mock failures, 1 optional skip;
   18 probes reproduce defects, not safety; synthetic media proved mechanics only.
 - Optional v2/addendum absent from repository and Downloads file inventory.
@@ -31,3 +31,39 @@
 
 Next: focused safety regressions and implementation. Full UI+media scenarios
 remain unverified. No real provider calls, no posting, external spend $0.
+
+
+## Checkpoint 2026-10-18 13:17 Eastern
+
+Implemented local foundations (not full milestone closure): strict verdict/ref
+coverage and repair recheck; saved-script checking without redraft; typed writing
+credits; strict evidence record predicate; no AI statistics in citable countdown
+notes; backend/UI research gates; backup owner-header download; private atomic
+Drive files; missing vidIQ mocks; safe E2E storage/network/scheduler isolation;
+atomic publish claim and per-platform intent/unknown journals; final-file decode,
+stream, duration and QA signals; hashed export approval; bounded atomic uploads;
+stale plan/script/trailer output invalidation; explicit reconcile action; fragment
+navigation and truthful storage/connection labels. Removed borrowed intro audio.
+
+Evidence: artifacts/backend-checkpoint5.txt: 330 passed / 1 optional skipped,
+33.92s, with external socket guard. artifacts/safety-checkpoint.txt: 26 passing
+focused safety tests. Frontend build checkpoint2 passed; checkpoint3 running.
+Next 15.5.28 + PostCSS override 8.5.30: npm audit reports zero advisories
+(artifacts/npm-audit-final.json). This is scanner evidence, not security assurance.
+
+Real local browser: configured connection through form; searched/created Synthetic
+Film 1; real gather/trailer/shots/script executed against fake providers. Six
+actual FFmpeg cuts tagged. New reusable E2E stack running at 8802/3302 with
+fresh temp DB, no schedulers, OS outbound denial; browser suite not yet complete.
+Initial unconfigured browser produced connection-refused logs; structured suite
+will configure storage before load and retain all subsequent console errors.
+
+Remaining material gaps: canonical identity/category/countdown validation;
+independent source retrieval/semantic validation; campaign-specific segment reuse;
+legacy direct social publish durability; attempt history/manual unknown resolution;
+general queue asset approval and in-flight metadata fencing; crash leases/budgets;
+full UI/media suite including Top5/native vertical/carousel; M3-M5.
+
+Next commands: complete frontend build, restart isolated stack, run committed
+Playwright suite (being developed), inspect actual exports, then extend safety
+contracts. External spend remains $0. Production remains untouched.

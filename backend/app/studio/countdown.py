@@ -1146,8 +1146,6 @@ def skip_next() -> dict[str, Any]:
 @router.get("/topics")
 def get_topics() -> dict[str, Any]:
     from . import countdown_topics
-    if countdown_topics.is_stale() and not countdown_topics.stored().get("topics"):
-        countdown_topics.refresh_async()
     return countdown_topics.listing()
 
 

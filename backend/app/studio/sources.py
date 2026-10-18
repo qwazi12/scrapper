@@ -78,5 +78,46 @@ def annotate(research: dict) -> dict:
 
 
 def usable(claim: dict, sources: list[dict]) -> bool:
-    """A finding counts as a fact only if an official or trusted source backs it."""
-    return any(i < len(sources) and sources[i].get("tier") in ("official", "trusted") for i in claim.get("sources", []))
+    """Fail closed: a domain label or grounding citation is not claim support.
+
+    Evidence must identify the retrieved record, exact supporting excerpt and
+    entity. Existing grounding-only claims remain visible for owner review but
+    cannot become narrated facts. Semantic support still requires editorial review.
+    """
+    import hashlib
+    from datetime import datetime, timezone
+    evidence = claim.get("evidence")
+    if not isinstance(evidence, dict) or evidence.get("verdict") != "supported" or evidence.get("conflicts"):
+        return False
+    if not isinstance(evidence.get("entity"), str) or not evidence["entity"].strip() or evidence.get("confidence") not in ("high", "medium"):
+        return False
+    try:
+        retrieved_at = evidence.get("retrieved_at")
+        if not isinstance(retrieved_at, str):
+            return False
+        retrieved = datetime.fromisoformat(retrieved_at.replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - retrieved).total_seconds()
+        if not 0 <= age <= 30 * 86400:
+            return False
+    except (KeyError, TypeError, ValueError):
+        return False
+    record, excerpt = evidence.get("retrieved_text"), evidence.get("excerpt")
+    if not isinstance(record, str) or not isinstance(excerpt, str) or not excerpt.strip() or excerpt not in record:
+        return False
+    normalize = lambda text: " ".join(text.casefold().split())
+    text = claim.get("text")
+    if not isinstance(text, str) or not text.strip() or normalize(text) not in normalize(excerpt):
+        return False  # abstractive/semantic support requires a separate editorial verifier
+    if evidence.get("record_sha256") != hashlib.sha256(record.encode()).hexdigest():
+        return False
+    refs = claim.get("sources")
+    if not isinstance(refs, list):
+        return False
+    for i in refs:
+        if type(i) is not int or not 0 <= i < len(sources) or not isinstance(sources[i], dict):
+            continue
+        url = sources[i].get("url", "")
+        if (isinstance(url, str) and urlparse(url).scheme == "https" and "grounding-api-redirect" not in url
+                and evidence.get("url") == url and tier(url) in ("official", "trusted")):
+            return True
+    return False

@@ -112,7 +112,7 @@ export default function Page() {
 
   // Sync hash with active tab if set in URL (#tab or #tab/sub; open projects add /id)
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    const syncHash = () => {
       const [hash, sub] = readHash();
       const SUBS = ["queue", "longform", "countdowns", "scheduler", "ingest", "drive"];
       if (["scraper", "socialpilot", "longform", "countdowns", "comps", "logs", "settings"].includes(hash)) {
@@ -125,7 +125,14 @@ export default function Page() {
         setActiveTab("socialpilot");
         setSocialPilotTab("drive");
       }
-    }
+    };
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    window.addEventListener("popstate", syncHash);
+    return () => {
+      window.removeEventListener("hashchange", syncHash);
+      window.removeEventListener("popstate", syncHash);
+    };
   }, []);
 
   // Keep the SocialPilot sub-tab in the address too.
@@ -340,7 +347,7 @@ export default function Page() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: "var(--muted)" }}>Volume Storage</span>
                 <span className="mono" style={{ color: "#e6e9ef", fontWeight: 600 }}>
-                  {fmtBytes(stats?.storage_bytes ?? 0)} / 5 GB
+                  {stats?.disk ? `${stats.disk.used_gb} / ${stats.disk.total_gb} GB` : "Capacity unavailable"}
                 </span>
               </div>
               <div
@@ -355,14 +362,14 @@ export default function Page() {
                 <div
                   style={{
                     height: "100%",
-                    width: `${Math.min(100, Math.round(((stats?.storage_bytes ?? 0) / (5 * 1024 * 1024 * 1024)) * 100))}%`,
+                    width: `${stats?.disk?.percent_used ?? 0}%`,
                     background: "var(--accent)",
                   }}
                 />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
                 <span style={{ color: connected ? "var(--accent)" : "var(--red)", display: "flex", alignItems: "center", gap: 5 }}>
-                  <span>{connected ? "●" : "○"}</span> {connected ? "Railway Live" : "Disconnected"}
+                  <span>{connected ? "●" : "○"}</span> {connected ? (stats?.safe_e2e_mode ? "SAFE E2E · fake providers" : "API connected") : "Disconnected"}
                 </span>
                 <span style={{ color: "var(--muted)" }}>v2.5 Upload-Post</span>
               </div>

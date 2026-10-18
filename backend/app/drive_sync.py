@@ -63,6 +63,8 @@ def extract_drive_file_id(url_or_id: str) -> Optional[str]:
 
 def get_drive_service():
     """Build and return an authorized Google Drive v3 client."""
+    from .e2e_safety import deny_live
+    deny_live("Google Drive access")
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
@@ -169,19 +171,36 @@ def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -
 
     service = get_drive_service()
     meta = service.files().get(fileId=file_id, fields="id, name, mimeType", supportsAllDrives=True).execute()
-    filename = meta.get("name", f"drive_video_{file_id}.mp4")
-
-    target_dir = dest_dir or tempfile.gettempdir()
-    target_path = Path(target_dir) / filename
-
-    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-    with io.FileIO(str(target_path), "wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-
-    return target_path
+    # Remote names are untrusted metadata. Never use them as a local path.
+    # A unique, exclusive file also prevents collisions and pre-existing symlinks.
+    target_dir = Path(dest_dir or tempfile.gettempdir())
+    target_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(str(meta.get("name", ""))).suffix.lower()
+    if suffix not in (".mp4", ".mov", ".webm", ".mkv"):
+        suffix = ".mp4"
+    fd, temporary = tempfile.mkstemp(prefix="scrapper-drive-", suffix=".part", dir=target_dir)
+    target_path = Path(temporary + suffix)
+    try:
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+        with os.fdopen(fd, "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            fh.flush()
+            os.fsync(fh.fileno())
+        # Link without replacement: a competing path can never be overwritten.
+        os.link(temporary, target_path)
+        return target_path
+    except BaseException:
+        # Includes cancellation: no half-file becomes a usable download.
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def trash_drive_file(drive_link_or_id: str) -> bool:

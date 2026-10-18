@@ -213,12 +213,15 @@ def test_render_batch_runs_one_by_one_and_skips_unready(monkeypatch):
 
 
 def test_publish_batch_reports_each(client, tmp_path, monkeypatch):
+    from backend.app.studio import media_quality
+    monkeypatch.setattr(media_quality, "require_export_approval", lambda p, root: None)  # batching unit only
+
     monkeypatch.setattr(runner, "project_dir", lambda pid: tmp_path)
     (tmp_path / "final.mp4").write_bytes(b"x")
     from backend.app.studio import routes
     monkeypatch.setattr(routes, "_start_drive", lambda p: None)
     with SessionLocal() as s:
-        a = StudioProject(tmdb_id=30, title="Rendered", render={"file": "final.mp4", "rendered_at": "t"}, script={})
+        a = StudioProject(tmdb_id=30, title="Rendered", render={"file": "final.mp4", "rendered_at": "t"}, script={"sentences": [{"paragraph": 1, "text": "Synthetic.", "check": "ok", "refs": ["F1"]}]})
         b = StudioProject(tmdb_id=31, title="Not rendered")
         s.add_all([a, b])
         s.commit()

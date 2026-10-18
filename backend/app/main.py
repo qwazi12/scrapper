@@ -99,6 +99,9 @@ def _mark_jobs_cut_by_shutdown() -> None:
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    if settings.safe_e2e_mode:
+        logbus.log("info", "safe_e2e_startup", "Isolated E2E: schedulers, recovery, rescan and cleanup disabled")
+        return
     # Self-heal: rebuild any missing clip/compilation rows from files on the
     # volume, so a lost or rolled-back DB recovers automatically.
     try:
@@ -159,7 +162,7 @@ def _clip_out(c: Clip) -> ClipOut:
 # --- health / stats ----------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, **engine.health()}
+    return {"ok": True, "safe_e2e_mode": settings.safe_e2e_mode, **engine.health()}
 
 
 @app.get("/api/stats", dependencies=_AUTH)
@@ -177,6 +180,8 @@ def stats(s: Session = Depends(get_session)) -> dict:
         "retention_days": settings.retention_days,
         "sources": logbus.source_stats(),
         "engine": engine.health(),
+        "disk": cleanup.get_disk_usage(),
+        "safe_e2e_mode": settings.safe_e2e_mode,
     }
 
 
@@ -291,22 +296,36 @@ async def upload_clip(
     try:
         info = json.loads(meta) if meta else {}
     except json.JSONDecodeError:
-        info = {}
+        raise HTTPException(400, "Invalid metadata JSON")
+    if not isinstance(info, dict):
+        raise HTTPException(400, "Metadata must be an object")
 
-    dest_dir = settings.downloads_path / (clip.platform or info.get("extractor") or "other")
+    import re
+    import uuid
+    platform = re.sub(r"[^a-zA-Z0-9_-]", "_", str(clip.platform or info.get("extractor") or "other"))[:64] or "other"
+    dest_dir = settings.downloads_path / platform
     dest_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = pathlib.Path(file.filename or f"clip_{clip_id}.mp4").name
+    safe_name = f"clip_{clip_id}_{uuid.uuid4().hex}.mp4"
     dest = dest_dir / safe_name
 
-    size = 0
-    with dest.open("wb") as fh:
-        while chunk := await file.read(1024 * 1024):
-            fh.write(chunk)
-            size += len(chunk)
+    from .uploads import save_video
+    size, probe = await save_video(file, dest)
 
     if thumb is not None:
         thumb_dest = dest.with_suffix(".jpg")
-        thumb_dest.write_bytes(await thumb.read())
+        from PIL import Image
+        import io
+        content = await thumb.read(5 * 1024 * 1024 + 1)
+        if len(content) > 5 * 1024 * 1024:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(413, "Thumbnail exceeds 5 MB")
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                image.convert("RGB").save(thumb_dest, "JPEG")
+        except Exception as exc:
+            dest.unlink(missing_ok=True)
+            thumb_dest.unlink(missing_ok=True)
+            raise HTTPException(400, "Invalid thumbnail") from exc
         clip.thumb_path = str(thumb_dest)
 
     if info:
@@ -851,6 +870,12 @@ async def publish_queue_item_now(item_id: int, s: Session = Depends(get_session)
         raise HTTPException(exc.status_code if exc.status_code < 500 else 502, f"Publishing failed: {exc.message}")
     except Exception as exc:
         raise HTTPException(502, f"Publishing failed: {exc}")
+
+
+@app.post("/api/queue/reconcile", dependencies=_AUTH)
+def reconcile_queue_now(s: Session = Depends(get_session)) -> dict:
+    """Explicit owner-triggered status reconciliation, never a new submission."""
+    return {"settled": queue_manager.reconcile_posting(s, datetime.datetime.now(datetime.timezone.utc))}
 
 
 @app.post("/api/queue/{item_id}/generate-ai", response_model=QueueItemOut, dependencies=_AUTH)

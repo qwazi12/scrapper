@@ -33,6 +33,8 @@ export type Compilation = {
 };
 
 export type Stats = {
+  disk?: DiskSystemStatus;
+  safe_e2e_mode?: boolean;
   clips_total: number;
   clips_selected: number;
   clips_done: number;
@@ -458,10 +460,13 @@ export type StudioProject = {
   cost_usd?: number;
   archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
   review?: { auto?: boolean; reviewed_at?: string | null; score?: number;
+             export_approval?: { fingerprint: string; approved_at: string };
              archived_at?: string | null; delete_after?: string | null } | null;
   drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
             thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
+  script_ready?: boolean;
+  research_issues?: string[];
   facts?: any;
   research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[] }[] } | null;
   trailer?: any;
@@ -478,6 +483,7 @@ export type StudioProject = {
     narration_seconds?: number;
   } | null;
   render?: { file: string; thumbnail: string; selected_thumbnail?: string;
+             quality?: { status: string; decode: string; sha256: string; lufs: number | null; errors: string[]; warnings: string[] };
             thumbnails?: { id: string; label: string; desc: string; file: string }[];
             thumbnails_updated_at?: string;
             seconds: number; size: number; rendered_at: string;
@@ -949,6 +955,19 @@ export function mediaUrl(url: string): string {
 }
 const withToken = mediaUrl;
 
+/** Private backups require the owner header; never attach a reusable media pass. */
+export async function downloadBackup(path: string, filename: string): Promise<void> {
+  if (!/^\/api\/backup\/download\/scrapper_[^/]+\.db\.gz$/.test(path)) throw new Error("Invalid backup path");
+  const res = await fetch(`${apiBase()}${path}`, { headers: headers(false), cache: "no-store" });
+  if (!res.ok) throw new Error(`Backup download failed (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const api = {
   base: apiBase,
   thumbUrl: (id: number) => withToken(`${apiBase()}/api/clips/${id}/thumb`),
@@ -1117,6 +1136,7 @@ export const api = {
       headers: headers(),
     }),
 
+  reconcileQueue: () => req<{ settled: number }>("/api/queue/reconcile", { method: "POST", headers: headers() }),
   publishQueueItem: (id: number) =>
     req<QueueItem>(`/api/queue/${id}/publish`, {
       method: "POST",
@@ -1239,6 +1259,7 @@ export const api = {
   studioGenerateThumbnails: (id: number) =>
     req<StudioProject>(`/api/studio/projects/${id}/thumbnail/generate`, {
       method: "POST", headers: headers() }),
+  studioApproveExport: (id: number) => req<StudioProject>(`/api/studio/projects/${id}/approve-export`, { method: "POST", headers: headers() }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),

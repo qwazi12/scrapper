@@ -27,7 +27,7 @@ const STAGES: { key: string; label: string; hint: string }[] = [
   { key: "gather", label: "1. Research", hint: "TMDB facts + web sources" },
   { key: "trailer", label: "2. Footage", hint: "Official trailer + clips" },
   { key: "shots", label: "3. Shots", hint: "Cut + tag every shot" },
-  { key: "script", label: "4. Script", hint: "Written from the storyboard, fact-checked" },
+  { key: "script", label: "4. Script", hint: "Checked against the storyboard; review source evidence" },
   { key: "plan", label: "5. Voice + shots", hint: "Narration and a shot for every ~4 s" },
   { key: "render", label: "6. Render", hint: "Final 1080p video" },
 ];
@@ -438,7 +438,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
       {/* Stage stepper */}
       <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
         {STAGES.map((s) => {
-          const done = p.has[s.key === "gather" ? "facts" : s.key === "trailer" ? "trailer" : s.key] ?? false;
+          const done = s.key === "script" ? p.script_ready === true : p.has[s.key === "gather" ? "facts" : s.key] ?? false;
           const active = p.stage === s.key;
           return (
             <div
@@ -455,7 +455,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
               <div style={{ fontSize: 12, fontWeight: 700 }}>{done ? "✓ " : ""}{s.label}</div>
               <div style={{ ...muted, minHeight: 28 }}>{s.hint}</div>
               <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
-                <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={running} onClick={() => run(s.key)}
+                <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={running || (["plan", "render"].includes(s.key) && !p.script_ready)} onClick={() => run(s.key)}
                         title={done ? "Run just this step again" : "Run just this step"}>
                   {done ? "Re-run" : "Run"}
                 </button>
@@ -489,10 +489,10 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
               </button>
             );
           })()}
-          <button style={{ fontSize: 11 }} disabled={running || !p.has.script} onClick={() => run("plan")}>
+          <button style={{ fontSize: 11 }} disabled={running || !p.script_ready} onClick={() => run("plan")}>
             Voice + shots
           </button>
-          <button style={{ fontSize: 11 }} disabled={running || !p.has.plan} onClick={() => run("render")}>
+          <button style={{ fontSize: 11 }} disabled={running || !p.has.plan || !p.script_ready} onClick={() => run("render")}>
             Render video
           </button>
           <span style={muted}>Research → script runs on its own; review the script before voicing and rendering.</span>
@@ -796,6 +796,14 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
 
   return (
     <Section title={`Script — ${sc.sentences.length} sentences, ${words} words (~${fmtTime(words / 3)})`}>
+      {!p.script_ready && <div role="alert" data-testid="research-blocked" style={{ color: "var(--red)", marginBottom: 12 }}>
+        <b>Research blocked — review sources and check the saved script.</b>
+        <ul>{(p.research_issues || []).slice(0, 8).map((issue) => <li key={issue}>{issue}</li>)}</ul>
+      </div>}
+      <button disabled={running} onClick={async () => {
+        try { await api.studioRun(p.id, "verify"); setMsg("Check started; your saved words are preserved."); }
+        catch (e: any) { setMsg(e.message); }
+      }}>Check saved script</button>
       {!!sc.changes?.length && (
         <div style={{ fontSize: 11, marginBottom: 10, padding: 8, background: "var(--row)", borderRadius: 6 }}>
           <b>Fact-check changed {sc.changes.length} sentence(s):</b>
@@ -810,7 +818,7 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
         </div>
       )}
       <div style={muted}>One sentence per line; a blank line starts a new paragraph. Paragraph 1 names the title, paragraph 2 gives the release date.</div>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={16} style={{ width: "100%", marginTop: 6, fontSize: 13, lineHeight: 1.5 }} disabled={running} />
+      <textarea data-testid="script-editor" aria-label="Narration script" value={text} onChange={(e) => setText(e.target.value)} rows={16} style={{ width: "100%", marginTop: 6, fontSize: 13, lineHeight: 1.5 }} disabled={running} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, marginTop: 10 }}>
         <label style={{ fontSize: 11 }}>YouTube title
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} style={{ width: "100%" }} disabled={running} />
@@ -1134,6 +1142,15 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
   const thumbBust = `${bust}-${parseApiDate(r.thumbnails_updated_at || "") || ""}`;
   return (
     <Section title={`Video — ${fmtTime(r.seconds)}, ${Math.round(r.size / 1e6)} MB`}>
+      <div data-testid="export-quality" style={{ fontSize: 12, marginBottom: 12 }}>
+        <b>Final export inspection: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}</b>
+        <div>Review facts, narration, captions, footage rights and title/thumbnail honesty before approval.</div>
+        {r.quality?.warnings?.map((w) => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
+        <button disabled={!p.script_ready || !r.quality || !!r.quality.errors.length} onClick={async () => {
+          try { await api.studioApproveExport(p.id); setMsg("✓ Approval recorded for this exact video, script, plan and thumbnail."); onChange(); }
+          catch (e: any) { setMsg(`✕ ${e.message}`); }
+        }}>Approve inspected export</button>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
         <div>
           {r.motion_mode === "compare" && r.motion?.file && <div style={{ fontSize: 11, marginBottom: 4 }}>Static look (current video)</div>}
@@ -1255,6 +1272,7 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
             </a>
             <button
               className="primary"
+              disabled={!p.script_ready || !p.review?.export_approval}
               onClick={async () => {
                 setMsg("");
                 try {

@@ -77,6 +77,7 @@ class TestAuth(unittest.TestCase):
         req = MagicMock()
         path = "/api/clips/10/thumb"
         req.url.path = path
+        req.method = "GET"
         req.client.host = "127.0.0.1"
 
         query = auth.sign_url(path, expires_in_seconds=300)

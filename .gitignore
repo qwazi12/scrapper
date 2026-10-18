@@ -25,6 +25,7 @@ artifacts/
 output/playwright/
 test-results/
 playwright-report/
+.playwright-cli/
 
 # macOS
 .DS_Store

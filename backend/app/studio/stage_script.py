@@ -16,7 +16,7 @@ from .. import control
 from ..config import settings
 from ..db import SessionLocal
 from ..models import StudioProject
-from . import gemini, sources as srcq, tmdb
+from . import gemini, research_gate, sources as srcq, tmdb
 from .runner import stage
 
 WPM = 180
@@ -39,8 +39,8 @@ def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
         F.append(f"Primary release date: {f['primary_date']}")
     if f.get("directors"):
         F.append(f"Directed/created by: {', '.join(f['directors'])}")
-    if f.get("writers"):
-        F.append(f"Written by: {', '.join(f['writers'])}")
+    for credit in f.get("writing_credits", []):
+        F.append(f"{credit['job']}: {credit['name']}")
     if f.get("studios") or f.get("networks"):
         F.append(f"Studio/network: {', '.join((f.get('studios') or []) + (f.get('networks') or []))}")
     for c in f.get("cast", [])[:10]:
@@ -58,10 +58,12 @@ def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
         text = (c.get("text") or "").strip()
         if not text:
             continue
-        if srcs and any("tier" in x for x in srcs) and not srcq.usable(c, srcs):
+        if not srcq.usable(c, srcs):
             skipped += 1
             continue
-        R.append({"text": text, "sources": [srcs[i] for i in c.get("sources", []) if i < len(srcs)]})
+        R.append({"text": text, "sources": [srcs[i] for i in c.get("sources", [])
+                                            if type(i) is int and 0 <= i < len(srcs)],
+                  "evidence": c.get("evidence")})
 
     T = [s["description"] for s in (shots or [])
          if s.get("source_type") == "Trailer" and s.get("description") and not s.get("card")][:60]
@@ -120,9 +122,7 @@ Return JSON:
 def countdown_notes(ctx: dict) -> str:
     """The countdown's research for this title, as citable storyboard lines [C1…]."""
     notes = [f"Ranked #{ctx.get('rank')} of {ctx.get('total')} in the countdown \"{ctx.get('topic')}\"."]
-    for k in ("why_it_ranks", "key_stat", "fun_fact", "where_to_watch"):
-        if ctx.get(k):
-            notes.append(f"{k.replace('_', ' ').capitalize()}: {ctx[k]}")
+    # AI-generated ranking rationales/statistics are suggestions, never evidence.
     return "\n".join(["", "COUNTDOWN NOTES (researched for this list):"] +
                      [f"[C{i + 1}] {x}" for i, x in enumerate(notes)])
 
@@ -160,7 +160,9 @@ def check_prompt(board: str, sentences: list[dict]) -> str:
     return f"""You are a strict fact-checker. Judge each numbered script sentence ONLY against the
 storyboard. Opinion, enthusiasm, transitions and the subscribe line are fine ("ok").
 
-For each sentence return {{"i": n, "verdict": "ok"|"unsupported", "reason": "short", "fix": "..."}}
+For each sentence return {{"i": n, "verdict": "ok"|"unsupported", "kind": "fact"|"opinion"|"interpretation"|"transition"|"cta", "refs": ["F1"], "reason": "short", "fix": "..."}}
+- Give exact valid storyboard refs for every fact or interpretation; [] only for nonfactual lines.
+- Do not label a factual assertion as opinion to bypass checking.
 - "unsupported" when it states a fact (plot, character, place, date, platform, cast, reception)
   that the storyboard does not support, or contradicts it.
 - "fix": for unsupported sentences, a corrected sentence using only storyboard facts, or "" to drop it.
@@ -206,6 +208,7 @@ def script(project_id: int) -> str:
     ctx = facts.get("countdown") if isinstance(facts.get("countdown"), dict) else None
     if ctx:
         board_txt += "\n" + countdown_notes(ctx)
+        board["C"] = [f"Ranked #{ctx.get('rank')} of {ctx.get('total')} in {ctx.get('topic')}"]
     control.check()
     prompt = countdown_prompt(board_txt, facts["title"], minutes, ctx) if ctx \
         else draft_prompt(board_txt, facts["title"], minutes, channel)
@@ -220,7 +223,8 @@ def script(project_id: int) -> str:
     control.check()
     verdicts = gemini.ask_json(check_prompt(board_txt, sentences), temperature=0.1)
     control.check()
-    by_i = {int(v.get("i", 0)): v for v in verdicts if isinstance(v, dict)} if isinstance(verdicts, list) else {}
+    checked, check_issues = research_gate.checked_sentences(sentences, verdicts, board)
+    by_i = {v["i"]: v for v in verdicts if isinstance(v, dict) and type(v.get("i")) is int} if isinstance(verdicts, list) else {}
     final, changes = [], []
     for i, sen in enumerate(sentences):
         v = by_i.get(i + 1, {})
@@ -230,7 +234,17 @@ def script(project_id: int) -> str:
             if not fix:
                 continue
             sen = {**sen, "text": fix, "changed": True, "original": sen["text"], "reason": v.get("reason", "")}
-        final.append({**sen, "check": "ok" if v else "unchecked"})
+        final.append({**sen, **checked[i], "text": sen["text"],
+                      **({"changed": True, "original": sen["original"], "reason": sen["reason"]} if sen.get("changed") else {})})
+
+    if changes and final:
+        # Suggested repairs must themselves pass the checker. Never inherit the
+        # verdict on the rejected original text.
+        verdicts = gemini.ask_json(check_prompt(board_txt, final), temperature=0.1)
+        final, check_issues = research_gate.checked_sentences(final, verdicts, board)
+    check_issues += research_gate.structured_conflicts(final, facts)
+    if not final:
+        check_issues.append("No supported narration remains")
 
     for i, sen in enumerate(final):
         sen["i"] = i + 1
@@ -245,6 +259,8 @@ def script(project_id: int) -> str:
     ])
     result = {
         "sentences": final,
+        "check_issues": check_issues,
+        "check_scope": "storyboard_only",
         "changes": changes,
         "word_count": words,
         "est_seconds": round(words / WPM * 60),
@@ -258,6 +274,30 @@ def script(project_id: int) -> str:
         p = s.get(StudioProject, project_id)
         p.script = result
         p.plan = None  # sentences changed
+        p.render = None
         s.commit()
+    if check_issues:
+        raise gemini.GeminiError("Research blocked: " + "; ".join(check_issues[:5]))
     return (f"{len(final)} sentences, {words} words (~{result['est_seconds'] // 60}m{result['est_seconds'] % 60:02d}s); "
             f"fact-check fixed {sum(1 for c in changes if c['fix'])}, dropped {sum(1 for c in changes if not c['fix'])}")
+
+
+@stage("verify")
+def verify_saved(project_id: int) -> str:
+    """Check owner edits in place; never redraft or replace their words."""
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        sc, facts = dict(p.script or {}), p.facts or {}
+        board = storyboard(facts, p.research, p.shots)
+    if not sc.get("sentences"):
+        raise gemini.GeminiError("Write the script first")
+    verdicts = gemini.ask_json(check_prompt(_board_text(board), sc["sentences"]), temperature=0.1)
+    sc["sentences"], sc["check_issues"] = research_gate.checked_sentences(sc["sentences"], verdicts, board)
+    sc["check_issues"] += research_gate.structured_conflicts(sc["sentences"], facts)
+    sc["storyboard"], sc["check_scope"] = board, "storyboard_only"
+    with SessionLocal() as s:
+        p = s.get(StudioProject, project_id)
+        p.script, p.plan, p.render = sc, None, None
+        s.commit()
+    research_gate.require_checked(sc)
+    return "Saved script checked against storyboard; independent source verification still required"

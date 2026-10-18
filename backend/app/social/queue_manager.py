@@ -621,6 +621,8 @@ async def submit_upload(
     scheduled_date: str | None = None,
     thumbnail: pathlib.Path | None = None,
     allow: dict[str, bool] | None = None,
+    on_intent=None,
+    on_result=None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -642,17 +644,26 @@ async def submit_upload(
             entries.append({"skipped": skipped, "reason": "daily number for that platform reached", "at": now})
         if not accounts:
             return entries
-    for profile, platforms in upload_post.group_by_profile(accounts).items():
+    for account in dict.fromkeys(accounts):
+        profile, network = upload_post.split_account(account)
+        platforms = [network]
+        intent = {"profile": profile, "platforms": platforms, "state": "intent", "submitted_at": scheduled_date or now}
+        if on_intent:
+            on_intent(intent)
         try:
             rid = await upload_post.upload_video(
                 video_path, profile=profile, platforms=platforms, title=title,
                 description=description, tags=tags, privacy=settings.publish_privacy,
                 scheduled_date=scheduled_date, thumbnail=thumbnail,
             )
-            entries.append({"profile": profile, "platforms": platforms, "request_id": rid,
-                            "submitted_at": scheduled_date or now})  # timeout counts from go-live
+            result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
-            entries.append({"profile": profile, "platforms": platforms, "error": str(exc)[:300]})
+            # Even a lost response can mean accepted. Never turn uncertainty
+            # into a retry without provider reconciliation or owner resolution.
+            result = {**intent, "state": "unknown", "error": str(exc)[:300]}
+        entries.append(result)
+        if on_result:
+            on_result(result)
     return entries
 
 
@@ -781,6 +792,8 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     item = s.get(QueueItem, item_id)
     if not item:
         raise ValueError(f"Queue item {item_id} not found")
+    if any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
+        raise upload_post.UploadPostError("An unresolved submission exists — reconcile before another attempt", status_code=409)
     if not item.accounts:
         raise upload_post.UploadPostError(
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
@@ -827,7 +840,20 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     if needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
-    item.status = "posting"
+    from sqlalchemy import update
+    claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
+                        QueueItem.status.in_(("ready", "retry", "review", "error")))
+                        .values(status="posting"), execution_options={"synchronize_session": False}).rowcount
+    s.commit()
+    s.refresh(item)
+    if not claimed:
+        if is_temp_download and video_path:
+            video_path.unlink(missing_ok=True)
+        raise upload_post.UploadPostError("Already submitted or not eligible; reconcile the existing attempt before posting again", status_code=409)
+    # Persist a durable fence before ANY submission, including before profiles
+    # are resolved. A crash must remain ambiguous rather than retryable.
+    item.publish_requests = [{"state": "intent", "accounts": list(item.accounts),
+                              "submitted_at": datetime.datetime.now(UTC).isoformat()}]
     s.commit()
     logbus.log("info", "queue_posting", f"Posting item #{item.id} ('{item.title[:40]}')")
     from .. import costs
@@ -846,9 +872,16 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             hhmm = at.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M") if at else None
             allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
                      for net, lim in limits.items()}
+        def persist(entry, result=False):
+            saved = [e for e in (item.publish_requests or []) if e.get("profile")]
+            if result:
+                saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
+            item.publish_requests = [*saved, entry]
+            s.commit()
         entries = await submit_upload(
             video_path, list(item.accounts), title=item.title or item.video_name,
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
+            on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
         )
         skipped = [a for e in entries for a in e.get("skipped", [])]
         if skipped and not any(e.get("request_id") or e.get("error") for e in entries):
@@ -858,7 +891,7 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             s.commit()
             logbus.log("info", "queue_platform_limits", f"Item #{item.id}: all platforms at today's number — not sent")
             return item
-        if not any(e.get("request_id") for e in entries):
+        if not any(e.get("request_id") or e.get("state") == "unknown" for e in entries):
             raise upload_post.UploadPostError("; ".join(e.get("error", "") for e in entries if e.get("error")))
         # Accepted is not published: stay "posting" until reconcile_posting()
         # reads every platform's real result. Only then "posted" (4-day clock).
@@ -878,8 +911,8 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
 
     except Exception as exc:
         logger.exception("Failed to post queue item #%s: %s", item.id, exc)
-        item.status = "retry"
-        item.notes = f"Publish failed: {str(exc)[:300]}"
+        item.status = "posting"
+        item.notes = f"Submission outcome unknown — do not retry. Reconcile with provider before resolving: {str(exc)[:250]}"
         s.commit()
         logbus.log("error", "queue_post_error", f"Item #{item.id} failed: {exc}")
         raise
@@ -906,6 +939,8 @@ def resolve_results(
 
     Returns None while any request is still processing (and not timed out),
     else {"ok": [(acc, url)], "failed": {acc: reason}}."""
+    if any(e.get("state") in ("intent", "unknown") for e in entries):
+        return None
     accounts = [f"{e['profile']}:{net}" for e in entries for net in e.get("platforms", [])]
     outcome: dict[str, tuple[bool, str]] = {}
     for e in entries:
@@ -920,9 +955,7 @@ def resolve_results(
             submitted = _aware(datetime.datetime.fromisoformat(e["submitted_at"].replace("Z", "+00:00")))
             if now - submitted < PENDING_TIMEOUT:
                 return None
-            for net in e.get("platforms", []):
-                outcome[f"{e['profile']}:{net}"] = (False, "Upload-Post still processing after 3h")
-            continue
+            return None  # elapsed time does not prove rejection; never blindly resubmit
         for r in st.get("results") or []:
             acc = f"{r.get('profile_username') or e['profile']}:{r.get('platform')}"
             if r.get("success"):
@@ -945,6 +978,8 @@ def _fetch_statuses(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -> None:
+    item.publish_requests = [{**e, "state": "completed"} if e.get("request_id") else e
+                             for e in item.publish_requests or []]
     # Platforms left out because this slot wasn't theirs still get the video (catch-up, owner 2026-10-14).
     skipped = [a for e in item.publish_requests or [] for a in e.get("skipped", [])]
     cu = dict(item.catchup or {})
@@ -1012,8 +1047,9 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
         s.commit()
         settled += 1
         done = item.status in ("posted", "archived")
-        logbus.log("info" if done else "error",
-                   "queue_posted" if done else "queue_post_failed",
+        pending = item.status == "ready"
+        logbus.log("info" if done or pending else "error",
+                   "queue_posted" if done else "queue_catchup_pending" if pending else "queue_post_failed",
                    f"Item #{item.id}: {item.notes}")
 
     for post in s.query(SocialPost).filter(SocialPost.status == "submitted").all():

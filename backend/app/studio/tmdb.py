@@ -236,7 +236,10 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
     crew = credits.get("crew", [])
     directors = [c["name"] for c in crew if c.get("job") == "Director"] or \
                 [c.get("name") for c in d.get("created_by", [])]
-    writers = [c["name"] for c in crew if c.get("department") == "Writing"][:4]
+    writing_credits = [{"name": c["name"], "job": c["job"]} for c in crew
+                       if c.get("department") == "Writing" and c.get("name") and c.get("job")]
+    writers = list(dict.fromkeys(c["name"] for c in writing_credits
+                                if c["job"] in ("Screenplay", "Writer", "Teleplay")))
 
     videos = [{
         "name": v.get("name"),
@@ -268,6 +271,7 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
         "networks": [n["name"] for n in d.get("networks", [])][:3],
         "directors": directors,
         "writers": writers,
+        "writing_credits": writing_credits,
         "cast": cast,
         "videos": videos,
         "poster": image_url(d.get("poster_path"), "original"),

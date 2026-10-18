@@ -218,6 +218,10 @@ def render(project_id: int) -> str:
     if archived:
         raise RuntimeError("This breakdown is archived (footage deleted to save space; the video is in Drive). "
                            "Press Restore footage first, then render.")
+    from .research_gate import require_checked
+    require_checked(script)
+    if not script.get("timeline"):
+        raise RuntimeError("Narration timeline missing — run Voice + shots before rendering")
     from .archive import ensure_footage
     ensure_footage(project_id)      # footage freed after its Drive save comes back from IMDb (no AI cost)
     root = project_dir(project_id)
@@ -377,7 +381,12 @@ def render(project_id: int) -> str:
     active_thumb = out_dir / "thumbnail.jpg"
 
     secs = media.duration(final)
+    from .media_quality import inspect_export
+    quality = inspect_export(final, expected_seconds=total)
+    if quality["errors"]:
+        raise RuntimeError("Final export quality blocked: " + "; ".join(quality["errors"]))
     info = {"file": str(final.relative_to(root)), "thumbnail": str(active_thumb.relative_to(root)),
+            "quality": quality,
             "selected_thumbnail": "poster",
             "thumb_round": 0,
             "thumbnails": [

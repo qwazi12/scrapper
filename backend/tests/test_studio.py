@@ -99,7 +99,26 @@ def test_env_name_from_railway_is_read(monkeypatch):
     assert Settings().tmdb_read_token == "eyJfromrailway"
 
 
+def _fixture_script(sc):
+    """Trusted synthetic input for tests of stages downstream of research."""
+    sc = dict(sc)
+    sentences = sc.get("sentences") or [{"paragraph": 1, "text": "Synthetic narration."}]
+    sc["sentences"] = [{**x, "check": "ok", "refs": ["F1"]} for x in sentences]
+    return sc
+
+
+def _evidence(text, url):
+    import hashlib
+    from datetime import datetime, timezone
+    return {"url": url, "retrieved_text": text, "excerpt": text,
+            "record_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(), "entity": "Send Help",
+            "verdict": "supported", "confidence": "high", "conflicts": []}
+
+
 def _new_project(**kw) -> int:
+    if kw.get("script"):
+        kw["script"] = _fixture_script(kw["script"])
     with SessionLocal() as s:
         p = StudioProject(tmdb_id=1, media_type="movie", title="Send Help", **kw)
         s.add(p)
@@ -253,6 +272,9 @@ def test_script_drops_unsupported_claims_and_credits_sources(monkeypatch):
 
     def fake(prompt, **kw):
         calls.append(prompt)
+        if "fact-checker" in prompt and "2. It opens January 30, 2026." in prompt:
+            return [{"i": 1, "verdict": "ok", "refs": ["F1"]},
+                    {"i": 2, "verdict": "ok", "refs": ["F5"]}]
         if "fact-checker" in prompt:
             return [{"i": 1, "verdict": "ok"},
                     {"i": 2, "verdict": "unsupported", "reason": "storyboard says island, not city", "fix": ""},
@@ -263,8 +285,8 @@ def test_script_drops_unsupported_claims_and_credits_sources(monkeypatch):
                 "youtube_title": "Send Help Trailer Breakdown", "tags": ["send help"]}
 
     monkeypatch.setattr(gemini, "ask_json", fake)
-    pid = _new_project(facts=_facts(), research={"sources": [{"title": "deadline.com", "url": "https://d"}],
-                                                 "claims": [{"text": "Opens Jan 30.", "sources": [0]}]})
+    pid = _new_project(facts=_facts(), research={"sources": [{"title": "deadline.com", "url": "https://deadline.com/synthetic-fixture"}],
+                                                 "claims": [{"text": "Opens Jan 30.", "sources": [0], "evidence": _evidence("Opens Jan 30.", "https://deadline.com/synthetic-fixture")}]})
     summary = runner.run_one(pid, "script")
     with SessionLocal() as s:
         sc = s.get(StudioProject, pid).script
@@ -337,7 +359,7 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         p.shots, p.plan = shots, plan
-        p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
+        p.script = _fixture_script({"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]})
         s.commit()
     monkeypatch.setattr(stage_render, "END_CARD", 1.0)
     monkeypatch.setattr(stage_render, "motion_mode", lambda: "off")
@@ -355,6 +377,9 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
 
 
 def test_publish_sends_render_to_queue_once(client, monkeypatch):
+    from backend.app.studio import media_quality
+    monkeypatch.setattr(media_quality, "require_export_approval", lambda p, root: None)  # queue routing unit only; real approval in safety/E2E tests
+
     from backend.app.models import QueueItem
     from backend.app.studio import drive_store
     started = []
@@ -406,7 +431,7 @@ def test_storyboard_keeps_only_findings_backed_by_trusted_sources():
     research = {"sources": [{"title": "reddit.com", "url": "https://reddit.com/x", "tier": "low"},
                             {"title": "variety.com", "url": "https://variety.com/y", "tier": "trusted"}],
                 "claims": [{"text": "Rumour: a sequel is planned.", "sources": [0]},
-                           {"text": "It opens January 30.", "sources": [0, 1]}]}
+                           {"text": "It opens January 30.", "sources": [0, 1], "evidence": _evidence("It opens January 30.", "https://variety.com/y")}]}
     b = stage_script.storyboard(_facts(), research, [])
     assert [r["text"] for r in b["R"]] == ["It opens January 30."] and b["skipped_findings"] == 1
     assert [s["title"] for s in b["sources"]] == ["variety.com"]  # only good sources go in the description
@@ -554,7 +579,7 @@ def _render_project(three_scene_video):
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         p.shots, p.plan = shots, plan
-        p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
+        p.script = _fixture_script({"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]})
         s.commit()
     return pid, root
 

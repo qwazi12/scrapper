@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api, apiBase, BackupStatus, DiskSystemStatus, mediaUrl, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
+import { api, apiBase, BackupStatus, DiskSystemStatus, downloadBackup, mediaUrl, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 import { PacingThrottle } from "./PacingThrottle";
@@ -289,13 +289,12 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
                   <span style={{ color: "var(--muted)" }}>
                     {new Date(c.created_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Eastern
                   </span>
-                  <a
-                    href={mediaUrl(c.download_url)}
-                    download={c.filename}
+                  <button
+                    onClick={() => downloadBackup(c.download_url, c.filename).catch((e) => alert(e.message))}
                     style={{ color: "var(--accent)", textDecoration: "underline", fontSize: 11 }}
                   >
                     ⬇ Download .db.gz
-                  </a>
+                  </button>
                 </div>
               </div>
             ))}

@@ -211,6 +211,8 @@ async def upload_video(
 
     Acceptance is not publication: poll get_status(request_id) for the real
     per-platform result."""
+    from ..e2e_safety import deny_live
+    deny_live("social upload")
     if not platforms:
         raise UploadPostError("No platforms selected", status_code=400)
     if not video_path.exists() or video_path.stat().st_size == 0:

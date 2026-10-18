@@ -10,10 +10,9 @@ the countdown's own posters (~9.4 s):
   D 7.4–9.4  lock-up — red bar logo + "TOP N · topic", with a shine sweep
 Frames are drawn with PIL and encoded with ffmpeg (motion blur, sound mix); no AI cost.
 
-Sound: `assets/intro/page_flips.wav` is lifted from the owner's reference clip (Marvel's
-official intro — copyrighted; Content ID can claim it). It is the only borrowed sound and a
-single file: replace it with any royalty-free page-flip sound to remove that risk. The
-flash whoosh and the logo impact are synthesised here.
+Sound: the flash whoosh and logo impact are synthesized here. No borrowed
+reference audio is included. An optional owner-cleared page-flip recording may
+be supplied as assets/intro/cleared_page_flips.wav after rights review.
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ from .. import media
 W, H, FPS = 1920, 1080, 30
 ASSETS = pathlib.Path(__file__).resolve().parents[3] / "assets" / "intro"
 FONT = ASSETS / "Anton-Regular.ttf"
-FLIPS = ASSETS / "page_flips.wav"
+FLIPS = ASSETS / "cleared_page_flips.wav"
 WASHES = [(229, 9, 20), (255, 120, 0), (30, 90, 255), (140, 40, 220), (0, 170, 120), (255, 40, 120)]
 RED = (196, 12, 22)
 A_END, B_END, C_END, D_END = 3.6, 4.4, 7.4, 9.4

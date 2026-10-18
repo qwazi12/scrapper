@@ -26,6 +26,8 @@ class GeminiError(Exception):
 
 
 def _post(body: dict[str, Any], model: str | None = None, retries: int = 3) -> dict[str, Any]:
+    from ..e2e_safety import deny_live
+    deny_live("Gemini generation")
     if not settings.gemini_api_key:
         raise GeminiError("GEMINI_API_KEY is not set on the server")
     from .. import control, costs

@@ -105,7 +105,7 @@ import re as _re
 MEDIA_PASS_TTL = 12 * 3600
 MEDIA_ROUTES = _re.compile(
     r"^/api/(clips/\d+/(thumb|download)|queue/\d+/thumb|compilations/\d+/download|events|"
-    r"studio/projects/\d+/file|countdowns/\d+/file|tts/audio/[^/]+|backup/download/[^/]+)$")
+    r"studio/projects/\d+/file|countdowns/\d+/file|tts/audio/[^/]+)$")
 
 
 def media_pass(ttl: int = MEDIA_PASS_TTL) -> dict[str, Any]:
@@ -173,7 +173,8 @@ def require_token(
     # 3. Check HMAC signed URL (used for media, thumbnail, or download links)
     exp_val = exp if isinstance(exp, (int, float, str)) else None
     sig_val = sig if isinstance(sig, str) else None
-    if exp_val is not None and sig_val is not None:
+    if (request.method == "GET" and MEDIA_ROUTES.fullmatch(request.url.path)
+            and exp_val is not None and sig_val is not None):
         if verify_signature(request.url.path, exp_val, sig_val):
             check_rate_limit(request)
             return

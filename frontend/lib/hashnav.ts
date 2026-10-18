@@ -2,7 +2,8 @@
 // page (owner, 2026-10-13: "when I refresh the page it takes me to the starting page").
 export function readHash(): string[] {
   if (typeof window === "undefined") return [];
-  return decodeURIComponent(window.location.hash.replace(/^#/, "")).split("/").filter(Boolean);
+  try { return decodeURIComponent(window.location.hash.replace(/^#/, "")).split("/").filter(Boolean); }
+  catch { return []; }
 }
 
 /** Replace the address hash without adding a history step. */

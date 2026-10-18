@@ -65,6 +65,9 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
     d["drive"] = p.drive
     d["archive"] = p.archive
     d["review"] = p.review
+    from .research_gate import script_issues
+    d["research_issues"] = script_issues(p.script)
+    d["script_ready"] = not d["research_issues"]
     return d
 
 
@@ -220,13 +223,23 @@ def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_s
     if req.script is not None:
         old = [x.get("text") for x in (p.script or {}).get("sentences", [])]
         new = [x.get("text") for x in req.script.get("sentences", [])]
-        p.script = req.script
+        # Checks are server-owned. Preserve them only for exactly unchanged
+        # sentences; a client cannot copy an old green verdict onto new words.
+        sc = dict(req.script)
+        previous = {(x.get("paragraph"), x.get("text")): x for x in (p.script or {}).get("sentences", [])}
+        sc["sentences"] = [dict(previous[(x.get("paragraph"), x.get("text"))])
+                           if (x.get("paragraph"), x.get("text")) in previous
+                           else {**x, "check": "unchecked", "refs": []}
+                           for x in sc.get("sentences", [])]
+        sc["check_issues"] = list((p.script or {}).get("check_issues") or []) if old == new else []
+        p.script = sc
         if old != new:  # new words -> new voice timings -> old plan/render are stale
             p.plan = None
             p.render = None
         changed.append("script")
     if req.plan is not None:
         p.plan = req.plan
+        p.render = None
         changed.append("shot plan")
     s.commit()
     s.refresh(p)
@@ -424,16 +437,14 @@ async def upload_trailer(project_id: int, file: UploadFile = File(...),
                          s: Session = Depends(get_session)) -> dict[str, Any]:
     """Manual fallback: the owner uploads the trailer file themselves."""
     p = _get(s, project_id)
+    if p.stage_status in ("running", "queued"):
+        raise HTTPException(409, "Stop the running stage before replacing footage")
     dest = runner.project_dir(project_id) / "trailer.mp4"
-    size = 0
-    with dest.open("wb") as fh:
-        while chunk := await file.read(1024 * 1024):
-            fh.write(chunk)
-            size += len(chunk)
-    if size == 0:
-        raise HTTPException(400, "empty upload")
+    from ..uploads import save_video
+    size, _ = await save_video(file, dest)
     p.trailer = {"file": str(dest), "origin": "upload", "name": file.filename, "size": size}
     p.shots = None  # shots belong to the old trailer
+    p.plan, p.render = None, None
     s.commit()
     logbus.log("info", "studio_trailer_upload", f"Studio #{p.id}: trailer uploaded ({round(size / 1e6)} MB)",
                project=p.id)
@@ -520,6 +531,25 @@ def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = De
 LONGFORM_DESTINATION = ["default:*"]   # Upload-Post profile "default" — all channels (Screen Central)
 
 
+@router.post("/projects/{project_id}/approve-export")
+def approve_export(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    from datetime import datetime, timezone
+    from .research_gate import require_checked
+    from .media_quality import export_fingerprint
+    p = _get(s, project_id)
+    if p.stage_status in ("running", "queued"):
+        raise HTTPException(409, "Wait for the running stage before approving")
+    try:
+        require_checked(p.script)
+        fingerprint = export_fingerprint(p, runner.project_dir(project_id))
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    p.review = {**(p.review or {}), "export_approval": {"fingerprint": fingerprint,
+                 "approved_at": datetime.now(timezone.utc).isoformat()}}
+    s.commit()
+    return _out(p)
+
+
 @router.post("/projects/{project_id}/publish")
 def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Send the rendered video to the Posting Queue as Ready to Post (pipeline
@@ -531,6 +561,15 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
     root = runner.project_dir(project_id)
     if not p.render or not (root / p.render["file"]).exists():
         raise HTTPException(400, "Render the video first")
+    from .research_gate import script_issues
+    from .media_quality import require_export_approval
+    issues = script_issues(p.script)
+    if issues:
+        raise HTTPException(409, "Research blocked: " + "; ".join(issues[:5]))
+    try:
+        require_export_approval(p, root)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
     sc = p.script or {}
     tags = longform_tags(p.title, sc.get("tags", []))
     primary_date = (p.facts or {}).get("primary_date")
@@ -653,8 +692,6 @@ class IdsIn(BaseModel):
 @router.get("/candidates")
 def get_candidates() -> dict[str, Any]:
     from . import candidates
-    if candidates.is_stale() and not candidates.state["refreshing"]:
-        candidates.refresh_async()
     return candidates.listing()
 
 
@@ -765,4 +802,3 @@ def publish_batch(req: IdsIn, s: Session = Depends(get_session)) -> dict[str, An
 
 from .compilations.routes import router as compilations_router
 router.include_router(compilations_router)
-

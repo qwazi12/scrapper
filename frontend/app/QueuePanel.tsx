@@ -588,6 +588,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               onChange();
             }}
           />
+          <button style={{ fontSize: 11 }} onClick={async () => {
+            try { const r = await api.reconcileQueue(); notify(`Reconciliation checked; ${r.settled} settled. Unknown submissions stay blocked.`); await loadQueue(); onChange(); }
+            catch (e: any) { notify(`Reconciliation failed: ${e.message}`); }
+          }}>Reconcile submitted posts</button>
           {autopostPaused !== null && (
             <button
               onClick={toggleAutopost}

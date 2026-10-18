@@ -296,7 +296,7 @@ def test_whole_profile_submits_one_request_with_all_its_platforms(monkeypatch, t
     monkeypatch.setattr(upload_post, "list_accounts", accounts)
     monkeypatch.setattr(upload_post, "upload_video", upload)
     asyncio.run(qm.submit_upload(video, ["default:*"], title="t", description="", tags=[]))
-    assert calls == [("default", ["youtube", "tiktok"])]
+    assert calls == [("default", ["youtube"]), ("default", ["tiktok"])]
 
 
 def _entry(profile, rid, nets=("youtube",), minutes_ago=1):
@@ -340,10 +340,10 @@ def test_rejected_profile_upload_is_a_failure_not_silence():
     assert "mk:youtube" in res["failed"] and not res["ok"]
 
 
-def test_stuck_request_times_out():
+def test_stuck_request_remains_unknown_and_cannot_be_blindly_retried():
     now = datetime.datetime.now(UTC)
     res = qm.resolve_results([_entry("mk", "r1", minutes_ago=200)], {"r1": {"status": "processing"}}, now)
-    assert "mk:youtube" in res["failed"]
+    assert res is None
 
 
 def test_reconcile_polls_upload_post(session, monkeypatch):
@@ -995,13 +995,13 @@ def test_per_platform_daily_numbers(session, reset_schedule, monkeypatch, tmp_pa
     session.commit()
     asyncio.run(qm.publish_queue_item(rows[0].id, session, regular=True))
     asyncio.run(qm.publish_queue_item(rows[1].id, session, regular=True))
-    assert sent == [["facebook", "instagram", "youtube"], ["facebook", "instagram"]]   # YouTube only its 1 a day
+    assert sent == [["youtube"], ["facebook"], ["instagram"], ["facebook"], ["instagram"]]   # YouTube only its 1 a day
     session.refresh(rows[1])
     assert "Not sent to default:youtube" in rows[1].notes
     assert qm.platform_posts_today(session, "Movie Clips", now) == {"youtube": 1, "facebook": 2, "instagram": 2}
     (pinned,) = add(session, 1, accounts=["default:*"], video_path=str(video))
     asyncio.run(qm.publish_queue_item(pinned.id, session, regular=False))          # Post now / pinned: everywhere
-    assert sent[-1] == ["facebook", "instagram", "youtube"]
+    assert sent[-3:] == [["youtube"], ["facebook"], ["instagram"]]
 
 
 def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tmp_path):
@@ -1035,7 +1035,7 @@ def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tm
         it.scheduled_at = datetime.datetime.now(tz).replace(hour=h, minute=m, second=0, microsecond=0).astimezone(UTC)
         session.commit()
         asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
-        assert sent[-1] == expect
+        assert sorted(x[0] for x in sent[-len(expect):]) == sorted(expect)
 
 
 def test_schedule_api_keeps_platform_settings(session, client, reset_schedule):

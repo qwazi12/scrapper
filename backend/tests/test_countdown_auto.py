@@ -45,6 +45,8 @@ def _build(ai_topics, demand=None):
          patch("backend.app.vidiq.configured", return_value=True), \
          patch("backend.app.vidiq.breakout_videos", return_value=[]), \
          patch("backend.app.vidiq.trending", return_value=[]), \
+         patch("backend.app.vidiq.rising", return_value=[]), \
+         patch("backend.app.vidiq.safe", return_value=None), \
          patch("backend.app.vidiq.keyword_metrics", return_value=demand):
         return countdown_topics.build()
 
