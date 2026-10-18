@@ -840,21 +840,32 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     if needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
-    from sqlalchemy import update
+    import hashlib
+    import json
+    from ..studio.media_quality import file_hash
+    artifact_key = hashlib.sha256(json.dumps({"video": file_hash(video_path), "title": item.title,
+        "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
+        "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path},
+        sort_keys=True).encode()).hexdigest()
+    intent = [{"state": "intent", "accounts": list(item.accounts), "artifact_key": artifact_key,
+               "submitted_at": datetime.datetime.now(UTC).isoformat()}]
+    from sqlalchemy import String, cast, update
+    # Claim and intent are ONE transaction: no posting-without-intent crash gap.
+    # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
-                        QueueItem.status.in_(("ready", "retry", "review", "error")))
-                        .values(status="posting"), execution_options={"synchronize_session": False}).rowcount
+                        QueueItem.status.in_(("ready", "retry", "review", "error")),
+                        QueueItem.title == item.title, QueueItem.description == item.description,
+                        QueueItem.tags == item.tags, cast(QueueItem.accounts, String) == json.dumps(item.accounts),
+                        QueueItem.video_path == item.video_path, QueueItem.thumb_path == item.thumb_path,
+                        QueueItem.drive_link == item.drive_link)
+                        .values(status="posting", publish_requests=intent),
+                        execution_options={"synchronize_session": False}).rowcount
     s.commit()
     s.refresh(item)
     if not claimed:
         if is_temp_download and video_path:
             video_path.unlink(missing_ok=True)
-        raise upload_post.UploadPostError("Already submitted or not eligible; reconcile the existing attempt before posting again", status_code=409)
-    # Persist a durable fence before ANY submission, including before profiles
-    # are resolved. A crash must remain ambiguous rather than retryable.
-    item.publish_requests = [{"state": "intent", "accounts": list(item.accounts),
-                              "submitted_at": datetime.datetime.now(UTC).isoformat()}]
-    s.commit()
+        raise upload_post.UploadPostError("Already submitted or changed; reconcile or reload before another attempt", status_code=409)
     logbus.log("info", "queue_posting", f"Posting item #{item.id} ('{item.title[:40]}')")
     from .. import costs
     _op = costs.operation("post", ref=f"queue:{item.id}")
@@ -873,6 +884,7 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
                      for net, lim in limits.items()}
         def persist(entry, result=False):
+            entry = {**entry, "artifact_key": artifact_key}
             saved = [e for e in (item.publish_requests or []) if e.get("profile")]
             if result:
                 saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
@@ -883,10 +895,12 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
         )
+        entries = [{**e, "artifact_key": artifact_key} for e in entries]
         skipped = [a for e in entries for a in e.get("skipped", [])]
         if skipped and not any(e.get("request_id") or e.get("error") for e in entries):
             # Every platform already had today's number: nothing to send now.
             item.status = "ready"
+            item.publish_requests = entries
             item.notes = f"Waiting: {', '.join(skipped)} already had today's posts (per-platform limits)."
             s.commit()
             logbus.log("info", "queue_platform_limits", f"Item #{item.id}: all platforms at today's number — not sent")
@@ -973,7 +987,7 @@ def _fetch_statuses(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     for e in entries:
         rid = e.get("request_id")
         if rid:
-            out[rid] = asyncio.run(upload_post.get_status(rid))
+            out[rid] = e.get("provider_status") or asyncio.run(upload_post.get_status(rid))
     return out
 
 
@@ -1037,7 +1051,14 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
         if not item.publish_requests:
             continue  # pre-migration or mid-submit; nothing to poll
         try:
-            res = resolve_results(item.publish_requests, _fetch_statuses(item.publish_requests), now)
+            statuses = _fetch_statuses(item.publish_requests)
+            # Save known platform receipts even if a different attempt remains
+            # ambiguous. A future reconciliation never loses known success.
+            item.publish_requests = [{**e, "provider_status": statuses[e["request_id"]]}
+                                     if e.get("request_id") and statuses.get(e["request_id"], {}).get("status") == "completed"
+                                     else e for e in item.publish_requests]
+            s.commit()
+            res = resolve_results(item.publish_requests, statuses, now)
         except Exception as exc:
             logger.warning("Upload-Post status check failed for #%s: %s", item.id, exc)
             continue

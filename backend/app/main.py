@@ -788,11 +788,17 @@ def _refuse_blocked(accounts: list[str] | None) -> None:
                                  f"Posting Queue or LongForm videos (refused: {', '.join(bad)}).")
 
 
+def _require_queue_editable(item) -> None:
+    if item.status == "posting" or any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
+        raise HTTPException(409, "Submission unresolved — reconcile with the provider before editing, deleting or requeueing")
+
+
 @app.patch("/api/queue/{item_id}", response_model=QueueItemOut, dependencies=_AUTH)
 def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(get_session)):
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Edit #{item.id} '{(item.title or '')[:40]}'", rows=[item])
 
     if req.title is not None:
@@ -853,6 +859,7 @@ def approve_queue_item(item_id: int, s: Session = Depends(get_session)):
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Approve #{item.id}", rows=[item])
     item.status = "ready"
     s.commit()
@@ -883,6 +890,7 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
 
     if not settings.gemini_api_key:
         raise HTTPException(502, "AI generation failed: GEMINI_API_KEY is not set on the server")
@@ -906,6 +914,7 @@ def queue_post_next(item_id: int, s: Session = Depends(get_session)) -> dict:
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Post next: #{item.id}", rows=[item])
     first = s.query(func.min(func.coalesce(QueueItem.position, QueueItem.id))).scalar() or 0
     item.position = first - 1
@@ -965,6 +974,7 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     p = _studio_project_for(s, item)
     if not p:
         raise HTTPException(400, "this row didn't come from LongForm Studio — upload an image instead")
@@ -990,6 +1000,7 @@ async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Sess
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     data = await file.read(QUEUE_THUMB_MAX + 1)
     if len(data) > QUEUE_THUMB_MAX:
         raise HTTPException(400, "image is larger than 5 MB")
@@ -1018,6 +1029,7 @@ def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Delete #{item.id} '{(item.title or '')[:40]}'", rows=[item])
     s.delete(item)
     s.commit()
@@ -1029,6 +1041,8 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
     if req.action == "set_accounts":
         _refuse_blocked(req.accounts)       # checked before anything (incl. the undo point) is written
     items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
+    for item in items:
+        _require_queue_editable(item)
     count = len(items)
     what = {"approve": "Approve", "review": "Set to Review", "archive": "Archive", "posted": "Mark posted",
             "change_status": f"Set status {req.target_status}", "set_accounts": "Change targets",

@@ -52,10 +52,18 @@ def inspect_export(path: Path, expected_seconds: float | None = None, aspect: fl
                              "-f", "null", "-"], timeout=1800).stderr
     loud = re.findall(r"I:\s*(-?[\d.]+) LUFS", signals)
     lufs = float(loud[-1]) if loud else None
+    peaks = re.findall(r"Peak:\s*(-?[\d.]+) dBFS", signals)
+    peak = float(peaks[-1]) if peaks else None
     silence = [float(v) for v in re.findall(r"silence_duration:\s*([\d.]+)", signals)]
     black = [float(v) for v in re.findall(r"black_duration:([\d.]+)", signals)]
     if lufs is None or not -18 <= lufs <= -11:
         warnings.append("Review loudness: target -18 to -11 LUFS")
+    if peak is None:
+        warnings.append("True peak measurement unavailable")
+    elif peak > 0:
+        errors.append("Audio true peak exceeds 0 dBFS")
+    elif peak > -1:
+        warnings.append("Review audio true peak: target at most -1 dBFS")
     if max(silence, default=0) > 3:
         warnings.append("Review silence longer than 3 seconds")
     if black:
@@ -63,6 +71,8 @@ def inspect_export(path: Path, expected_seconds: float | None = None, aspect: fl
     return {"schema": 1, "sha256": file_hash(path), "seconds": seconds,
             "width": video.get("width") if video else None, "height": video.get("height") if video else None,
             "audio_codec": audio.get("codec_name") if audio else None, "lufs": lufs,
+            "true_peak_dbfs": peak,
+            "unverified_checks": ["caption accuracy", "visual relevance", "rights clearance", "narrative quality"],
             "silence_seconds": silence, "black_seconds": black, "errors": errors, "warnings": warnings,
             "status": "blocked" if errors else "needs_owner_review", "decode": "passed"}
 

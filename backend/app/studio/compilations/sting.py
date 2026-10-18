@@ -282,7 +282,11 @@ def _lockup_frames(last: Image.Image, subtitle: str) -> Iterable[Image.Image]:
 # --- sound ----------------------------------------------------------------------------------------
 def _sound(dest: pathlib.Path) -> pathlib.Path:
     """Page flips (A) + synthesised whoosh (B) and impact (D), 48 kHz stereo."""
-    flips = ["-i", str(FLIPS)] if FLIPS.exists() else ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=4"]
+    # Original noise bursts replace the removed borrowed reference recording.
+    # Fixed seed makes the replacement reproducible and uses no external media file.
+    flips = ["-i", str(FLIPS)] if FLIPS.exists() else ["-f", "lavfi", "-i",
+        "anoisesrc=r=48000:c=pink:a=0.35:d=4.2:s=17018,highpass=f=1500,lowpass=f=7000,"
+        "volume='if(lt(mod(t,0.18),0.08),1,0.02)':eval=frame"]
     graph = (
         "[0:a]atrim=0:4.2,adelay=150|150,volume=1.0[fl];"
         "anoisesrc=d=1.2:c=pink:r=48000:a=0.5,bandpass=f=1200:w=900,afade=t=in:d=0.5,afade=t=out:st=0.6:d=0.6,"

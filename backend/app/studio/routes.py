@@ -444,6 +444,8 @@ async def upload_trailer(project_id: int, file: UploadFile = File(...),
     size, _ = await save_video(file, dest)
     p.trailer = {"file": str(dest), "origin": "upload", "name": file.filename, "size": size}
     p.shots = None  # shots belong to the old trailer
+    from .research_gate import invalidate
+    p.script = invalidate(p.script, "Trailer changed; check narration against the new footage")
     p.plan, p.render = None, None
     s.commit()
     logbus.log("info", "studio_trailer_upload", f"Studio #{p.id}: trailer uploaded ({round(size / 1e6)} MB)",
@@ -516,12 +518,13 @@ def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = De
     if not sh:
         raise HTTPException(404, "shot not found")
     undo.record(s, f"studio:{p.id}", f"{'Use' if req.usable else 'Leave out'} shot {shot_id}", rows=[p],
-                model="studio_projects", fields=["shots"])
+                model="studio_projects", fields=["shots", "plan", "render"])
     if "auto_usable" not in sh:
         sh["auto_usable"] = bool(sh.get("usable"))     # what the tagger decided, kept for reference
     sh["usable"] = req.usable
     sh["owner_set"] = True
     p.shots = shots
+    p.plan, p.render = None, None
     s.commit()
     logbus.log("info", "studio_shot", f"Studio #{p.id}: shot {shot_id} {'in' if req.usable else 'out'} (owner)",
                project=p.id)
@@ -593,7 +596,10 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
         },
     )
     from ..social import queue_manager
+    from ..social import enqueue
     item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
+    if item:
+        enqueue.ensure_editable(item)
     if item and item.status in ("review", "ready", "retry", "error"):
         undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
         for k, v in fields.items():          # re-publishing a re-render updates the same row
@@ -606,10 +612,9 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
         # Ready to Post on profile "default" (Screen Central), next LongForm slot.
         item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(LONGFORM_DESTINATION),
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
-        s.add(item)
-        s.flush()
-        undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
-        p.queue_item_id = item.id
+        item, created = enqueue.claim(s, p, item)
+        if created:
+            undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
     s.commit()
     logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id} (ready, default)",
                project=p.id, queue_item=item.id)

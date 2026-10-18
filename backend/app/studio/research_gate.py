@@ -80,3 +80,10 @@ def require_checked(script: dict | None) -> None:
     issues = script_issues(script)
     if issues:
         raise RuntimeError("Research blocked: " + "; ".join(issues[:5]) + ". Review sources and run Check saved script.")
+
+
+def invalidate(script: dict | None, reason: str) -> dict | None:
+    if not script:
+        return script
+    return {**script, "sentences": [{**x, "check": "unchecked"} for x in script.get("sentences", [])],
+            "check_issues": [reason]}

@@ -55,3 +55,40 @@ def test_each_platform_records_intent_and_result_independently(tmp_path, monkeyp
     assert events == [("intent", "youtube"), ("accepted", "youtube"), ("intent", "instagram"), ("unknown", "instagram")]
     assert result[0]["request_id"] == "synthetic-youtube-id" and result[1]["state"] == "unknown"
     assert qm.resolve_results(result, {}, datetime.now(timezone.utc)) is None
+
+
+def test_two_project_enqueue_requests_create_only_one_queue_row(session):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from backend.app.models import StudioProject
+    from backend.app.social import enqueue
+    p = StudioProject(tmdb_id=998, title="Concurrent enqueue")
+    session.add(p); session.commit(); pid = p.id
+    barrier = threading.Barrier(2)
+    def create():
+        with SessionLocal() as s:
+            project = s.get(StudioProject, pid)
+            barrier.wait(timeout=5)
+            item, created = enqueue.claim(s, project, QueueItem(title="one export", status="ready", accounts=[]))
+            s.commit()
+            return item.id, created
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(create) for _ in range(2)]
+        results = [f.result(timeout=10) for f in futures]
+    assert results[0][0] == results[1][0] and sum(created for _, created in results) == 1
+    assert session.query(QueueItem).filter(QueueItem.title == "one export").count() == 1
+
+
+def test_unknown_submission_cannot_be_edited_deleted_or_reapproved_via_api(session):
+    from backend.app.main import app
+    from fastapi.testclient import TestClient
+    item = QueueItem(title="Uncertain", accounts=["default:youtube"], status="posting",
+                     publish_requests=[{"state": "unknown", "profile": "default", "platforms": ["youtube"]}])
+    session.add(item); session.commit(); item_id = item.id
+    client = TestClient(app, headers={"x-access-token": "test-token"})
+    assert client.patch(f"/api/queue/{item_id}", json={"title": "Changed", "status": "ready"}).status_code == 409
+    assert client.delete(f"/api/queue/{item_id}").status_code == 409
+    assert client.post(f"/api/queue/{item_id}/approve").status_code == 409
+    assert client.post("/api/queue/bulk-action", json={"ids": [item_id], "action": "approve"}).status_code == 409
+    session.refresh(item)
+    assert item.title == "Uncertain" and item.status == "posting"

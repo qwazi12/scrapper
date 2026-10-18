@@ -603,6 +603,9 @@ def publish(s, c: CountdownProject) -> QueueItem:
                   research={"countdown_id": c.id, "chapters": c.render.get("chapters")})
     from ..social import queue_manager
     item = s.get(QueueItem, c.queue_item_id) if c.queue_item_id else None
+    from ..social import enqueue
+    if item:
+        enqueue.ensure_editable(item)
     if item and item.status in ("review", "ready", "retry", "error"):
         undo.record(s, "queue", f"Update countdown '{c.topic[:40]}'", rows=[item])
         for k, v in fields.items():
@@ -613,10 +616,9 @@ def publish(s, c: CountdownProject) -> QueueItem:
     else:
         item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(DESTINATION),
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
-        s.add(item)
-        s.flush()
-        undo.add_created(s, "queue", f"Add countdown '{c.topic[:40]}'", [item.id])
-        c.queue_item_id = item.id
+        item, created = enqueue.claim(s, c, item)
+        if created:
+            undo.add_created(s, "queue", f"Add countdown '{c.topic[:40]}'", [item.id])
     s.commit()
     from ..social import queue_manager
     queue_manager.wake()
@@ -1573,6 +1575,8 @@ def put_script(cid: int, req: ScriptIn) -> dict[str, Any]:
             v = getattr(req, k)
             if v is not None:
                 sc[k] = v.strip()
+        if any(sc.get(k) != (c.script or {}).get(k) for k in ("intro", "outro")):
+            c.render = None
         c.script = sc
         s.commit()
         return out(s, c)
