@@ -646,6 +646,7 @@ export type CountdownProject = {
   queue_item_id?: number | null;
   queue_status?: string | null;
   review: { reviewed_at?: string | null; delete_after?: string | null; auto?: boolean; keyword?: string; keywords?: string[];
+            export_approval?: { fingerprint: string; approved_at: string };
             demand?: { overall?: number; monthly_searches?: number; growth_pct?: number } };
   created_at: string;
   updated_at: string;
@@ -660,6 +661,7 @@ export type CountdownProject = {
   cost_usd: number;
   has: { ranking: boolean; titles: boolean; segments: boolean; script: boolean; render: boolean };
   render?: {
+    quality?: { decode: string; errors: string[]; warnings: string[]; sha256: string; lufs: number | null };
     compilation_id: number; file: string; thumbnail: string; thumbnails: Record<string, string>;
     selected_thumbnail: string; chapters: { time_formatted: string; title: string }[];
     seconds: number; minutes: number; rendered_at: string; thumb_v?: number; archived_at?: string;
@@ -1337,6 +1339,7 @@ export const api = {
     req<{ ok: boolean; job_id: string }>(`/api/countdowns/${id}/render`, { method: "POST", headers: headers(false) }),
   countdownThumbnail: (id: number, option: string) =>
     req<CountdownProject>(`/api/countdowns/${id}/thumbnail`, { method: "POST", headers: headers(), body: JSON.stringify({ option }) }),
+  countdownApproveExport: (id: number) => req<CountdownProject>(`/api/countdowns/${id}/approve-export`, { method: "POST", headers: headers() }),
   countdownPublish: (id: number) =>
     req<{ queue_item_id: number; status: string }>(`/api/countdowns/${id}/publish`, { method: "POST", headers: headers(false) }),
   countdownReview: (id: number, on: boolean) =>

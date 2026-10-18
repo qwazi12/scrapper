@@ -82,7 +82,12 @@ def export_fingerprint(project, root: Path) -> str:
     if digest != qa.get("sha256"):
         raise RuntimeError("Export changed since quality inspection; inspect again")
     thumbnail = file_hash(local_file(render["thumbnail"])) if render.get("thumbnail") else None
-    inputs = {"video": digest, "thumbnail": thumbnail, "script": project.script, "plan": project.plan}
+    inputs = {"video": digest, "thumbnail": thumbnail, "script": project.script, "plan": getattr(project, "plan", None),
+              "facts": getattr(project, "facts", None), "research": getattr(project, "research", None),
+              "shots": getattr(project, "shots", None)}
+    if hasattr(project, "ranking"):
+        inputs.update(ranking=project.ranking, segment_ids=project.segment_ids,
+                      segment_fingerprints=render.get("segment_fingerprints"))
     return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 

@@ -69,7 +69,9 @@ def storyboard(facts: dict, research: dict | None, shots: list | None) -> dict:
          if s.get("source_type") == "Trailer" and s.get("description") and not s.get("card")][:60]
 
     good = [x for x in srcs if x.get("tier") in ("official", "trusted") or "tier" not in x]
-    return {"F": F, "R": R, "T": T, "sources": good, "skipped_findings": skipped}
+    ctx = f.get("countdown") if isinstance(f.get("countdown"), dict) else None
+    C = [f"Ranked #{ctx.get('rank')} of {ctx.get('total')} in {ctx.get('topic')}"] if ctx else []
+    return {"F": F, "R": R, "T": T, "C": C, "sources": good, "skipped_findings": skipped}
 
 
 def _board_text(b: dict) -> str:
@@ -79,6 +81,8 @@ def _board_text(b: dict) -> str:
               for i, x in enumerate(b["R"])]
     lines += ["", "SHOT LOG OF THE OFFICIAL TRAILER, in order (evidence of what it shows — do not narrate shot by shot):"]
     lines += [f"[T{i + 1}] {x}" for i, x in enumerate(b["T"])]
+    lines += ["", "EDITORIAL LIST POSITION (not a measured quality score):"]
+    lines += [f"[C{i + 1}] {x}" for i, x in enumerate(b.get("C", []))]
     return "\n".join(lines)
 
 
@@ -206,9 +210,6 @@ def script(project_id: int) -> str:
     channel = settings.studio_channel_name
 
     ctx = facts.get("countdown") if isinstance(facts.get("countdown"), dict) else None
-    if ctx:
-        board_txt += "\n" + countdown_notes(ctx)
-        board["C"] = [f"Ranked #{ctx.get('rank')} of {ctx.get('total')} in {ctx.get('topic')}"]
     control.check()
     prompt = countdown_prompt(board_txt, facts["title"], minutes, ctx) if ctx \
         else draft_prompt(board_txt, facts["title"], minutes, channel)

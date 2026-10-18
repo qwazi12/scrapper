@@ -1355,6 +1355,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           style={{ fontSize: 10, padding: "3px 7px", background: "#7c3aed", borderColor: "#6d28d9", color: "#fff" }}
                           onClick={() => handlePublishNow(item)}
                           title="Post to social media now"
+                          disabled={["posting", "posted", "archived"].includes(item.status)}
                         >
                           🚀 Post Now
                         </button>

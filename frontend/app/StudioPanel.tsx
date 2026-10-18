@@ -482,7 +482,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
             const hasKey = (k: string) => p.has[k === "gather" ? "facts" : k];
             const next = order.find((k) => !hasKey(k));
             return (
-              <button style={{ fontSize: 11 }} disabled={running || !next}
+              <button style={{ fontSize: 11 }} disabled={running || !next || (p.has.script && !p.script_ready)}
                       title={next ? `Runs ${order.slice(order.indexOf(next)).join(" → ")}, then stops before render` : "Steps 1–5 are done"}
                       onClick={() => next && run(next, true, "plan")}>
                 {next ? `▶ Continue to step 5 (from ${STAGES.find((x) => x.key === next)?.label})` : "✓ Steps 1–5 done"}
@@ -801,7 +801,11 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
         <ul>{(p.research_issues || []).slice(0, 8).map((issue) => <li key={issue}>{issue}</li>)}</ul>
       </div>}
       <button disabled={running} onClick={async () => {
-        try { await api.studioRun(p.id, "verify"); setMsg("Check started; your saved words are preserved."); }
+        try {
+          await api.studioRun(p.id, "verify");
+          onChange(await api.studioProject(p.id));
+          setMsg("Check started; your saved words are preserved.");
+        }
         catch (e: any) { setMsg(e.message); }
       }}>Check saved script</button>
       {!!sc.changes?.length && (
@@ -840,9 +844,8 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
 
 function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p: StudioProject) => void; running: boolean }) {
   const [pick, setPick] = useState<number | null>(null);
-  const plan = p.plan;
+  const plan = p.plan || [];
   const shots = useMemo(() => Object.fromEntries((p.shots || []).map((s) => [s.id, s])), [p.shots]);
-  if (!plan) return <Section title="Voice + shot plan">Run step 5 after you are happy with the script.</Section>;
 
   async function setSlot(idx: number, change: Partial<StudioPlanItem>) {
     const next = plan!.map((it, i) => (i === idx ? { ...it, ...change } : it));
@@ -872,6 +875,7 @@ function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p:
     plan.forEach((it) => { if (it.shot) m[shots[it.shot]?.look || it.shot] = fmtTime(it.start); });
     return m;
   }, [plan, shots]);
+  if (!p.plan) return <Section title="Voice + shot plan">Run step 5 after you are happy with the script.</Section>;
   return (
     <Section title={`Voice + shot plan — ${plan.length} visuals, ${fmtTime(total)} of narration`}>
       <div style={{ ...muted, marginBottom: 6 }}>

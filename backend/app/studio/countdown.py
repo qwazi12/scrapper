@@ -154,11 +154,11 @@ def research_job(cid: int) -> str:
             data = engine.generate_countdown(topic=topic, format_type=fmt, custom_instructions=notes,
                                              market=market_text(mk))
         data["market"] = mk
+        data["contract_version"] = 1
         control.check()
         entries = []
         for e in data.get("entries") or []:
-            r = engine._resolve_title(e) if not e.get("tmdb_id") else \
-                {"tmdb_id": e["tmdb_id"], "media_type": e.get("media_type") or "movie"}
+            r = engine._resolve_title(e)
             e["tmdb_id"] = (r or {}).get("tmdb_id")
             e["media_type"] = (r or {}).get("media_type") or e.get("media_type") or "movie"
             entries.append(e)
@@ -250,6 +250,13 @@ def save_entries(c: CountdownProject, entries: list[dict[str, Any]]) -> None:
 def confirm_titles(s, c: CountdownProject) -> None:
     """Create or reuse one Studio segment per title (lowest rank first)."""
     entries = entries_of(c)
+    if (c.ranking or {}).get("contract_version") == 1:
+        expected = COUNTS.get(c.fmt)
+        if expected and len(entries) != expected:
+            raise HTTPException(409, f"{FMT_NAME(c.fmt)} requires exactly {expected} entries; review and repair the ranking")
+    identities = [(e.get("media_type") or "movie", e.get("tmdb_id")) for e in entries if e.get("tmdb_id")]
+    if len(set(identities)) != len(identities):
+        raise HTTPException(409, "Duplicate film/show identities in this ranking; replace duplicates before confirming")
     bad = [f"#{e.get('rank')} {e.get('title')}" for e in entries if not e.get("tmdb_id")]
     if bad:
         raise HTTPException(400, "These aren't matched to a movie or show (no trailer to use): "
@@ -260,17 +267,22 @@ def confirm_titles(s, c: CountdownProject) -> None:
     total = len(entries)
     ids = []
     for e in _ordered(entries):
-        ctx = {"rank": e.get("rank"), "total": total, "topic": c.topic, "why_it_ranks": e.get("why_it_ranks"),
+        ctx = {"countdown_id": c.id, "rank": e.get("rank"), "total": total, "topic": c.topic, "why_it_ranks": e.get("why_it_ranks"),
                "fun_fact": e.get("fun_fact"), "key_stat": e.get("key_stat"), "where_to_watch": e.get("where_to_watch")}
         p = (s.query(StudioProject)
              .filter(StudioProject.tmdb_id == int(e["tmdb_id"]), StudioProject.media_type == e.get("media_type", "movie"))
              .order_by(StudioProject.id.desc()).first())
-        if p is not None and (p.queue_item_id or (p.review or {}).get("auto")):
-            e["reused"] = True                 # a real LongForm breakdown: used as-is, never changed
-        elif p is not None:
+        # Rank, editorial angle and CTA belong to this campaign. A LongForm or
+        # another countdown's render must never stand in for this segment.
+        if p is not None and ((p.facts or {}).get("countdown") or {}).get("countdown_id") != c.id:
+            p = None
+        if p is not None:
             f = dict(p.facts or {})
+            changed = f.get("countdown") != ctx or p.target_minutes != minutes
             f.update(origin="countdown", is_countdown=True, countdown=ctx)
             p.facts = f
+            if changed:
+                p.script, p.plan, p.render = None, None, None
         else:
             p = StudioProject(tmdb_id=int(e["tmdb_id"]), media_type=e.get("media_type", "movie"),
                               title=e.get("title") or "", target_minutes=minutes,
@@ -475,6 +487,31 @@ def default_script(c: CountdownProject) -> dict[str, Any]:
 
 
 # --- 5. render ----------------------------------------------------------------------
+def segment_fingerprints(s, c) -> dict:
+    from .research_gate import require_checked
+    from .media_quality import export_fingerprint
+    from .runner import project_dir
+    fingerprints = {}
+    for pid in c.segment_ids or []:
+        p = s.get(StudioProject, pid)
+        if p is None:
+            raise RuntimeError(f"Missing countdown segment {pid}")
+        require_checked(p.script)
+        fingerprints[str(pid)] = export_fingerprint(p, project_dir(pid))
+    if not fingerprints:
+        raise RuntimeError("No checked segments")
+    return fingerprints
+
+
+def inspect_countdown(res) -> dict:
+    from pathlib import Path
+    from .media_quality import inspect_export
+    quality = inspect_export(Path(res["video_path"]), expected_seconds=float(res["total_seconds"]))
+    if quality["errors"]:
+        raise RuntimeError("Final countdown quality blocked: " + "; ".join(quality["errors"]))
+    return quality
+
+
 def render_job(cid: int) -> dict[str, Any]:
     from .compilations import stitch
     with SessionLocal() as s:
@@ -482,10 +519,13 @@ def render_job(cid: int) -> dict[str, Any]:
         ids, sc = list(c.segment_ids or []), dict(c.script or default_script(c))
     _set(cid, stage="render", stage_status="running", stage_message="Stitching the countdown video…")
     try:
+        with SessionLocal() as s:
+            fingerprints = segment_fingerprints(s, s.get(CountdownProject, cid))
         with costs.operation("countdown_render", ref=f"countdown:{cid}"):      # intro/outro voice-over
             res = stitch.stitch_countdown_compilation(project_ids=ids, title=sc.get("title") or "",
                                                       custom_intro=sc.get("intro") or "", custom_outro=sc.get("outro") or "",
                                                       send_to_queue=False)
+        quality = inspect_countdown(res)
     except control.Cancelled:
         _set(cid, stage_status="stopped", stage_message="Render stopped")
         raise
@@ -501,6 +541,7 @@ def render_job(cid: int) -> dict[str, Any]:
         pass
     thumbs = {"poster": "thumb_option_1_poster.jpg", "action": "thumb_option_2_action.jpg", "split": "thumb_option_3_split.jpg"}
     render = {"compilation_id": res["compilation_id"], "file": res["video_path"], "thumbnail": res["primary_thumb"],
+              "quality": quality, "segment_fingerprints": fingerprints,
               "thumbnails": thumbs, "selected_thumbnail": "poster", "chapters": res["chapters"],
               "seconds": res["total_seconds"], "minutes": res["total_minutes"], "rendered_at": _now().isoformat()}
     _set(cid, render=render, stage="render", stage_status="done",
@@ -518,6 +559,31 @@ def comp_dir(c: CountdownProject):
     return stitch.compilations_dir() / str((c.render or {}).get("compilation_id"))
 
 
+def require_release(s, c: CountdownProject, approved: bool = True) -> str:
+    from .media_quality import export_fingerprint, require_export_approval
+    try:
+        if segment_fingerprints(s, c) != (c.render or {}).get("segment_fingerprints"):
+            raise RuntimeError("Segments changed since the final countdown render; render again")
+        fingerprint = export_fingerprint(c, comp_dir(c))
+        if approved:
+            require_export_approval(c, comp_dir(c))
+        return fingerprint
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@router.post("/{cid}/approve-export")
+def approve_countdown_export(cid: int) -> dict[str, Any]:
+    with SessionLocal() as s:
+        c = _get(s, cid)
+        if c.stage_status in ("running", "waiting", "queued"):
+            raise HTTPException(409, "Wait for the countdown to finish before approval")
+        fingerprint = require_release(s, c, approved=False)
+        c.review = {**(c.review or {}), "export_approval": {"fingerprint": fingerprint, "approved_at": _now().isoformat()}}
+        s.commit()
+        return out(s, c)
+
+
 def publish(s, c: CountdownProject) -> QueueItem:
     """Send to the Countdowns queue as Ready to Post on Screen Central (like LongForm)."""
     from sqlalchemy import func
@@ -525,6 +591,7 @@ def publish(s, c: CountdownProject) -> QueueItem:
     from .compilations import engine
     if not c.render:
         raise HTTPException(400, "Render the video first")
+    require_release(s, c)
     sc = c.script or default_script(c)
     entries = _ordered(entries_of(c))
     lines = [f"{ch['time_formatted']} {ch['title']}" for ch in (c.render or {}).get("chapters", [])]

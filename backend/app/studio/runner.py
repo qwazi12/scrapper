@@ -92,14 +92,22 @@ def run_one(project_id: int, name: str, stop_event: threading.Event | None = Non
     if ev and ev.is_set():
         _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
         raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
-    if name in ("script", "plan"):
+    if name in ("gather", "trailer", "shots", "script", "plan"):
         # Re-running these replaces text/plan the owner may have edited: keep an undo point.
         from .. import undo
         with SessionLocal() as s:
             p = s.get(StudioProject, project_id)
-            if p is not None and (p.script or p.plan):
+            if p is not None and (p.script or p.plan or p.render):
                 undo.record(s, f"studio:{project_id}", f"Re-run {name}", rows=[p], model="studio_projects",
                             fields=["script", "plan", "render", "target_minutes"])
+                if name != "plan" and p.script:
+                    sc = dict(p.script)
+                    sc["sentences"] = [{**x, "check": "unchecked"} for x in sc.get("sentences", [])]
+                    sc["check_issues"] = [f"{name} changed upstream evidence; check saved script again"]
+                    p.script = sc
+                if name != "plan":
+                    p.plan = None
+                p.render = None
                 s.commit()
     _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
     logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)

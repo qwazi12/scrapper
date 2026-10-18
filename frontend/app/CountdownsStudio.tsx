@@ -818,7 +818,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
                 </button>
               )}
               {s.key === "segments" && (
-                <button style={tiny} disabled={working || !confirmed || c.has.segments || busyStatus(c)} title="Make the segments (also retries a failed one)"
+                <button style={tiny} disabled={working || !confirmed || c.has.segments || c.stage_status === "running"} title="Make the segments (also retries a failed or waiting one)"
                         onClick={() => act(() => api.countdownMake(c.id))}>▶ Make segments</button>
               )}
               {s.key === "render" && (
@@ -865,6 +865,16 @@ function VideoPart({ c, onChange, reload }: { c: CountdownProject; onChange: (c:
   const drive = r.drive || {};
   return (
     <Part title={`🎬 Video (${r.minutes} min)`}>
+      <div data-testid="countdown-export-quality" style={{ fontSize: 12, marginBottom: 8 }}>
+        Final export: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}.
+        Review every segment, intro/outro, source claims and rights before approval.
+        {r.quality?.warnings.map(w => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
+        <button disabled={busy || !r.quality || !!r.quality.errors.length} onClick={async () => {
+          setBusy(true);
+          try { onChange(await api.countdownApproveExport(c.id)); }
+          catch (e: any) { notify(errText(e)); } finally { setBusy(false); }
+        }}>Approve inspected countdown</button>
+      </div>
       {r.archived_at ? (
         <div style={muted}>📦 Archived {new Date(r.archived_at).toLocaleDateString()} — the video is in Drive{drive.link ? <>: <a href={drive.link} target="_blank" rel="noreferrer">open ↗</a></> : ""}.</div>
       ) : (
@@ -887,7 +897,7 @@ function VideoPart({ c, onChange, reload }: { c: CountdownProject; onChange: (c:
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>
-        <button className="primary" style={{ fontSize: 12 }} disabled={busy || !!c.queue_item_id}
+        <button className="primary" style={{ fontSize: 12 }} disabled={busy || !!c.queue_item_id || !c.review.export_approval}
                 onClick={async () => {
                   if (!(await askConfirm("Send to the Countdowns queue as Ready to Post on Screen Central? It takes the next Countdowns post time (12:00 by default) and a copy is saved to Drive."))) return;
                   setBusy(true);

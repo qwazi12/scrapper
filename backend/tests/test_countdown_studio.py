@@ -46,6 +46,12 @@ def _researched(client) -> int:
          patch.object(countdown, "start_research", side_effect=lambda cid: countdown.research_job(cid)):
         r = client.post("/api/countdowns", json={"topic": "Top 3 horror", "fmt": "top5"})
     assert r.status_code == 200, r.text
+    # This module's two-title toy workflow intentionally covers legacy saved
+    # lists. New Top5 cardinality contracts have separate rejection tests.
+    with SessionLocal() as s:
+        c = s.get(CountdownProject, r.json()["id"])
+        c.ranking = {**c.ranking, "contract_version": 0}
+        s.commit()
     return r.json()["id"]
 
 
@@ -70,7 +76,7 @@ def test_research_flags_non_titles_and_confirm_refuses_them(client):
         assert all(membership.is_countdown(p, ids) for p in segs)                # never in LongForm Studio
 
 
-def test_real_longform_breakdown_is_reused_untouched(client):
+def test_countdown_creates_own_segment_and_preserves_longform(client):
     with SessionLocal() as s:
         lf = StudioProject(tmdb_id=IDS["Alien"], media_type="movie", title="Alien", queue_item_id=999,
                            facts={"primary_date": "1979-05-25"})
@@ -81,12 +87,17 @@ def test_real_longform_breakdown_is_reused_untouched(client):
     c = client.get(f"/api/countdowns/{cid}").json()
     client.put(f"/api/countdowns/{cid}/entries", json={"entries": [e for e in c["ranking"]["entries"] if e.get("tmdb_id")]})
     c = client.post(f"/api/countdowns/{cid}/confirm").json()
-    assert lf_id in [x["id"] for x in c["segments"]]
+    assert lf_id not in [x["id"] for x in c["segments"]]
     with SessionLocal() as s:
         assert "countdown" not in (s.get(StudioProject, lf_id).facts or {})      # LongForm project not changed
 
 
-def test_tick_makes_one_segment_when_idle_then_render_and_publish(client):
+def test_tick_makes_one_segment_when_idle_then_render_and_publish(client, monkeypatch):
+    # Orchestration unit lane: its stitch stub returns nonexistent files.
+    # Physical final-file/approval contracts are tested in quality and real UI E2E.
+    monkeypatch.setattr(countdown, "segment_fingerprints", lambda s, c: {"unit": "fixture"})
+    monkeypatch.setattr(countdown, "inspect_countdown", lambda res: {"decode": "passed", "errors": []})
+    monkeypatch.setattr(countdown, "require_release", lambda s, c: None)
     cid = _researched(client)
     c = client.get(f"/api/countdowns/{cid}").json()
     client.put(f"/api/countdowns/{cid}/entries", json={"entries": [e for e in c["ranking"]["entries"] if e.get("tmdb_id")]})

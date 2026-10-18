@@ -133,3 +133,61 @@ def test_saved_edits_cannot_reuse_check_and_plan_swap_invalidates_render():
     assert r.status_code == 200
     assert not r.json()["script_ready"] and r.json()["script"]["sentences"][0]["check"] == "unchecked"
     assert r.json()["render"] is None
+
+
+def test_suggested_repair_is_not_approved_without_its_own_verdict(monkeypatch):
+    with SessionLocal() as s:
+        p = StudioProject(tmdb_id=999, title="Synthetic", facts={"title": "Synthetic"})
+        s.add(p); s.commit(); pid = p.id
+    answers = iter([
+        {"sentences": [{"paragraph": 1, "text": "Original false claim.", "refs": ["F1"]}]},
+        [{"i": 1, "verdict": "unsupported", "fix": "Still false replacement."}],
+        [{"i": 1, "verdict": "unsupported", "reason": "Replacement is unsupported too"}],
+    ])
+    monkeypatch.setattr(gemini, "ask_json", lambda *a, **k: next(answers))
+    with pytest.raises(gemini.GeminiError, match="Replacement is unsupported too"):
+        runner.run_one(pid, "script")
+    with SessionLocal() as s:
+        sc = s.get(StudioProject, pid).script
+        assert sc["sentences"][0]["check"] == "unchecked"
+        assert sc["sentences"][0]["original"] == "Original false claim."
+
+
+def test_upstream_stage_failure_keeps_owner_words_but_invalidates_old_approval(monkeypatch):
+    with SessionLocal() as s:
+        p = StudioProject(tmdb_id=999, title="Synthetic", script={"sentences": [
+            {"paragraph": 1, "text": "Owner's original words.", "check": "ok", "refs": ["F1"]}]},
+            plan=[{"slot": 1}], render={"file": "previous.mp4"})
+        s.add(p); s.commit(); pid = p.id
+    def fail(project_id): raise RuntimeError("Synthetic research outage")
+    monkeypatch.setitem(runner.STAGES, "gather", fail)
+    with pytest.raises(RuntimeError): runner.run_one(pid, "gather")
+    with SessionLocal() as s:
+        p = s.get(StudioProject, pid)
+        assert p.script["sentences"][0]["text"] == "Owner's original words."
+        assert research_gate.script_issues(p.script) and p.plan is None and p.render is None
+
+
+def test_new_countdowns_reject_partial_and_duplicate_lists():
+    from backend.app.models import CountdownProject
+    from backend.app.studio import countdown
+    from fastapi import HTTPException
+    entries = [{"rank": i, "title": f"Synthetic {i}", "tmdb_id": i, "media_type": "movie"} for i in range(1, 6)]
+    with SessionLocal() as s:
+        c = CountdownProject(topic="Top 5", fmt="top5", ranking={"contract_version": 1, "entries": entries[:2]})
+        s.add(c); s.commit()
+        with pytest.raises(HTTPException, match="exactly 5"):
+            countdown.confirm_titles(s, c)
+        c.ranking = {"contract_version": 1, "entries": entries[:4] + [entries[0]]}
+        with pytest.raises(HTTPException, match="Duplicate"):
+            countdown.confirm_titles(s, c)
+
+
+def test_countdown_requires_actual_inspection_before_release():
+    from backend.app.models import CountdownProject
+    from backend.app.studio import countdown
+    from fastapi import HTTPException
+    with SessionLocal() as s:
+        c = CountdownProject(topic="Synthetic", fmt="top5", render={"file": "not-real.mp4"})
+        s.add(c); s.commit()
+        with pytest.raises(HTTPException): countdown.require_release(s, c)
