@@ -67,3 +67,54 @@ full UI/media suite including Top5/native vertical/carousel; M3-M5.
 Next commands: complete frontend build, restart isolated stack, run committed
 Playwright suite (being developed), inspect actual exports, then extend safety
 contracts. External spend remains $0. Production remains untouched.
+
+
+## Checkpoint 2026-10-18 13:39 Eastern
+
+Commits: 5d19d77 authorization/plan; 68f4bf8 safety foundations; 528db32 strict
+identity/provider scope + tracked generated-file removal; 3648c9b campaign segment
+isolation, upstream invalidation, countdown exact-export checks, React hook and
+verify refresh repairs; 362b19b rotating logs/queue reference protection/local CLI.
+
+Fresh orientation completed: full prior audit, milestone plan, README, test matrix
+and all 18 reproduction implementations reread after macOS hydration delays.
+No optional v2/addendum found. All 24 findings reconciled with base source.
+
+- M1: strict title/year/medium/original-title/alias ambiguity matcher now used in
+  countdown resolution/enrichment and clip research; supplied IDs are checked in
+  research resolution. New countdowns require exact list size and unique IDs at
+  confirmation (legacy lists retained). Provider availability replaces conflicting
+  model text, records US/date scope, unavailable stays unconfirmed. Public copy
+  omits unverified statistics and default scores. Full category/claim retrieval
+  support remains incomplete; manual entry edits can still need identity review.
+- M1/M2: countdown segments belong to their own countdown, not a reused LongForm
+  or another ranking. Segment hashes bind final countdown inspection and approval.
+  Facts/research/shots are now included in export fingerprint. Upstream reruns
+  retain owner words as unchecked, invalidate plan/render and keep undo snapshot.
+- UI: real E2E found two defects: Check saved script didn't refresh/poll; first
+  generated plan changed React hook order and crashed the screen. Both repaired.
+  Waiting countdown now permits explicit Make segments with scheduler disabled.
+- M2: file logging bounded to 4 x 10 MiB; all queue-referenced clip/compilation
+  files protected from generic retention. CLI no longer stages/commits/pushes.
+  Generated runtime logs/buildinfo untracked on feature branch; Git history intact.
+- Latest full backend: artifacts/backend-checkpoint8.txt = 341 passed / 1 skipped,
+  35.15s. Frontend production build checkpoint8 passed. Identity focused suite
+  artifacts/identity-checkpoint2.txt = 116 passed. Socket guard stays enabled.
+- UI_E2E_LOCAL + MEDIA_E2E: browser-run4: 2 passed / 17.3s. LongForm actual UI
+  discovery/create -> six cuts -> draft -> rejected/malformed checks -> saved edit
+  repair/reload -> installed Samantha speech -> real FFmpeg export -> hash approval
+  -> enqueue -> UI fake 3-platform submission -> duplicate API rejection -> UI
+  reconcile -> archive. Final 1080p6.103s, AAC, -14.1 LUFS, no black spans/hard
+  errors. Navigation/mobile also passed. These are synthetic provider fixtures,
+  never real researcher integration or creative excellence proof.
+- New complete Top5 UI test and final countdown hash/QA gate added. browser-run6
+  is running against a new isolated stack. Earlier failed browser attempts and
+  their traces are retained; missing Ready filter in harness was corrected.
+- CI workflow and Linux offline Docker harness prepared, NOT executed in CI.
+  Local Docker daemon unavailable; no Docker Desktop startup/provisioning attempted.
+
+Next: finish browser-run6, fix any Top5 failures, inspect actual final files and
+frames, add manifest/runbook and completion report, run final regressions, commit
+harness. No M3-M5 implementation or native vertical/carousel E2E claimed.
+No pushes, draft PRs, deployments, production reads/writes or paid calls in this
+implementation run. External cost $0.
