@@ -36,6 +36,29 @@ from backend.app.models import QueueItem  # noqa: E402
 init_db()
 
 
+@pytest.fixture(autouse=True)
+def _finish_test_jobs(monkeypatch):
+    """Keep fixture fakes alive until their background jobs actually exit.
+
+    Several workers set the result before their finally blocks finish; leaking
+    those threads lets the next test's HTTP/DB fakes service unrelated work.
+    """
+    import threading
+    import time
+    yield
+    deadline = time.monotonic() + 10
+    while True:
+        jobs = [t for t in threading.enumerate() if t is not threading.current_thread()
+                and (t.name.startswith(("studio-", "job-")) or t.name == "bulk_ai")
+                and t.name not in ("job-heartbeat", "job-resume-watch")]
+        if not jobs:
+            break
+        if time.monotonic() > deadline:
+            pytest.fail("Test leaked a background job: " + ", ".join(t.name for t in jobs))
+        for job in jobs:
+            job.join(timeout=.1)
+
+
 @pytest.fixture()
 def session():
     with SessionLocal() as s:

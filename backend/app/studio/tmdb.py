@@ -91,6 +91,7 @@ def _summary(r: dict[str, Any], media_type: str | None = None) -> dict[str, Any]
         "tmdb_id": r.get("id"),
         "media_type": mt,
         "title": r.get("title") or r.get("name") or "",
+        "original_title": r.get("original_title") or r.get("original_name") or "",
         "date": r.get("release_date") or r.get("first_air_date") or "",
         "overview": r.get("overview") or "",
         "poster": image_url(r.get("poster_path"), "w342"),

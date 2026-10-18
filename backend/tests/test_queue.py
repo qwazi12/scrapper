@@ -532,7 +532,7 @@ def test_clip_research_uses_tmdb_facts_in_the_prompt(session, monkeypatch):
                 "hashtags": ["#shorts", "#Superman & Lois"]}
 
     monkeypatch.setattr(sgem, "ask_json", fake_ask)
-    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 95057, "media_type": "tv", "date": "2021-02-23", "popularity": 50}])
+    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 95057, "title": "Superman & Lois", "media_type": "tv", "date": "2021-02-23", "popularity": 50}])
     monkeypatch.setattr(clip_research, "lookup", lambda mt, i: {
         "tmdb_id": i, "media_type": mt, "title": "Superman & Lois", "year": "2021", "genres": ["Drama"],
         "overview": "o", "cast": [{"actor": "Tyler Hoechlin", "character": "Clark Kent"}],
@@ -564,7 +564,7 @@ def test_research_cache_shares_lookups(session, monkeypatch):
     monkeypatch.setattr(sgem, "ask_json", lambda p, **kw: {"title": "Superman & Lois", "media_type": "tv",
                                                           "year": 2021, "confidence": 0.9})
     looked = []
-    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 1, "media_type": "tv", "date": "2021", "popularity": 1}])
+    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 1, "title": "Superman & Lois", "media_type": "tv", "date": "2021", "popularity": 1}])
     monkeypatch.setattr(clip_research, "lookup", lambda mt, i: looked.append(i) or {"title": "S", "cast": [],
                         "genres": [], "keywords": [], "watch_on": [], "overview": "", "media_type": mt, "tmdb_id": i})
     cache = {}

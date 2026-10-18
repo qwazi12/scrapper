@@ -40,16 +40,9 @@ def _item_text(item) -> str:
     return "\n".join(parts)
 
 
-def _best_match(results: list[dict], media_type: str, year: int | None) -> dict | None:
-    def score(r: dict) -> float:
-        s = r.get("popularity", 0) / 100.0
-        if media_type and r["media_type"] == media_type:
-            s += 5
-        if year and (r.get("date") or "")[:4] == str(year):
-            s += 3
-        return s
-    results = [r for r in results if r.get("tmdb_id")]
-    return max(results, key=score) if results else None
+def _best_match(results: list[dict], media_type: str, year: int | None, title: str = "") -> dict | None:
+    from ..studio.identity import select
+    return select(title, results, year=year, medium=media_type)
 
 
 def lookup(media_type: str, tmdb_id: int) -> dict[str, Any]:
@@ -88,7 +81,7 @@ def research(item, cache: dict | None = None) -> dict[str, Any]:
     if cache is not None and key in cache:
         facts = cache[key]
     else:
-        match = _best_match(tmdb.search(title), guess.get("media_type") or "", guess.get("year"))
+        match = _best_match(tmdb.search(title), guess.get("media_type") or "", guess.get("year"), title)
         facts = lookup(match["media_type"], match["tmdb_id"]) if match else None
         if cache is not None:
             cache[key] = facts

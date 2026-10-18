@@ -267,14 +267,10 @@ def _lookup_tmdb_metadata(title: str, year: int | None = None) -> dict[str, Any]
         results = tmdb.search(title)
         if not results:
             return {}
-        # Match closest year if provided
-        match = results[0]
-        if year and len(results) > 1:
-            for r in results[:4]:
-                r_year = (r.get("date") or "")[:4]
-                if r_year and str(year) == r_year:
-                    match = r
-                    break
+        from ..identity import select
+        match = select(title, results, year=year)
+        if not match:
+            return {}
 
         media_type = match.get("media_type") or "movie"
         tmdb_id = match.get("tmdb_id") or match.get("id")
@@ -287,7 +283,7 @@ def _lookup_tmdb_metadata(title: str, year: int | None = None) -> dict[str, Any]
         flatrate = [p.get("provider_name") for p in (us_providers.get("flatrate") or [])][:3]
         rent = [p.get("provider_name") for p in (us_providers.get("rent") or [])][:2]
 
-        streaming_summary = " · ".join(flatrate) if flatrate else ("Rent on " + ", ".join(rent) if rent else "Theaters / Digital")
+        streaming_summary = " · ".join(flatrate) if flatrate else ("Rent on " + ", ".join(rent) if rent else "Availability unconfirmed")
 
         return {
             "tmdb_id": tmdb_id,
@@ -301,6 +297,7 @@ def _lookup_tmdb_metadata(title: str, year: int | None = None) -> dict[str, Any]
             "overview": (d.get("overview") or "")[:240],
             "imdb_id": (d.get("external_ids") or {}).get("imdb_id"),
             "where_to_watch": streaming_summary,
+            "availability_status": "available" if flatrate or rent else "unavailable",
             "justwatch_url": (us_providers.get("link") or ""),
         }
     except Exception as e:
@@ -319,7 +316,7 @@ def _find_matching_studio_project(tmdb_id: int | None, title: str) -> dict[str, 
         if p:
             return {
                 "project_id": p.id,
-                "has_render": bool(p.has and p.has.get("render")),
+                "has_render": bool(p.render),
                 "seconds": round((p.render or {}).get("seconds", 0.0), 1) if p.render else 0.0,
                 "thumbnail": (p.render or {}).get("thumbnail"),
                 "stage": p.stage,
@@ -429,8 +426,13 @@ STEP 5 — OUTPUT JSON FORMAT ONLY (Do not wrap in markdown or explanation):
             entry["backdrop"] = meta.get("backdrop")
             entry["tmdb_rating"] = meta.get("rating")
             entry["overview"] = meta.get("overview")
-            if not entry.get("where_to_watch") or entry.get("where_to_watch") == "Unknown":
-                entry["where_to_watch"] = meta.get("where_to_watch")
+            suggested = entry.get("where_to_watch")
+            entry["where_to_watch"] = meta.get("where_to_watch") or "Availability unconfirmed"
+            entry["availability_scope"] = {"territory": "US", "retrieved_at": datetime.datetime.now(UTC).isoformat(),
+                                           "source": meta.get("justwatch_url"), "provider": "TMDB/JustWatch",
+                                           "status": meta.get("availability_status", "unavailable")}
+            if suggested and suggested != entry["where_to_watch"]:
+                entry["availability_conflict"] = {"suggested": suggested, "provider_snapshot": entry["where_to_watch"]}
             entry["justwatch_url"] = meta.get("justwatch_url")
 
         # Check for matching project in our database
@@ -485,9 +487,6 @@ def delete_saved_countdown(countdown_id: str) -> bool:
 def _resolve_title(entry: dict[str, Any]) -> dict[str, Any] | None:
     """The entry's real TMDB title, or None. A countdown is made from trailers, so an
     entry that isn't a movie or show (e.g. "Ned Leeds Becomes Hobgoblin…") can't be used."""
-    if entry.get("tmdb_id"):
-        return {"tmdb_id": int(entry["tmdb_id"]), "media_type": entry.get("media_type") or "movie",
-                "title": entry.get("title") or ""}
     title = (entry.get("title") or "").strip()
     if not title or not tmdb.configured():
         return None
@@ -495,12 +494,8 @@ def _resolve_title(entry: dict[str, Any]) -> dict[str, Any] | None:
         results = tmdb.search(title)
     except Exception:  # noqa: BLE001 — treated as "not found"
         return None
-    norm = lambda t: "".join(ch for ch in (t or "").lower() if ch.isalnum())
-    year = str(entry.get("year") or "")
-    same = [r for r in results if norm(r["title"]) == norm(title)]
-    if year:
-        same = [r for r in same if (r.get("date") or "")[:4] == year] or same
-    return same[0] if same else None
+    from ..identity import select
+    return select(title, results, year=entry.get("year"), medium=entry.get("media_type"), tmdb_id=entry.get("tmdb_id"))
 
 
 def countdown_description(countdown: dict[str, Any], entries: list[dict[str, Any]],
@@ -516,11 +511,17 @@ def countdown_description(countdown: dict[str, Any], entries: list[dict[str, Any
     lines.append("")
     lines.append("🎬 RANKED ENTRIES & WHERE TO STREAM:")
     for e in entries:
-        lines.append(f"• #{e['rank']} {e['title']} ({e.get('year', '')}) — Score: {e.get('score', 90)}/100")
-        if e.get("where_to_watch"):
-            lines.append(f"  Streaming (US): {e['where_to_watch']}")
-        if e.get("key_stat"):
-            lines.append(f"  Key Stat: {e['key_stat']}")
+        lines.append(f"• #{e['rank']} {e['title']} ({e.get('year', '')})")
+        scope = e.get("availability_scope") or {}
+        if (e.get("where_to_watch") and scope.get("status") == "available"
+                and scope.get("provider") == "TMDB/JustWatch" and scope.get("territory") == "US"):
+            try:
+                retrieved = datetime.datetime.fromisoformat(scope["retrieved_at"])
+                if datetime.timedelta(0) <= datetime.datetime.now(UTC) - retrieved < datetime.timedelta(days=1):
+                    lines.append(f"  Streaming (US, checked {retrieved.date()}): {e['where_to_watch']}")
+            except (KeyError, TypeError, ValueError):
+                pass
+        # Free-form model statistics are draft suggestions, never source-backed copy.
     if countdown.get("closing_question"):
         lines.append(f"\n💬 DISCUSSION:\n{countdown['closing_question']}\n")
     lines.append("\n🔔 Subscribe to Screen Central for daily film & TV countdowns, reviews, and rankings!")
