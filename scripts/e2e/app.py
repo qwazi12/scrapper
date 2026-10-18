@@ -60,7 +60,7 @@ def title(n=1):
 
 def facts(kind, n, **kwargs):
     return {**title(n), "primary_date": "2026-10-18", "releases": [], "directors": [], "writers": [],
-            "writing_credits": [], "cast": [], "genres": ["Animation"], "videos": [],
+            "writing_credits": [], "cast": [], "genres": ["Animation"], "videos": ([{"site":"YouTube","type":"Trailer","url":"https://youtube.com/watch?v=fixture40"}] if n==40 else []),
             "poster": os.getenv("SAFE_E2E_API_URL", "http://127.0.0.1:8802") + "/api/e2e/poster.jpg", "backdrops": [], "imdb_id": f"tt{int(n):07}",
             "source": f"https://www.themoviedb.org/movie/{n}", "attribution": tmdb.ATTRIBUTION}
 
@@ -133,6 +133,8 @@ async def upload(path, **kwargs):
     with ledger.open("a") as f:
         f.write(json.dumps(entry) + "\n")
         f.flush(); os.fsync(f.fileno())
+    if kwargs.get('title')=='Synthetic uncertain delivery':
+        raise TimeoutError('Synthetic response lost after provider acceptance')
     return rid
 
 
@@ -167,7 +169,7 @@ def fetch_source(url):
     if url != SOURCE_URL: raise IsolationError("Unexpected fixture source")
     return {"url": url, "requested_url": url, "text": SOURCE_TEXT, "sha256": hashlib.sha256(SOURCE_TEXT.encode()).hexdigest()}
 fact_verification.fetch = fetch_source
-imdb.list_videos = lambda imdb_id: [{"id": "synthetic-trailer", "name": "Original fixture", "type": "Trailer", "seconds": 12}]
+imdb.list_videos = lambda imdb_id: [] if imdb_id == "tt0000040" else [{"id": "synthetic-trailer", "name": "Original fixture", "type": "Trailer", "seconds": 12}]
 imdb.download = lambda video, dest: shutil.copy(TRAILER, dest)
 tts.synth = synth
 tts.configured = lambda: True
@@ -240,3 +242,29 @@ def isolation():
 def poster():
     from fastapi.responses import FileResponse
     return FileResponse(ASSETS / "poster.jpg")
+
+
+@app.post("/api/e2e/residential-run")
+def residential_run():
+    """Only the downloader boundary is synthetic; use the real client over HTTP."""
+    from scripts import local_worker
+    def download(url, workdir, browser, cancelled=None):
+        target=workdir/"synthetic-worker.mp4"
+        shutil.copy(TRAILER,target)
+        return target,{'webpage_url':url,'title':'Original worker fixture','uploader':'Screen Central offline fixture'}
+    previous=local_worker.download
+    try:
+        local_worker.download=download
+        count=local_worker.drain(os.environ['SAFE_E2E_API_URL'],settings.access_token,None)
+        return {'recovered':count}
+    finally:
+        local_worker.download=previous
+
+
+@app.post("/api/e2e/uncertain-queue")
+def uncertain_queue():
+    from backend.app.models import QueueItem
+    with SessionLocal() as s:
+        row=QueueItem(title='Synthetic uncertain delivery',description='Original fixture for uncertain provider response',
+            tags='#synthetic',pipeline='Movie Clips',status='review',accounts=['default:youtube'],video_path=str(TRAILER))
+        s.add(row);s.commit();return {'id':row.id}

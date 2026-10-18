@@ -796,10 +796,26 @@ def strip_blocked_accounts(s: Session) -> int:
 
 
 async def publish_queue_item(item_id: int, s: Session, regular: bool = False) -> QueueItem:
+    from ..worker_leases import scope,LeaseLost
+    try:
+        with scope(f'publication:{item_id}'):
+            try:
+                return await _publish_queue_item_owned(item_id,s,regular)
+            except BaseException:
+                s.rollback()  # Release failed writer transactions before lease cleanup.
+                raise
+    except LeaseLost as exc:
+        raise upload_post.UploadPostError(f"Submission unresolved or already in progress: {exc}",status_code=409) from exc
+
+
+async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = False) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
     if not item:
         raise ValueError(f"Queue item {item_id} not found")
+    from .. import publication_journal as journal
+    if journal.unresolved_late_receipt(s,item):
+        raise upload_post.UploadPostError("A late provider receipt needs explicit review before another submission",status_code=409)
     if any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
         raise upload_post.UploadPostError("An unresolved submission exists — reconcile before another attempt", status_code=409)
     if not item.accounts:
@@ -877,7 +893,10 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
         "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
         "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path},
         sort_keys=True).encode()).hexdigest()
-    intent = [{"state": "intent", "accounts": list(item.accounts), "artifact_key": artifact_key,
+    import uuid
+    batch_key=uuid.uuid4().hex
+    publication_identity=journal.identity(item)
+    intent = [{"state": "intent", "client_request_id":batch_key, "accounts": list(item.accounts), "artifact_key": artifact_key,
                "submitted_at": datetime.datetime.now(UTC).isoformat()}]
     from sqlalchemy import String, cast, update
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
@@ -891,6 +910,8 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
                         QueueItem.drive_link == item.drive_link)
                         .values(status="posting", publish_requests=intent),
                         execution_options={"synchronize_session": False}).rowcount
+    from .. import publication_journal as journal
+    if claimed: journal.record(s,item,intent[0],'batch_intent')
     s.commit()
     s.refresh(item)
     if not claimed:
@@ -915,8 +936,24 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
                      for net, lim in limits.items()}
         def persist(entry, result=False):
+            from ..budget_reservations import lock
+            from .. import worker_leases as leases
             entry = {**entry, "artifact_key": artifact_key}
+            if result:
+                # A receipt arriving after ownership loss must survive even when
+                # the old generation is forbidden from changing the queue row.
+                with leases.bind(None), SessionLocal() as receipt_session:
+                    journal.append(receipt_session,item_id,entry['client_request_id'],'transport_result',entry,queue_identity=publication_identity)
+                    receipt_session.commit()
+            lock(s);s.refresh(item)
+            leases.guard(s)
+            if item.status!='posting': raise upload_post.UploadPostError('Submission was stopped for review',status_code=409)
+            journal.record(s,item,entry)
             saved = [e for e in (item.publish_requests or []) if e.get("profile")]
+            previous=next((e for e in saved if e.get('client_request_id')==entry.get('client_request_id')),None)
+            if previous and previous.get('state')=='confirmed_not_accepted' and entry.get('state')=='accepted':
+                entry={**entry,'state':'unknown','error':'Late provider receipt contradicts owner nonacceptance; review again'}
+                journal.record(s,item,entry,'evidence_conflict')
             if result:
                 saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
             item.publish_requests = [*saved, entry]
@@ -927,7 +964,13 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
             **({"media_files": images} if images else {}),
         )
-        entries = [{**e, "artifact_key": artifact_key} for e in entries]
+        from ..budget_reservations import lock
+        lock(s);s.refresh(item)
+        # Persisted decisions/late-response conflicts take precedence over a stale
+        # transport-local list. Do not erase reviewed evidence on return.
+        saved_by_id={e.get('client_request_id'):e for e in item.publish_requests or [] if e.get('client_request_id')}
+        entries = [saved_by_id.get(e.get('client_request_id'),{**e,"artifact_key":artifact_key}) for e in entries]
+        journal.append(s,item.id,batch_key,'batch_returned',{'entries':entries})
         skipped = [a for e in entries for a in e.get("skipped", [])]
         if skipped and not any(e.get("request_id") or e.get("error") for e in entries):
             # Every platform already had today's number: nothing to send now.
@@ -1002,12 +1045,16 @@ def resolve_results(
             if now - submitted < PENDING_TIMEOUT:
                 return None
             return None  # elapsed time does not prove rejection; never blindly resubmit
+        expected={f"{e['profile']}:{net}" for net in e.get('platforms',[])}
+        seen=set()
         for r in st.get("results") or []:
+            if not isinstance(r,dict) or type(r.get('success')) is not bool: return None
             acc = f"{r.get('profile_username') or e['profile']}:{r.get('platform')}"
-            if r.get("success"):
-                outcome[acc] = (True, r.get("post_url") or "")
-            else:
-                outcome[acc] = (False, str(r.get("error_message") or "failed"))
+            if acc not in expected or acc in seen:return None
+            seen.add(acc)
+            if r['success']:outcome[acc]=(True,r.get('post_url') or '')
+            else:outcome[acc]=(False,str(r.get('error_message') or 'Provider confirmed failure'))
+        if seen!=expected:return None
     ok = [(a, outcome[a][1]) for a in accounts if a in outcome and outcome[a][0]]
     failed = {a: (outcome[a][1] if a in outcome else "no result returned") for a in accounts
               if not (a in outcome and outcome[a][0])}
@@ -1029,7 +1076,9 @@ def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -
     # Platforms left out because this slot wasn't theirs still get the video (catch-up, owner 2026-10-14).
     skipped = [a for e in item.publish_requests or [] for a in e.get("skipped", [])]
     cu = dict(item.catchup or {})
-    done = [list(d) for d in cu.get("done") or []] + [[a, url] for a, url in res["ok"]]
+    done = [list(d) for d in cu.get("done") or []]
+    for a, url in res["ok"]:
+        if [a, url] not in done: done.append([a, url])
     parts = [f"✓ {a} {url}".strip() for a, url in done]
     parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
     if res["failed"]:
@@ -1079,25 +1128,48 @@ def start_catchup_backfill(s: Session, now: datetime.datetime) -> int:
 def reconcile_posting(s: Session, now: datetime.datetime) -> int:
     """Settle submitted queue items and compilation posts from Upload-Post status."""
     settled = 0
+    from .. import publication_journal as journal, worker_leases as leases
+    from ..budget_reservations import lock
     for item in s.query(QueueItem).filter(QueueItem.status == "posting").all():
-        if not item.publish_requests:
-            continue  # pre-migration or mid-submit; nothing to poll
+        if not item.publish_requests or leases.live(f'publication:{item.id}') or journal.unresolved_late_receipt(s,item):
+            continue  # Do not settle a partially dispatched multi-platform batch.
+        qid, row_identity = item.id, journal.identity(item)
+        version = journal.digest(item.publish_requests)
+        entries = list(item.publish_requests)
+        s.rollback()  # Provider reads must not hold a database writer lock.
         try:
-            statuses = _fetch_statuses(item.publish_requests)
-            # Save known platform receipts even if a different attempt remains
-            # ambiguous. A future reconciliation never loses known success.
-            item.publish_requests = [{**e, "provider_status": statuses[e["request_id"]]}
-                                     if e.get("request_id") and statuses.get(e["request_id"], {}).get("status") == "completed"
-                                     else e for e in item.publish_requests]
-            s.commit()
-            res = resolve_results(item.publish_requests, statuses, now)
+            statuses = _fetch_statuses(entries)
+            lock(s)
+            item = s.get(QueueItem, qid, populate_existing=True)
+            if (not item or item.status != 'posting' or journal.identity(item) != row_identity
+                    or journal.digest(item.publish_requests) != version
+                    or leases.live(f'publication:{qid}')):
+                s.rollback()
+                continue  # An owner decision or new dispatch superseded this read.
+            saved = []
+            for entry in entries:
+                status = statuses.get(entry.get('request_id'))
+                if status:
+                    journal.record(s, item, {**entry, 'observed_status': status}, 'provider_observation')
+                # Cache only complete, strictly covered results. Malformed responses
+                # remain pollable rather than poisoning the receipt permanently.
+                if status and status.get('status') == 'completed' and resolve_results([entry], statuses, now) is not None:
+                    entry = {**entry, 'provider_status': status}
+                saved.append(entry)
+            item.publish_requests = saved
+            res = resolve_results(saved, statuses, now)
+            if res is not None:
+                apply_result(item, res, now)
+                if item.status == 'retry' and any(e.get('state') == 'confirmed_not_accepted' for e in saved):
+                    item.status = 'review'; item.scheduled_at = None
+                for entry in item.publish_requests or []: journal.record(s, item, entry, 'settled')
+            s.commit()  # Observation, outcome and append-only history are atomic.
         except Exception as exc:
-            logger.warning("Upload-Post status check failed for #%s: %s", item.id, exc)
+            s.rollback()
+            logger.warning("Upload-Post status check failed for #%s: %s", qid, exc)
             continue
         if res is None:
             continue
-        apply_result(item, res, now)
-        s.commit()
         settled += 1
         done = item.status in ("posted", "archived")
         pending = item.status == "ready"

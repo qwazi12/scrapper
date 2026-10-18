@@ -264,6 +264,8 @@ def rescan_now(s: Session = Depends(get_session)) -> dict:
 
 from .worker_transfers import router as worker_transfer_router
 app.include_router(worker_transfer_router)
+from .publication_journal import router as publication_journal_router
+app.include_router(publication_journal_router)
 
 
 # --- hybrid local worker (Reliability Layer 5) -------------------------------

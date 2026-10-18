@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { PublicationEvidence } from "./PublicationEvidence";
 import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, QueueThumbOptions, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
@@ -592,6 +593,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             try { const r = await api.reconcileQueue(); notify(`Reconciliation checked; ${r.settled} settled. Unknown submissions stay blocked.`); await loadQueue(); onChange(); }
             catch (e: any) { notify(`Reconciliation failed: ${e.message}`); }
           }}>Reconcile submitted posts</button>
+          <PublicationEvidence items={allItems} onChanged={() => { void loadQueue(); onChange(); }} />
           {autopostPaused !== null && (
             <button
               onClick={toggleAutopost}

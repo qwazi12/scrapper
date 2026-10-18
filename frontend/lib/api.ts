@@ -151,6 +151,19 @@ export type QueueItem = {
   created_at: string;
 };
 
+export type PublicationEntry = { client_request_id: string; state: string; profile?: string; platforms?: string[]; request_id?: string; error?: string };
+export type PublicationEvidenceView = {
+  queue_id: number; status: string;
+  current: { entry: PublicationEntry; version: string; resolvable: boolean }[];
+  events: { id: number; attempt_id: string; kind: string; payload: Record<string, unknown>; at: string }[];
+  decisions: { id: number; attempt_id: string; evidence: Record<string, unknown>; at: string }[];
+};
+export type PublicationDecisionInput = {
+  request_key: string; attempt_id: string; expected_version: string; account: string;
+  outcome: "accepted" | "not_accepted" | "unresolved"; provider_request_id: string | null;
+  evidence_url: string; rationale: string; reviewed_account: true; absence_confirmed: boolean;
+};
+
 export type ReleaseMomentum = {
   has_release_date: boolean;
   release_date: string | null;
@@ -1199,6 +1212,9 @@ export const api = {
       headers: headers(),
     }),
 
+  publicationEvidence: (id: number) => req<PublicationEvidenceView>(`/api/queue/${id}/publication-evidence`, { headers: headers(false) }),
+  publicationDecision: (id: number, data: PublicationDecisionInput) => req<{ saved: number; duplicate: boolean }>(`/api/queue/${id}/publication-decisions`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  publicationLedger: () => req<PublicationEvidenceView["events"]>("/api/queue/publication-ledger/export?limit=2000", { headers: headers(false) }),
   reconcileQueue: () => req<{ settled: number }>("/api/queue/reconcile", { method: "POST", headers: headers() }),
   publishQueueItem: (id: number) =>
     req<QueueItem>(`/api/queue/${id}/publish`, {

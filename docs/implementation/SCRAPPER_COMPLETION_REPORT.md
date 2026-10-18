@@ -171,7 +171,7 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R03 | Unsafe refs/domain-only admission blocked | Real safe retrieval, redirects/dead pages, semantic support, claim-specific freshness/territory workflow |
 | R04 | Partial: new exact counts/duplicates, no citable AI notes, provider conflicts and public stats contained | Category eligibility, supported rationale/trivia and checked intro/outro; manual canonical identity now rechecked |
 | R05 | Strict resolver repaired and tested | Category/country criteria and broader adversarial identity corpus; new-list confirmation now revalidates manual edits |
-| R06 | Queue intent/claim/uncertainty and enqueue race repaired in local fixtures | Direct path retired; durable full attempt history, manual unknown-resolution evidence, stronger in-flight metadata/file fencing still needed |
+| R06 | Queue intent/claim/uncertainty and enqueue race repaired in local fixtures | Append-only history, explicit owner uncertainty workflow and fenced dispatch locally implemented/tested; external provider proof and stronger in-flight file fencing still needed |
 | R07 | Scoped backup access repaired | Broader auth penetration testing remains outside proof |
 | R08 | Unsafe Drive path mechanism repaired | Active transfer leases/media validation and stale-temp retention policy |
 | R09 | Partial: bounded atomic video uploads/probes | Complete cookie/image caps, upload full-decode/edge-case corpus and UI negatives |
@@ -180,8 +180,8 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R12 | PARTIAL: editorial/calendar/imported cohort evidence with API/UI tests | Live authorized analytics adapters, historical content mapping and richer outcome lineage |
 | R13 | PARTIAL: actual native Short/carousel UI/media E2E and community draft | Broader creative treatments, single-image/poll flow, recut semantics, production Reel proof and real cleared-content editorial QA |
 | R14 | Partial: atomic USD/credit admission and uncertain holds; TTS paths accounted | Confirm provider cost bounds, orphan-hold recovery, credit reconciliation and settings UI |
-| R15 | Partial: resumable/Studio/Countdown/native generation leases and output fencing | Legacy scrape/compile and residential handoff; PostgreSQL and clock-skew corpus |
-| R16 | REPAIRED locally: worker wait stops chain and retry collects same handoff | Real Mac-worker arrival/resume integration remains staging work |
+| R15 | Partial: resumable/Studio/Countdown/native generation leases and output fencing | Legacy scrape/compile and residential protocol v2 now locally integrated/tested; PostgreSQL and clock-skew corpus remain |
+| R16 | REPAIRED locally: worker wait stops chain and retry collects same handoff | Actual residential client over localhost HTTP + UI resume passed with synthetic download; real residential/provider lane remains staging work |
 | R17 | Core reuse/DTO defects repaired | File-aware lookup, asset reuse without narrative reuse, further campaign-version tests |
 | R18 | Partial: frontend scanner clean, PR CI authored | Execute Linux/CI lane, backend pip/pytest advisory triage, image/runtime locks, owner branch-protection/release policy |
 | R19 | REPAIRED locally: legacy/modern topic GETs and schedule GET read only | Broader safe-method audit remains useful |

@@ -414,3 +414,41 @@ class WorkerTransfer(Base):
     status: Mapped[str] = mapped_column(String(20), default="claimed", index=True)
     receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PublicationEvent(Base):
+    __tablename__ = "publication_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(64), unique=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), index=True)
+    attempt_id: Mapped[str] = mapped_column(String(80), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PublicationDecision(Base):
+    __tablename__ = "publication_decisions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(36), unique=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), index=True)
+    attempt_id: Mapped[str] = mapped_column(String(80), index=True)
+    evidence: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
+# DDL is provided but has not been exercised in the local SQLite test lane.
+from sqlalchemy import DDL, event as _schema_event
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__):
+    for _action in ("UPDATE", "DELETE"):
+        _schema_event.listen(_table,"after_create",DDL(
+            f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "
+            "BEGIN SELECT RAISE(ABORT, 'Publication journal is append-only'); END").execute_if(dialect="sqlite"))
+    _schema_event.listen(_table,"after_create",DDL("""CREATE OR REPLACE FUNCTION scrapper_journal_immutable()
+        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Publication journal is append-only'; END; $$""").execute_if(dialect="postgresql"))
+    _schema_event.listen(_table,"after_create",DDL(
+        f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE OR DELETE ON {_table.name} "
+        "FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()").execute_if(dialect="postgresql"))
