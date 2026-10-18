@@ -731,11 +731,14 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
   async function load() { try { setC(await api.countdown(id)); } catch (e: any) { setErr(errText(e)); } }
   useEffect(() => { load(); }, [id]);
   useEffect(() => {
-    if (c && (busyStatus(c) || c.render?.drive?.status === "uploading")) {
-      timer.current = setInterval(() => { if (!document.hidden) load(); }, 4000);
-      return () => { if (timer.current) clearInterval(timer.current); };
-    }
-  }, [c?.stage_status, c?.stage, c?.render?.drive?.status]);
+    // A render can start after the immediate refresh read the previous done
+    // state. Keep an idle refresh so that read cannot freeze the finished view.
+    const active = c && (busyStatus(c) || c.render?.drive?.status === "uploading");
+    timer.current = setInterval(() => { if (!document.hidden) load(); }, active ? 4000 : 5000);
+    const onShow = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { if (timer.current) clearInterval(timer.current); document.removeEventListener("visibilitychange", onShow); };
+  }, [id, c?.stage_status, c?.render?.drive?.status]);
 
   async function act(fn: () => Promise<any>, ok?: string) {
     setErr(""); setWorking(true);

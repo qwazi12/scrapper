@@ -158,6 +158,19 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   expect(isolation.blocked_network_attempts).toBe(0);
   expect(isolation.scheduler_threads).toEqual([]);
   expect(isolation.fake_publish_receipts).toBe(3);  // only the explicit LongForm submit; no auto-posting
+  // Reproduce the immediate post-start stale GET, independently of timing.
+  let injectedCountdownDone = false;
+  await page.route(new RegExp(`/api/countdowns/${cid}$`), async route => {
+    if (!injectedCountdownDone) {
+      injectedCountdownDone = true;
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...completed, stage: "segments", stage_status: "done",
+        stage_message: "All 5 segments made", render: null, has: { ...completed.has, render: false } } });
+    } else await route.continue();
+  });
+  await page.reload();
+  await expect(page.getByTestId("countdown-export-quality")).toContainText("decoded");
+  expect(injectedCountdownDone).toBe(true);
   expect(errors).toEqual([]);
 });
 

@@ -10,9 +10,10 @@ marked failed with the reason.
 Deploys overlap: Railway starts the new server while the old one is still
 running (and finishing) its jobs. So each server stamps the rows it runs
 (`owner` = this process) and refreshes `updated_at` every HEARTBEAT seconds;
-a new server only resumes rows whose owner has been silent for STALE seconds,
-and keeps checking for WATCH seconds after it starts (an old server can take
-a while to be shut down). Never two copies of one job.
+a new server claims an expired resource atomically and keeps watching for later
+interruptions. Generation tokens fence old checkpoints, completion, content DB
+writes and paid admission. An old process may still compute or have external IO
+in flight; those effects need their own durable intent and reconciliation.
 
 Kinds and how they resume:
   studio          the interrupted step re-runs; an auto-chain carries on
@@ -59,7 +60,14 @@ def launcher(kind: str):
 
 def begin(kind: str, label: str, params: dict) -> int:
     with SessionLocal() as s:
-        h = leases.acquire(s, leases.resource(kind, params), BOOT)
+        key = leases.resource(kind, params)
+        h = leases.acquire(s, key, BOOT)
+        # An explicit fresh invocation after expiry supersedes old crash rows;
+        # the watcher must not revive their obsolete checkpoint after it finishes.
+        for previous in s.query(ResumableJob).filter_by(kind=kind, status="running").all():
+            if leases.resource(previous.kind, previous.params) == key:
+                previous.status = "stopped"
+                previous.last_error = "Superseded by a new invocation after lease expiry"
         row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT)
         s.add(row); s.commit(); _claims[row.id] = h
         return row.id
@@ -77,12 +85,21 @@ def reopen(rid: int) -> None:
         s.commit(); _claims[rid]=h
 
 
+def _handle_for(row):
+    current=leases.current()
+    key=leases.resource(row.kind,row.params)
+    # A batch can enqueue/close a different child job. Never use the parent's
+    # lease for that child's checkpoint or completion, even on the same server.
+    if current and current.resource == key: return current
+    return _claims.get(row.id)
+
+
 def _mutate(rid, fn):
     if not rid: return False
-    h=leases.current() or _claims.get(rid)
     with _lock, SessionLocal() as s:
         row=s.get(ResumableJob,rid)
         if not row: return False
+        h=_handle_for(row)
         if row.status == "running":
             if not h or row.owner != h.owner: raise leases.LeaseLost("Job is no longer owned by this worker")
             leases.guard(s,h)
@@ -102,7 +119,10 @@ def add_done(rid: int | None, item: Any) -> None:
 
 def finish(rid: int | None, status: str, error: str | None = None) -> None:
     if not rid: return
-    h=leases.current() or _claims.get(rid)
+    with SessionLocal() as lookup:
+        target=lookup.get(ResumableJob,rid)
+        if not target: return
+        h=_handle_for(target)
     try:
         def apply(row):
             row.status, row.last_error=status,(str(error)[:500] if error else None)
@@ -129,7 +149,6 @@ def bind_work(rid, fn):
     def wrapped():
         try:
             with leases.bind(h), leases.keepalive(h):
-                leases.guard()
                 return fn()
         finally:
             with _lock: _active_rids.discard(rid)
@@ -146,6 +165,7 @@ def tracked_thread(kind: str, label: str, scope: str, params: dict, fn: Callable
 
     def work():
         try:
+            leases.guard()
             out = fn()
         except control.Cancelled:
             finish(rid, "stopped")
@@ -171,7 +191,7 @@ def _heartbeat_once() -> None:
 
 def start_background(watch: int | None = None) -> None:
     """Startup: keep this server's jobs alive, and resume dead servers' jobs as
-    soon as they've been silent STALE seconds (checked for `watch` seconds)."""
+    soon as their lease expires (continuous unless `watch` is explicitly bounded)."""
     import time
 
     def beat():

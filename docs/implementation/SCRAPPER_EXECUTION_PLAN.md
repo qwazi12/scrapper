@@ -1,3 +1,8 @@
+> **2026-10-18 continued checkpoint:** independent retrieval + owner review,
+> atomic USD/credit reservations and scoped worker leases are implemented locally.
+> The current contracts and limitations are in [LOCAL_CONTRACTS_20261018.md](LOCAL_CONTRACTS_20261018.md).
+> Latest owner instruction: stay local; do not push, deploy or publish. Record every checkpoint in root MEMORY.md and the progress ledger.
+
 # Screen Central isolated execution plan
 
 Authorization: SCRAPPER_CODEX_UNATTENDED_EXECUTION.md. Base: origin/main

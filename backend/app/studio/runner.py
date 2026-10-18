@@ -226,6 +226,7 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
         from .. import costs
         outcome, err = "done", None
         try:
+            worker_leases.guard()
             names = [name]
             if auto:
                 i = ORDER.index(name) if name in ORDER else len(ORDER)
@@ -263,6 +264,8 @@ def start(project_id: int, name: str, auto: bool = False, rid: int | None = None
                     _set(project_id, stage_status="stopped",
                          stage_message=f"{n} stopped by user — re-run it when ready")
                     return
+        except worker_leases.LeaseLost as exc:
+            outcome, err = "stopped", str(exc)
         finally:
             resume.finish(rid, outcome, err)
             _current.update(project_id=None, stage=None)

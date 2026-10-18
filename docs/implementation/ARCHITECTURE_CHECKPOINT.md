@@ -1,3 +1,8 @@
+> **2026-10-18 continued checkpoint:** independent retrieval + owner review,
+> atomic USD/credit reservations and scoped worker leases are implemented locally.
+> The current contracts and limitations are in [LOCAL_CONTRACTS_20261018.md](LOCAL_CONTRACTS_20261018.md).
+> Latest owner instruction: stay local; do not push, deploy or publish. Record every checkpoint in root MEMORY.md and the progress ledger.
+
 # Local revival architecture checkpoint
 
 Original system-wide maps and 24 root-cause findings remain in the Phase 0
@@ -62,17 +67,19 @@ media_kind/media_files, compilations queue_item_id. Disposable SQLite creation
 and existing-table migration paths are locally exercised. PostgreSQL upgrade,
 backup/restore, mixed-version deploys and rollback are not verified.
 
-The original studios still use mutable live export directories; immutable
-versions currently apply to native campaigns. Publishing journals currently live
-on the queue row, with per-platform receipts and client IDs; full append-only
-attempt history/manual unknown resolution remain open. Process-local stage locks
-are not global worker leases. Usage accounting is not an atomic budget-reservation
-system. These are release blockers, not guarantees provided by the diagram.
+Studio stage writes now use generation-specific attempt folders; native campaigns
+retain immutable export versions. Complete immutable history, restoration and
+transfer/cache/deletion leases remain open. Publishing journals currently live on
+the queue row; append-only attempt history and manual unknown resolution remain
+open. Atomic USD/credit reservation and generation leases for scoped jobs are
+implemented; legacy scrape/compile and residential handoffs remain release gaps.
+See LOCAL_CONTRACTS_20261018.md for the three contract diagrams and limitations.
 
-Research admission remains conservative: trusted domains and grounding citations
-alone do not establish a claim. An independent bounded retrieval/semantic support
-workflow remains incomplete. Editorial excerpts are explicitly owner-supplied;
-brief approval never claims independent factual verification.
+Research admission requires independently retrieved records plus explicit owner
+semantic review with context, freshness and conflict checks. This does not turn
+the storyboard model into a truth verifier or verify every structured TMDB claim.
+Editorial opportunity excerpts remain owner-supplied; their approval has a
+separate, clearly labeled scope.
 
 Native creative treatment currently provides original beat cards and manually
 selected stills. It does not implement semantic footage search, automatic legal

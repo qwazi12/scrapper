@@ -78,3 +78,27 @@ def test_same_process_cannot_launch_an_owned_job_twice():
     with pytest.raises(leases.LeaseLost): resume.reopen(rid)
     fn()
     assert rid not in resume._active_rids
+
+
+def test_batch_closing_queued_child_releases_child_and_keeps_parent_lease():
+    with leases.scope('batch:parent') as parent:
+        rid=resume.begin('studio','Child',{'project_id':995})
+        child=resume._claims[rid]
+        resume.finish(rid,'queued')
+        leases.guard(handle=parent)
+        with SessionLocal() as s:
+            assert s.get(WorkerLease,child.resource).owner is None
+            assert s.get(WorkerLease,parent.resource).owner is not None
+            assert s.get(ResumableJob,rid).status=='queued'
+
+
+def test_new_invocation_after_expiry_supersedes_obsolete_crash_checkpoint():
+    old=resume.begin('studio','Old',{'project_id':996})
+    resume.checkpoint(old,stage='gather')
+    expire(resume._claims[old].resource)
+    new=resume.begin('studio','New',{'project_id':996})
+    resume.finish(new,'done')
+    with SessionLocal() as s:
+        assert s.get(ResumableJob,old).status=='stopped'
+        assert 'Superseded' in s.get(ResumableJob,old).last_error
+    assert resume.resume_interrupted()==0

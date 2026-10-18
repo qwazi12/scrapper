@@ -241,3 +241,13 @@ Owner requested independent fact verification first, then atomic budgets and wor
 - Added resource leases with increasing generations, expiry, renewal, stale-write/payment/checkpoint/completion fencing and owner-stop revocation. Applied to resumable jobs, Countdown research/render and native campaigns. Studio output folders are isolated per attempt; committed segment caches are copied for reuse. Native crash recovery preserves earlier export versions. Legacy scrape/compile workers and residential handoff still need full lease integration.
 - Checks so far: full backend baseline after first integration 384 passed /1 optional skip; expanded focused contracts 37 passed; production frontend build passed. First six-scenario browser run: five passed; new source-review scenario exposed a dropdown accessible-label selector issue. Fixed its explicit label; fresh full browser rerun pending. Failed trace retained.
 - All work local on the feature branch. No GitHub push, deploy, public post, live account mutation or paid API request. External spend remains $0. Full roadmap remains partial; see completion report for release gaps.
+
+
+## Verified local contract checkpoint — 2026-10-18
+
+- Final backend: **395 passed /1 optional skip**, 37.16s, 32 existing deprecation warnings; unhandled worker-thread exceptions were treated as test failures. Production frontend build5 and explicit TypeScript check exited 0.
+- Final browser3: **all 6 passed /2.4min**: LongForm, Top 5, native Short/carousel, navigation, project history and independent source-review UI. Fixed a Countdown idle-read polling freeze; regression forces one stale response and proves recovery. Earlier failed traces remain preserved.
+- Lease cleanup now handles owner stop without leaking the local runner lock; closing a queued child preserves its batch parent's lease; an explicit invocation after expiry stops the obsolete crash checkpoint. Dedicated negative tests and the final backend suite pass.
+- Final isolation: zero external attempts, zero scheduler threads, five explicit fake posting receipts and $0 external spend. Owned test servers stopped; synthetic evidence retained.
+- Root MEMORY.md and the detailed ledger are updated. Changes are committed locally on the feature branch; no GitHub push, PR, deploy, publication, live account change or paid request. Latest owner instruction remains LOCAL ONLY.
+- New return package: `outputs/scrapper-roadmap-contracts` in the chat workspace. Full remaining limits, architecture and configuration are in `docs/implementation/LOCAL_CONTRACTS_20261018.md`; M1–M5 remain partial.

@@ -129,6 +129,7 @@ def start(ids: list[int], rid: int | None = None, already_done: list[int] | None
     def work() -> None:
         outcome = "done"
         try:
+            resume.assert_current_lease()
             with control.job("ai", label, scope="socialpilot"):
                 asyncio.run(_run(todo))
             if status.get("budget_paused"):
