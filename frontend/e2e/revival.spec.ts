@@ -441,3 +441,38 @@ test("uncertain publication is resolved through owner evidence UI without duplic
   expect(after.blocked_network_attempts).toBe(0); expect(after.external_spend_usd).toBe(0);
   writeFileSync(path.join(evidence, "worker-journal-isolation.json"), JSON.stringify(after, null, 2));
 });
+
+test("financial holds UI requires explicit orphan review and reconciles USD and credits locally", async ({ page, request }) => {
+  const ids = await (await request.post(`${stack.api}/api/e2e/financial-holds`)).json();
+  await page.goto("/#settings");
+  await page.getByText(/Unsettled requests & cost contracts/).click();
+  await page.getByLabel("Unsettled request", { exact: true }).selectOption(ids.usd);
+  await page.getByLabel("Confirmed actual amount (USD)").fill("0.2");
+  await page.getByLabel("Provider receipt reference", { exact: true }).fill("synthetic-usd-receipt");
+  await page.getByLabel("Financial reconciliation rationale").fill("Reviewed this synthetic request and its exact provider billing receipt.");
+  const save = page.getByRole("button", { name: "Record financial reconciliation", exact: true });
+  await expect(save).toBeDisabled();
+  await page.getByRole("checkbox", { name: /I reviewed this exact request against/ }).check();
+  await expect(save).toBeDisabled();
+  await page.getByRole("checkbox", { name: /I confirm the interrupted request worker/ }).check();
+  await save.click();
+  await expect(page.getByRole("status").filter({ hasText: "local ledger has been reconciled" })).toBeVisible();
+  await page.getByLabel("Unsettled request", { exact: true }).selectOption(ids.credit);
+  await page.getByLabel("Confirmed actual amount (credits)").fill("3");
+  await page.getByLabel("Provider receipt reference", { exact: true }).fill("synthetic-credit-receipt");
+  await page.getByLabel("Financial reconciliation rationale").fill("Reviewed the synthetic credit receipt; three credits were confirmed for this request.");
+  await page.getByRole("checkbox", { name: /I reviewed this exact request against/ }).check();
+  await save.click();
+  await expect(page.getByRole("status").filter({ hasText: "local ledger has been reconciled" })).toBeVisible();
+  await page.getByText("Per-request USD ceilings", { exact: true }).click();
+  await page.getByLabel("Provider service and model").fill("synthetic-finance:local-model");
+  await page.getByLabel("Maximum USD per request").fill("0.125");
+  await page.getByRole("button", { name: "Save request ceiling", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Request ceilings saved locally" })).toBeVisible();
+  const ledger = await (await request.get(`${stack.api}/api/financial/holds`, { headers })).json();
+  expect(ledger.holds).toEqual([]);
+  expect(ledger.history.filter((r: any) => [ids.usd, ids.credit].includes(r.reservation_id))).toHaveLength(2);
+  const costs = await (await request.get(`${stack.api}/api/costs`, { headers })).json();
+  expect(costs.settings.request_bounds["synthetic-finance:local-model"]).toBe(0.125);
+  await page.screenshot({ path: path.join(evidence, "financial-hold-review.png"), fullPage: true });
+});

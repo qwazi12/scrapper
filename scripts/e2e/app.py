@@ -268,3 +268,18 @@ def uncertain_queue():
         row=QueueItem(title='Synthetic uncertain delivery',description='Original fixture for uncertain provider response',
             tags='#synthetic',pipeline='Movie Clips',status='review',accounts=['default:youtube'],video_path=str(TRAILER))
         s.add(row);s.commit();return {'id':row.id}
+
+
+@app.post('/api/e2e/financial-holds')
+def financial_holds_fixture():
+    import datetime
+    from datetime import timedelta
+    from uuid import uuid4
+    from backend.app import budget_reservations as br
+    from backend.app.models import CreditReservation,WorkerLease
+    usd=br.reserve('synthetic-finance',.4)
+    credit=str(uuid4())
+    with SessionLocal() as s:
+        s.get(WorkerLease,'budget:'+usd).expires_at=datetime.datetime.now(datetime.timezone.utc)-timedelta(seconds=1)
+        s.add(CreditReservation(id=credit,tool='synthetic-credit-tool',credits=5,state='unknown'));s.commit()
+    return {'usd':usd,'credit':credit}

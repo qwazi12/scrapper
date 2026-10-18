@@ -266,6 +266,8 @@ from .worker_transfers import router as worker_transfer_router
 app.include_router(worker_transfer_router)
 from .publication_journal import router as publication_journal_router
 app.include_router(publication_journal_router)
+from .financial_reconciliation import router as financial_reconciliation_router
+app.include_router(financial_reconciliation_router)
 
 
 # --- hybrid local worker (Reliability Layer 5) -------------------------------

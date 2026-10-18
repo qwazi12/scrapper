@@ -65,7 +65,11 @@ def reserve(service: str, upper_usd) -> str:
         op, ref = costs._op.get()
         row = BudgetReservation(id=str(uuid.uuid4()), service=service, operation=op, ref=ref,
                                 reserved_micros=amount, state="reserved")
-        s.add(row); s.commit(); return row.id
+        s.add(row)
+        from .worker_leases import acquire
+        from .resume import BOOT
+        acquire(s,'budget:'+row.id,BOOT)
+        s.commit(); return row.id
 
 
 def transition(rid, before, after):
@@ -78,34 +82,58 @@ def transition(rid, before, after):
 
 @contextlib.contextmanager
 def attempt(service: str, upper_usd):
-    from . import resume
+    from . import resume, worker_leases as leases
+    from .models import WorkerLease
     if _active.get(): raise RuntimeError("Nested paid attempts must reserve independently")
     rid = reserve(service, upper_usd)
+    with SessionLocal() as s:
+        row=s.get(WorkerLease,'budget:'+rid)
+        handle=leases.Handle(row.resource,row.owner,row.generation)
     try:
-        resume.assert_current_lease()
-    except BaseException:
-        transition(rid, ("reserved",), "released"); raise
-    transition(rid, ("reserved",), "dispatched")
-    token = _active.set(rid)
-    try:
-        yield rid
+        with leases.keepalive(handle):
+            try:
+                resume.assert_current_lease()
+            except BaseException:
+                transition(rid, ("reserved",), "released"); raise
+            with SessionLocal() as s:
+                lock(s); leases.guard(s,handle)
+                if s.get(BudgetReservation,rid).state!='reserved':
+                    raise RuntimeError('Budget hold changed before dispatch')
+                s.get(BudgetReservation,rid).state='dispatched';s.commit()
+            token = _active.set(rid)
+            try:
+                yield rid
+            finally:
+                _active.reset(token)
+                transition(rid, ("dispatched",), "unknown")
     finally:
-        _active.reset(token)
-        # Success without a durable usage receipt is also uncertain.
-        transition(rid, ("dispatched",), "unknown")
+        with SessionLocal() as s:
+            leases.release(s,handle);s.commit()
 
 
 def settle_record(s, event):
-    """Called in the SAME transaction as the UsageEvent insert; never swallow failure."""
+    """A usage receipt and its charge delta commit in the same transaction."""
+    from .models import BudgetReceipt, BudgetResolution
     rid = _active.get()
     if not rid: return
     row = s.get(BudgetReservation, rid)
-    if not row or row.state not in ("dispatched", "unknown"):
+    if not row or s.get(BudgetReceipt,rid):
         raise RuntimeError("Budget receipt already settled or missing")
-    row.actual_micros = micros(event.cost_usd)
-    # Actual usage exceeding the declared bound is recorded, but remaining
-    # requests fail closed until this breached contract is investigated.
-    row.state = "breach" if row.actual_micros > row.reserved_micros else "settled"
+    amount=micros(event.cost_usd)
+    if row.state not in ('dispatched','unknown'):
+        if row.state!='settled' or not s.get(BudgetResolution,rid):
+            raise RuntimeError("Budget receipt already settled or missing")
+        # A provider usage receipt can arrive after owner crash reconciliation.
+        # Preserve both records; charge only the delta and stop on disagreement.
+        previous=row.actual_micros or 0
+        event.cost_usd=(amount-previous)/1e6
+        row.state='breach' if amount!=previous else 'settled'
+    else:
+        row.state='breach' if amount>row.reserved_micros else 'settled'
+    s.add(BudgetReceipt(reservation_id=rid,amount_micros=amount,usage=dict(service=event.service,
+        model=event.model,input_tokens=event.input_tokens,output_tokens=event.output_tokens,
+        chars=event.chars,requests=event.requests)))
+    row.actual_micros=amount
 
 
 def request_bound(service: str, body: dict, model: str | None = None) -> float:
@@ -144,24 +172,22 @@ async def post_json_async(client, url, *, body, model, service="gemini", **kwarg
         return res
 
 
-def resolve(rid, actual_usd, receipt, rationale):
-    """Explicit receipt reconciliation; no automatic expiry or midnight release."""
+def resolve(rid, actual_usd, receipt, rationale, *, confirm_interrupted=False, expected_version=None, request_key=None):
+    """Explicit provider evidence; lease expiry alone never releases a hold."""
     from . import costs
     from .models import BudgetResolution, UsageEvent
+    from .financial_reconciliation import require_resolution,save_decision,duplicate
     amount=micros(actual_usd)
     with SessionLocal() as s:
         lock(s)
+        if duplicate(s,request_key,'usd',rid,amount,receipt,rationale):return
         row=s.get(BudgetReservation,rid)
-        if not row or row.state not in ("unknown","breach") or s.get(BudgetResolution,rid):
-            raise ValueError("Reservation is not awaiting reconciliation or was already resolved")
-        if len(receipt.strip()) < 5 or len(rationale.strip()) < 20:
-            raise ValueError("Provide a provider receipt reference and a substantive reconciliation rationale")
+        require_resolution(s,'usd',row,confirm_interrupted,expected_version)
+        save_decision(s,'usd',rid,amount,receipt,rationale,request_key)
         previous=row.actual_micros or 0
-        # Breaches already recorded their charge. Unknown attempts record zero
-        # until a complete usage receipt or this explicit reconciliation.
-        adjustment=amount-previous
         s.add(UsageEvent(service=row.service,operation=row.operation,ref=row.ref,
-                         month=costs.month_key(),cost_usd=adjustment/1e6,requests=0))
-        s.add(BudgetResolution(reservation_id=rid,actual_micros=amount,receipt=receipt,rationale=rationale))
-        row.actual_micros,row.state=amount,"settled"
+                         month=costs.month_key(),cost_usd=(amount-previous)/1e6,requests=0))
+        if not s.get(BudgetResolution,rid):
+            s.add(BudgetResolution(reservation_id=rid,actual_micros=amount,receipt=receipt,rationale=rationale))
+        row.actual_micros,row.state=amount,'settled'
         s.commit()

@@ -895,7 +895,11 @@ export type QueueThumbOptions = {
   options: { id: string; label: string; desc: string; file: string }[];
 };
 
+export type FinancialHold = { id: string; kind: "usd" | "credit"; service: string; state: string; ref: string | null;
+  reserved: number; actual: number | null; version: string; worker_live: boolean; orphan: boolean; can_resolve: boolean; created_at: string };
+export type FinancialHoldView = { holds: FinancialHold[]; history: { id: string; kind: string; reservation_id: string; amount: number; receipt: string; rationale: string; at: string }[] };
 export type CostSettings = {
+  request_bounds?: Record<string, number>;
   budget_usd: number;
   daily_usd: number;
   hard_stop: boolean;
@@ -1503,6 +1507,8 @@ export const api = {
       method: "POST", headers: headers(), body: JSON.stringify({ scope }) }),
   costs: (month?: string) =>
     req<CostSummary>(`/api/costs${month ? `?month=${encodeURIComponent(month)}` : ""}`, { headers: headers(false) }),
+  financialHolds: () => req<FinancialHoldView>("/api/financial/holds", { headers: headers(false) }),
+  resolveFinancialHold: (data: { request_key: string; kind: "usd" | "credit"; reservation_id: string; expected_version: string; actual: number; receipt: string; rationale: string; reviewed: true; confirm_interrupted: boolean }) => req<{ resolved: string }>("/api/financial/resolve", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   setCostSettings: (patch: Partial<CostSettings>) =>
     req<CostSummary>("/api/costs/settings", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   seo: () => req<{ auto: boolean; clips_without_seo: number }>("/api/seo", { headers: headers(false) }),

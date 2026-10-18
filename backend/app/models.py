@@ -439,16 +439,35 @@ class PublicationDecision(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class FinancialResolution(Base):
+    __tablename__ = "financial_resolutions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    reservation_id: Mapped[str] = mapped_column(String(36), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    receipt: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BudgetReceipt(Base):
+    __tablename__ = "budget_receipts"
+    reservation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    amount_micros: Mapped[int] = mapped_column(BigInteger)
+    usage: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # DDL is provided but has not been exercised in the local SQLite test lane.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "
-            "BEGIN SELECT RAISE(ABORT, 'Publication journal is append-only'); END").execute_if(dialect="sqlite"))
+            "BEGIN SELECT RAISE(ABORT, 'Evidence journal is append-only'); END").execute_if(dialect="sqlite"))
     _schema_event.listen(_table,"after_create",DDL("""CREATE OR REPLACE FUNCTION scrapper_journal_immutable()
-        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Publication journal is append-only'; END; $$""").execute_if(dialect="postgresql"))
+        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Evidence journal is append-only'; END; $$""").execute_if(dialect="postgresql"))
     _schema_event.listen(_table,"after_create",DDL(
         f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE OR DELETE ON {_table.name} "
         "FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()").execute_if(dialect="postgresql"))

@@ -100,7 +100,7 @@ No nested Codex process or recurring automation was launched.
 
 | Lane | Actual result | Evidence under ignored artifacts/ |
 |---|---|---|
-| UNIT_ONLY / API_ONLY, full backend | **395 passed, 1 optional motion test skipped**, 37.16 s; 32 deprecation warnings; worker thread exceptions are errors | roadmap-backend-verified3.txt/xml |
+| UNIT_ONLY / API_ONLY, full backend | **423 passed, 1 optional motion test skipped**, 36.05 s; 32 deprecation warnings; worker thread exceptions are errors | financial-backend2.txt/xml |
 | Publisher regression after final portable JSON comparison | **90 passed**, 1.17 s | publisher-final.txt |
 | Frontend | Production build and explicit tsc passed | roadmap-build5.txt; roadmap-tsc.txt |
 | Dependency scanner | **0 npm advisories** at scan time; not exploitability/security assurance | frontend-final-audit6.json |
@@ -179,7 +179,7 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R11 | Partial: final-file QA + exact approval integrated in both studios | Captions/relevance/duplicate/rights validators, intentional-dark/silence policy, production-length corpus |
 | R12 | PARTIAL: editorial/calendar/imported cohort evidence with API/UI tests | Live authorized analytics adapters, historical content mapping and richer outcome lineage |
 | R13 | PARTIAL: actual native Short/carousel UI/media E2E and community draft | Broader creative treatments, single-image/poll flow, recut semantics, production Reel proof and real cleared-content editorial QA |
-| R14 | Partial: atomic USD/credit admission and uncertain holds; TTS paths accounted | Confirm provider cost bounds, orphan-hold recovery, credit reconciliation and settings UI |
+| R14 | Partial: atomic USD/credit admission and uncertain holds; TTS paths accounted | Orphan USD/credit receipt recovery and Settings UI now locally tested; provider price/bound validation and invoice matching remain |
 | R15 | Partial: resumable/Studio/Countdown/native generation leases and output fencing | Legacy scrape/compile and residential protocol v2 now locally integrated/tested; PostgreSQL and clock-skew corpus remain |
 | R16 | REPAIRED locally: worker wait stops chain and retry collects same handoff | Actual residential client over localhost HTTP + UI resume passed with synthetic download; real residential/provider lane remains staging work |
 | R17 | Core reuse/DTO defects repaired | File-aware lookup, asset reuse without narrative reuse, further campaign-version tests |

@@ -93,7 +93,7 @@ def current(): return _current.get()
 @event.listens_for(Session, 'before_flush')
 def fence_content_writes(s, flush_context, instances):
     # Usage must still be recorded if a response arrives after lease loss.
-    exempt={'UsageEvent','BudgetMutex','BudgetReservation','WorkerLease','ResumableJob','CreditReservation','LogEntry'}
+    exempt={'UsageEvent','BudgetMutex','BudgetReservation','BudgetReceipt','WorkerLease','ResumableJob','CreditReservation','LogEntry'}
     if _current.get() and any(type(o).__name__ not in exempt for o in (*s.new,*s.dirty,*s.deleted)):
         guard(s)
 
@@ -108,7 +108,7 @@ def revoke(s, key):
 def fence_bulk_content_writes(state):
     if not _current.get() or not (state.is_update or state.is_delete or state.is_insert): return
     name = getattr(getattr(state.statement,'table',None),'name',None)
-    if name not in {'worker_leases','resumable_jobs','budget_mutex','budget_reservations','usage_events','credit_reservations','log_entries'}:
+    if name not in {'worker_leases','resumable_jobs','budget_mutex','budget_reservations','budget_receipts','usage_events','credit_reservations','log_entries'}:
         guard(state.session)
 
 

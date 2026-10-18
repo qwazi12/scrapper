@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api, CostSummary } from "../lib/api";
+import { FinancialHolds } from "./FinancialHolds";
 import { UndoButton } from "./UndoButton";
 import { notify } from "../lib/dialogs";
 
@@ -123,6 +124,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
         </div>
       </div>
 
+      <FinancialHolds bounds={cfg.request_bounds || {}} onChanged={load} />
       <DailyCap data={data} saving={saving} onSave={(v) => save({ daily_usd: v }, "daily cap")} onReload={load} />
       {!!data.breakdowns?.length && <BreakdownCosts rows={data.breakdowns} />}
 
@@ -136,7 +138,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
           )}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: "var(--yellow)", marginBottom: 14 }}>No monthly budget set — spending is tracked but never limited.</div>
+        <div style={{ fontSize: 12, color: "var(--yellow)", marginBottom: 14 }}>No monthly budget set — the daily cap and request ceilings still apply.</div>
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
