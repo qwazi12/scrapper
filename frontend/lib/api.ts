@@ -491,6 +491,7 @@ export type RenderBatch = {
 };
 
 export type StudioProject = {
+  script_version?: string;
   id: number;
   tmdb_id: number;
   media_type: string;
@@ -683,6 +684,7 @@ export type CountdownSegment = {
 };
 
 export type CountdownProject = {
+  script_version?: string;
   id: number;
   topic: string;
   fmt: "top5" | "top10" | "top15" | string;
@@ -1326,7 +1328,7 @@ export const api = {
       "/api/studio/publish-batch", { method: "POST", headers: headers(), body: JSON.stringify({ ids }) }),
   studioCreate: (t: { tmdb_id: number; media_type: string; title: string; target_minutes?: number; force?: boolean }) =>
     req<StudioProject>("/api/studio/projects", { method: "POST", headers: headers(), body: JSON.stringify(t) }),
-  studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any }) =>
+  studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any; expected_script_version?: string }) =>
     req<StudioProject>(`/api/studio/projects/${id}`, { method: "PATCH", headers: headers(), body: JSON.stringify(data) }),
   studioDelete: (id: number, force = false) =>
     req<{ deleted: number }>(`/api/studio/projects/${id}${force ? "?force=true" : ""}`, { method: "DELETE", headers: headers(false) }),
@@ -1417,7 +1419,7 @@ export const api = {
     req<CountdownProject>(`/api/countdowns/${id}/make`, { method: "POST", headers: headers(false) }),
   countdownStop: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/stop`, { method: "POST", headers: headers(false) }),
-  countdownScript: (id: number, patch: { title?: string; intro?: string; outro?: string }) =>
+  countdownScript: (id: number, patch: { title?: string; intro?: string; outro?: string; expected_script_version?: string }) =>
     req<CountdownProject>(`/api/countdowns/${id}/script`, { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   countdownRender: (id: number) =>
     req<{ ok: boolean; job_id: string }>(`/api/countdowns/${id}/render`, { method: "POST", headers: headers(false) }),

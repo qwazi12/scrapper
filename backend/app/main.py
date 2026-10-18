@@ -1344,8 +1344,12 @@ def _undo_guard(scope: str) -> None:
             raise HTTPException(400, "bad scope")
         if control.running(scope="studio", ref=pid):
             raise HTTPException(409, "A stage is running on this video — stop it or wait, then undo")
+    elif scope.startswith("countdown:"):
+        try:cid=int(scope.split(":",1)[1])
+        except ValueError:raise HTTPException(400,"bad scope")
+        if control.running(scope="countdown",ref=cid):raise HTTPException(409,"A countdown job is running; stop it before undo")
     elif scope not in ("queue", "settings"):
-        raise HTTPException(400, "scope must be queue, settings or studio:<id>")
+        raise HTTPException(400, "scope must be queue, settings, studio:<id> or countdown:<id>")
 
 
 @app.get("/api/undo", dependencies=_AUTH)

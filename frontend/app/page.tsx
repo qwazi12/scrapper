@@ -16,6 +16,7 @@ import {
 import { PublishModal } from "./PublishModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { QueuePanel } from "./QueuePanel";
+import { allowNavigation } from "../lib/navigationGuard";
 import { readHash, writeHash } from "../lib/hashnav";
 import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
@@ -113,7 +114,8 @@ export default function Page() {
 
   // Sync hash with active tab if set in URL (#tab or #tab/sub; open projects add /id)
   useEffect(() => {
-    const syncHash = () => {
+    const syncHash = async () => {
+      if (!await allowNavigation(window.location.hash)) return;
       const [hash, sub] = readHash();
       const SUBS = ["queue", "longform", "countdowns", "scheduler", "ingest", "drive"];
       if (["scraper", "socialpilot", "longform", "countdowns", "editorial", "comps", "logs", "settings"].includes(hash)) {
@@ -141,7 +143,8 @@ export default function Page() {
     if (activeTab === "socialpilot") writeHash(["socialpilot", socialPilotTab]);
   }, [activeTab, socialPilotTab]);
 
-  function handleTabSelect(tab: NavTab) {
+  async function handleTabSelect(tab: NavTab) {
+    if (!await allowNavigation(`#${tab}`)) return;
     setActiveTab(tab);
     setNavOpen(false);
     if (typeof window !== "undefined") {

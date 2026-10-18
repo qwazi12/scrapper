@@ -1,8 +1,10 @@
 "use client";
 
+import { useLocalDraft } from "../lib/localDraft";
+import { LocalDraftStatus } from "./LocalDraftStatus";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  api,
+  api, apiBase,
   CountdownAuto,
   CountdownEntryRow,
   CountdownProject,
@@ -1031,13 +1033,14 @@ function SegmentsPart({ c, onOpen }: { c: CountdownProject; onOpen: (id: number)
 
 function ScriptPart({ c, onChange }: { c: CountdownProject; onChange: (c: CountdownProject) => void }) {
   const sc = c.script || {};
-  const [title, setTitle] = useState(sc.title || "");
-  const [intro, setIntro] = useState(sc.intro || "");
-  const [outro, setOutro] = useState(sc.outro || "");
+  const draft = useLocalDraft(`scrapper-draft:${apiBase()}:countdown:${c.id}:${c.created_at}`, { title: sc.title || "", intro: sc.intro || "", outro: sc.outro || "" });
+  const { title, intro, outro } = draft.value;
+  const setTitle = (value: string) => draft.change({ ...draft.value, title: value });
+  const setIntro = (value: string) => draft.change({ ...draft.value, intro: value });
+  const setOutro = (value: string) => draft.change({ ...draft.value, outro: value });
   const [saving, setSaving] = useState(false);
   const [vq, setVq] = useState(false);
-  useEffect(() => { setTitle(sc.title || ""); setIntro(sc.intro || ""); setOutro(sc.outro || ""); }, [c.id, c.updated_at]);
-  const dirty = title !== (sc.title || "") || intro !== (sc.intro || "") || outro !== (sc.outro || "");
+  const dirty = draft.dirty;
   const scoreOf = (t: string) => {
     const s = (sc.title_scores || {})[t];
     const n = s && (s.score ?? s.overallScore ?? s.ctrScore);
@@ -1049,6 +1052,7 @@ function ScriptPart({ c, onChange }: { c: CountdownProject; onChange: (c: Countd
   }
   return (
     <Part title="4. Script" open={c.has.segments && !c.has.render}>
+      <LocalDraftStatus draft={draft} />
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <label style={{ fontSize: 12 }}>YouTube title
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} style={{ width: "100%" }} />
@@ -1072,8 +1076,9 @@ function ScriptPart({ c, onChange }: { c: CountdownProject; onChange: (c: Countd
           <div style={{ ...muted, overflowWrap: "anywhere" }}>vidIQ tags used when sent: {(c.review!.keywords || []).slice(0, 12).join(", ")}</div>
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="primary" style={{ fontSize: 12 }} disabled={!dirty || saving}
-                  onClick={async () => { setSaving(true); try { onChange(await api.countdownScript(c.id, { title, intro, outro })); } catch (e: any) { notify(errText(e)); } finally { setSaving(false); } }}>
+          <button className="primary" style={{ fontSize: 12 }} disabled={!dirty || saving || draft.conflict}
+                  onClick={async () => { setSaving(true); try { const result = await api.countdownScript(c.id, { title, intro, outro, expected_script_version: c.script_version });
+                    draft.saved({ title: result.script?.title || "", intro: result.script?.intro || "", outro: result.script?.outro || "" }); onChange(result); } catch (e: any) { notify(errText(e)); } finally { setSaving(false); } }}>
             {saving ? "Saving…" : "Save script"}
           </button>
           {c.has.render && dirty && <span style={muted}>Re-render to use the new intro/outro.</span>}

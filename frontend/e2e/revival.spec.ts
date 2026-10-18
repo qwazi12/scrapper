@@ -476,3 +476,104 @@ test("financial holds UI requires explicit orphan review and reconciles USD and 
   expect(costs.settings.request_bounds["synthetic-finance:local-model"]).toBe(0.125);
   await page.screenshot({ path: path.join(evidence, "financial-hold-review.png"), fullPage: true });
 });
+
+test("unsaved Studio and Countdown scripts survive polling, navigation, reload and conflicting saves", async ({ page, request }) => {
+  await page.goto("/#longform");
+  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 50");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  const editor = page.getByTestId("script-editor");
+  await expect(editor).toHaveValue(/Original colored shapes/);
+  const pid = Number(new URL(page.url()).hash.split("/")[1]);
+  const original = await editor.inputValue();
+  const draft = original + "\nWhich unsaved draft should we keep?";
+  await editor.fill(draft);
+  await expect(page.getByRole("status").filter({ hasText: "Unsaved draft stored" })).toBeVisible();
+  await page.goto("/#settings");
+  await page.goto(`/#longform/${pid}`);
+  await expect(page.getByRole("status").filter({ hasText: "recovered unsaved draft" })).toBeVisible();
+  await expect(editor).toHaveValue(original);
+  await page.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(editor).toHaveValue(draft);
+  const project = await (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
+  const newer = { ...project.script, sentences: [{ paragraph: 1, text: "A newer saved script." }] };
+  const update = await request.patch(`${stack.api}/api/studio/projects/${pid}`, { headers,
+    data: { script: newer, expected_script_version: project.script_version } });
+  expect(update.ok()).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(editor).toHaveValue(draft);
+  await expect(page.getByRole("alert").filter({ hasText: "saved script also changed" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save script", exact: true })).toBeDisabled();
+  await page.getByText("Current saved script", { exact: true }).click();
+  await expect(page.getByText("A newer saved script.", { exact: true })).toBeVisible();
+  // Restoring a browser draft does not write to the backend.
+  expect((await (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json()).script.sentences[0].text).toBe("A newer saved script.");
+  await page.getByRole("button", { name: "Use saved version", exact: true }).click();
+  await expect(editor).toHaveValue("A newer saved script.");
+  await editor.fill("Which reviewed draft should we keep?");
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await expect(page.getByText(/Saved. If the words changed/)).toBeVisible();
+  await page.reload();
+  await expect(editor).toHaveValue("Which reviewed draft should we keep?");
+  await expect(page.getByRole("button", { name: "Restore unsaved draft", exact: true })).toHaveCount(0);
+
+  let c = (await (await request.get(`${stack.api}/api/countdowns`, { headers })).json()).find((x: any) => x.has.titles);
+  if (!c) {
+    c = await (await request.post(`${stack.api}/api/countdowns`, { headers, data: { topic: "Synthetic draft recovery", fmt: "top5" } })).json();
+    await request.post(`${stack.api}/api/countdowns/${c.id}/research`, { headers });
+    await expect.poll(async () => (await (await request.get(`${stack.api}/api/countdowns/${c.id}`, { headers })).json()).entry_count).toBe(5);
+    await request.post(`${stack.api}/api/countdowns/${c.id}/confirm`, { headers });
+  }
+  const openScript = async () => {
+    const summary = page.locator("summary").filter({ hasText: /^4\. Script$/ });
+    const intro = page.getByLabel("Intro hook (voiced over a preview of the titles; tease #1 without naming it)");
+    if (!await intro.isVisible()) await summary.click();
+    return intro;
+  };
+  await page.goto(`/#countdowns/${c.id}`);
+  let intro = await openScript();
+  const savedIntro = await intro.inputValue();
+  await intro.fill("An unsaved countdown hook survives an unrelated status refresh.");
+  // Updating review metadata changes updated_at, but must not reset unsaved copy.
+  await request.put(`${stack.api}/api/countdowns/${c.id}/review`, { headers, data: { on: true } });
+  await page.waitForResponse(r => r.url() === `${stack.api}/api/countdowns/${c.id}` && r.request().method() === "GET");
+  await expect(intro).toHaveValue("An unsaved countdown hook survives an unrelated status refresh.");
+  await page.goto("/#settings");
+  await page.goto(`/#countdowns/${c.id}`);
+  intro = await openScript();
+  await page.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(intro).toHaveValue("An unsaved countdown hook survives an unrelated status refresh.");
+  await page.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  await expect(intro).toHaveValue(savedIntro);
+  await page.screenshot({ path: path.join(evidence, "script-draft-recovery.png"), fullPage: true });
+
+  await page.goto(`/#longform/${pid}`);
+  await expect(editor).toHaveValue("Which reviewed draft should we keep?");
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    (window as any).restoreDraftStorage = () => { Storage.prototype.setItem = original; };
+    Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith("scrapper-draft:")) throw new DOMException("Synthetic storage quota failure", "QuotaExceededError");
+      original.call(this, key, value);
+    };
+  });
+  await editor.fill("This unsaved draft cannot be cached.");
+  await expect(page.getByRole("alert").filter({ hasText: "Browser draft storage is unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: /Settings & Channels/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("will lose unsaved changes");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editor).toHaveValue("This unsaved draft cannot be cached.");
+  await expect(page).toHaveURL(new RegExp(`#longform/${pid}$`));
+  // External hash/history changes must receive the same protection as buttons.
+  await page.evaluate(() => { window.location.hash = "settings"; });
+  await expect(page.getByRole("dialog")).toContainText("will lose unsaved changes");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`#longform/${pid}$`));
+  await expect(editor).toHaveValue("This unsaved draft cannot be cached.");
+  await page.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  await expect(editor).toHaveValue("Which reviewed draft should we keep?");
+  await page.getByRole("button", { name: /Settings & Channels/ }).click();
+  await expect(page).toHaveURL(/#settings$/);
+  await page.evaluate(() => { (window as any).restoreDraftStorage(); });
+});

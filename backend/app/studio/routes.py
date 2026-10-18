@@ -7,10 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from ..publication_journal import digest
 from .. import logbus
 from ..auth import require_token
 from ..config import settings
@@ -34,6 +35,7 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectPatch(BaseModel):
+    expected_script_version: str | None = Field(default=None,min_length=64,max_length=64)
     target_minutes: float | None = None
     script: dict | None = None     # owner edits to the script (sentences, metadata)
     plan: list | None = None       # owner swaps shots
@@ -53,6 +55,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
         "target_minutes": p.target_minutes, "stage": p.stage, "stage_status": p.stage_status,
         "stage_message": p.stage_message, "queue_item_id": p.queue_item_id,
         "created_at": p.created_at, "updated_at": p.updated_at,
+        "script_version": digest(p.script),
         "poster": f.get("poster"),
         "primary_date": primary_date,
         "momentum": momentum.compute_momentum(primary_date),
@@ -215,6 +218,10 @@ def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_s
         p = _get(s, project_id)
         if p.stage_status == "running":
             raise HTTPException(409, "a stage is running on this project; wait for it to finish")
+        if req.script is not None and req.expected_script_version:
+            from ..publication_journal import digest
+            if digest(p.script)!=req.expected_script_version:
+                raise HTTPException(409,'Saved script changed; reload and compare your draft before saving')
         what = "Edit script" if req.script is not None else "Swap shots" if req.plan is not None else "Change length"
         undo.record(s, f"studio:{project_id}", what, rows=[p], model="studio_projects", fields=UNDO_FIELDS)
         changed = []

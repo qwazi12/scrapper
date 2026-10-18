@@ -1,9 +1,11 @@
 "use client";
 
+import { useLocalDraft } from "../lib/localDraft";
+import { LocalDraftStatus } from "./LocalDraftStatus";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
 import {
-  api,
+  api, apiBase,
   parseApiDate,
   StudioArchive,
   StudioMotion,
@@ -764,19 +766,16 @@ function fromText(text: string) {
 
 function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (p: StudioProject) => void; running: boolean }) {
   const sc = p.script;
-  const [text, setText] = useState("");
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-  const [tags, setTags] = useState("");
+  const draft = useLocalDraft(`scrapper-draft:${apiBase()}:studio:${p.id}:${p.created_at}`, {
+    text: toText(sc?.sentences || []), title: sc?.youtube_title || "", desc: sc?.description || "", tags: (sc?.tags || []).join(", "),
+  });
+  const { text, title, desc, tags } = draft.value;
   const [msg, setMsg] = useState("");
-
-  useEffect(() => {
-    if (!sc) return;
-    setText(toText(sc.sentences));
-    setTitle(sc.youtube_title || "");
-    setDesc(sc.description || "");
-    setTags((sc.tags || []).join(", "));
-  }, [p.id, sc?.sentences?.length, sc?.youtube_title]);
+  const edit = (key: keyof typeof draft.value, value: string) => { setMsg(""); draft.change({ ...draft.value, [key]: value }); };
+  const setText = (value: string) => edit("text", value);
+  const setTitle = (value: string) => edit("title", value);
+  const setDesc = (value: string) => edit("desc", value);
+  const setTags = (value: string) => edit("tags", value);
 
   if (!sc) return <Section title="Script">Run steps 1–4 to write the script.</Section>;
   const words = text.split(/\s+/).filter(Boolean).length;
@@ -787,7 +786,10 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
       const sentences = fromText(text);
       const next = { ...sc, sentences, youtube_title: title, description: desc,
                      tags: tags.split(",").map((t) => t.trim()).filter(Boolean), word_count: words };
-      onChange(await api.studioPatch(p.id, { script: next }));
+      const result = await api.studioPatch(p.id, { script: next, expected_script_version: p.script_version });
+      const saved = result.script!;
+      draft.saved({ text: toText(saved.sentences), title: saved.youtube_title || "", desc: saved.description || "", tags: (saved.tags || []).join(", ") });
+      onChange(result);
       setMsg("✓ Saved. If the words changed, run Voice + shots again.");
     } catch (e: any) {
       setMsg(`✕ ${e.message || e}`);
@@ -796,6 +798,7 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
 
   return (
     <Section title={`Script — ${sc.sentences.length} sentences, ${words} words (~${fmtTime(words / 3)})`}>
+      <LocalDraftStatus draft={draft} />
       {!p.script_ready && <div role="alert" data-testid="research-blocked" style={{ color: "var(--red)", marginBottom: 12 }}>
         <b>Research blocked — review sources and check the saved script.</b>
         <ul>{(p.research_issues || []).slice(0, 8).map((issue) => <li key={issue}>{issue}</li>)}</ul>
@@ -835,7 +838,7 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
         </label>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
-        <button className="primary" onClick={save} disabled={running}>Save script</button>
+        <button className="primary" onClick={save} disabled={running || draft.conflict || !draft.dirty}>Save script</button>
         {msg && <span style={{ fontSize: 11, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</span>}
       </div>
     </Section>

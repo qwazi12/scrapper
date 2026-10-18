@@ -12,6 +12,8 @@ paid API use, push or PR occurred. External test spend: **$0.00**. The Downloads
 handoff was absent; the attached text was copied into the feature worktree.
 No nested Codex process or recurring automation was launched.
 
+Latest continued checkpoint: **451 backend tests passed /1 optional skip**, production frontend build and TypeScript passed, and **all 10 browser scenarios passed**. Studio/Countdown draft recovery, stale-save rejection and Countdown undo scope are now covered. See the append-only progress ledger for the full sequence and remaining gaps.
+
 ## Implemented and verified scope
 
 - Fail-closed checker coverage, verdict types, reference IDs and repaired-sentence
@@ -189,7 +191,7 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R21 | Partial: bounded file logs and all queue references protected | DB log retention, cache/transfer claims and Studio checksum-verified deletion added; legacy Countdown/trash/stream consumers still require coverage |
 | R22 | Several misleading labels repaired | Recovered same-job failures now disappear after success; full typed platform status UI and deployed severity validation remain |
 | R23 | CLI auto-Git removed, generated files untracked, current runbook added | Larger module refactors/current architecture docs and historical documentation reconciliation |
-| R24 | Main tabs tested; same-studio history synchronization added | Project history/reload passed; unsaved draft preservation and the full negative matrix remain |
+| R24 | Main tabs tested; same-studio history synchronization added | Identity-scoped Studio/Countdown draft recovery, stale-save conflicts and storage-failure navigation passed in the expanded ten-scenario suite; other forms and the full negative matrix remain |
 | UI-01/UI-02/UI-03 | Saved-check refresh, plan hook-order crash and interstage polling freeze repaired | Regression browser suite now covers their triggers |
 
 M1–M5 all remain **partial**. M3–M5 now have a usable local prototype with

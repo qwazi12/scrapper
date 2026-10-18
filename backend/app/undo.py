@@ -87,6 +87,10 @@ def _undo_owned(s: Session, scope: str) -> str:
         raise NothingToUndo(f"Nothing to undo here")
     p = entry.payload or {}
     model = MODELS[p.get("model", "queue_items")]
+    expected=StudioProject if scope.startswith('studio:') else CountdownProject if scope.startswith('countdown:') else QueueItem if scope=='queue' else AppSetting
+    if model is not expected:
+        from fastapi import HTTPException
+        raise HTTPException(409,'Legacy undo snapshot has an incompatible model; current project was preserved')
     pk = _pk(model)
     fields = p.get("fields")
     from fastapi import HTTPException
@@ -96,6 +100,10 @@ def _undo_owned(s: Session, scope: str) -> str:
     candidates=[(cid,None) for cid in p.get('created',[])]+[(data.get(pk),data) for data in p.get('rows',[])]
     for cid,data in candidates:
         current=s.get(model,cid,populate_existing=True)
+        if current and model in (StudioProject,CountdownProject):
+            key=('studio:' if model is StudioProject else 'countdown:')+str(cid)
+            if current.stage_status in ('running','queued') or worker_leases.live(key):
+                raise HTTPException(409,'A generation job owns this project; wait before undo')
         if model is QueueItem:
             if current and (current.status=='posting' or worker_leases.live(f'publication:{cid}') or current.publish_requests
                     or publication_journal.unresolved_late_receipt(s,current)):

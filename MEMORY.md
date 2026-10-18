@@ -1271,3 +1271,18 @@ Owner: use Gemini text-to-speech, model gemini-3.8-flash-tts, prebuilt voice Cha
 - New explicit invocations supersede old queued/budget-paused/worker-wait checkpoints for the same resource, preventing stale automatic revival. Drive/restore lease keys ignore cosmetic title changes.
 - Full backend **447 passed/1 optional skip**, 37.60s; 32 existing deprecation warnings; worker thread exceptions are errors. New lifecycle/mutation suite 21 passed. Lease/vidIQ focused recheck 16 passed. A full nine-browser run passed eight scenarios and exposed a vidIQ missing-credential path reserving impossible credit holds. Moved credential validation ahead of admission and added a regression; fresh browser rerun is in progress. Do not claim all nine passed yet.
 - All local, no GitHub push, PR, deployment, publication, live account mutation or paid API request. External spend $0. Media lifecycle scope/limitations are in docs/implementation/MEDIA_LIFECYCLE_20261018.md. Continuing remaining roadmap work; no production-readiness claim.
+
+
+## Verified lifecycle browser checkpoint
+
+- Fresh full browser rerun **9/9 passed, 2.2min** (artifacts/e2e/lifecycle-browser5.txt). Residential HTTP handoff/resume, unknown-publication evidence UI and USD/credit recovery all passed alongside existing LongForm/Top5/native/navigation/source-review flows. The missing-vidIQ-credential admission bug is fixed without weakening the zero-unsettled-holds assertion. Focused admission/lease suite: 16 passed.
+- The local lifecycle commit is 03d4d53. Its broad backend result is 447 passed/1 optional skip, plus the new missing-credential test in the focused suite. Both synthetic servers from the fresh browser run are stopped; external spend $0, no push/deploy/publication/live account changes.
+- Continuing unsaved Studio/Countdown draft preservation and stale-save checks. The full roadmap remains unfinished, including external/provider/production lanes.
+
+
+## Verified draft recovery and stale-save checkpoint
+
+- Studio and Countdown unsaved script fields now survive idle polling, tab/project navigation and reload through identity-scoped browser drafts. Recovery is explicit. Concurrent server edits preserve the local words, show the saved version for review and block saving until the owner resolves the conflict. Backend script versions reject stale writes.
+- If browser storage fails, in-app and external-hash navigation share one confirmation; cancellation restores the editor route. Native unload protection also applies. Countdown undo now uses the correct table/scope and rejects legacy mismatched snapshots instead of touching a same-number queue row.
+- Full backend: **451 passed/1 optional skip**, 37.77s, 32 existing deprecation warnings; worker-thread exceptions treated as errors. Production frontend build4 and explicit TypeScript check passed. Full browser7: **10/10 passed, 2.5min**, including draft recovery/conflict/storage-failure navigation plus all previous workflows. Final isolated stack reported zero external attempts, no scheduler threads and six fake publication receipts; owned servers stopped. Dependency consistency check passed.
+- Local-only checkpoint; no GitHub push, PR, deployment, publication, live account change or paid provider request. External spend remains $0. Full roadmap remains partial. Continuing legacy Countdown file-copy/deletion protections next.

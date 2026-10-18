@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..publication_journal import digest
 from .. import control, costs, logbus
 from ..auth import require_token
 from ..db import SessionLocal
@@ -116,6 +117,7 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         "stage": c.stage, "stage_status": c.stage_status, "stage_message": c.stage_message,
         "title": (c.script or {}).get("title") or ((c.ranking or {}).get("title_options") or [c.topic])[0],
         "queue_item_id": c.queue_item_id, "review": c.review or {}, "created_at": c.created_at, "updated_at": c.updated_at,
+        "script_version": digest(c.script),
         "posters": posters, "entry_count": len(entries), "unmatched": len(unmatched),
         "segments_made": made, "segments_total": len(segs),
         "est_minutes": round((est + 40) / 60, 1),                     # + intro/outro and the #N cards
@@ -1128,6 +1130,7 @@ class EntriesIn(BaseModel):
 
 
 class ScriptIn(BaseModel):
+    expected_script_version: str | None = None
     title: str | None = None
     intro: str | None = None
     outro: str | None = None
@@ -1535,7 +1538,7 @@ def put_entries(cid: int, req: EntriesIn) -> dict[str, Any]:
         if c.stage in ("segments", "render") and _running(c):
             raise HTTPException(409, "Segments are being made — Stop first to change the titles")
         from .. import undo
-        undo.record(s, f"countdown:{cid}", "Edit titles", rows=[c])
+        undo.record(s, f"countdown:{cid}", "Edit titles", rows=[c],model="countdown_projects")
         save_entries(c, req.entries)
         s.commit()
         return out(s, c)
@@ -1593,9 +1596,16 @@ def stop(cid: int) -> dict[str, Any]:
 @router.put("/{cid}/script")
 def put_script(cid: int, req: ScriptIn) -> dict[str, Any]:
     with SessionLocal() as s:
+        from ..budget_reservations import lock
+        from ..worker_leases import live
+        from ..publication_journal import digest
+        lock(s)
         c = _get(s, cid)
+        if _running(c) or live(f'countdown:{cid}'):raise HTTPException(409,'Wait for this countdown job before editing its script')
+        if req.expected_script_version and digest(c.script)!=req.expected_script_version:
+            raise HTTPException(409,'Saved script changed; reload and compare your draft before saving')
         from .. import undo
-        undo.record(s, f"countdown:{cid}", "Edit script", rows=[c])
+        undo.record(s, f"countdown:{cid}", "Edit script", rows=[c],model="countdown_projects")
         sc = dict(c.script or default_script(c))
         for k in ("title", "intro", "outro"):
             v = getattr(req, k)
