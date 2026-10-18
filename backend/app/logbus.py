@@ -12,6 +12,7 @@ import collections
 import datetime
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import queue
 import threading
 
@@ -26,7 +27,7 @@ _LOG_FILE = settings.data_path / "scrapper.log"
 _file_logger = logging.getLogger("scrapper")
 if not _file_logger.handlers:
     _file_logger.setLevel(logging.DEBUG)
-    _fh = logging.FileHandler(_LOG_FILE)
+    _fh = RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8")
     _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     _file_logger.addHandler(_fh)
     _sh = logging.StreamHandler()

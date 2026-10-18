@@ -77,13 +77,13 @@ def purge_expired(s: Session) -> dict:
     queued_clips = {
         row[0]
         for row in s.query(QueueItem.clip_id)
-        .filter(QueueItem.clip_id.isnot(None), QueueItem.status.in_(("review", "ready", "posting", "posted", "retry")))
+        .filter(QueueItem.clip_id.isnot(None))
         .all()
     }
     queued_comps = {
         row[0]
         for row in s.query(QueueItem.compilation_id)
-        .filter(QueueItem.compilation_id.isnot(None), QueueItem.status.in_(("review", "ready", "posting", "posted", "retry")))
+        .filter(QueueItem.compilation_id.isnot(None))
         .all()
     }
 
