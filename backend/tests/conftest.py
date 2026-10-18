@@ -36,6 +36,21 @@ from backend.app.models import QueueItem  # noqa: E402
 init_db()
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """Only this process's own synthetic root; failed evidence stays available.
+
+    E2E evidence has a separate marked root and is deliberately retained. The
+    previous mkdtemp-only setup accumulated DB/media after every passing run.
+    """
+    if exitstatus == 0 and os.environ.get("KEEP_TEST_DATA") != "1":
+        from backend.app.db import engine
+        import shutil
+        engine.dispose()
+        shutil.rmtree(_tmp)
+    else:
+        print(f"Synthetic unit-test data retained: {_tmp}")
+
+
 @pytest.fixture(autouse=True)
 def _finish_test_jobs(monkeypatch):
     """Keep fixture fakes alive until their background jobs actually exit.

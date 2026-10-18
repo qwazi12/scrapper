@@ -15,7 +15,7 @@ import {
 } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
-import { readHash, writeHash } from "../lib/hashnav";
+import { useProjectHash } from "../lib/hashnav";
 import { AutomationCard, deleteProject, RankedTrending, VideosList } from "./StudioAuto";
 import { MomentumBadge } from "./MomentumBadge";
 
@@ -55,11 +55,7 @@ function fmtDate(iso: string): string {
 export function StudioPanel() {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [projects, setProjects] = useState<StudioProject[]>([]);
-  const [openId, setOpenId] = useState<number | null>(() => {
-    const [tab, id] = readHash();
-    return tab === "longform" && /^\d+$/.test(id || "") ? Number(id) : null;        // refresh keeps the open breakdown
-  });
-  useEffect(() => { writeHash(["longform", openId]); }, [openId]);
+  const [openId, setOpenId] = useProjectHash("longform");
   const [err, setErr] = useState("");
 
   async function loadList() {
@@ -78,6 +74,7 @@ export function StudioPanel() {
   if (openId !== null) {
     return (
       <ProjectView
+        key={openId}
         id={openId}
         status={status}
         onBack={() => {
@@ -341,15 +338,16 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
     load();
   }, [id]);
 
-  // Poll while a stage runs so progress shows up without refreshing.
+  // A fast stage can finish between reads while an auto-chain is still running.
+  // Keep a slower visible-page refresh even at done/idle so the next stage and
+  // work started by another control cannot leave this view permanently stale.
   useEffect(() => {
-    if (p?.stage_status === "running" || p?.stage_status === "queued") {
-      timer.current = setInterval(() => { if (!document.hidden) load(); }, 3000);
-      return () => {
-        if (timer.current) clearInterval(timer.current);
-      };
-    }
-  }, [p?.stage_status]);
+    const active = p?.stage_status === "running" || p?.stage_status === "queued";
+    timer.current = setInterval(() => { if (!document.hidden) load(); }, active ? 3000 : 5000);
+    const onShow = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { if (timer.current) clearInterval(timer.current); document.removeEventListener("visibilitychange", onShow); };
+  }, [id, p?.stage_status]);
 
   const [undoV, setUndoV] = useState(0);
 

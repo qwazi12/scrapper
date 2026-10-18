@@ -55,6 +55,7 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   await page.getByRole("button", { name: "Save script", exact: true }).click();
   await page.getByRole("button", { name: "Check saved script", exact: true }).click();
   await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
+  await expect(page.getByTestId("job-error").filter({ hasText: `Studio #${pid}: verify` })).toHaveCount(0, { timeout: 10_000 });
   await page.reload();
   await expect(page.getByTestId("script-editor")).toHaveValue(original);
   await page.getByRole("button", { name: "Voice + shots", exact: true }).click();
@@ -158,4 +159,174 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   expect(isolation.scheduler_threads).toEqual([]);
   expect(isolation.fake_publish_receipts).toBe(3);  // only the explicit LongForm submit; no auto-posting
   expect(errors).toEqual([]);
+});
+
+test("Editorial UI: reviewed research, cleared still, native Short and carousel, simulated delivery", async ({ page, request }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  await page.goto("/#editorial");
+  await page.getByLabel("Topic", { exact: true }).fill("Synthetic Native Shapes");
+  await page.getByLabel("Original angle", { exact: true }).fill("Show how one original shape shifts the emphasis of a frame across three deliberate visual beats.");
+  await page.getByLabel("Audience and question", { exact: true }).fill("Viewers learning visual storytelling: which frame feels clearer?");
+  await page.getByLabel("Research source URL", { exact: true }).fill("https://example.invalid/original-test-assets");
+  await page.getByLabel("Supporting excerpt", { exact: true }).fill("The blue still and colored shape sequence were created in this isolated test. No third-party footage or factual claims are used.");
+  await page.getByLabel("Planned time (your local timezone)").fill("2026-10-20T12:00");
+  await page.getByRole("button", { name: "Create opportunity", exact: true }).click();
+  const opportunity = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Synthetic Native Shapes", exact: true }) });
+  await expect(opportunity).toContainText("Demand: Unavailable");
+  await opportunity.getByRole("button", { name: "Approve research brief", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  await expect(opportunity).toContainText("approved");
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByText("Import a cleared still", { exact: true }).click();
+  await page.getByLabel("Still image", { exact: true }).setInputFiles(path.join(stack.root, "fixtures/poster.jpg"));
+  await page.getByLabel("Rights record", { exact: true }).fill("Original colored shape fixture created locally by the test harness; permitted for all synthetic test treatments.");
+  await page.getByLabel("Scene tags", { exact: true }).fill("original shapes, synthetic frame");
+  await page.getByRole("button", { name: "Index cleared still", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Still indexed" })).toBeVisible();
+  const opportunities = await (await request.get(`${stack.api}/api/editorial/opportunities`, { headers })).json();
+  const oid = opportunities.find((o: any) => o.title === "Synthetic Native Shapes").id;
+  await page.getByLabel("Approved research", { exact: true }).selectOption(String(oid));
+  const texts = ["Can a simple shape change the way you read a frame?",
+    "Moving our original shape shifts attention from one side of the frame to the other.",
+    "The strongest frame makes one clear choice. Which version would you keep?"];
+  for (let i = 0; i < 3; i++) await page.getByLabel(`Beat text ${i + 1}`, { exact: true }).fill(texts[i]);
+  const assets = await (await request.get(`${stack.api}/api/editorial/assets`, { headers })).json();
+  await page.getByLabel("Visual for beat 2", { exact: true }).selectOption(String(assets[0].id));
+  await page.getByLabel("Short/Reel caption", { exact: true }).fill("Watch our original shape shift attention across the frame. Which composition would you keep?");
+  await page.getByLabel("Carousel caption", { exact: true }).fill("Swipe through three original visual choices. Pause on the clearest frame and tell us why.");
+  await page.getByLabel("Community question draft", { exact: true }).fill("Which visual change made the biggest difference to your reading of the frame?");
+  await page.getByRole("button", { name: "Create native campaign", exact: true }).click();
+  const campaigns = async () => (await request.get(`${stack.api}/api/editorial/campaigns`, { headers })).json();
+  await expect.poll(async () => (await campaigns()).length).toBe(1);
+  const cid = (await campaigns())[0].id;
+  const campaign = page.getByTestId(`campaign-${cid}`);
+  const queueIds: number[] = [];
+  for (const fmt of ["short", "carousel"]) {
+    await campaign.getByRole("button", { name: `Render ${fmt}`, exact: true }).click();
+    const review = campaign.getByTestId(`native-export-${fmt}`);
+    await expect(review).toContainText("Final decode: passed", { timeout: 180_000 });
+    const item = (await campaigns())[0].exports.find((e: any) => e.format === fmt);
+    expect(item.manifest.quality.errors).toEqual([]);
+    const premature = await request.post(`${stack.api}/api/editorial/exports/${item.id}/enqueue`, { headers, data: { accounts: ["default:instagram"] } });
+    expect(premature.status()).toBe(409);
+    if (fmt === "short") {
+      const final = path.join(evidence, "native-short-final.mp4");
+      copyFileSync(item.manifest.video.file, final);
+      const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", final], { encoding: "utf8" }));
+      const video = probe.streams.find((s: any) => s.codec_type === "video");
+      expect([video.width, video.height]).toEqual([1080, 1920]);
+      expect(probe.streams.some((s: any) => s.codec_type === "audio")).toBe(true);
+      expect(item.manifest.timeline.map((b: any) => b.text)).toEqual(texts);
+      expect(item.manifest.cards.every((c: any) => c.caption_lines > 0 && c.caption_lines <= 5)).toBe(true);
+      execFileSync("ffmpeg", ["-v", "error", "-xerror", "-i", final, "-f", "null", "-"]);
+      writeFileSync(path.join(evidence, "native-short-probe.json"), JSON.stringify(probe, null, 2));
+    } else {
+      expect(item.manifest.cards).toHaveLength(3);
+      for (const [i, card] of item.manifest.cards.entries()) copyFileSync(card.file, path.join(evidence, `native-carousel-${i + 1}.png`));
+    }
+    writeFileSync(path.join(evidence, `native-${fmt}-manifest.json`), JSON.stringify(item.manifest, null, 2));
+    await review.screenshot({ path: path.join(evidence, `native-${fmt}-review.png`) });
+    await review.getByRole("button", { name: `Approve inspected ${fmt}`, exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+    await review.getByRole("checkbox", { name: "default:instagram", exact: true }).check();
+    await review.getByRole("button", { name: `Add ${fmt} to review queue`, exact: true }).click();
+    await expect(review).toContainText("Queue item #");
+    queueIds.push((await campaigns())[0].exports.find((e: any) => e.format === fmt).queue_item_id);
+  }
+  await page.getByRole("button", { name: /SocialPilot AI/ }).click();
+  await page.getByRole("button", { name: /All Items/ }).click();
+  const status = async (id: number) => (await (await request.get(`${stack.api}/api/queue`, { headers })).json()).find((q: any) => q.id === id)?.status;
+  for (const id of queueIds) {
+    const row = page.getByRole("row").filter({ has: page.getByText(`#${id}`, { exact: true }) });
+    await row.getByRole("button", { name: "✓ Approve", exact: true }).click();
+    await expect.poll(() => status(id)).toBe("ready");
+    await row.getByRole("button", { name: "🚀 Post Now", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+    await expect.poll(() => status(id)).toBe("posting");
+  }
+  await page.getByRole("button", { name: "Reconcile submitted posts", exact: true }).click();
+  for (const id of queueIds) await expect.poll(() => status(id)).toBe("archived");
+  const photos = readFileSync(path.join(stack.root, "fake-photo-provider.jsonl"), "utf8").trim().split("\n").map(x => JSON.parse(x));
+  expect(photos).toHaveLength(1); expect(photos[0].files).toHaveLength(3);
+  await page.goto("/#editorial");
+  await page.getByRole("button", { name: "Performance evidence", exact: true }).click();
+  await expect(page.getByText("youtube: unavailable", { exact: true })).toBeVisible();
+  await page.getByLabel("Content ID", { exact: true }).fill("synthetic-native-short");
+  await page.getByLabel("Published at", { exact: true }).fill("2026-10-14T12:00");
+  await page.getByLabel("Measured at", { exact: true }).fill("2026-10-15T12:00");
+  await page.getByLabel("Views (leave missing measures blank)", { exact: true }).fill("125");
+  await page.getByLabel("Export source and reporting period", { exact: true }).fill("Synthetic local observation fixture at 24 hours; no real performance claim");
+  await page.getByRole("button", { name: "Import observation", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: "youtube / short" })).toContainText("125");
+  await page.screenshot({ path: path.join(evidence, "editorial-performance.png"), fullPage: true });
+  await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+  await page.getByLabel("Source content ID", { exact: true }).fill("synthetic-native-short");
+  await page.getByLabel("Comment export source", { exact: true }).fill("Authorized synthetic local comment export; no real audience");
+  await page.getByLabel("Comment texts", { exact: true }).fill("How does framing guide attention? Contact viewer@example.org @syntheticviewer\nActually that credit is incorrect; check the original source.");
+  await page.getByRole("button", { name: "Import private feedback", exact: true }).click();
+  await expect(page.getByRole("blockquote").filter({ hasText: "How does framing" })).toContainText("[email removed]");
+  await expect(page.getByRole("blockquote").filter({ hasText: "How does framing" })).not.toContainText("viewer@example.org");
+  const question = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "question", exact: true }) });
+  await question.getByRole("textbox").fill("Thanks for the question. We will inspect the original framing examples before drafting a follow-up.");
+  await question.getByRole("button", { name: "Mark reviewed for manual use", exact: true }).click();
+  await expect(question).toContainText("Nothing sent.");
+  await page.getByLabel("Experiment name", { exact: true }).fill("Synthetic opening question experiment");
+  await page.getByLabel("Hypothesis", { exact: true }).fill("An original visual question may improve engaged views at the same publication age.");
+  await page.getByLabel("Control content IDs (comma separated)").fill("synthetic-control");
+  await page.getByLabel("Variant content IDs (comma separated)").fill("synthetic-native-short");
+  await page.getByLabel("Controls and known confounders").fill("Keep subject, length and audience comparable; vary the opening question only.");
+  await page.getByRole("button", { name: "Register experiment", exact: true }).click();
+  await expect(page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Synthetic opening question experiment", exact: true }) })).toContainText("insufficient comparable data");
+  await page.screenshot({ path: path.join(evidence, "audience-private-drafts.png"), fullPage: true });
+  await question.getByRole("button", { name: "Draft follow-up opportunity", exact: true }).click();
+  await expect(page.getByLabel("Topic", { exact: true })).toHaveValue(/How does framing/);
+  await page.getByRole("button", { name: "Create opportunity", exact: true }).click();
+  await expect(page.getByLabel("Topic", { exact: true })).toHaveValue("");
+  const followups = await (await request.get(`${stack.api}/api/editorial/opportunities`, { headers })).json();
+  expect(followups.find((o: any) => o.title.startsWith("How does framing")).feedback_refs).toHaveLength(1);
+  const isolation = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(isolation.blocked_network_attempts).toBe(0); expect(isolation.scheduler_threads).toEqual([]);
+  expect(isolation.external_spend_usd).toBe(0);
+  writeFileSync(path.join(evidence, "native-final-isolation.json"), JSON.stringify(isolation, null, 2));
+  writeFileSync(path.join(evidence, "native-browser-errors.json"), JSON.stringify(errors, null, 2));
+  expect(errors).toEqual([]);
+});
+
+test("studio project fragments, back/forward and reload keep the intended project", async ({ page, request }) => {
+  const projects = await (await request.get(`${stack.api}/api/studio/projects`, { headers })).json();
+  const first = projects.find((p: any) => p.title === "Synthetic Film 2");
+  expect(first).toBeTruthy();
+  const number = Math.max(5, ...projects.map((p: any) => Number(/Synthetic Film (\d+)/.exec(p.title)?.[1]) || 0)) + 1;
+  const title = `Synthetic Film ${number}`;
+  let injectedInterstage = false;
+  await page.route(/\/api\/studio\/projects\/\d+$/, async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    if (body.title === title && !injectedInterstage) {
+      injectedInterstage = true;
+      await route.fulfill({ response, json: { ...body, stage: "gather", stage_status: "done", script: null,
+        plan: null, render: null, has: { ...body.has, script: false, plan: false, render: false } } });
+    } else await route.fulfill({ response });
+  });
+  await page.goto("/#longform");
+  await page.getByPlaceholder("Search a movie or TV show…").fill(title);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await expect(page.getByTestId("script-editor")).toBeVisible();
+  expect(injectedInterstage).toBe(true);
+  const second = Number(new URL(page.url()).hash.split("/")[1]);
+  expect(second).not.toBe(first.id);
+  await page.evaluate(id => { window.location.hash = `longform/${id}`; }, first.id);
+  await expect(page.getByRole("heading", { name: "Synthetic Film 2", exact: true })).toBeVisible();
+  await page.evaluate(id => { window.location.hash = `longform/${id}`; }, second);
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Synthetic Film 2", exact: true })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "same-studio-navigation.png"), fullPage: true });
 });

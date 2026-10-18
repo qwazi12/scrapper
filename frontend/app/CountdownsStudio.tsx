@@ -15,7 +15,7 @@ import {
   VidIQStatus,
 } from "../lib/api";
 import { askConfirm, notify } from "../lib/dialogs";
-import { readHash, writeHash } from "../lib/hashnav";
+import { useProjectHash } from "../lib/hashnav";
 import { ProjectView } from "./StudioPanel";
 import { UndoButton } from "./UndoButton";
 
@@ -109,11 +109,7 @@ function Chips({ checks }: { checks: Record<string, { status: string; why: strin
 // --- the page ---------------------------------------------------------------------------------
 export function CountdownsStudio() {
   const [list, setList] = useState<CountdownProject[]>([]);
-  const [openId, setOpenId] = useState<number | null>(() => {
-    const [tab, id] = readHash();
-    return tab === "countdowns" && /^\d+$/.test(id || "") ? Number(id) : null;      // refresh keeps the open countdown
-  });
-  useEffect(() => { writeHash(["countdowns", openId]); }, [openId]);
+  const [openId, setOpenId] = useProjectHash("countdowns");
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [vq, setVq] = useState<VidIQStatus | null>(null);
   const [err, setErr] = useState("");
@@ -133,7 +129,7 @@ export function CountdownsStudio() {
     return () => clearInterval(t);
   }, [list, openId]);
 
-  if (openId !== null) return <CountdownView id={openId} status={status} onBack={() => { setOpenId(null); load(); }} />;
+  if (openId !== null) return <CountdownView key={openId} id={openId} status={status} onBack={() => { setOpenId(null); load(); }} />;
   const chip = (ok: boolean | undefined, label: string, why: string) => (
     <span title={why} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: ok ? "#064e3b" : "#450a0a", color: ok ? "#34d399" : "#fca5a5" }}>
       {ok ? "●" : "○"} {label}
