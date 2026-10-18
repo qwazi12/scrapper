@@ -14,12 +14,12 @@ def _paths(value,root):
         for v in value:yield from _paths(v,root)
 
 
-def protected(s,path,*,ignore=None):
+def protected(s,path,*,ignore=None,ignore_rows=()):
     target=Path(path).resolve()
     def matches(p):return target==p or p.is_relative_to(target)
     for model in (QueueItem,StudioProject,CountdownProject,CreativeExport,MediaAsset,Clip,Compilation):
         for row in s.query(model):
-            if ignore==(model,row.id):continue
+            if ignore==(model,row.id) or (model,row.id) in ignore_rows:continue
             if model is StudioProject:
                 root=settings.data_path/'studio'/str(row.id)
                 values=[row.trailer,row.shots,row.plan,row.render]

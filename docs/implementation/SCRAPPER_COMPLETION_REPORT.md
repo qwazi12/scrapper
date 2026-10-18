@@ -12,7 +12,7 @@ paid API use, push or PR occurred. External test spend: **$0.00**. The Downloads
 handoff was absent; the attached text was copied into the feature worktree.
 No nested Codex process or recurring automation was launched.
 
-Latest continued checkpoint: **451 backend tests passed /1 optional skip**, production frontend build and TypeScript passed, and **all 10 browser scenarios passed**. Studio/Countdown draft recovery, stale-save rejection and Countdown undo scope are now covered. See the append-only progress ledger for the full sequence and remaining gaps.
+Latest continued checkpoint: **466 backend tests passed /1 optional skip**, production frontend build passed, and **all 10 browser scenarios passed**. Worker integrations, publication evidence, financial recovery, file claims, Studio/Countdown drafts, stale saves and protected Countdown lifecycle are implemented locally. The final stricter archived-queue backup-link comparison is backend-tested; safe browser mode disables archive scheduling. See the append-only progress ledger for exact runs and remaining gaps.
 
 ## Implemented and verified scope
 
@@ -188,7 +188,7 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R18 | Partial: frontend scanner clean, PR CI authored | Execute Linux/CI lane, backend pip/pytest advisory triage, image/runtime locks, owner branch-protection/release policy |
 | R19 | REPAIRED locally: legacy/modern topic GETs and schedule GET read only | Broader safe-method audit remains useful |
 | R20 | Borrowed bundled audio removed/replaced, actual export tested | Rights manifest for every future real media asset and permissions review |
-| R21 | Partial: bounded file logs and all queue references protected | DB log retention, cache/transfer claims and Studio checksum-verified deletion added; legacy Countdown/trash/stream consumers still require coverage |
+| R21 | Partial: bounded file logs and all queue references protected | DB log retention, cache/transfer claims, Studio/Countdown checksum-verified deletion and protected Countdown thumbnails added; other trash/stream consumers still require coverage |
 | R22 | Several misleading labels repaired | Recovered same-job failures now disappear after success; full typed platform status UI and deployed severity validation remain |
 | R23 | CLI auto-Git removed, generated files untracked, current runbook added | Larger module refactors/current architecture docs and historical documentation reconciliation |
 | R24 | Main tabs tested; same-studio history synchronization added | Identity-scoped Studio/Countdown draft recovery, stale-save conflicts and storage-failure navigation passed in the expanded ten-scenario suite; other forms and the full negative matrix remain |
@@ -223,8 +223,8 @@ discarding the feature branch/worktree after review: main and production are
 unchanged. Preserve the ignored artifacts before deleting a worktree.
 
 Next priority: extend M1 material-claim/category/manual-edit contracts; finish M2
-publication attempt resolution, immutable storage lifecycle, orphan budget-hold
-recovery and legacy worker fencing. Extend negative UI tests, archive/restore
+immutable original-studio export history, remaining stream/trash lifecycle paths,
+provider contract validation and migration/recovery coverage. Extend negative UI tests, archive/restore
 and recovery. Extend M3 live audience lineage, M4 creative quality/assets and M5
 comment ingestion/controlled learning beyond the tested local prototype. Use SAFE_LOCAL_TESTING.md and SCRAPPER_RESUME.md; regular
 local implementation approval is already granted.
@@ -243,9 +243,10 @@ not complete M1–M5. [LOCAL_CONTRACTS_20261018.md](LOCAL_CONTRACTS_20261018.md)
 architecture, exact behavior, configuration, test coverage and remaining limits.
 
 Next release work: full material-claim coverage and cross-source conflicts;
-verified provider price/usage contracts and orphan/credit hold reconciliation;
-legacy scrape/compile and residential-worker lease integration; append-only
-publication attempts and explicit unknown-delivery resolution; immutable storage
-lifecycle/restore guarantees. Real-provider tests, PostgreSQL, CI/container and
+verified provider price/usage contracts and invoice matching; PostgreSQL and
+clock-skew/rolling-upgrade worker coverage; full publication-provider evidence;
+immutable original-studio export history and remaining storage/stream lifecycle
+guarantees. Local worker integration, append-only publication evidence, explicit
+unknown-delivery review and orphan USD/credit recovery are now implemented. Real-provider tests, PostgreSQL, CI/container and
 production-scale verification remain unrun. Keep this work local unless the owner
 later changes that constraint. No implementation approval question is pending.

@@ -607,7 +607,7 @@ export type CompilationPreview = {
 };
 
 export type StitchResult = {
-  compilation_id: number;
+  compilation_id: number | string;
   title: string;
   total_seconds: number;
   total_minutes: number;
@@ -712,7 +712,7 @@ export type CountdownProject = {
   has: { ranking: boolean; titles: boolean; segments: boolean; script: boolean; render: boolean };
   render?: {
     quality?: { decode: string; errors: string[]; warnings: string[]; sha256: string; lufs: number | null };
-    compilation_id: number; file: string; thumbnail: string; thumbnails: Record<string, string>;
+    compilation_id: number | string; file: string; thumbnail: string; thumbnails: Record<string, string>;
     selected_thumbnail: string; chapters: { time_formatted: string; title: string }[];
     seconds: number; minutes: number; rendered_at: string; thumb_v?: number; archived_at?: string;
     drive?: { status?: string; error?: string | null; link?: string; saved_at?: string };

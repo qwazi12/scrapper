@@ -10,7 +10,12 @@ docs/implementation/SCRAPPER_COMPLETION_REPORT.md, docs/implementation/SCRAPPER_
 and docs/implementation/SAFE_LOCAL_TESTING.md. Inspect Git state and preserve owner
 changes; do not recreate or overwrite the worktree. The roadmap is incomplete.
 
-Start with the open M1/M2 safety gaps and acceptance tests in the completion report,
+Latest draft checkpoint: 3e6f446. Continued Countdown lifecycle checkpoint:
+466 backend tests passed /1 optional skip, production frontend build passed,
+10 browser scenarios passed. Exact evidence and limits follow in the progress ledger. Worker integrations, publication uncertainty history and financial
+recovery are implemented locally; do not restart these from the older plan.
+
+Start with the remaining M1/M2 safety gaps and acceptance tests in the completion report,
 then continue M3–M5 as dependencies permit. Reuse the offline test harness, improve
 negative-path UI coverage, and keep evidence labels honest. Keep external test
 spend at $0 unless an enforceable isolated metered lane is actually established

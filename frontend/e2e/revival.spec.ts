@@ -138,6 +138,7 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   await expect(page.getByTestId("countdown-export-quality")).toContainText("decoded", { timeout: 120_000 });
   const completed = await getCountdown();
   expect(completed.render.quality.errors).toEqual([]);
+  expect(completed.render.compilation_id).toMatch(/^[a-f0-9]{32}$/);
   const final = path.join(evidence, "countdown-top5-final.mp4");
   copyFileSync(completed.render.file, final);
   const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", final], { encoding: "utf8" }));
@@ -146,11 +147,18 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   execFileSync("ffmpeg", ["-v", "error", "-xerror", "-i", final, "-f", "null", "-"]);
   writeFileSync(path.join(evidence, "countdown-probe.json"), JSON.stringify(probe, null, 2));
   writeFileSync(path.join(evidence, "countdown-quality.json"), JSON.stringify(completed.render.quality, null, 2));
+  await page.getByRole("button", { name: "🔄 Refresh Options", exact: true }).click();
+  await expect.poll(async () => (await getCountdown()).render.thumb_round).toBe(1);
   await page.screenshot({ path: path.join(evidence, "countdown-review.png"), fullPage: true });
   await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
   await page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await expect.poll(async () => !!(await getCountdown()).queue_item_id).toBe(true);
+  const queuedExport = await getCountdown();
+  const queuedThumbnail = readFileSync(queuedExport.render.thumbnail);
+  const replacement = await request.post(`${stack.api}/api/countdowns/${cid}/thumbnail`, { headers, data: { option: "action" } });
+  expect(replacement.status()).toBe(409);
+  expect(readFileSync(queuedExport.render.thumbnail).equals(queuedThumbnail)).toBe(true);
   await page.screenshot({ path: path.join(evidence, "countdown-queued.png"), fullPage: true });
   writeFileSync(path.join(evidence, "countdown-browser-errors.json"), JSON.stringify(errors, null, 2));
   const isolation = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();

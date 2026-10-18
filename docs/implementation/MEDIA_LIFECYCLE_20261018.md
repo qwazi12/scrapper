@@ -12,7 +12,8 @@ fence controlled subprocesses and database writes after expiry. Nested claims
 from the same invocation are allowed. Expired workers cannot revive a claim.
 
 Current integrations cover Studio stages and edits, restore/archive/Drive saves,
-publication media, legacy compilation inputs, Drive download staging and LRU
+publication media, Countdown render sources/current exports/Drive/thumbnail edits,
+legacy compilation inputs, Drive download staging and LRU
 cache eviction. Studio stages also pin shared motion/audio/TTS cache directories.
 Retention and owner clip/compilation deletion check saved queue, Studio, export,
 asset and compilation references. A pending Studio worker handoff is a reference.
@@ -20,7 +21,7 @@ Operational log retention defaults to 30 days and 100,000 rows, separately from
 append-only financial and publication evidence.
 
 These contracts do not yet cover every media response stream or every legacy
-Countdown/Drive trash path. A lease controls cooperating application processes;
+Drive trash path. A lease controls cooperating application processes;
 it cannot stop a person or unrelated process changing files on disk. Ordinary
 byte hashes do not establish media rights, relevance or editorial quality.
 
@@ -30,7 +31,7 @@ Drive upload completion now requires a separate metadata read whose remote MD5
 and byte count match the local content. The saved receipt records local SHA-256,
 remote MD5, bytes, remote ID and verification time. A changed local file or missing
 remote proof fails closed. Existing `saved` labels without proof cannot authorize
-Studio archive/footage deletion; the owner must save and verify the current file.
+Studio archive/footage deletion or Countdown video reclamation; the owner must save and verify the current file.
 Queue-linked previous remote copies are retained, and only a queue item pointing
 to this exact local video may receive its new Drive link.
 
@@ -40,6 +41,15 @@ before promotion. Changed or unverifiable legacy sources require owner review;
 no incompatible asset silently inherits the old shot plan. A real Drive account
 was never accessed. SDK/remote compatibility still requires an isolated provider
 lane approved separately from this local work.
+
+Countdown saves retain the same video proof and use a renewable generation lease.
+A stale transfer cannot attach its result to a replaced render or another queued
+video. Render output directories use random attempt IDs, avoiding same-second
+collisions. Thumbnail refresh stages privately and checks ownership before
+promotion; queued/shared thumbnail files cannot be overwritten. Owner deletion
+refuses unresolved submissions and foreign references. Scheduled cleanup skips
+busy media and requires a matching verified backup for the current video. Its
+own archived queue row must also carry that backup link before local bytes go.
 
 ## Uploads, mutation and undo
 
@@ -63,14 +73,18 @@ pre-v2 residential clients must be upgraded with the server.
 
 ## Evidence
 
-- `artifacts/lifecycle-backend10.txt/xml`: 444 passed, one optional skip; thread
-  exceptions are test failures. Subsequent waiting-checkpoint regressions pass.
-- `artifacts/lifecycle-new9.txt`: 21 mutation, ownership, checksum, corruption,
-  cookie, restore and retention tests pass.
-- `artifacts/lifecycle-resume11.txt`: 9 lease/resume tests pass, including explicit
-  fresh invocations superseding queued, budget-paused and worker-wait checkpoints.
-- Browser evidence and latest full-suite results are recorded in the progress
-  ledger when their runs finish. Do not infer an unrun lane passed.
+- `artifacts/countdown-backend7.txt/xml`: **466 passed, one optional skip**, 40.48s;
+  thread exceptions are failures. Existing 32 warnings are deprecations.
+- `artifacts/countdown-lifecycle5.txt`: 52 focused lifecycle/mutation/countdown
+  tests pass before the last stricter backup-link case; the final full suite
+  includes that additional case (15 new Countdown lifecycle cases in total).
+- `artifacts/countdown-build4.txt`: production frontend build passes.
+- `artifacts/e2e/countdown-browser5.txt`: **10/10 passed, 2.6min**, including
+  actual thumbnail refresh before approval and queued-thumbnail rejection.
+- `artifacts/e2e/countdown-isolation5.json`: zero external attempts, no scheduler
+  threads, six fake publication receipts, $0 external spend. Owned servers stopped.
 
-PostgreSQL, clock skew, crash-injected rolling upgrades, real providers, long
-production media, and the complete UI/rights/retention matrix remain unproven.
+The last stricter archive-link comparison is backend-tested; safe browser mode
+suppresses archive scheduling. PostgreSQL, clock skew, crash-injected rolling
+upgrades, real providers, production-length media, retained original-studio export
+history, every stream/trash consumer and the full UI/rights matrix remain open.

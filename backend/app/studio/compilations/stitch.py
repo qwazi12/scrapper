@@ -436,9 +436,11 @@ def stitch_countdown_compilation(
     if len(projects) < 2:
         raise ValueError("A countdown compilation requires at least 2 projects (typically 5 or 10).")
 
-    comp_id = int(datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
+    # Separate attempts must never share output files, even in the same second.
+    from uuid import uuid4
+    comp_id = uuid4().hex
     comp_dir = compilations_dir() / str(comp_id)
-    comp_dir.mkdir(parents=True, exist_ok=True)
+    comp_dir.mkdir(parents=True, exist_ok=False)
     segs_dir = comp_dir / "segments"
     segs_dir.mkdir(parents=True, exist_ok=True)
 
