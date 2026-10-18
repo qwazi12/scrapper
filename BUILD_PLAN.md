@@ -1,5 +1,9 @@
 # Build Plan — Scrapper Web App (scrapper.nodepilot.dev)
 
+Historical plan: the original status below predates the implemented studios.
+Use docs/implementation/SCRAPPER_COMPLETION_REPORT.md for the current revival
+branch status and remaining work. This file is retained as product history.
+
 > Status: **awaiting approval**. Nothing below is built yet. This document is the
 > agreed spec once you approve it.
 

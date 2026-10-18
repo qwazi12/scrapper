@@ -20,4 +20,5 @@ UI_E2E_LOCAL and MEDIA_E2E are evidence labels, never inferred from unit tests.
 No milestone is complete until all of its acceptance criteria have evidence.
 
 Resume from SCRAPPER_AUTONOMOUS_PROGRESS.md; preserve owner edits and inspect
-git status before every continuation. Do not run legacy scrape.py (pushes main).
+git status before every continuation. Legacy scrape.py no longer auto-commits or
+pushes on this branch; its live scraping workflows still require isolation.

@@ -170,7 +170,7 @@ test("Editorial UI: reviewed research, cleared still, native Short and carousel,
   await page.getByLabel("Original angle", { exact: true }).fill("Show how one original shape shifts the emphasis of a frame across three deliberate visual beats.");
   await page.getByLabel("Audience and question", { exact: true }).fill("Viewers learning visual storytelling: which frame feels clearer?");
   await page.getByLabel("Research source URL", { exact: true }).fill("https://example.invalid/original-test-assets");
-  await page.getByLabel("Supporting excerpt", { exact: true }).fill("The blue still and colored shape sequence were created in this isolated test. No third-party footage or factual claims are used.");
+  await page.getByLabel("Supporting excerpt", { exact: true }).fill("The original still and colored shape sequence were created in this isolated test. No third-party footage or factual claims are used.");
   await page.getByLabel("Planned time (your local timezone)").fill("2026-10-20T12:00");
   await page.getByRole("button", { name: "Create opportunity", exact: true }).click();
   const opportunity = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Synthetic Native Shapes", exact: true }) });

@@ -71,17 +71,25 @@ Do not set SCRAPPER_E2E_CONTAINER_OFFLINE on an ordinary networked Linux host.
 
 ## Interpretation
 
-The committed browser suite exercises LongForm, Top5 and primary-page/mobile
-navigation. It uses actual HTTP servers, database, stage runner, FFmpeg and
+The committed browser suite exercises LongForm, Top5, native Short/carousel,
+private editorial/learning actions and primary-page/mobile/project navigation. It uses actual HTTP servers, database, stage runner, FFmpeg and
 offline speech. TMDB, research, model/vision, storage and publishing are fixtures.
-It does not prove live provider compatibility, factual research quality,+excellent content, native vertical/carousel workflows or audience growth.
+It does not prove live provider compatibility, factual research quality, excellent
+creative content, complete native-format coverage or audience growth.
 
 Final-file QA blocks decode, missing-audio, duration/aspect and stream-skew errors.
 Loudness/silence/black-frame signals require editorial review. The detector also
 flags intentionally dark countdown rank cards. It cannot verify captions,
 semantic footage relevance, rights or a compelling hook. Approval fingerprints
 bind exact video, thumbnail, script, plan and evidence inputs; countdown approvals
-also bind the segment exports. Legacy exports need fresh inspection/review.
+also bind the segment exports. Native campaign approvals bind immutable media,
+cover, captions, research approval and asset provenance hashes. Legacy exports
+need fresh inspection/review.
+
+Photo transport follows the provider's [official photo endpoint](https://docs.upload-post.com/api/upload-photo/)
+and [video endpoint](https://docs.upload-post.com/api/upload-video/) (checked October 18, 2026):
+ordered photos[] multipart, async request ID and Idempotency-Key. Only fixture
+transport and local mocked HTTP were tested; no live publishing call was made.
 
 ## Resume authorized development
 

@@ -27,7 +27,7 @@
 | M2-01 | E2E can escape to scheduler/provider | VERIFIED_LOCAL | Safe mode + OS network isolation; no scheduler threads |
 | M2-02 | publish intent recorded after submission | PARTIAL | Durable intent/unknown states, atomic enqueue; full journal/manual reconciliation remain |
 | M2-03 | stale render survives edits, weak final QA | PARTIAL | Hash/decode/approval gate; immutable exports and creative QA remain |
-| M3-M5 | full product roadmap | NOT_STARTED | dependent on safety foundations; never label complete prematurely |
+| M3-M5 | full product roadmap | PARTIAL | Local editorial/native/learning prototype tested; full acceptance and live adapters remain open |
 
 Next: focused safety regressions and implementation. Full UI+media scenarios
 remain unverified. No real provider calls, no posting, external spend $0.
@@ -142,3 +142,88 @@ Now continuing beyond that checkpoint, not claiming roadmap completion:
   and rerunning that regression before committing.
 - Next: usable M3 editorial evidence/analytics records, then native format workflow
   and safe UI/media E2E. M1/M2 residuals remain explicit in the checkpoint report.
+
+## Editorial/native/learning checkpoint (continuation)
+
+- Worker wait/read-only/legacy publish regression lane: 102 passed. Committed
+  d61ab9e. Strict identity is also rechecked after manual countdown edits.
+- Added private editorial records and an editable calendar. Evidence approval
+  binds the brief and resets after edits. All suggestions require manual selection.
+  Demand is nullable and requires a source; no invented demand/performance scores.
+- Authorized export observations are idempotent and immutable, with nullable
+  metrics and source/latency provenance. Cohorts separate platform, native format
+  and publication age (±10%); at most one snapshot per content item/window.
+  Private analytics adapters explicitly remain unavailable; an import is not OAuth.
+- Native campaign drafts reuse approved research, not identical metadata. Three
+  supported renderer treatments: Short, Reel, carousel. This first treatment is
+  original beat cards + optional manually selected cleared stills, not semantic
+  footage selection or a complete creative engine. Hook/body/payoff, valid excerpt
+  refs, caption length/safe areas and a reading-time floor are enforced.
+- Asset index hashes/deduplicates bounded images, strips metadata, stores tags and
+  owner-created/licensed attestations. Legal clearance is never inferred. Video,
+  audio licensing catalog, semantic indexing and automatic matching remain open.
+- Native renders have immutable version directories and full final video QA or
+  decoded image-card manifests. Approval binds research, asset rights record,
+  caption text, exact media and cover hashes; edits/tampering block enqueue.
+  Queue creation is atomic. Carousel uses ordered images and explicit IG/FB picks;
+  provider transport authored from public official docs, never exercised live.
+- Each platform intent now persists a client request ID before IO, and video/photo
+  requests send matching request_id + Idempotency-Key. Unknown acceptance still
+  requires reconciliation; no automatic retry has been enabled.
+- Audience import accepts comment text only, strips common contacts/URLs/handles,
+  stores no author fields, flags classification as heuristic. Reply drafts are
+  editable and reviewable for manual use only. No sending route exists. Follow-up
+  opportunity drafts retain feedback IDs and need independent research approval.
+- Experiments retain hypothesis, controls, format, metric and publication age.
+  At least five comparable observations/group for the UI's descriptive result;
+  retrospective observations are labeled. No automatic winner/causality claim.
+- Full backend artifacts/backend-native-final.txt: 364 passed, 1 optional skip,
+  40.74s; frontend native-build5 passed. Editorial/native/learning lane 16 passed.
+- UI_E2E_LOCAL + MEDIA_E2E native-browser3: 1 passed /17.4s, including all UI
+  editorial/native/learning actions, real 12.708s 1080x1920 speech export (-14.1
+  LUFS, -3.8dBFS true peak, no hard errors/warnings), three 1080x1350 image cards,
+  simulated video/photo delivery and archive reconciliation. Zero external cost.
+  Two earlier harness attempts exposed label/filter assumptions; preserved traces.
+- Added same-studio hash/back/forward synchronization and keyed project views;
+  final full browser regression is next. Unsaved draft guards remain incomplete.
+- All milestones remain PARTIAL. No production-ready release claim. Independent
+  material-claim retrieval, durable global budget reservations, worker leases,
+  manual unknown-attempt resolution and complete negative UI corpus remain open.
+
+
+## Verified return checkpoint
+
+- Latest full backend: 364 passed / 1 skipped, 45.26s (backend-final-364.txt/xml).
+  After adding success-only synthetic test-root cleanup, focused editorial/native/
+  learning lane: 16 passed /0.90s. Failed unit roots and all E2E roots are retained.
+- final-build8: production frontend build passed. Explicit tsc6 passed; npm audit6
+  reports 0 advisories. No backend dependency upgrade or advisory clearance claimed.
+- browser-complete7: ALL 5 PASSED /1.9min. Real LongForm + Top5 + native Short +
+  carousel pipelines; queue simulation/reconciliation; editorial calendar, import
+  observations, private replies, experiment and follow-up lineage; main/mobile and
+  project fragment/back/forward/reload navigation.
+- The new project test exposed a real interstage polling freeze: initial GET saw
+  gather=done between auto stages, polling stopped forever although backend script
+  completed. Idle visible views now refresh every 5s; active every 3s; hidden pages
+  pause. Test injects this exact stale response and verifies recovery deterministically.
+- Recovered same-label job error banners now hide once a later attempt completes.
+  The LongForm UI test verifies the recovered verification failure disappears.
+- Full pass traces/report/isolation copied into artifacts/e2e/history/full-passed7.
+  Five fake receipts; zero external attempts/threads/cost. Main checkout clean at
+  base SHA, no push/PR/deploy/live changes. Branch upstream unset to avoid an
+  accidental implicit push to origin/main.
+- Visually reviewed carousel cards; basic readable original cards, not excellent
+  creative or real film-content proof. Correcting synthetic excerpt wording from
+  a specific color to "original still"; targeted native scenario rerun next.
+- Native media: 12.708s, 1080x1920 AAC, -14.1LUFS/-3.8dBFS peak, no warnings or
+  hard errors; carousel 3 x1080x1350 decoded PNGs. Top5 remains 82.296s with dark
+  rank-card warning, no hard errors. LongForm 6.103s, no hard errors.
+- Remaining P1/P2 release work remains in completion report; local implementation
+  authorization persists. No implementation approval question is needed.
+
+
+Final narrow fixture check: native-final-corrected-fixture.txt = 1 browser scenario
+passed /12.8s after visual-QA wording correction. Its fresh stack has 2 fake
+receipts, no external attempts/scheduler threads and $0 spend. Full five-scenario
+pass/isolation (5 receipts) remains preserved separately in history/full-passed7.
+Frontend explicit final tsc8 passed. No application changes after these checks.
