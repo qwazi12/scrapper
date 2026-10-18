@@ -1205,3 +1205,12 @@ Owner: use Gemini text-to-speech, model gemini-3.8-flash-tts, prebuilt voice Cha
 - Cost: `costs.record_gemini_tts` from the response's token counts, else estimated (≈4 chars/text token, 25 audio tokens/s). Price $0.50/M in, $10/M out is an ESTIMATE from Gemini's published Flash TTS rates — not confirmed for 3.8; ≈ $0.015 per minute of voice.
 - Tests 291 pass (payload, cache, retry, missing key, cost). Live test of one line scheduled after the daily cap resets (04:00 UTC); today was at the cap.
 - Note: breakdowns already rendered keep the Chirp voice; the next step-5 run (voice + shots) re-voices them in Gemini Charon. The horror countdown's paused re-render will get Gemini intro/outro but its 15 segments keep Chirp voice unless their step 5 is re-run.
+
+
+## Revival checkpoint — 2026-10-18 — local feature branch
+
+- Worktree: `~/dev/scrapper-worktrees/revival-20261018`; branch `codex/scrapper-revival-full-stack-20261018`; verified checkpoint `6f92fb1`. Main checkout remains at `95b6bd4`.
+- Revival changes have been saved as local Git commits, with detailed evidence in `docs/implementation/SCRAPPER_AUTONOMOUS_PROGRESS.md` and `SCRAPPER_COMPLETION_REPORT.md`. This is the first revival entry in this memory file; earlier revival progress was recorded in the separate ledger.
+- Verified checkpoint: backend 364 passed / 1 skipped; production frontend build and TypeScript passed; five offline browser scenarios passed. Synthetic LongForm, Top 5, native Short and carousel exports inspected. All roadmap milestones remain partial.
+- No GitHub push, pull request, deployment, publishing, live settings change or paid provider request performed during revival work. Owner now explicitly requires all further work to stay local.
+- Next authorized order: independent fact verification, atomic budget reservations, then durable worker leases and fencing. Append evidence and limitations at each checkpoint.

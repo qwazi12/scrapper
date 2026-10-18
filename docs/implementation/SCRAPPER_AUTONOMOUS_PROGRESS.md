@@ -227,3 +227,8 @@ passed /12.8s after visual-QA wording correction. Its fresh stack has 2 fake
 receipts, no external attempts/scheduler threads and $0 spend. Full five-scenario
 pass/isolation (5 receipts) remains preserved separately in history/full-passed7.
 Frontend explicit final tsc8 passed. No application changes after these checks.
+
+
+## Continued local roadmap — 2026-10-18
+
+Owner requested independent fact verification first, then atomic budgets and worker leases. Latest instruction keeps all work local; no GitHub push. Added first revival checkpoint to root MEMORY.md, preserving historical entries. Previous revival work was saved in local Git and this ledger, not synchronized to GitHub.
