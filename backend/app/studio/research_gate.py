@@ -6,6 +6,17 @@ They deliberately do not claim that a URL or a second model proves a fact.
 from __future__ import annotations
 
 import re
+import unicodedata
+
+
+def _name(value):
+    return ' '.join(unicodedata.normalize('NFKC',str(value)).casefold().replace('’',"'").split()).strip(' .')
+
+
+def _roles(value):
+    # Parenthetical performance labels do not change the character identity.
+    return {_name(re.sub(r'\s*\((?:voice|uncredited|archive footage)\)\s*','',v,flags=re.I))
+            for v in re.split(r'\s*/\s*|\s+aka\s+',value,flags=re.I) if v.strip()}
 
 
 def refs_for(board: dict) -> set[str]:
@@ -52,8 +63,15 @@ def checked_sentences(sentences: list[dict], verdicts, board: dict) -> tuple[lis
 
 
 def structured_conflicts(sentences: list[dict], facts: dict) -> list[str]:
-    """Catch explicit actor/role swaps even if the model approves them."""
+    """Typed relational checks independent of the model's storyboard verdict.
+
+    This catches explicit credit/date contradictions. Free prose is still not
+    an independently established truth just because it escapes these patterns.
+    """
     conflicts = []
+    writers={_name(c.get('name')) for c in facts.get('writing_credits',[])
+             if c.get('job') in ('Screenplay','Writer','Teleplay')}
+    credited={_name(c.get('name')):c.get('job') for c in facts.get('writing_credits',[])}
     for i, sentence in enumerate(sentences, 1):
         text = sentence.get("text", "")
         for cast in facts.get("cast", []):
@@ -61,9 +79,34 @@ def structured_conflicts(sentences: list[dict], facts: dict) -> list[str]:
             if not actor or not character:
                 continue
             match = re.search(re.escape(actor) + r"\s+(?:plays|portrays|stars as|as)\s+([^.,;!?]+)", text, re.I)
-            if match and character.casefold() not in match[1].casefold():
+            role = re.split(r'\s+(?:and|while|who|in the)\b',match[1],flags=re.I)[0] if match else ''
+            if match and not (_roles(role)&_roles(character)):
                 conflicts.append(f"Sentence {i}: {actor} role conflicts with structured credit ({character})")
-    return conflicts
+            # Reversing the grammar must not bypass the same binding.
+            for known in _roles(character):
+                reverse=re.search(re.escape(known)+r'\s+(?:is\s+)?(?:played|portrayed|voiced)\s+by\s+([^.,;!?]+)',text,re.I)
+                if reverse:
+                    named=re.split(r'\s+(?:and|while|who|in the)\b',reverse[1],flags=re.I)[0]
+                    allowed={_name(c.get('actor')) for c in facts.get('cast',[]) if known in _roles(c.get('character') or '')}
+                    if _name(named) not in allowed:
+                        conflicts.append(f'Sentence {i}: {character} performer conflicts with structured cast credit')
+        for credit in facts.get('writing_credits',[]):
+            person=credit.get('name') or ''
+            if not person or _name(person) in writers:continue
+            name=re.escape(person)
+            screenplay=(re.search(r'(?:screenplay|teleplay|screenwriter|script)\s+(?:(?:was|is)\s+)?(?:written\s+)?by\s+'+name,text,re.I)
+                        or re.search(name+r'\s+(?:wrote|writes|penned|scripted)\s+(?:the\s+)?(?:screenplay|teleplay|script|movie|film)\b',text,re.I))
+            ambiguous=re.search(r'(?:written|scripted)\s+by\s+'+name,text,re.I)
+            original=bool(ambiguous and re.search(r'\b(novel|book|source material|original story)\b',text[max(0,ambiguous.start()-35):ambiguous.start()],re.I))
+            if screenplay or (ambiguous and not original):
+                conflicts.append(f'Sentence {i}: {person} is credited for {credited[_name(person)]}, not screenplay writing')
+        title=facts.get('title') or ''
+        dates={str(facts.get('primary_date') or '')[:4],*[str(r.get('date') or '')[:4] for r in facts.get('releases',[])]}-{''}
+        if title and dates:
+            match=re.search(re.escape(title)+r'\s+(?:(?:was|is|will be|first)\s+)*(?:released|premiered|debuted|opens)\s+(?:in\s+)?(\d{4})\b',text,re.I)
+            if match and match[1] not in dates:
+                conflicts.append(f'Sentence {i}: stated release year conflicts with the dated provider record')
+    return list(dict.fromkeys(conflicts))
 
 
 def script_issues(script: dict | None) -> list[str]:
