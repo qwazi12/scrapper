@@ -883,6 +883,20 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         s.commit()
         raise FileNotFoundError(f"Video file not found for queue item {item_id}")
 
+    from ..file_use import pin
+    paths=[video_path,*images]
+    if item.thumb_path and not item.thumb_path.startswith('http'):paths.append(item.thumb_path)
+    try:
+        with pin(paths,session=s):
+            return await _submit_owned_media(item,s,video_path,images,regular)
+    finally:
+        if is_temp_download and video_path:
+            video_path.unlink(missing_ok=True)
+
+
+async def _submit_owned_media(item,s,video_path,images,regular):
+    item_id=item.id
+    from .. import publication_journal as journal
     if needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
@@ -942,11 +956,14 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
             if result:
                 # A receipt arriving after ownership loss must survive even when
                 # the old generation is forbidden from changing the queue row.
-                with leases.bind(None), SessionLocal() as receipt_session:
+                from ..file_use import suspend
+                with leases.bind(None), suspend(), SessionLocal() as receipt_session:
                     journal.append(receipt_session,item_id,entry['client_request_id'],'transport_result',entry,queue_identity=publication_identity)
                     receipt_session.commit()
             lock(s);s.refresh(item)
             leases.guard(s)
+            from ..file_use import assert_current
+            assert_current(s)
             if item.status!='posting': raise upload_post.UploadPostError('Submission was stopped for review',status_code=409)
             journal.record(s,item,entry)
             saved = [e for e in (item.publish_requests or []) if e.get("profile")]
@@ -1008,12 +1025,6 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
 
     finally:
         _op.__exit__(None, None, None)
-        if is_temp_download and video_path and video_path.exists():
-            try:
-                video_path.unlink(missing_ok=True)
-                logger.info("Cleaned up temporary Drive download file: %s", video_path)
-            except Exception:
-                pass
 
 
 PENDING_TIMEOUT = datetime.timedelta(hours=3)

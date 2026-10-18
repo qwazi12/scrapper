@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     # Each clip/compilation gets its own rolling timer from its created_at, so
     # something scraped Thursday expires the following Tuesday. 0 disables.
     retention_days: int = 5
+    log_retention_days: int = Field(default=30, ge=0)
+    log_max_rows: int = Field(default=100000, ge=0)
     retention_sweep_minutes: int = 30       # how often the worker sweeps
 
     # --- Disk Space & Cache Management -----------------------------------

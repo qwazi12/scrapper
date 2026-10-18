@@ -102,3 +102,17 @@ def test_new_invocation_after_expiry_supersedes_obsolete_crash_checkpoint():
         assert s.get(ResumableJob,old).status=='stopped'
         assert 'Superseded' in s.get(ResumableJob,old).last_error
     assert resume.resume_interrupted()==0
+
+@pytest.mark.parametrize('waiting',['queued','awaiting_worker','budget_paused'])
+def test_explicit_new_invocation_supersedes_older_waiting_checkpoint(waiting):
+    from backend.app import resume
+    from backend.app.db import SessionLocal
+    from backend.app.models import ResumableJob
+    params={'project_id':990007,'stage':'trailer'}
+    old=resume.begin('studio','Old waiting invocation',params)
+    resume.finish(old,waiting)
+    new=resume.begin('studio','Explicit fresh invocation',{**params,'stage':'gather'})
+    with SessionLocal() as s:
+        assert s.get(ResumableJob,old).status=='stopped'
+        assert 'Superseded' in s.get(ResumableJob,old).last_error
+    resume.finish(new,'done')

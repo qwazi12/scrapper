@@ -100,7 +100,7 @@ No nested Codex process or recurring automation was launched.
 
 | Lane | Actual result | Evidence under ignored artifacts/ |
 |---|---|---|
-| UNIT_ONLY / API_ONLY, full backend | **423 passed, 1 optional motion test skipped**, 36.05 s; 32 deprecation warnings; worker thread exceptions are errors | financial-backend2.txt/xml |
+| UNIT_ONLY / API_ONLY, full backend | **447 passed, 1 optional motion test skipped**, 37.60 s; 32 deprecation warnings; worker thread exceptions are errors | lifecycle-backend12.txt/xml |
 | Publisher regression after final portable JSON comparison | **90 passed**, 1.17 s | publisher-final.txt |
 | Frontend | Production build and explicit tsc passed | roadmap-build5.txt; roadmap-tsc.txt |
 | Dependency scanner | **0 npm advisories** at scan time; not exploitability/security assurance | frontend-final-audit6.json |
@@ -173,8 +173,8 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R05 | Strict resolver repaired and tested | Category/country criteria and broader adversarial identity corpus; new-list confirmation now revalidates manual edits |
 | R06 | Queue intent/claim/uncertainty and enqueue race repaired in local fixtures | Append-only history, explicit owner uncertainty workflow and fenced dispatch locally implemented/tested; external provider proof and stronger in-flight file fencing still needed |
 | R07 | Scoped backup access repaired | Broader auth penetration testing remains outside proof |
-| R08 | Unsafe Drive path mechanism repaired | Active transfer leases/media validation and stale-temp retention policy |
-| R09 | Partial: bounded atomic video uploads/probes | Complete cookie/image caps, upload full-decode/edge-case corpus and UI negatives |
+| R08 | Unsafe Drive path mechanism repaired | Shared/exclusive file claims and Drive/download decode/hash verification implemented locally; every legacy transfer/trash path and stale-temp matrix remain |
+| R09 | Partial: bounded atomic video uploads/probes | Cookie/image caps and full-decode corruption corpus now locally tested; full request-ingress/negative UI matrix remains |
 | R10 | Partial: invalidation, undo and export fingerprints | Native versions immutable; original studios still need retained export history, every mutation/undo path and active queue file replacement protection |
 | R11 | Partial: final-file QA + exact approval integrated in both studios | Captions/relevance/duplicate/rights validators, intentional-dark/silence policy, production-length corpus |
 | R12 | PARTIAL: editorial/calendar/imported cohort evidence with API/UI tests | Live authorized analytics adapters, historical content mapping and richer outcome lineage |
@@ -186,10 +186,10 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R18 | Partial: frontend scanner clean, PR CI authored | Execute Linux/CI lane, backend pip/pytest advisory triage, image/runtime locks, owner branch-protection/release policy |
 | R19 | REPAIRED locally: legacy/modern topic GETs and schedule GET read only | Broader safe-method audit remains useful |
 | R20 | Borrowed bundled audio removed/replaced, actual export tested | Rights manifest for every future real media asset and permissions review |
-| R21 | Partial: bounded file logs and all queue references protected | DB log retention, cache/transfer leases, verified off-disk hashes before deletion |
+| R21 | Partial: bounded file logs and all queue references protected | DB log retention, cache/transfer claims and Studio checksum-verified deletion added; legacy Countdown/trash/stream consumers still require coverage |
 | R22 | Several misleading labels repaired | Recovered same-job failures now disappear after success; full typed platform status UI and deployed severity validation remain |
 | R23 | CLI auto-Git removed, generated files untracked, current runbook added | Larger module refactors/current architecture docs and historical documentation reconciliation |
-| R24 | Main tabs tested; same-studio history synchronization added | Project fragments/back/forward/reload passed, including injected interstage stale response; unsaved-edit guards and full matrix remain |
+| R24 | Main tabs tested; same-studio history synchronization added | Project history/reload passed; unsaved draft preservation and the full negative matrix remain |
 | UI-01/UI-02/UI-03 | Saved-check refresh, plan hook-order crash and interstage polling freeze repaired | Regression browser suite now covers their triggers |
 
 M1–M5 all remain **partial**. M3–M5 now have a usable local prototype with

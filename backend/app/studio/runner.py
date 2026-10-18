@@ -103,74 +103,76 @@ def stop(project_id: int) -> bool:
 
 def run_one(project_id: int, name: str, stop_event: threading.Event | None = None) -> str:
     """Run a single stage synchronously (used by the thread and by tests)."""
-    if name not in STAGES:
-        raise ValueError(f"Unknown stage '{name}'. Stages: {', '.join(STAGES)}")
-    ev = stop_event or _stop_events.get(project_id)
-    if ev and ev.is_set():
-        _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
-        raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
-    if name in ("gather", "trailer", "shots", "script", "plan"):
-        # Re-running these replaces text/plan the owner may have edited: keep an undo point.
-        from .. import undo
-        with SessionLocal() as s:
-            p = s.get(StudioProject, project_id)
-            if p is not None and (p.script or p.plan or p.render):
-                undo.record(s, f"studio:{project_id}", f"Re-run {name}", rows=[p], model="studio_projects",
-                            fields=["script", "plan", "render", "target_minutes"])
-                if name != "plan" and p.script:
-                    sc = dict(p.script)
-                    sc["sentences"] = [{**x, "check": "unchecked"} for x in sc.get("sentences", [])]
-                    sc["check_issues"] = [f"{name} changed upstream evidence; check saved script again"]
-                    p.script = sc
-                if name != "plan":
-                    p.plan = None
-                p.render = None
-                s.commit()
-    _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
-    logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)
-    from .. import costs
-    try:
-        with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id), \
-                costs.operation(f"studio:{name}", ref=f"studio:{project_id}"):
-            if ev and ev.is_set():
-                raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
-            summary = STAGES[name](project_id) or "done"
-            if ev and ev.is_set():
-                raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
-    except worker_leases.LeaseLost:
-        raise
-    except AwaitingWorker as exc:
-        _set(project_id, stage_status="awaiting_worker", stage_message=str(exc))
-        logbus.log("info", "studio_stage_waiting", f"Studio #{project_id}: {exc}",
-                   project=project_id, stage=name)
-        raise
-    except control.Cancelled:
-        _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
-        logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
-                   project=project_id, stage=name)
-        raise
-    except costs.DailyCapReached as exc:
-        _set(project_id, stage_status="paused",
-             stage_message=f"{name} paused — daily spend cap reached; it resumes from this step after midnight")
-        logbus.log("warning", "studio_stage_budget_paused", f"Studio #{project_id}: {name} paused — {exc}",
-                   project=project_id, stage=name)
-        raise
-    except Exception as exc:
+    from ..file_use import pin
+    with pin([project_dir(project_id)], exclusive=True), pin([settings.data_path/"studio"/"_motioncache", settings.data_path/"studio"/"_ttscache", settings.data_path/"audio"]):
+        if name not in STAGES:
+            raise ValueError(f"Unknown stage '{name}'. Stages: {', '.join(STAGES)}")
+        ev = stop_event or _stop_events.get(project_id)
         if ev and ev.is_set():
+            _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
+            raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
+        if name in ("gather", "trailer", "shots", "script", "plan"):
+            # Re-running these replaces text/plan the owner may have edited: keep an undo point.
+            from .. import undo
+            with SessionLocal() as s:
+                p = s.get(StudioProject, project_id)
+                if p is not None and (p.script or p.plan or p.render):
+                    undo.record(s, f"studio:{project_id}", f"Re-run {name}", rows=[p], model="studio_projects",
+                                fields=["script", "plan", "render", "target_minutes"])
+                    if name != "plan" and p.script:
+                        sc = dict(p.script)
+                        sc["sentences"] = [{**x, "check": "unchecked"} for x in sc.get("sentences", [])]
+                        sc["check_issues"] = [f"{name} changed upstream evidence; check saved script again"]
+                        p.script = sc
+                    if name != "plan":
+                        p.plan = None
+                    p.render = None
+                    s.commit()
+        _set(project_id, stage=name, stage_status="running", stage_message=f"{name} running…")
+        logbus.log("info", "studio_stage_start", f"Studio #{project_id}: {name} started", project=project_id, stage=name)
+        from .. import costs
+        try:
+            with control.job("studio", f"Studio #{project_id}: {name}", scope="studio", ref=project_id), \
+                    costs.operation(f"studio:{name}", ref=f"studio:{project_id}"):
+                if ev and ev.is_set():
+                    raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
+                summary = STAGES[name](project_id) or "done"
+                if ev and ev.is_set():
+                    raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user")
+        except worker_leases.LeaseLost:
+            raise
+        except AwaitingWorker as exc:
+            _set(project_id, stage_status="awaiting_worker", stage_message=str(exc))
+            logbus.log("info", "studio_stage_waiting", f"Studio #{project_id}: {exc}",
+                       project=project_id, stage=name)
+            raise
+        except control.Cancelled:
             _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
             logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
                        project=project_id, stage=name)
-            raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user") from exc
-        msg = f"{type(exc).__name__}: {exc}"[:1000]
-        logger.error("Studio #%s %s failed:\n%s", project_id, name, traceback.format_exc())
-        _set(project_id, stage_status="error", stage_message=msg)
-        logbus.log("error", "studio_stage_error", f"Studio #{project_id}: {name} failed — {msg}",
+            raise
+        except costs.DailyCapReached as exc:
+            _set(project_id, stage_status="paused",
+                 stage_message=f"{name} paused — daily spend cap reached; it resumes from this step after midnight")
+            logbus.log("warning", "studio_stage_budget_paused", f"Studio #{project_id}: {name} paused — {exc}",
+                       project=project_id, stage=name)
+            raise
+        except Exception as exc:
+            if ev and ev.is_set():
+                _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")
+                logbus.log("warning", "studio_stage_stopped", f"Studio #{project_id}: {name} stopped by user",
+                           project=project_id, stage=name)
+                raise control.Cancelled(f"Studio #{project_id}: {name} stopped by user") from exc
+            msg = f"{type(exc).__name__}: {exc}"[:1000]
+            logger.error("Studio #%s %s failed:\n%s", project_id, name, traceback.format_exc())
+            _set(project_id, stage_status="error", stage_message=msg)
+            logbus.log("error", "studio_stage_error", f"Studio #{project_id}: {name} failed — {msg}",
+                       project=project_id, stage=name)
+            raise
+        _set(project_id, stage_status="done", stage_message=summary)
+        logbus.log("info", "studio_stage_done", f"Studio #{project_id}: {name} — {summary}",
                    project=project_id, stage=name)
-        raise
-    _set(project_id, stage_status="done", stage_message=summary)
-    logbus.log("info", "studio_stage_done", f"Studio #{project_id}: {name} — {summary}",
-               project=project_id, stage=name)
-    return summary
+        return summary
 
 
 def recover_interrupted() -> int:

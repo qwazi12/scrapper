@@ -170,7 +170,7 @@ def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -
         raise ValueError(f"Could not extract Google Drive file ID from {drive_link_or_id}")
 
     service = get_drive_service()
-    meta = service.files().get(fileId=file_id, fields="id, name, mimeType", supportsAllDrives=True).execute()
+    meta = service.files().get(fileId=file_id, fields="id, name, mimeType, size", supportsAllDrives=True).execute()
     # Remote names are untrusted metadata. Never use them as a local path.
     # A unique, exclusive file also prevents collisions and pre-existing symlinks.
     target_dir = Path(dest_dir or tempfile.gettempdir())
@@ -178,20 +178,28 @@ def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -
     suffix = Path(str(meta.get("name", ""))).suffix.lower()
     if suffix not in (".mp4", ".mov", ".webm", ".mkv"):
         suffix = ".mp4"
+    from .config import settings
+    if int(meta.get("size",0))>settings.max_upload_bytes:raise ValueError("Drive video exceeds upload size limit")
     fd, temporary = tempfile.mkstemp(prefix="scrapper-drive-", suffix=".part", dir=target_dir)
     target_path = Path(temporary + suffix)
     try:
-        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-        with os.fdopen(fd, "wb") as fh:
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-            fh.flush()
-            os.fsync(fh.fileno())
-        # Link without replacement: a competing path can never be overwritten.
-        os.link(temporary, target_path)
-        return target_path
+        from .file_use import pin,assert_current
+        from . import control
+        from .uploads import validate_video
+        with pin([temporary,target_path],exclusive=True):
+            request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+            with os.fdopen(fd, "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request, chunksize=1024*1024)
+                done = False
+                while not done:
+                    control.check()
+                    _, done = downloader.next_chunk()
+                    if fh.tell()>settings.max_upload_bytes:raise ValueError('Drive video exceeds upload size limit')
+                fh.flush();os.fsync(fh.fileno())
+            validate_video(Path(temporary))
+            assert_current()
+            os.link(temporary, target_path)
+            return target_path
     except BaseException:
         # Includes cancellation: no half-file becomes a usable download.
         try:

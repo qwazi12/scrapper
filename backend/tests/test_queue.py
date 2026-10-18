@@ -866,13 +866,22 @@ def test_longform_row_uses_its_breakdowns_options(session, client, monkeypatch, 
                       render={"thumbnails": [{"id": "poster"}, {"id": "shot1"}, {"id": "shot2"}], "selected_thumbnail": "shot1"})
     session.add(p)
     session.commit()
+    from PIL import Image
+    monkeypatch.setattr(runner,'project_dir',lambda pid:tmp_path)
+    source=tmp_path/'render'/'thumbnail.jpg';source.parent.mkdir()
+    Image.new('RGB',(100,60),'orange').save(source)
     picked = []
     monkeypatch.setattr(stage_render, "select_project_thumbnail", lambda pid, opt: picked.append(opt))
     d = client.get(f"/api/queue/{it.id}/thumbnail/options").json()
     assert d["project_id"] == p.id and len(d["options"]) == 3
     assert client.post(f"/api/queue/{it.id}/thumbnail/studio", json={"option": "shot2"}).status_code == 200
     session.refresh(it)
-    assert picked == ["shot2"] and it.thumb_path.endswith("render/thumbnail.jpg")
+    assert picked == ["shot2"]
+    from pathlib import Path
+    copied=Path(it.thumb_path)
+    assert copied!=source and copied.read_bytes()==source.read_bytes()
+    source.write_bytes(b'changed later Studio thumbnail')
+    assert copied.read_bytes()!=source.read_bytes()
     (other,) = add(session, 1)                      # a Shorts row has no breakdown options
     assert client.post(f"/api/queue/{other.id}/thumbnail/studio", json={"option": "poster"}).status_code == 400
 

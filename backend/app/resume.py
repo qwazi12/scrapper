@@ -64,10 +64,10 @@ def begin(kind: str, label: str, params: dict) -> int:
         h = leases.acquire(s, key, BOOT)
         # An explicit fresh invocation after expiry supersedes old crash rows;
         # the watcher must not revive their obsolete checkpoint after it finishes.
-        for previous in s.query(ResumableJob).filter_by(kind=kind, status="running").all():
+        for previous in s.query(ResumableJob).filter(ResumableJob.kind==kind,ResumableJob.status.in_(("running","queued","budget_paused","awaiting_worker"))).all():
             if leases.resource(previous.kind, previous.params) == key:
                 previous.status = "stopped"
-                previous.last_error = "Superseded by a new invocation after lease expiry"
+                previous.last_error = "Superseded by an explicit new invocation of the same resource"
         row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT)
         s.add(row); s.commit(); _claims[row.id] = h
         return row.id

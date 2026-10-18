@@ -87,6 +87,24 @@ def _deletable(p: StudioProject) -> list[pathlib.Path]:
     return [x for x in parts if x.exists()]
 
 
+def remember_sources(p):
+    from .media_quality import file_hash
+    import copy
+    trailer=copy.deepcopy(p.trailer or {})
+    for src in trailer.get('sources',[]):
+        path=pathlib.Path(src.get('file') or '')
+        if path.is_file():src['sha256']=file_hash(path);src['bytes']=path.stat().st_size
+    p.trailer=trailer
+
+
+def verified_copy(p,root):
+    from .media_quality import file_hash
+    d=p.drive or {};proof=d.get('verification') or {};r=p.render or {}
+    path=root/(r.get('file') or 'missing')
+    return bool(path.is_file() and proof.get('remote_file_id')==d.get('file_id') and proof.get('remote_md5')
+        and proof.get('bytes')==path.stat().st_size and proof.get('sha256')==file_hash(path))
+
+
 def check(s, p: StudioProject, now: datetime.datetime, days: int) -> tuple[bool, str]:
     """(eligible, reason) — the reason is shown in the preview."""
     if (p.archive or {}).get("archived_at"):
@@ -104,6 +122,12 @@ def check(s, p: StudioProject, now: datetime.datetime, days: int) -> tuple[bool,
         return False, "no confirmed Drive copy"
     if not p.render or d.get("rendered_at") != p.render.get("rendered_at"):
         return False, "Drive copy is of an older render"
+    if not verified_copy(p,project_dir(p.id)):
+        return False,'Drive checksum verification is missing or does not match this file'
+    if p.queue_item_id:
+        queued=s.get(QueueItem,p.queue_item_id)
+        if queued and queued.status in ('review','ready','retry','error','posting'):
+            return False,'An active queue item still needs this media'
     return True, f"posted {age} days ago, Drive copy confirmed"
 
 
@@ -123,26 +147,29 @@ def preview(now: datetime.datetime | None = None) -> dict[str, Any]:
 
 
 def archive_project(project_id: int, now: datetime.datetime | None = None) -> dict[str, Any]:
-    now = now or datetime.datetime.now(UTC)
-    with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        ok, why = check(s, p, now, int(settings_dict(s)["days"]))
-        if not ok:
-            return {"id": project_id, "archived": False, "reason": why}
-        root = project_dir(p.id)
-        thumb = root / (p.render or {}).get("thumbnail", "render/thumbnail.jpg")
-        if thumb.exists():                                   # keep the thumbnail outside render/
-            shutil.copy(thumb, root / "thumbnail.jpg")
-        freed = 0
-        for part in _deletable(p):
-            freed += _dir_bytes(part)
-            shutil.rmtree(part, ignore_errors=True)
-        p.archive = {**(p.archive or {}), "archived_at": now.isoformat(), "freed_mb": round(freed / 1e6, 1),
-                     "restored_at": None}
-        s.commit()
-    logbus.log("info", "studio_archived", f"Studio #{project_id} archived ({why}); freed {round(freed / 1e6)} MB — "
-               "the video stays in Drive", project=project_id)
-    return {"id": project_id, "archived": True, "freed_mb": round(freed / 1e6, 1)}
+    from ..file_use import pin
+    with pin([project_dir(project_id)], exclusive=True):
+        now = now or datetime.datetime.now(UTC)
+        with SessionLocal() as s:
+            p = s.get(StudioProject, project_id)
+            ok, why = check(s, p, now, int(settings_dict(s)["days"]))
+            if not ok:
+                return {"id": project_id, "archived": False, "reason": why}
+            root = project_dir(p.id)
+            thumb = root / (p.render or {}).get("thumbnail", "render/thumbnail.jpg")
+            if thumb.exists():                                   # keep the thumbnail outside render/
+                shutil.copy(thumb, root / "thumbnail.jpg")
+            remember_sources(p)
+            freed = 0
+            for part in _deletable(p):
+                freed += _dir_bytes(part)
+                shutil.rmtree(part, ignore_errors=True)
+            p.archive = {**(p.archive or {}), "archived_at": now.isoformat(), "freed_mb": round(freed / 1e6, 1),
+                         "restored_at": None}
+            s.commit()
+        logbus.log("info", "studio_archived", f"Studio #{project_id} archived ({why}); freed {round(freed / 1e6)} MB — "
+                   "the video stays in Drive", project=project_id)
+        return {"id": project_id, "archived": True, "freed_mb": round(freed / 1e6, 1)}
 
 
 def sweep(now: datetime.datetime | None = None) -> list[dict]:
@@ -151,7 +178,13 @@ def sweep(now: datetime.datetime | None = None) -> list[dict]:
         ids = [p.id for p in s.query(StudioProject).all()]
     if not cfg.get("enabled"):
         return []
-    return [r for r in (archive_project(i, now) for i in ids) if r.get("archived")]
+    from ..file_use import FileBusy
+    result=[]
+    for pid in ids:
+        try:
+            if (r:=archive_project(pid,now)).get('archived'):result.append(r)
+        except FileBusy:continue
+    return result
 
 
 def free_footage(project_id: int) -> dict[str, Any] | None:
@@ -161,37 +194,47 @@ def free_footage(project_id: int) -> dict[str, Any] | None:
     script, plan and thumbnails stay. Rendering again re-downloads the footage
     from IMDb first (render → ensure_footage). Uploaded footage is never deleted.
     Returns what was freed, or None when the project doesn't qualify."""
-    with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        if not p or p.stage_status in ("running", "queued"):
-            return None
-        r, d = p.render or {}, p.drive or {}
-        if not r or d.get("status") != "saved" or d.get("rendered_at") != r.get("rendered_at"):
-            return None
-        sources = (p.trailer or {}).get("sources", [])
-        if any(src.get("origin") != "imdb" for src in sources) or (p.trailer or {}).get("origin") == "upload":
-            return None          # only footage IMDb can give back is deleted
-        root = project_dir(project_id)
-        parts = [x for x in (root / "footage", root / "segcache") if x.exists()]
-        freed = sum(_dir_bytes(x) for x in parts)
-        if not freed:
-            return None
-        for x in parts:
-            shutil.rmtree(x, ignore_errors=True)
-        info = {"footage_freed_at": datetime.datetime.now(UTC).isoformat(), "footage_freed_mb": round(freed / 1e6)}
-        p.archive = {**(p.archive or {}), **info}
-        s.commit()
-        title = p.title
-    logbus.log("info", "studio_footage_freed",
-               f"Studio #{project_id} {title}: freed {info['footage_freed_mb']} MB of trailer footage "
-               "(video is in Drive; footage re-downloads from IMDb if you render again)", project=project_id)
-    return {"project_id": project_id, **info}
+    from ..file_use import pin
+    with pin([project_dir(project_id)], exclusive=True):
+        with SessionLocal() as s:
+            p = s.get(StudioProject, project_id)
+            if not p or p.stage_status in ("running", "queued"):
+                return None
+            r, d = p.render or {}, p.drive or {}
+            if not r or d.get("status") != "saved" or d.get("rendered_at") != r.get("rendered_at"):
+                return None
+            if not verified_copy(p,project_dir(project_id)):return None
+            sources = (p.trailer or {}).get("sources", [])
+            if any(src.get("origin") != "imdb" for src in sources) or (p.trailer or {}).get("origin") == "upload":
+                return None          # only footage IMDb can give back is deleted
+            root = project_dir(project_id)
+            parts = [x for x in (root / "footage", root / "segcache") if x.exists()]
+            freed = sum(_dir_bytes(x) for x in parts)
+            if not freed:
+                return None
+            remember_sources(p)
+            for x in parts:
+                shutil.rmtree(x, ignore_errors=True)
+            info = {"footage_freed_at": datetime.datetime.now(UTC).isoformat(), "footage_freed_mb": round(freed / 1e6)}
+            p.archive = {**(p.archive or {}), **info}
+            s.commit()
+            title = p.title
+        logbus.log("info", "studio_footage_freed",
+                   f"Studio #{project_id} {title}: freed {info['footage_freed_mb']} MB of trailer footage "
+                   "(video is in Drive; footage re-downloads from IMDb if you render again)", project=project_id)
+        return {"project_id": project_id, **info}
 
 
 def free_footage_sweep() -> list[dict[str, Any]]:
     with SessionLocal() as s:
         ids = [pid for (pid,) in s.query(StudioProject.id).all()]
-    return [r for r in (free_footage(pid) for pid in ids) if r]
+    from ..file_use import FileBusy
+    result=[]
+    for pid in ids:
+        try:
+            if r:=free_footage(pid):result.append(r)
+        except FileBusy:continue
+    return result
 
 
 def ensure_footage(project_id: int) -> bool:
@@ -227,37 +270,52 @@ def maybe_sweep() -> None:
 
 def restore(project_id: int) -> str:
     """Re-download the IMDb footage and rebuild every shot's still (no AI calls)."""
-    from . import imdb
-    with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        sources = (p.trailer or {}).get("sources", [])
-        shots = p.shots or []
-    root = project_dir(project_id)
-    (root / "footage").mkdir(exist_ok=True)
-    (root / "stills").mkdir(exist_ok=True)
-    for n, src in enumerate(sources, 1):
-        dest = pathlib.Path(src["file"])
-        if dest.exists():
-            continue
-        if src.get("origin") != "imdb":
-            raise RuntimeError(f"{src.get('name') or dest.name} can't be re-downloaded (origin {src.get('origin')})")
-        control.check()
-        control.progress(f"re-downloading footage {n} of {len(sources)}")
-        imdb.download(src["id"], dest)
-    for n, sh in enumerate(shots, 1):
-        still = root / sh["still"]
-        if not still.exists() and pathlib.Path(sh.get("file", "")).exists():
+    from ..file_use import pin
+    with pin([project_dir(project_id)], exclusive=True):
+        from . import imdb
+        with SessionLocal() as s:
+            p = s.get(StudioProject, project_id)
+            sources = (p.trailer or {}).get("sources", [])
+            shots = p.shots or []
+        root = project_dir(project_id)
+        (root / "footage").mkdir(exist_ok=True)
+        (root / "stills").mkdir(exist_ok=True)
+        for n, src in enumerate(sources, 1):
+            dest = pathlib.Path(src["file"])
+            if dest.exists():
+                continue
+            if src.get("origin") != "imdb":
+                raise RuntimeError(f"{src.get('name') or dest.name} can't be re-downloaded (origin {src.get('origin')})")
             control.check()
-            control.progress(f"rebuilding still {n} of {len(shots)}")
-            media.frame(sh["file"], sh["start"] + (sh["end"] - sh["start"]) / 2, still, crop=sh.get("crop"))
-    with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        p.archive = {**(p.archive or {}), "archived_at": None,
-                     "restored_at": datetime.datetime.now(UTC).isoformat()}
-        s.commit()
-    logbus.log("info", "studio_restored", f"Studio #{project_id}: footage restored — re-render when ready",
-               project=project_id)
-    return "footage restored"
+            control.progress(f"re-downloading footage {n} of {len(sources)}")
+            from .media_quality import file_hash
+            from ..uploads import validate_video
+            import os,uuid
+            expected=src.get('sha256')
+            if not expected:raise RuntimeError('No retained source hash; upload and review the footage before restoring this legacy project')
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            temporary=dest.parent/f'.restore-{uuid.uuid4().hex}.mp4'
+            try:
+                imdb.download(src['id'],temporary)
+                validate_video(temporary)
+                if file_hash(temporary)!=expected or (src.get('bytes') is not None and temporary.stat().st_size!=src['bytes']):
+                    raise RuntimeError('Restored source content changed; prior plan was retained for owner review')
+                control.check();os.replace(temporary,dest)
+            finally:temporary.unlink(missing_ok=True)
+        for n, sh in enumerate(shots, 1):
+            still = root / sh["still"]
+            if not still.exists() and pathlib.Path(sh.get("file", "")).exists():
+                control.check()
+                control.progress(f"rebuilding still {n} of {len(shots)}")
+                media.frame(sh["file"], sh["start"] + (sh["end"] - sh["start"]) / 2, still, crop=sh.get("crop"))
+        with SessionLocal() as s:
+            p = s.get(StudioProject, project_id)
+            p.archive = {**(p.archive or {}), "archived_at": None,
+                         "restored_at": datetime.datetime.now(UTC).isoformat()}
+            s.commit()
+        logbus.log("info", "studio_restored", f"Studio #{project_id}: footage restored — re-render when ready",
+                   project=project_id)
+        return "footage restored"
 
 
 def start_restore(project_id: int, title: str, rid: int | None = None) -> str:

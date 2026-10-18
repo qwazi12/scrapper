@@ -16,6 +16,7 @@ import datetime
 import pathlib
 
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from .config import settings
 from .logbus import log
@@ -53,6 +54,30 @@ def remove_clip_files(clip: Clip) -> None:
 def remove_compilation_files(comp: Compilation) -> None:
     if comp.output_path:
         pathlib.Path(comp.output_path).unlink(missing_ok=True)
+
+
+def delete_media(s, model, ident):
+    """Protect references and active readers before unlinking and deleting a row."""
+    from fastapi import HTTPException
+    from . import file_refs, file_use, worker_leases
+    from .budget_reservations import lock
+    row=s.get(model,ident,populate_existing=True)
+    if not row:return
+    paths=([row.file_path,row.thumb_path] if model is Clip else [row.output_path])
+    with file_use.pin(paths,exclusive=True,session=s):
+        lock(s)
+        s.refresh(row)
+        resource=('clip:' if model is Clip else 'compile:')+str(ident)
+        if row.status in (Status.queued,Status.running) or worker_leases.live(resource):
+            raise HTTPException(409,'Stop the active worker before deleting its media')
+        if (model is Clip and file_refs.clip_referenced(s,ident)) or (model is Compilation and s.query(QueueItem).filter(QueueItem.compilation_id==ident).first()):
+            raise HTTPException(409,'Media is referenced by a queue, Studio handoff or compilation')
+        if any(file_refs.protected(s,p,ignore=(model,ident)) for p in paths if p):
+            raise HTTPException(409,'Another saved artifact references this media')
+        file_use.assert_current(s)
+        if model is Clip:remove_clip_files(row)
+        else:remove_compilation_files(row)
+        s.delete(row);s.commit()
 
 
 def expires_at(created_at: datetime.datetime) -> datetime.datetime | None:
@@ -93,8 +118,12 @@ def purge_expired(s: Session) -> dict:
         if clip.id in queued_clips:
             continue  # SocialPilot scheduler/queue is exempt from retention
         if _aware(clip.created_at) < cutoff:
-            remove_clip_files(clip)
-            s.delete(clip)
+            from fastapi import HTTPException
+            try:delete_media(s,Clip,clip.id)
+            except HTTPException as exc:
+                s.rollback()
+                if exc.status_code==409:continue
+                raise
             n_clips += 1
             log("info", "retention_delete",
                 f"clip expired after {days}d: {clip.title or clip.source_url}")
@@ -105,8 +134,12 @@ def purge_expired(s: Session) -> dict:
         if comp.id in queued_comps:
             continue  # SocialPilot scheduler/queue is exempt from retention
         if _aware(comp.created_at) < cutoff:
-            remove_compilation_files(comp)
-            s.delete(comp)
+            from fastapi import HTTPException
+            try:delete_media(s,Compilation,comp.id)
+            except HTTPException as exc:
+                s.rollback()
+                if exc.status_code==409:continue
+                raise
             n_comps += 1
             log("info", "retention_delete", f"compilation #{comp.id} expired after {days}d")
 
@@ -231,10 +264,15 @@ def prune_lru_cache(cache_dir: pathlib.Path, max_bytes: int, target_ratio: float
     removed = 0
     for path, sz, _ in entries:
         try:
-            path.unlink(missing_ok=True)
+            from .file_use import pin, FileBusy, assert_current
+            with pin([path],exclusive=True):
+                assert_current()
+                path.unlink(missing_ok=True)
             freed += sz
             total_bytes -= sz
             removed += 1
+        except FileBusy:
+            continue
         except OSError as exc:
             log("warning", "cache_eviction_failed", str(exc), path=str(path))
         if total_bytes <= target_bytes:
@@ -274,7 +312,10 @@ def cleanup_leftover_renders(max_age_seconds: int = 3600) -> dict:
             if rn.exists():
                 try:
                     if now - rn.stat().st_mtime > max_age_seconds:
-                        shutil.rmtree(rn, ignore_errors=True)
+                        from .file_use import pin,assert_current
+                        with pin([rn],exclusive=True):
+                            assert_current()
+                            shutil.rmtree(rn, ignore_errors=True)
                         removed += 1
                         log("info", "abandoned_render_cleaned", f"removed leftover {rn}")
                 except Exception as exc:
@@ -296,10 +337,13 @@ def cleanup_temp_downloads(max_age_seconds: int = 7200) -> dict:
             try:
                 if now - f.stat().st_mtime > max_age_seconds:
                     sz = f.stat().st_size
-                    f.unlink(missing_ok=True)
+                    from .file_use import pin,assert_current
+                    with pin([f],exclusive=True):
+                        assert_current()
+                        f.unlink(missing_ok=True)
                     removed += 1
                     freed += sz
-            except OSError:
+            except (OSError, HTTPException):
                 continue
     if removed:
         log("info", "temp_downloads_cleaned", f"removed {removed} orphaned partial downloads ({round(freed / 1e6, 1)} MB)")

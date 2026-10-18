@@ -22,8 +22,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from app import backup
-from app.config import settings
+from backend.app import backup
+from backend.app.config import settings
 from scripts import restore_db
 
 

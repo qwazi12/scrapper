@@ -25,6 +25,9 @@ class Status(str, enum.Enum):
 
 class IngestJob(Base):
     __tablename__ = "ingest_jobs"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     urls: Mapped[list] = mapped_column(JSON, default=list)
@@ -41,6 +44,9 @@ class IngestJob(Base):
 
 class Clip(Base):
     __tablename__ = "clips"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("ingest_jobs.id"), nullable=True)
@@ -66,6 +72,9 @@ class Clip(Base):
 
 class Compilation(Base):
     __tablename__ = "compilations"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     clip_ids: Mapped[list] = mapped_column(JSON, default=list)
@@ -116,6 +125,9 @@ class QueueItem(Base):
     Plus Upload-Post publishing, compilations, and the automated scheduler.
     """
     __tablename__ = "queue_items"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     compilation_id: Mapped[int | None] = mapped_column(ForeignKey("compilations.id"), nullable=True)
@@ -234,6 +246,9 @@ class StudioProject(Base):
     data/studio/<id>/), so any stage can be re-run without redoing the others.
     """
     __tablename__ = "studio_projects"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tmdb_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -267,6 +282,9 @@ class CountdownProject(Base):
     breakdown (owner, 2026-10-12): research → titles → segments → script → render
     → the Countdowns queue. Each title's segment is a StudioProject (segment_ids)."""
     __tablename__ = "countdown_projects"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     topic: Mapped[str] = mapped_column(String(255), default="")
@@ -456,6 +474,13 @@ class BudgetReceipt(Base):
     amount_micros: Mapped[int] = mapped_column(BigInteger)
     usage: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class FileUse(Base):
+    __tablename__ = "file_uses"
+    resource: Mapped[str] = mapped_column(String(160), primary_key=True)
+    paths: Mapped[list] = mapped_column(JSON)
+    exclusive: Mapped[bool] = mapped_column(default=False)
 
 
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL

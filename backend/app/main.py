@@ -250,9 +250,7 @@ def delete_clip(clip_id: int, s: Session = Depends(get_session)) -> dict:
     clip = s.get(Clip, clip_id)
     if not clip:
         raise HTTPException(404, "clip not found")
-    cleanup.remove_clip_files(clip)
-    s.delete(clip)
-    s.commit()
+    cleanup.delete_media(s,Clip,clip_id)
     return {"deleted": clip_id}
 
 
@@ -482,19 +480,17 @@ def delete_compilation(comp_id: int, s: Session = Depends(get_session)) -> dict:
     comp = s.get(Compilation, comp_id)
     if not comp:
         raise HTTPException(404, "not found")
-    cleanup.remove_compilation_files(comp)
-    s.delete(comp)
-    s.commit()
+    cleanup.delete_media(s,Compilation,comp_id)
     return {"deleted": comp_id}
 
 
 # --- cookies upload (Reliability Layer 2) -----------------------------------
 @app.post("/api/cookies", dependencies=_AUTH)
 async def upload_cookies(file: UploadFile = File(...)) -> dict:
-    data = await file.read()
-    settings.cookies_path.write_bytes(data)
-    logbus.log("info", "cookies_uploaded", f"{len(data)} bytes")
-    return {"ok": True, "bytes": len(data)}
+    from .uploads import save_cookies
+    size=await save_cookies(file,settings.cookies_path)
+    logbus.log("info", "cookies_uploaded", f"{size} bytes")
+    return {"ok": True, "bytes": size}
 
 
 @app.get("/api/cookies", dependencies=_AUTH)
@@ -800,7 +796,15 @@ def _refuse_blocked(accounts: list[str] | None) -> None:
 
 
 def _require_queue_editable(item) -> None:
-    if item.status == "posting" or any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
+    from sqlalchemy.orm import object_session
+    from .budget_reservations import lock
+    from . import worker_leases,publication_journal
+    session=object_session(item)
+    if session:
+        lock(session);session.refresh(item)
+    if (item.status == "posting" or worker_leases.live(f'publication:{item.id}')
+            or (session and publication_journal.unresolved_late_receipt(session,item))
+            or any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or [])):
         raise HTTPException(409, "Submission unresolved — reconcile with the provider before editing, deleting or requeueing")
 
 
@@ -911,11 +915,17 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     if (item.research or {}).get("native_export_id"):
         raise HTTPException(409, "Native campaign copy is bound to its export approval; create a revised campaign treatment")
     from . import costs
+    from .publication_journal import digest
+    expected=digest([item.title,item.description,item.tags,item.research,item.accounts,item.status,item.video_path,item.thumb_path])
+    s.rollback()  # No database writer lock during paid provider I/O.
     try:
         with costs.operation("queue:ai", ref=f"queue:{item.id}"):
             res, research = await ai_bulk.ai_for(item, s)
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI generation failed: {exc}")
+    _require_queue_editable(item)
+    if digest([item.title,item.description,item.tags,item.research,item.accounts,item.status,item.video_path,item.thumb_path])!=expected:
+        raise HTTPException(409,'Queue metadata changed during AI generation; review before applying it')
     undo.record(s, "queue", f"AI rewrite of #{item.id}", rows=[item])
     ai_bulk.apply_ai(item, res, research)
     s.commit()
@@ -994,7 +1004,7 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
     p = _studio_project_for(s, item)
     if not p:
         raise HTTPException(400, "this row didn't come from LongForm Studio — upload an image instead")
-    undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
+    s.rollback()  # Thumbnail generation owns its own short database transactions.
     try:
         if req.option == "refresh":
             stage_render.generate_thumbnails_for_project(p.id)
@@ -1002,7 +1012,15 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
             stage_render.select_project_thumbnail(p.id, req.option)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc))
-    item.thumb_path = str(studio_routes.runner.project_dir(p.id) / "render" / "thumbnail.jpg")
+    _require_queue_editable(item)
+    s.refresh(p)
+    undo.record(s,"queue",f"Thumbnail of #{item.id}",rows=[item])
+    import shutil,uuid
+    source=studio_routes.runner.project_dir(p.id)/(p.render or {}).get('thumbnail','render/thumbnail.jpg')
+    root=settings.data_path/'queue_thumbs';root.mkdir(parents=True,exist_ok=True)
+    target=root/f'{item.id}_{uuid.uuid4().hex}.jpg'
+    shutil.copyfile(source,target)
+    item.thumb_path=str(target)
     s.commit()
     logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail set from LongForm ({req.option})")
     return queue_thumb_options(item_id, s)
@@ -1017,25 +1035,33 @@ async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Sess
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
+    if (item.research or {}).get('native_export_id'):raise HTTPException(409,'Native cover is bound to its approved export')
+    s.rollback()
     data = await file.read(QUEUE_THUMB_MAX + 1)
     if len(data) > QUEUE_THUMB_MAX:
         raise HTTPException(400, "image is larger than 5 MB")
     try:
         with Image.open(io.BytesIO(data)) as im:
+            if im.width*im.height>20_000_000:raise HTTPException(413,"Thumbnail exceeds 20 megapixels")
             im = im.convert("RGB")
             im.thumbnail((1920, 1080))
             out_dir = settings.data_path / "queue_thumbs"
             out_dir.mkdir(parents=True, exist_ok=True)
-            dest = out_dir / f"{item.id}_{int(datetime.datetime.now().timestamp())}.jpg"
+            import uuid
+            dest = out_dir / f"{item_id}_{uuid.uuid4().hex}.jpg"
             for q in (90, 80, 70, 60):
                 im.save(dest, "JPEG", quality=q)
                 if dest.stat().st_size <= 2_000_000:
                     break
-    except (UnidentifiedImageError, OSError):
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
         raise HTTPException(400, "that file isn't an image (use JPG, PNG or WebP)")
-    undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
-    item.thumb_path = str(dest)
-    s.commit()
+    try:
+        _require_queue_editable(item)
+        undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
+        item.thumb_path = str(dest)
+        s.commit()
+    except BaseException:
+        s.rollback();dest.unlink(missing_ok=True);raise
     logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail uploaded ({dest.stat().st_size // 1024} KB)")
     return queue_thumb_options(item_id, s)
 

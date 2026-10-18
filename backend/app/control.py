@@ -80,6 +80,8 @@ def adopt(j: Job | None) -> None:
 
 def check() -> None:
     """Between steps: stop here if Stop was pressed."""
+    from . import file_use
+    file_use.assert_current()
     from .worker_leases import guard
     guard()
     j = current()

@@ -119,10 +119,10 @@ def _update_ledger(s, credits):
 
 
 def _charge(tool: str, credits: int, reservation: str | None = None) -> None:
-    from . import worker_leases as leases
+    from . import worker_leases as leases, file_use
     from .models import FinancialResolution
     # Receipt accounting must survive loss of the content-generation lease.
-    with leases.bind(None), SessionLocal() as s:
+    with leases.bind(None), file_use.suspend(), SessionLocal() as s:
         from .budget_reservations import lock
         lock(s)
         if reservation:
@@ -311,6 +311,7 @@ def _content(result: Any) -> Any:
 
 def call(tool: str, args: dict | None = None, *, cache_hours: float | None = None, purpose: str = "") -> Any:
     """Run a vidIQ tool with credit guard + cache. Raises VidIQError / CreditCapReached."""
+    if not configured():raise VidIQError("VIDIQ_API_KEY is not configured; no credits reserved")
     args = args or {}
     cfg = settings_value()
     if not cfg["enabled"]:

@@ -462,6 +462,13 @@ class _SharedDriveSvc:
         return F()
 
 
+def _copy_proof(path,fid='fixture-copy'):
+    import hashlib
+    return {'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+            'remote_md5':hashlib.md5(path.read_bytes()).hexdigest(),
+            'bytes':path.stat().st_size,'remote_file_id':fid,'checked_at':'2026-10-18T00:00:00Z'}
+
+
 def test_drive_quota_error_is_explained():
     from backend.app.studio import drive_store
     msg = drive_store._explain(Exception("<HttpError 403 ... storageQuotaExceeded: Service Accounts do not have storage quota>"))
@@ -476,7 +483,7 @@ def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path)
     monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
     (tmp_path / "final.mp4").write_bytes(b"x" * 10)
     (tmp_path / "thumb.jpg").write_bytes(b"y")
-    item = QueueItem(title="t", status="review", pipeline="LongForm", accounts=[])
+    item = QueueItem(title="t", status="review", pipeline="LongForm", accounts=[],video_path=str(tmp_path/"final.mp4"))
     session.add(item)
     session.flush()
     p = StudioProject(tmdb_id=1, title="Send Help", render={"file": "final.mp4", "thumbnail": "thumb.jpg",
@@ -487,7 +494,7 @@ def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path)
     monkeypatch.setattr(drive_sync, "get_drive_service", lambda: _SharedDriveSvc())
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "FOLDER")
     monkeypatch.setattr(drive_store, "_upload", lambda svc, path, parent, name: (
-        uploaded.append((parent, name)) or {"id": f"id{len(uploaded)}", "webViewLink": f"https://drive/{len(uploaded)}"}))
+        uploaded.append((parent, name)) or {"id": f"id{len(uploaded)}", "webViewLink": f"https://drive/{len(uploaded)}", "verification":_copy_proof(path,f"id{len(uploaded)}")}))
     info = drive_store.save(p.id)
     session.expire_all()
     assert info["status"] == "saved" and info["rendered_at"] == "r1" and len(uploaded) == 2
@@ -717,7 +724,8 @@ def test_drive_uploads_to_shared_drive_folder(session, monkeypatch, tmp_path):
         def files(self):
             class F:
                 def get(self, **kw):
-                    return type("R", (), {"execute": lambda self: {"name": "LongForm Studio", "driveId": "SD1"}})()
+                    result={'name':'LongForm Studio','driveId':'SD1'} if kw['fileId']=='F' else {'id':'uploaded_123','size':'1','md5Checksum':'9dd4e461268c8034f5c8564e155c67a6'}
+                    return type('R',(),{'execute':lambda self:result})()
 
                 def create(self, **kw):
                     done = (None, {"id": "uploaded_123", "webViewLink": "https://drive.google.com/file/d/uploaded_123"})
@@ -879,11 +887,12 @@ def _archivable(posted_days_ago: float, drive_ok: bool = True, origin: str = "im
         (root / d).mkdir(exist_ok=True)
         (root / d / "x.bin").write_bytes(b"0" * 300_000)
     (root / "render" / "thumbnail.jpg").write_bytes(b"jpg")
+    (root / "render" / "final.mp4").write_bytes(b"original archive fixture")
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         p.queue_item_id = qid
         p.render = {"file": "render/final.mp4", "thumbnail": "render/thumbnail.jpg", "rendered_at": "r1"}
-        p.drive = {"status": "saved", "rendered_at": "r1" if drive_ok else "r0", "link": "https://drive/x"}
+        p.drive = {"status": "saved", "rendered_at": "r1" if drive_ok else "r0", "link": "https://drive/x", "file_id":"fixture-copy", "verification":_copy_proof(root/"render"/"final.mp4")}
         p.trailer = {"origin": origin, "sources": [{"id": "vi1", "origin": origin, "file": str(root / "footage" / "x.bin")}]}
         p.plan = [{"slot": 1}]
         s.commit()
@@ -940,7 +949,7 @@ def test_restore_rebuilds_stills_without_ai(monkeypatch, three_scene_video):
     dest = root / "footage" / "vi9.mp4"
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
-        p.trailer = {"origin": "imdb", "sources": [{"id": "vi9", "origin": "imdb", "file": str(dest)}]}
+        p.trailer = {"origin": "imdb", "sources": [{"id": "vi9", "origin": "imdb", "file": str(dest), "sha256":__import__("hashlib").sha256(three_scene_video.read_bytes()).hexdigest(), "bytes":three_scene_video.stat().st_size}]}
         p.shots = [{**sh, "file": str(dest)} for sh in p.shots]
         p.archive = {"archived_at": "2026-10-01T00:00:00+00:00"}
         s.commit()
@@ -1216,7 +1225,7 @@ def test_free_footage_only_after_drive_has_the_current_render(session, tmp_path,
     session.add(p)
     session.commit()
     assert archive.free_footage(p.id) is None                     # Drive has an OLDER render: keep everything
-    p.drive = {"status": "saved", "rendered_at": "r2"}
+    p.drive = {"status": "saved", "rendered_at": "r2", "file_id":"fixture-copy", "verification":_copy_proof(tmp_path/"render"/"final.mp4")}
     session.commit()
     out = archive.free_footage(p.id)
     assert out and not (tmp_path / "footage").exists() and not (tmp_path / "segcache").exists()

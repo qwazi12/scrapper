@@ -210,44 +210,46 @@ def get_project(project_id: int, s: Session = Depends(get_session)) -> dict[str,
 
 @router.patch("/projects/{project_id}")
 def patch_project(project_id: int, req: ProjectPatch, s: Session = Depends(get_session)) -> dict[str, Any]:
-    p = _get(s, project_id)
-    if p.stage_status == "running":
-        raise HTTPException(409, "a stage is running on this project; wait for it to finish")
-    what = "Edit script" if req.script is not None else "Swap shots" if req.plan is not None else "Change length"
-    undo.record(s, f"studio:{project_id}", what, rows=[p], model="studio_projects", fields=UNDO_FIELDS)
-    changed = []
-    if req.target_minutes is not None:
-        if not 1 <= req.target_minutes <= 10:
-            raise HTTPException(400, "target_minutes must be 1–10")
-        p.target_minutes = req.target_minutes
-        changed.append("length")
-    if req.script is not None:
-        old = [x.get("text") for x in (p.script or {}).get("sentences", [])]
-        new = [x.get("text") for x in req.script.get("sentences", [])]
-        # Checks are server-owned. Preserve them only for exactly unchanged
-        # sentences; a client cannot copy an old green verdict onto new words.
-        sc = {**req.script, "storyboard": (p.script or {}).get("storyboard"),
-              "check_scope": (p.script or {}).get("check_scope")}
-        previous = {(x.get("paragraph"), x.get("text")): x for x in (p.script or {}).get("sentences", [])}
-        sc["sentences"] = [dict(previous[(x.get("paragraph"), x.get("text"))])
-                           if (x.get("paragraph"), x.get("text")) in previous
-                           else {**x, "check": "unchecked", "refs": []}
-                           for x in sc.get("sentences", [])]
-        sc["check_issues"] = list((p.script or {}).get("check_issues") or []) if old == new else []
-        p.script = sc
-        if old != new:  # new words -> new voice timings -> old plan/render are stale
-            p.plan = None
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        p = _get(s, project_id)
+        if p.stage_status == "running":
+            raise HTTPException(409, "a stage is running on this project; wait for it to finish")
+        what = "Edit script" if req.script is not None else "Swap shots" if req.plan is not None else "Change length"
+        undo.record(s, f"studio:{project_id}", what, rows=[p], model="studio_projects", fields=UNDO_FIELDS)
+        changed = []
+        if req.target_minutes is not None:
+            if not 1 <= req.target_minutes <= 10:
+                raise HTTPException(400, "target_minutes must be 1–10")
+            p.target_minutes = req.target_minutes
+            changed.append("length")
+        if req.script is not None:
+            old = [x.get("text") for x in (p.script or {}).get("sentences", [])]
+            new = [x.get("text") for x in req.script.get("sentences", [])]
+            # Checks are server-owned. Preserve them only for exactly unchanged
+            # sentences; a client cannot copy an old green verdict onto new words.
+            sc = {**req.script, "storyboard": (p.script or {}).get("storyboard"),
+                  "check_scope": (p.script or {}).get("check_scope")}
+            previous = {(x.get("paragraph"), x.get("text")): x for x in (p.script or {}).get("sentences", [])}
+            sc["sentences"] = [dict(previous[(x.get("paragraph"), x.get("text"))])
+                               if (x.get("paragraph"), x.get("text")) in previous
+                               else {**x, "check": "unchecked", "refs": []}
+                               for x in sc.get("sentences", [])]
+            sc["check_issues"] = list((p.script or {}).get("check_issues") or []) if old == new else []
+            p.script = sc
+            if old != new:  # new words -> new voice timings -> old plan/render are stale
+                p.plan = None
+                p.render = None
+            changed.append("script")
+        if req.plan is not None:
+            p.plan = req.plan
             p.render = None
-        changed.append("script")
-    if req.plan is not None:
-        p.plan = req.plan
-        p.render = None
-        changed.append("shot plan")
-    s.commit()
-    s.refresh(p)
-    if changed:
-        logbus.log("info", "studio_edited", f"Studio #{p.id}: edited {', '.join(changed)}", project=p.id)
-    return _out(p)
+            changed.append("shot plan")
+        s.commit()
+        s.refresh(p)
+        if changed:
+            logbus.log("info", "studio_edited", f"Studio #{p.id}: edited {', '.join(changed)}", project=p.id)
+        return _out(p)
 
 
 ACTIVE_QUEUE = ("review", "ready", "retry", "error", "posting")
@@ -266,21 +268,23 @@ def _queue_block(s: Session, p: StudioProject) -> str | None:
 def delete_project_now(s: Session, p: StudioProject, reason: str) -> None:
     """Remove the project, its files and (if it never posted) its queue row.
     The Drive copy stays in Drive. The title stays in the never-repeat ledger."""
-    import shutil
-    from ..models import QueueItem
-    from . import candidates
-    pid = p.id
-    candidates.remember_made(s, p.media_type, p.tmdb_id)   # deleted ≠ eligible again
-    if p.stage_status == "queued":
-        runner.stop(pid)                       # take it out of the waiting line
-    item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
-    if item and item.status in ACTIVE_QUEUE:
-        s.delete(item)
-    shutil.rmtree(runner.project_dir(pid), ignore_errors=True)
-    s.delete(p)
-    s.commit()
-    logbus.log("info", "studio_deleted", f"Studio #{pid} deleted ({reason}; files removed, Drive copy kept)",
-               project=pid)
+    from ..file_use import pin
+    with pin([runner.project_dir(p.id)], exclusive=True, session=s):
+        import shutil
+        from ..models import QueueItem
+        from . import candidates
+        pid = p.id
+        candidates.remember_made(s, p.media_type, p.tmdb_id)   # deleted ≠ eligible again
+        if p.stage_status == "queued":
+            runner.stop(pid)                       # take it out of the waiting line
+        item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
+        if item and item.status in ACTIVE_QUEUE:
+            s.delete(item)
+        shutil.rmtree(runner.project_dir(pid), ignore_errors=True)
+        s.delete(p)
+        s.commit()
+        logbus.log("info", "studio_deleted", f"Studio #{pid} deleted ({reason}; files removed, Drive copy kept)",
+                   project=pid)
 
 
 @router.delete("/projects/{project_id}")
@@ -302,24 +306,26 @@ class ProjectArchiveIn(BaseModel):
 @router.put("/projects/{project_id}/archive")
 def archive_project(project_id: int, req: ProjectArchiveIn, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Archive = delete automatically ARCHIVE_DAYS days later (undo any time before)."""
-    import datetime
-    p = _get(s, project_id)
-    rv = dict(p.review or {})
-    if req.archived:
-        if p.stage_status in ("running", "queued"):
-            raise HTTPException(409, f"this project is {p.stage_status} — Stop it first")
-        now = datetime.datetime.now(datetime.timezone.utc)
-        rv["archived_at"] = now.isoformat()
-        rv["delete_after"] = (now + datetime.timedelta(days=ARCHIVE_DAYS)).isoformat()
-    else:
-        rv.pop("archived_at", None)
-        rv.pop("delete_after", None)
-    p.review = rv
-    s.commit()
-    logbus.log("info", "studio_archived" if req.archived else "studio_unarchived",
-               f"Studio #{p.id}: " + (f"archived — deleted automatically after {rv['delete_after'][:10]}"
-                                       if req.archived else "un-archived (won't be deleted)"), project=p.id)
-    return _out(p, full=False)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        import datetime
+        p = _get(s, project_id)
+        rv = dict(p.review or {})
+        if req.archived:
+            if p.stage_status in ("running", "queued"):
+                raise HTTPException(409, f"this project is {p.stage_status} — Stop it first")
+            now = datetime.datetime.now(datetime.timezone.utc)
+            rv["archived_at"] = now.isoformat()
+            rv["delete_after"] = (now + datetime.timedelta(days=ARCHIVE_DAYS)).isoformat()
+        else:
+            rv.pop("archived_at", None)
+            rv.pop("delete_after", None)
+        p.review = rv
+        s.commit()
+        logbus.log("info", "studio_archived" if req.archived else "studio_unarchived",
+                   f"Studio #{p.id}: " + (f"archived — deleted automatically after {rv['delete_after'][:10]}"
+                                           if req.archived else "un-archived (won't be deleted)"), project=p.id)
+        return _out(p, full=False)
 
 
 def sweep_archived(now=None) -> list[int]:
@@ -411,48 +417,55 @@ class ThumbnailSelect(BaseModel):
 @router.post("/projects/{project_id}/thumbnail/select")
 def select_thumbnail(project_id: int, req: ThumbnailSelect, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Choose which of the 3 thumbnail options to use."""
-    from . import stage_render
-    p = _get(s, project_id)
-    try:
-        stage_render.select_project_thumbnail(project_id, req.id)
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(400, str(exc))
-    s.refresh(p)
-    return _out(p)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        from . import stage_render
+        p = _get(s, project_id)
+        try:
+            stage_render.select_project_thumbnail(project_id, req.id)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(400, str(exc))
+        s.refresh(p)
+        return _out(p)
 
 
 @router.post("/projects/{project_id}/thumbnail/generate")
 def generate_thumbnails(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Generate or refresh the 3 thumbnail options for this project."""
-    from . import stage_render
-    p = _get(s, project_id)
-    try:
-        stage_render.generate_thumbnails_for_project(project_id)
-    except RuntimeError as exc:
-        raise HTTPException(400, str(exc))
-    s.refresh(p)
-    return _out(p)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        from . import stage_render
+        p = _get(s, project_id)
+        try:
+            stage_render.generate_thumbnails_for_project(project_id)
+        except RuntimeError as exc:
+            raise HTTPException(400, str(exc))
+        s.refresh(p)
+        return _out(p)
 
 
 @router.post("/projects/{project_id}/trailer-upload")
 async def upload_trailer(project_id: int, file: UploadFile = File(...),
                          s: Session = Depends(get_session)) -> dict[str, Any]:
     """Manual fallback: the owner uploads the trailer file themselves."""
-    p = _get(s, project_id)
-    if p.stage_status in ("running", "queued"):
-        raise HTTPException(409, "Stop the running stage before replacing footage")
-    dest = runner.project_dir(project_id) / "trailer.mp4"
-    from ..uploads import save_video
-    size, _ = await save_video(file, dest)
-    p.trailer = {"file": str(dest), "origin": "upload", "name": file.filename, "size": size}
-    p.shots = None  # shots belong to the old trailer
-    from .research_gate import invalidate
-    p.script = invalidate(p.script, "Trailer changed; check narration against the new footage")
-    p.plan, p.render = None, None
-    s.commit()
-    logbus.log("info", "studio_trailer_upload", f"Studio #{p.id}: trailer uploaded ({round(size / 1e6)} MB)",
-               project=p.id)
-    return _out(p)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        p = _get(s, project_id)
+        if p.stage_status in ("running", "queued"):
+            raise HTTPException(409, "Stop the running stage before replacing footage")
+        import uuid
+        dest = runner.project_dir(project_id) / "uploads" / f"trailer-{uuid.uuid4().hex}.mp4"
+        from ..uploads import save_video
+        size, _ = await save_video(file, dest)
+        p.trailer = {"file": str(dest), "origin": "upload", "name": file.filename, "size": size}
+        p.shots = None  # shots belong to the old trailer
+        from .research_gate import invalidate
+        p.script = invalidate(p.script, "Trailer changed; check narration against the new footage")
+        p.plan, p.render = None, None
+        s.commit()
+        logbus.log("info", "studio_trailer_upload", f"Studio #{p.id}: trailer uploaded ({round(size / 1e6)} MB)",
+                   project=p.id)
+        return _out(p)
 
 
 class ArchiveIn(BaseModel):
@@ -512,25 +525,27 @@ class ShotUse(BaseModel):
 def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = Depends(get_session)) -> dict[str, Any]:
     """The owner's call overrides the automatic one: any shot (title card, dark,
     text, untagged) can be used, and any shot can be left out. Undoable."""
-    p = _get(s, project_id)
-    if p.stage_status == "running":
-        raise HTTPException(409, "A step is running; wait for it to finish")
-    shots = [dict(x) for x in (p.shots or [])]
-    sh = next((x for x in shots if x.get("id") == shot_id), None)
-    if not sh:
-        raise HTTPException(404, "shot not found")
-    undo.record(s, f"studio:{p.id}", f"{'Use' if req.usable else 'Leave out'} shot {shot_id}", rows=[p],
-                model="studio_projects", fields=["shots", "plan", "render"])
-    if "auto_usable" not in sh:
-        sh["auto_usable"] = bool(sh.get("usable"))     # what the tagger decided, kept for reference
-    sh["usable"] = req.usable
-    sh["owner_set"] = True
-    p.shots = shots
-    p.plan, p.render = None, None
-    s.commit()
-    logbus.log("info", "studio_shot", f"Studio #{p.id}: shot {shot_id} {'in' if req.usable else 'out'} (owner)",
-               project=p.id)
-    return _out(p)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        p = _get(s, project_id)
+        if p.stage_status == "running":
+            raise HTTPException(409, "A step is running; wait for it to finish")
+        shots = [dict(x) for x in (p.shots or [])]
+        sh = next((x for x in shots if x.get("id") == shot_id), None)
+        if not sh:
+            raise HTTPException(404, "shot not found")
+        undo.record(s, f"studio:{p.id}", f"{'Use' if req.usable else 'Leave out'} shot {shot_id}", rows=[p],
+                    model="studio_projects", fields=["shots", "plan", "render"])
+        if "auto_usable" not in sh:
+            sh["auto_usable"] = bool(sh.get("usable"))     # what the tagger decided, kept for reference
+        sh["usable"] = req.usable
+        sh["owner_set"] = True
+        p.shots = shots
+        p.plan, p.render = None, None
+        s.commit()
+        logbus.log("info", "studio_shot", f"Studio #{p.id}: shot {shot_id} {'in' if req.usable else 'out'} (owner)",
+                   project=p.id)
+        return _out(p)
 
 
 LONGFORM_DESTINATION = ["default:*"]   # Upload-Post profile "default" — all channels (Screen Central)
@@ -538,95 +553,99 @@ LONGFORM_DESTINATION = ["default:*"]   # Upload-Post profile "default" — all c
 
 @router.post("/projects/{project_id}/approve-export")
 def approve_export(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
-    from datetime import datetime, timezone
-    from .research_gate import require_checked
-    from .media_quality import export_fingerprint
-    p = _get(s, project_id)
-    if p.stage_status in ("running", "queued"):
-        raise HTTPException(409, "Wait for the running stage before approving")
-    try:
-        require_checked(p.script)
-        fingerprint = export_fingerprint(p, runner.project_dir(project_id))
-    except RuntimeError as exc:
-        raise HTTPException(409, str(exc))
-    p.review = {**(p.review or {}), "export_approval": {"fingerprint": fingerprint,
-                 "approved_at": datetime.now(timezone.utc).isoformat()}}
-    s.commit()
-    return _out(p)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        from datetime import datetime, timezone
+        from .research_gate import require_checked
+        from .media_quality import export_fingerprint
+        p = _get(s, project_id)
+        if p.stage_status in ("running", "queued"):
+            raise HTTPException(409, "Wait for the running stage before approving")
+        try:
+            require_checked(p.script)
+            fingerprint = export_fingerprint(p, runner.project_dir(project_id))
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+        p.review = {**(p.review or {}), "export_approval": {"fingerprint": fingerprint,
+                     "approved_at": datetime.now(timezone.utc).isoformat()}}
+        s.commit()
+        return _out(p)
 
 
 @router.post("/projects/{project_id}/publish")
 def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
     """Send the rendered video to the Posting Queue as Ready to Post (pipeline
     LongForm, profile "default" = Screen Central); it takes the next LongForm slot."""
-    from sqlalchemy import func
-    from ..models import QueueItem
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        from sqlalchemy import func
+        from ..models import QueueItem
 
-    p = _get(s, project_id)
-    root = runner.project_dir(project_id)
-    if not p.render or not (root / p.render["file"]).exists():
-        raise HTTPException(400, "Render the video first")
-    from .research_gate import script_issues
-    from .media_quality import require_export_approval
-    issues = script_issues(p.script)
-    if issues:
-        raise HTTPException(409, "Research blocked: " + "; ".join(issues[:5]))
-    try:
-        require_export_approval(p, root)
-    except RuntimeError as exc:
-        raise HTTPException(409, str(exc))
-    sc = p.script or {}
-    tags = longform_tags(p.title, sc.get("tags", []))
-    primary_date = (p.facts or {}).get("primary_date")
-    fields = dict(
-        pipeline="LongForm", video_name=f"{p.title} — Trailer Breakdown",
-        video_path=str(root / p.render["file"]),
-        thumb_path=str(root / p.render["thumbnail"]) if p.render.get("thumbnail") else None,
-        title=sc.get("youtube_title") or p.title, description=sc.get("description", ""), tags=tags,
-        source="LongForm Studio",
-        research={
-            "tmdb_id": p.tmdb_id,
-            "media_type": p.media_type,
-            "title": p.title,
-            "year": primary_date[:4] if primary_date else None,
-            "primary_date": primary_date,
-            "release_date": primary_date,
-            "releases": (p.facts or {}).get("releases", []),
-            "poster": (p.facts or {}).get("poster"),
-            "matched": True,
-            "source": f"https://www.themoviedb.org/{p.media_type}/{p.tmdb_id}",
-        },
-    )
-    from ..social import queue_manager
-    from ..social import enqueue
-    item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
-    if item:
-        enqueue.ensure_editable(item)
-    if item and item.status in ("review", "ready", "retry", "error"):
-        undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
-        for k, v in fields.items():          # re-publishing a re-render updates the same row
-            setattr(item, k, v)
-        if not item.accounts:
-            item.accounts = queue_manager.default_destination(LONGFORM_DESTINATION)
-        item.status = "ready"
-    else:
-        # Owner (2026-10-04): a sent breakdown is approved by sending it — straight to
-        # Ready to Post on profile "default" (Screen Central), next LongForm slot.
-        item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(LONGFORM_DESTINATION),
-                         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
-        item, created = enqueue.claim(s, p, item)
-        if created:
-            undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
-    s.commit()
-    logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id} (ready, default)",
-               project=p.id, queue_item=item.id)
-    from ..social import queue_manager
-    queue_manager.wake()                      # give it its slot now, not at the next 5-min tick
-    # Every breakdown sent to the queue is also kept in Drive (unless this render is already there).
-    drive_job = None
-    if (p.drive or {}).get("rendered_at") != p.render.get("rendered_at") or (p.drive or {}).get("status") != "saved":
-        drive_job = _start_drive(p)
-    return {"queue_item_id": item.id, "status": item.status, "drive_job_id": drive_job}
+        p = _get(s, project_id)
+        root = runner.project_dir(project_id)
+        if not p.render or not (root / p.render["file"]).exists():
+            raise HTTPException(400, "Render the video first")
+        from .research_gate import script_issues
+        from .media_quality import require_export_approval
+        issues = script_issues(p.script)
+        if issues:
+            raise HTTPException(409, "Research blocked: " + "; ".join(issues[:5]))
+        try:
+            require_export_approval(p, root)
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+        sc = p.script or {}
+        tags = longform_tags(p.title, sc.get("tags", []))
+        primary_date = (p.facts or {}).get("primary_date")
+        fields = dict(
+            pipeline="LongForm", video_name=f"{p.title} — Trailer Breakdown",
+            video_path=str(root / p.render["file"]),
+            thumb_path=str(root / p.render["thumbnail"]) if p.render.get("thumbnail") else None,
+            title=sc.get("youtube_title") or p.title, description=sc.get("description", ""), tags=tags,
+            source="LongForm Studio",
+            research={
+                "tmdb_id": p.tmdb_id,
+                "media_type": p.media_type,
+                "title": p.title,
+                "year": primary_date[:4] if primary_date else None,
+                "primary_date": primary_date,
+                "release_date": primary_date,
+                "releases": (p.facts or {}).get("releases", []),
+                "poster": (p.facts or {}).get("poster"),
+                "matched": True,
+                "source": f"https://www.themoviedb.org/{p.media_type}/{p.tmdb_id}",
+            },
+        )
+        from ..social import queue_manager
+        from ..social import enqueue
+        item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
+        if item:
+            enqueue.ensure_editable(item)
+        if item and item.status in ("review", "ready", "retry", "error"):
+            undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
+            for k, v in fields.items():          # re-publishing a re-render updates the same row
+                setattr(item, k, v)
+            if not item.accounts:
+                item.accounts = queue_manager.default_destination(LONGFORM_DESTINATION)
+            item.status = "ready"
+        else:
+            # Owner (2026-10-04): a sent breakdown is approved by sending it — straight to
+            # Ready to Post on profile "default" (Screen Central), next LongForm slot.
+            item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(LONGFORM_DESTINATION),
+                             position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
+            item, created = enqueue.claim(s, p, item)
+            if created:
+                undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
+        s.commit()
+        logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id} (ready, default)",
+                   project=p.id, queue_item=item.id)
+        from ..social import queue_manager
+        queue_manager.wake()                      # give it its slot now, not at the next 5-min tick
+        # Every breakdown sent to the queue is also kept in Drive (unless this render is already there).
+        drive_job = None
+        if (p.drive or {}).get("rendered_at") != p.render.get("rendered_at") or (p.drive or {}).get("status") != "saved":
+            drive_job = _start_drive(p)
+        return {"queue_item_id": item.id, "status": item.status, "drive_job_id": drive_job}
 
 
 def longform_tags(title: str, script_tags: list[str]) -> str:
@@ -760,15 +779,17 @@ def auto_skip_next() -> dict[str, Any]:
 
 @router.put("/projects/{project_id}/review")
 def set_reviewed(project_id: int, req: ReviewIn, s: Session = Depends(get_session)) -> dict[str, Any]:
-    import datetime
-    p = _get(s, project_id)
-    rv = dict(p.review or {})
-    rv["reviewed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat() if req.reviewed else None
-    p.review = rv
-    s.commit()
-    logbus.log("info", "studio_reviewed", f"Studio #{p.id}: marked {'reviewed' if req.reviewed else 'not reviewed'}",
-               project=p.id)
-    return _out(p, full=False)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        import datetime
+        p = _get(s, project_id)
+        rv = dict(p.review or {})
+        rv["reviewed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat() if req.reviewed else None
+        p.review = rv
+        s.commit()
+        logbus.log("info", "studio_reviewed", f"Studio #{p.id}: marked {'reviewed' if req.reviewed else 'not reviewed'}",
+                   project=p.id)
+        return _out(p, full=False)
 
 
 @router.get("/render-batch")
@@ -857,34 +878,36 @@ def fetch_source_record(project_id: int, req: SourceFetch, s: Session = Depends(
 
 @router.post("/projects/{project_id}/claims/{claim_index}/review")
 def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Session = Depends(get_session)):
-    import copy
-    import uuid
-    from ..models import ResearchClaimReview, ResearchSourceRecord
-    from . import fact_verification as fv
-    p = _get(s, project_id); _research_mutable(p)
-    research = copy.deepcopy(p.research or {})
-    claims = research.get("claims", [])
-    if not 0 <= claim_index < len(claims): raise HTTPException(404, "Claim not found")
-    claim = claims[claim_index]
-    record = s.get(ResearchSourceRecord, req.record_id)
-    urls = [research["sources"][i].get("url") for i in claim.get("sources", [])
-            if type(i) is int and 0 <= i < len(research.get("sources", []))]
-    if not record or record.project_id != project_id or record.requested_url not in urls:
-        raise HTTPException(422, "Choose an independently retrieved record cited by this claim")
-    if req.context != fv.context(p.facts or {}) or not all(req.context.values()):
-        raise HTTPException(422, "Confirm the exact title, release year, medium and territory")
-    if (req.verdict not in ("supported", "unresolved", "contradicted") or len(req.rationale.strip()) < 20
-            or not req.excerpt.strip() or req.excerpt not in record.text):
-        raise HTTPException(422, "Provide a verdict, exact excerpt and a substantive semantic rationale")
-    if req.verdict == "supported" and req.conflicts:
-        raise HTTPException(422, "Resolve or reject conflicting evidence before marking support")
-    review = ResearchClaimReview(id=str(uuid.uuid4()), project_id=project_id, record_id=record.id,
-        claim=claim["text"], excerpt=req.excerpt, context=req.context, verdict=req.verdict,
-        rationale=req.rationale.strip(), conflicts=req.conflicts)
-    s.add(review)
-    claim["evidence"] = {"review_id": review.id, "verdict": req.verdict, "excerpt": req.excerpt,
-        "record_sha256": record.sha256, "retrieved_at": record.retrieved_at.isoformat(),
-        "context": req.context, "rationale": req.rationale, "conflicts": req.conflicts,
-        "scope": "independently_retrieved_owner_reviewed"}
-    p.research = research; fv.invalidate(p); s.commit()
-    return _out(p)
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        import copy
+        import uuid
+        from ..models import ResearchClaimReview, ResearchSourceRecord
+        from . import fact_verification as fv
+        p = _get(s, project_id); _research_mutable(p)
+        research = copy.deepcopy(p.research or {})
+        claims = research.get("claims", [])
+        if not 0 <= claim_index < len(claims): raise HTTPException(404, "Claim not found")
+        claim = claims[claim_index]
+        record = s.get(ResearchSourceRecord, req.record_id)
+        urls = [research["sources"][i].get("url") for i in claim.get("sources", [])
+                if type(i) is int and 0 <= i < len(research.get("sources", []))]
+        if not record or record.project_id != project_id or record.requested_url not in urls:
+            raise HTTPException(422, "Choose an independently retrieved record cited by this claim")
+        if req.context != fv.context(p.facts or {}) or not all(req.context.values()):
+            raise HTTPException(422, "Confirm the exact title, release year, medium and territory")
+        if (req.verdict not in ("supported", "unresolved", "contradicted") or len(req.rationale.strip()) < 20
+                or not req.excerpt.strip() or req.excerpt not in record.text):
+            raise HTTPException(422, "Provide a verdict, exact excerpt and a substantive semantic rationale")
+        if req.verdict == "supported" and req.conflicts:
+            raise HTTPException(422, "Resolve or reject conflicting evidence before marking support")
+        review = ResearchClaimReview(id=str(uuid.uuid4()), project_id=project_id, record_id=record.id,
+            claim=claim["text"], excerpt=req.excerpt, context=req.context, verdict=req.verdict,
+            rationale=req.rationale.strip(), conflicts=req.conflicts)
+        s.add(review)
+        claim["evidence"] = {"review_id": review.id, "verdict": req.verdict, "excerpt": req.excerpt,
+            "record_sha256": record.sha256, "retrieved_at": record.retrieved_at.isoformat(),
+            "context": req.context, "rationale": req.rationale, "conflicts": req.conflicts,
+            "scope": "independently_retrieved_owner_reviewed"}
+        p.research = research; fv.invalidate(p); s.commit()
+        return _out(p)

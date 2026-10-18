@@ -73,6 +73,15 @@ def stack(s: Session, scope: str, n: int = 10) -> list[dict[str, Any]]:
 
 
 def undo(s: Session, scope: str) -> str:
+    from .config import settings
+    from .file_use import pin
+    paths=[settings.data_path/'studio'/scope.split(':',1)[1]] if scope.startswith('studio:') else []
+    with pin(paths,exclusive=True,session=s):return _undo_owned(s,scope)
+
+
+def _undo_owned(s: Session, scope: str) -> str:
+    from .budget_reservations import lock
+    lock(s)
     entry = s.query(UndoEntry).filter(UndoEntry.scope == scope).order_by(desc(UndoEntry.id)).first()
     if not entry:
         raise NothingToUndo(f"Nothing to undo here")
@@ -80,6 +89,23 @@ def undo(s: Session, scope: str) -> str:
     model = MODELS[p.get("model", "queue_items")]
     pk = _pk(model)
     fields = p.get("fields")
+    from fastapi import HTTPException
+    from . import publication_journal,worker_leases
+    # Undo may reverse an edit, but cannot erase a provider submission or reuse
+    # an old row snapshot after its numeric identity now belongs to another row.
+    candidates=[(cid,None) for cid in p.get('created',[])]+[(data.get(pk),data) for data in p.get('rows',[])]
+    for cid,data in candidates:
+        current=s.get(model,cid,populate_existing=True)
+        if model is QueueItem:
+            if current and (current.status=='posting' or worker_leases.live(f'publication:{cid}') or current.publish_requests
+                    or publication_journal.unresolved_late_receipt(s,current)):
+                raise HTTPException(409,'Undo cannot change submitted publication evidence; reconcile the item first')
+            if data and data.get('publish_requests'):
+                raise HTTPException(409,'Undo cannot restore historical submission state')
+        if current and data and data.get('created_at') and hasattr(current,'created_at'):
+            previous=_dec(data['created_at']);now=current.created_at
+            def aware(value):return value.replace(tzinfo=datetime.timezone.utc) if not value.tzinfo else value.astimezone(datetime.timezone.utc)
+            if aware(previous)!=aware(now):raise HTTPException(409,'Undo snapshot belongs to a different row identity')
     # 1. Rows the change created -> remove them.
     for cid in p.get("created", []):
         obj = s.get(model, cid)
@@ -92,10 +118,17 @@ def undo(s: Session, scope: str) -> str:
         if obj is None:   # it was deleted -> re-insert with its original id
             s.add(model(**vals))
             continue
+        upstream_changed=model is StudioProject and any(
+            k not in (fields or vals) and _enc(getattr(obj,k))!=data.get(k)
+            for k in ('facts','research','trailer','shots'))
         for k, v in vals.items():
             if k == pk or (fields and k not in fields):
                 continue
             setattr(obj, k, v)
+        if upstream_changed:
+            from .studio.research_gate import invalidate
+            obj.script=invalidate(obj.script,'Undo restored text after upstream evidence changed; check saved script again')
+            obj.plan,obj.render=None,None
     label = entry.label
     s.delete(entry)
     s.commit()

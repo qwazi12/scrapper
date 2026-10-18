@@ -29,3 +29,15 @@ def claim(s, project, candidate):
         raise HTTPException(409, "Queue link needs owner review; the previous queue record is missing")
     ensure_editable(existing)
     return existing, False
+
+
+def rewrite_version(s,item):
+    from ..budget_reservations import lock
+    from .. import worker_leases, publication_journal
+    lock(s);s.refresh(item);ensure_editable(item)
+    if worker_leases.live(f'publication:{item.id}') or publication_journal.unresolved_late_receipt(s,item):
+        raise HTTPException(409,'Submission unresolved; metadata cannot be rewritten')
+    if (item.research or {}).get('native_export_id'):
+        raise HTTPException(409,'Native copy is bound to its export approval')
+    return publication_journal.digest([item.title,item.description,item.tags,item.research,item.accounts,
+        item.status,item.video_path,item.thumb_path,item.clip_id,item.compilation_id])

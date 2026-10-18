@@ -298,7 +298,8 @@ def _compile_owned(comp_id: int) -> None:
                 s.commit()
 
     try:
-        with control.job("compile", f"Compilation #{comp_id} ({len(files)} clips)", scope="compile", ref=comp_id):
+        from .file_use import pin
+        with pin(files), control.job("compile", f"Compilation #{comp_id} ({len(files)} clips)", scope="compile", ref=comp_id):
             compiler.compile_videos(
                 files, out, orientation=orientation,
                 encoder=settings.video_encoder, bitrate=settings.video_bitrate,

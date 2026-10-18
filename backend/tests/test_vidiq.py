@@ -114,3 +114,11 @@ def test_concurrent_credit_calls_reserve_before_dispatch_and_timeout_is_not_retr
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool: list(pool.map(invoke,range(5)))
     assert len(dispatched)==1 and vidiq.usage()['held']==5 and vidiq.usage()['today']==0
     assert vidiq.safe('vidiq_keyword_research',{'q':'later'},cache_hours=0) is None
+
+
+def test_missing_credentials_never_reserve_an_impossible_paid_attempt(monkeypatch):
+    from backend.app.models import CreditReservation
+    monkeypatch.setattr(settings,'vidiq_api_key','')
+    with pytest.raises(vidiq.VidIQError,match='not configured'):
+        vidiq.call('vidiq_keyword_research',{'q':'synthetic'},cache_hours=0)
+    with SessionLocal() as s:assert s.query(CreditReservation).count()==0

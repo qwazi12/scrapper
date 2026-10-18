@@ -87,16 +87,20 @@ def test_backup_requires_owner_header_even_with_media_or_path_signature(tmp_path
 
 def test_drive_traversal_collision_and_partial_download(tmp_path, monkeypatch):
     import googleapiclient.http
+    from backend.app.studio import media
+    asset=tmp_path/'source.mp4'
+    media.run(['ffmpeg','-v','error','-y','-f','lavfi','-i','testsrc2=s=160x90:d=0.2','-c:v','libx264',str(asset)])
+    payload=asset.read_bytes();asset.unlink()
     service = MagicMock()
     service.files().get().execute.return_value = {"name": "../../owner.mp4"}
     monkeypatch.setattr(drive_sync, "get_drive_service", lambda: service)
     class Download:
-        def __init__(self, fh, request): self.fh = fh
-        def next_chunk(self): self.fh.write(b"synthetic"); return None, True
+        def __init__(self, fh, request, **kwargs): self.fh = fh
+        def next_chunk(self): self.fh.write(payload); return None, True
     monkeypatch.setattr(googleapiclient.http, "MediaIoBaseDownload", Download)
     first = drive_sync.download_drive_file("https://drive.google.com/file/d/abcdefghijklmno/view", str(tmp_path))
     second = drive_sync.download_drive_file("https://drive.google.com/file/d/abcdefghijklmno/view", str(tmp_path))
-    assert first != second and first.parent == tmp_path and first.read_bytes() == b"synthetic"
+    assert first != second and first.parent == tmp_path and first.read_bytes() == payload
     assert not list(tmp_path.glob("*.part")) and not (tmp_path.parent / "owner.mp4").exists()
     class Failed(Download):
         def next_chunk(self): self.fh.write(b"partial"); raise OSError("interrupted")
