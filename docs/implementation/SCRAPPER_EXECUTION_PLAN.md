@@ -1,7 +1,7 @@
 > **2026-10-18 continued checkpoint:** independent retrieval + owner review,
 > atomic USD/credit reservations and scoped worker leases are implemented locally.
 > The current contracts and limitations are in [LOCAL_CONTRACTS_20261018.md](LOCAL_CONTRACTS_20261018.md).
-> Latest owner instruction: stay local; do not push, deploy or publish. Record every checkpoint in root MEMORY.md and the progress ledger.
+> Owner subsequently authorized push, deployment and live tests after implementation is finished; until then work stays local. The later YouTube/Drive archive task is now deferred. Public publishing and paid API spending remain disabled. Record every checkpoint in root MEMORY.md and the progress ledger.
 
 # Screen Central isolated execution plan
 

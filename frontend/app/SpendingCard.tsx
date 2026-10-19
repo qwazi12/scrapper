@@ -116,6 +116,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "baseline", marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>{usd(data.total_usd)}</div>
+          <p style={{ fontSize: 12 }}>Local budget ledger: configured estimates and owner-attested adjustments. Provider invoices are not independently verified.</p>
           <div style={{ fontSize: 11, color: "var(--muted)" }}>this month so far</div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>

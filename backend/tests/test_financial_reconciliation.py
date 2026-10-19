@@ -68,7 +68,7 @@ def test_orphan_hold_never_auto_releases_and_requires_interruption_review(client
         assert s.query(FinancialResolution).filter_by(reservation_id=rid,kind='usd').count()==1
 
 
-def test_late_usage_records_only_delta_and_flags_disagreement(client):
+def test_late_estimate_preserves_owner_attested_amount_and_flags_disagreement(client):
     with br.attempt('fixture',.7) as rid:pass
     req=form(client,rid)
     assert client.post('/api/financial/resolve',json=req).status_code==200
@@ -76,9 +76,16 @@ def test_late_usage_records_only_delta_and_flags_disagreement(client):
     try:costs._record('fixture',.3,requests=1)
     finally:br._active.reset(token)
     with SessionLocal() as s:
-        assert costs.today_spend(s)==pytest.approx(.3)
+        assert costs.today_spend(s)==pytest.approx(.2)
+        assert s.get(BudgetReservation,rid).actual_micros==200000
         assert s.get(BudgetReceipt,rid).amount_micros==300000
+        assert s.get(BudgetReceipt,rid).usage['cost_basis']=='configured_usage_estimate'
+        event=s.query(UsageEvent).filter_by(reservation_id=rid,cost_basis='estimate_after_attestation').one()
+        assert event.cost_usd==0
         assert s.get(BudgetReservation,rid).state=='breach'
+    hold=next(h for h in client.get('/api/financial/holds').json()['holds'] if h['id']==rid)
+    assert hold['actual']==.2 and hold['usage_estimate']==.3
+    assert hold['amount_basis']=='owner_attested' and hold['provider_invoice_verified'] is False
     with pytest.raises(costs.BudgetExceeded,match='breach'):br.reserve('fixture',.01)
     # Replaying the old decision cannot clear the new breach.
     assert client.post('/api/financial/resolve',json=req).status_code==200
@@ -145,3 +152,22 @@ def test_usage_accounting_survives_content_lease_loss():
     with SessionLocal() as s:
         assert s.get(BudgetReservation,rid).state=='settled'
         assert s.get(BudgetReceipt,rid).amount_micros>0
+
+
+@pytest.mark.parametrize('estimate',[0,.1,.2])
+def test_zero_lower_and_matching_late_estimates_never_reprice_attestation(client,estimate):
+    with br.attempt('fixture',.7) as rid:pass
+    assert client.post('/api/financial/resolve',json=form(client,rid)).status_code==200
+    token=br._active.set(rid)
+    try:costs._record('fixture',estimate,requests=1)
+    finally:br._active.reset(token)
+    with SessionLocal() as s:
+        assert costs.today_spend(s)==pytest.approx(.2)
+        row=s.get(BudgetReservation,rid)
+        assert row.actual_micros==200000
+        assert row.state==('settled' if estimate==.2 else 'breach')
+        assert s.get(BudgetReceipt,rid).amount_micros==br.micros(estimate)
+    summary=costs.summary()
+    assert summary['billing_status'].endswith('provider_invoice_not_verified')
+    assert summary['by_cost_basis']['owner_attested_adjustment']['cost_usd']==pytest.approx(.2)
+    assert summary['by_cost_basis']['estimate_after_attestation']['cost_usd']==0

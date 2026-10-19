@@ -32,6 +32,8 @@ init_db()
 
 @pytest.fixture(autouse=True)
 def ownership_and_job_cleanup():
+    from backend.app import auth
+    with auth._rl_lock:auth._rate_limits.clear()
     resume._claims.clear(); resume._active_rids.clear()
     with SessionLocal() as s:
         for model in (BudgetReservation, CreditReservation, FileUse, WorkerLease): s.query(model).delete()

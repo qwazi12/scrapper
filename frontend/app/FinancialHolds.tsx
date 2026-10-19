@@ -9,13 +9,15 @@ export function FinancialHolds({ bounds, onChanged }: { bounds: Record<string, n
   const [actual, setActual] = useState("");
   const [receipt, setReceipt] = useState("");
   const [rationale, setRationale] = useState("");
-  const [reviewed, setReviewed] = useState(false);
+  const [decision, setDecision] = useState<{ version: string; key: string } | null>(null);
   const [interrupted, setInterrupted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [contract, setContract] = useState("");
   const [ceiling, setCeiling] = useState("");
   const hold = view?.holds.find(h => h.id === selected);
+  const reviewVersion = JSON.stringify([hold?.id, hold?.version, actual, receipt, rationale, interrupted]);
+  const reviewed = decision?.version === reviewVersion;
 
   const load = async () => { setView(await api.financialHolds()); };
   useEffect(() => {
@@ -25,15 +27,15 @@ export function FinancialHolds({ bounds, onChanged }: { bounds: Record<string, n
   }, []);
 
   function select(id: string) {
-    setSelected(id); setActual(""); setReceipt(""); setRationale(""); setReviewed(false); setInterrupted(false); setMessage("");
+    setSelected(id); setActual(""); setReceipt(""); setRationale(""); setDecision(null); setInterrupted(false); setMessage("");
   }
 
   async function resolve(event: FormEvent) {
     event.preventDefault();
-    if (!hold || !reviewed) return;
+    if (!hold || !reviewed || !decision) return;
     setBusy(true); setMessage("");
     try {
-      await api.resolveFinancialHold({ request_key: crypto.randomUUID(), reservation_id: hold.id, kind: hold.kind,
+      await api.resolveFinancialHold({ request_key: decision.key, reservation_id: hold.id, kind: hold.kind,
         expected_version: hold.version, actual: Number(actual), receipt, rationale, reviewed: true, confirm_interrupted: interrupted });
       await load(); select(""); setMessage("Provider evidence recorded; the local ledger has been reconciled."); onChanged();
     } catch (e: unknown) { setMessage(e instanceof Error ? e.message : "Reconciliation failed"); }
@@ -50,7 +52,7 @@ export function FinancialHolds({ bounds, onChanged }: { bounds: Record<string, n
   const description = (h: FinancialHold) => `${h.service} · ${h.state} · ${h.kind === "usd" ? `$${h.reserved.toFixed(6)}` : `${h.reserved} credits`} reserved`;
   return <details style={{ margin: "14px 0", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
     <summary>Unsettled requests &amp; cost contracts{view ? ` (${view.holds.length} holds)` : ""}</summary>
-    <p>Unknown charges remain reserved across day and month resets. A worker timeout does not prove a request was free. Reconcile only against provider evidence for this exact request.</p>
+    <p>Configured usage costs are estimates. Owner-entered receipt amounts are attestations; the app does not verify provider invoices. Unknown charges remain reserved across day and month resets. A worker timeout does not prove a request was free. Reconcile only against provider evidence for this exact request.</p>
     <button disabled={busy} onClick={() => load().catch(e => setMessage(e.message))}>Refresh financial holds</button>
     {message && <p role="status">{message}</p>}
     {view && <>
@@ -61,10 +63,11 @@ export function FinancialHolds({ bounds, onChanged }: { bounds: Record<string, n
       </select></label>
       {hold && <form onSubmit={resolve} style={{ display: "grid", gap: 10, marginTop: 12 }}>
         <p>{description(hold)}. Reference: {hold.ref || hold.id}. {hold.worker_live ? "Request worker still holds a live lease." : hold.orphan ? "Interrupted request — explicit provider review required." : "Awaiting receipt reconciliation."}</p>
+        {hold.actual !== null && <p>Recorded ledger amount: {hold.actual} USD ({hold.amount_basis === "owner_attested" ? "owner-attested billing evidence" : "configured usage estimate"}). {hold.usage_estimate !== null && `Usage estimate: $${hold.usage_estimate.toFixed(6)}.`} Provider invoice has not been independently verified. A difference pauses paid work for review.</p>}
         <label>Confirmed actual amount ({hold.kind === "usd" ? "USD" : "credits"}) <input type="number" required min={0} max={1000000} step={hold.kind === "usd" ? "0.000001" : "1"} value={actual} onChange={e => setActual(e.target.value)} /></label>
         <label>Provider receipt reference <input required minLength={5} maxLength={2048} value={receipt} onChange={e => setReceipt(e.target.value)} /></label>
         <label>Financial reconciliation rationale <textarea required minLength={20} maxLength={4000} value={rationale} onChange={e => setRationale(e.target.value)} /></label>
-        <label><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} /> I reviewed this exact request against provider billing evidence.</label>
+        <label><input type="checkbox" checked={reviewed} onChange={e => setDecision(e.target.checked ? { version: reviewVersion, key: crypto.randomUUID() } : null)} /> I reviewed this exact request against provider billing evidence.</label>
         {hold.orphan && <label><input type="checkbox" checked={interrupted} onChange={e => setInterrupted(e.target.checked)} /> I confirm the interrupted request worker and its provider outcome were reviewed.</label>}
         <button disabled={busy || !hold.can_resolve || !reviewed || (hold.orphan && !interrupted)}>Record financial reconciliation</button>
       </form>}

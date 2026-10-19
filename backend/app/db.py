@@ -86,6 +86,11 @@ def _migrate() -> None:
                 if not exists:
                     conn.execute(text(f"CREATE TRIGGER {table}_immutable BEFORE UPDATE OR DELETE "
                         f"ON {table} FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()"))
+    if 'usage_events' in tables:
+        columns={c['name'] for c in insp.get_columns('usage_events')}
+        with engine.begin() as conn:
+            for name,sql_type in [('cost_basis','VARCHAR(32)'),('reservation_id','VARCHAR(36)')]:
+                if name not in columns:conn.execute(text(f'ALTER TABLE usage_events ADD COLUMN {name} {sql_type}'))
     if "compilations" in tables and "queue_item_id" not in {c["name"] for c in insp.get_columns("compilations")}:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE compilations ADD COLUMN queue_item_id INTEGER"))

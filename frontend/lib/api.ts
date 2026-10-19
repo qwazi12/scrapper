@@ -908,7 +908,7 @@ export type QueueThumbOptions = {
 };
 
 export type FinancialHold = { id: string; kind: "usd" | "credit"; service: string; state: string; ref: string | null;
-  reserved: number; actual: number | null; version: string; worker_live: boolean; orphan: boolean; can_resolve: boolean; created_at: string };
+  reserved: number; actual: number | null; amount_basis: string; usage_estimate: number | null; provider_invoice_verified: boolean; version: string; worker_live: boolean; orphan: boolean; can_resolve: boolean; created_at: string };
 export type FinancialHoldView = { holds: FinancialHold[]; history: { id: string; kind: string; reservation_id: string; amount: number; receipt: string; rationale: string; at: string }[] };
 export type CostSettings = {
   request_bounds?: Record<string, number>;
@@ -926,6 +926,8 @@ export type CostSettings = {
 
 export type CostSummary = {
   month: string;
+  billing_status: string;
+  by_cost_basis: Record<string, { cost_usd: number; events: number }>;
   variable_usd: number;
   fixed_usd: number;
   total_usd: number;

@@ -507,6 +507,14 @@ test("financial holds UI requires explicit orphan review and reconciles USD and 
   await page.getByRole("checkbox", { name: /I reviewed this exact request against/ }).check();
   await expect(save).toBeDisabled();
   await page.getByRole("checkbox", { name: /I confirm the interrupted request worker/ }).check();
+  const reviewed = page.getByRole("checkbox", { name: /I reviewed this exact request against/ });
+  await expect(reviewed).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await reviewed.check();
+  await page.getByLabel("Financial reconciliation rationale").fill("Reviewed the interrupted synthetic request against its exact revised provider receipt.");
+  await expect(reviewed).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await reviewed.check();
   await save.click();
   await expect(page.getByRole("status").filter({ hasText: "local ledger has been reconciled" })).toBeVisible();
   await page.getByLabel("Unsettled request", { exact: true }).selectOption(ids.credit);

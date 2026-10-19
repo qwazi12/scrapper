@@ -244,6 +244,8 @@ def _record(service: str, cost: float, **fields) -> None:
         if br._active.get() and not complete and service != "gemini-search": cost = 0.0
         asof=clock(s)
         fields.setdefault("created_at",asof)
+        fields.setdefault("cost_basis","configured_usage_estimate")
+        fields.setdefault("reservation_id",br._active.get())
         event = UsageEvent(service=service, operation=fields.pop("operation", None) or op,
                           ref=fields.pop("ref", None) or ref, cost_usd=round(cost, 6),
                           month=month_key(asof), **fields)
@@ -324,7 +326,10 @@ def summary(month: str | None = None) -> dict[str, Any]:
         by_op: dict[str, dict] = {}
         by_day: dict[str, float] = {}
         by_ref: dict[str, float] = {}
+        by_basis: dict[str, dict] = {}
         for e in q.all():
+            basis=by_basis.setdefault(e.cost_basis or 'legacy_unknown',{'cost_usd':0.0,'events':0})
+            basis['cost_usd']+=e.cost_usd or 0;basis['events']+=1
             sv = by_service.setdefault(e.service, {"cost": 0.0, "requests": 0, "input_tokens": 0,
                                                     "output_tokens": 0, "chars": 0})
             sv["cost"] += e.cost_usd or 0
@@ -347,6 +352,8 @@ def summary(month: str | None = None) -> dict[str, Any]:
         total = variable + fixed
         return {
             "month": month,
+            "billing_status": "local_estimates_and_owner_attestations; provider_invoice_not_verified",
+            "by_cost_basis": by_basis,
             "variable_usd": round(variable, 4),
             "fixed_usd": round(fixed, 2),
             "total_usd": round(total, 4),

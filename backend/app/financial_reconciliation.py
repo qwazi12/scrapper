@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .auth import require_token
 from .db import get_session
-from .models import BudgetReservation, CreditReservation, FinancialResolution, WorkerLease
+from .models import BudgetReservation, BudgetResolution, BudgetReceipt, CreditReservation, FinancialResolution, WorkerLease
 
 router=APIRouter(prefix='/api/financial',dependencies=[Depends(require_token)])
 
@@ -86,12 +86,16 @@ def holds(s:Session=Depends(get_session)):
     for kind,model in [('usd',BudgetReservation),('credit',CreditReservation)]:
         for row in s.query(model).filter(model.state.in_(('reserved','dispatched','unknown','breach'))).order_by(model.created_at):
             live,orphan,eligible=ownership(s,kind,row)
+            attestation=s.get(BudgetResolution,row.id) if kind=='usd' else None
+            estimate=s.get(BudgetReceipt,row.id) if kind=='usd' else None
             rows.append(dict(id=row.id,kind=kind,state=row.state,service=getattr(row,'service',getattr(row,'tool','')),
                 ref=getattr(row,'ref',None),reserved=row.reserved_micros/1e6 if kind=='usd' else row.credits,
                 actual=row.actual_micros/1e6 if kind=='usd' and row.actual_micros is not None else None,
+                amount_basis=('owner_attested' if attestation else 'configured_usage_estimate' if estimate else 'unknown'),
+                usage_estimate=(estimate.amount_micros/1e6 if estimate else None),provider_invoice_verified=False,
                 version=version(row),worker_live=live,orphan=orphan,can_resolve=eligible,created_at=row.created_at))
     return {'holds':rows,'history':[dict(id=r.id,kind=r.kind,reservation_id=r.reservation_id,amount=r.amount,
-        receipt=r.receipt,rationale=r.rationale,at=r.created_at)
+        receipt=r.receipt,rationale=r.rationale,at=r.created_at,basis='owner_attested',provider_invoice_verified=False)
         for r in s.query(FinancialResolution).order_by(FinancialResolution.created_at.desc()).limit(100)]}
 
 

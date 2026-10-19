@@ -75,3 +75,13 @@ def test_cost_settings_change_is_undoable(client):
     client.put("/api/costs/settings", json={"budget_usd": 50})
     client.post("/api/undo", json={"scope": "settings"})
     assert client.get("/api/costs").json()["budget_usd"] == 0
+
+
+def test_summary_labels_legacy_usage_without_inventing_invoice_proof(client):
+    with SessionLocal() as s:
+        s.add(UsageEvent(service='fixture',month=costs.month_key(costs.clock(s)),cost_usd=.4,cost_basis=None));s.commit()
+    costs._record('fixture',.2,requests=1)
+    summary=client.get('/api/costs').json()
+    assert summary['by_cost_basis']['legacy_unknown']['cost_usd']==pytest.approx(.4)
+    assert summary['by_cost_basis']['configured_usage_estimate']['cost_usd']==pytest.approx(.2)
+    assert summary['billing_status']=='local_estimates_and_owner_attestations; provider_invoice_not_verified'

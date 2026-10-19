@@ -349,6 +349,8 @@ class UsageEvent(Base):
     chars: Mapped[int] = mapped_column(Integer, default=0)
     requests: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_basis: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reservation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class ResearchSourceRecord(Base):

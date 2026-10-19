@@ -113,7 +113,7 @@ def attempt(service: str, upper_usd):
 
 
 def settle_record(s, event):
-    """A usage receipt and its charge delta commit in the same transaction."""
+    """Keep a configured usage estimate separate from owner-attested billing."""
     from .models import BudgetReceipt, BudgetResolution
     rid = _active.get()
     if not rid: return
@@ -124,17 +124,18 @@ def settle_record(s, event):
     if row.state not in ('dispatched','unknown'):
         if row.state!='settled' or not s.get(BudgetResolution,rid):
             raise RuntimeError("Budget receipt already settled or missing")
-        # A provider usage receipt can arrive after owner crash reconciliation.
-        # Preserve both records; charge only the delta and stop on disagreement.
+        # Usage multiplied by configured rates is an estimate, not an invoice.
+        # Preserve the owner's billed amount and the late estimate independently.
         previous=row.actual_micros or 0
-        event.cost_usd=(amount-previous)/1e6
+        event.cost_usd=0.0
+        event.cost_basis='estimate_after_attestation'
         row.state='breach' if amount!=previous else 'settled'
     else:
         row.state='breach' if amount>row.reserved_micros else 'settled'
+        row.actual_micros=amount
     s.add(BudgetReceipt(reservation_id=rid,amount_micros=amount,usage=dict(service=event.service,
         model=event.model,input_tokens=event.input_tokens,output_tokens=event.output_tokens,
-        chars=event.chars,requests=event.requests)))
-    row.actual_micros=amount
+        chars=event.chars,requests=event.requests,cost_basis="configured_usage_estimate")))
 
 
 def request_bound(service: str, body: dict, model: str | None = None) -> float:
@@ -189,7 +190,8 @@ def resolve(rid, actual_usd, receipt, rationale, *, confirm_interrupted=False, e
         save_decision(s,'usd',rid,amount,receipt,rationale,request_key)
         previous=row.actual_micros or 0
         s.add(UsageEvent(service=row.service,operation=row.operation,ref=row.ref,
-                         month=costs.month_key(costs.clock(s)),created_at=costs.clock(s),cost_usd=(amount-previous)/1e6,requests=0))
+                         month=costs.month_key(costs.clock(s)),created_at=costs.clock(s),cost_usd=(amount-previous)/1e6,requests=0,
+                         cost_basis='owner_attested_adjustment',reservation_id=rid))
         if not s.get(BudgetResolution,rid):
             s.add(BudgetResolution(reservation_id=rid,actual_micros=amount,receipt=receipt,rationale=rationale))
         row.actual_micros,row.state=amount,'settled'
