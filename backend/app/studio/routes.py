@@ -19,7 +19,7 @@ from ..db import get_session
 from ..models import StudioProject
 from .. import control, costs, undo
 from . import momentum, runner, tmdb, tts
-from .export_acceptance import AcceptanceIn
+from .export_acceptance import AcceptanceIn, QuickIn
 
 # What a Studio undo restores (text/plan level; footage and shots are files).
 UNDO_FIELDS = ["script", "plan", "render", "target_minutes"]
@@ -568,8 +568,32 @@ def export_review(project_id:int,s:Session=Depends(get_session)):
     from ..file_use import pin
     from .export_acceptance import view
     with pin([runner.project_dir(project_id)],session=s):
-        try:return view(_get(s,project_id),runner.project_dir(project_id))
+        from .export_acceptance import quick_view
+        try:
+            p=_get(s,project_id)
+            return {**view(p,runner.project_dir(project_id)),'quick':quick_view(s,p)}
         except RuntimeError as exc:raise HTTPException(409,str(exc))
+
+
+@router.post("/projects/{project_id}/quick-approve")
+def quick_approve_export(project_id: int, req: QuickIn, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """One-tap Approve after watching (owner, 2026-10-19); serious findings still need the full form."""
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        from .research_gate import require_checked
+        from .export_acceptance import quick_accept
+        from ..worker_leases import clock
+        p = _get(s, project_id)
+        if p.stage_status in ("running", "queued"):
+            raise HTTPException(409, "Wait for the running stage before approving")
+        try:
+            require_checked(p.script,p.facts)
+            approval = quick_accept(s,p,runner.project_dir(project_id),req,clock(s))
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+        p.review = {**(p.review or {}), "export_approval": approval}
+        s.commit()
+        return _out(p)
 
 
 @router.post("/projects/{project_id}/approve-export")

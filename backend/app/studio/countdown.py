@@ -810,7 +810,7 @@ def require_release(s, c: CountdownProject, approved: bool = True) -> str:
         raise HTTPException(409, str(exc))
 
 
-from .export_acceptance import AcceptanceIn
+from .export_acceptance import AcceptanceIn, QuickIn
 
 
 @router.get('/{cid}/export-review')
@@ -820,7 +820,27 @@ def countdown_export_review(cid:int):
         with SessionLocal() as s:
             c=_get(s,cid)
             require_release(s,c,approved=False)
-            return view(c,comp_dir(c))
+            from .export_acceptance import quick_view
+            return {**view(c,comp_dir(c)),'quick':quick_view(s,c)}
+
+
+@router.post("/{cid}/quick-approve")
+def quick_approve_countdown(cid: int, req: QuickIn) -> dict[str, Any]:
+    """One-tap Approve after watching (owner, 2026-10-19); serious findings still need the full form."""
+    with media_use(cid, segments=True):
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            if c.stage_status in ("running", "waiting", "queued"):
+                raise HTTPException(409, "Wait for the countdown to finish before approval")
+            require_release(s, c, approved=False)
+            from .export_acceptance import quick_accept
+            from ..worker_leases import clock
+            try:approval=quick_accept(s,c,comp_dir(c),req,clock(s))
+            except RuntimeError as exc:raise HTTPException(409,str(exc))
+            approval['countdown_format']=c.fmt
+            c.review = {**(c.review or {}), "export_approval": approval}
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/approve-export")

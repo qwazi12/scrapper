@@ -31,8 +31,37 @@ export function ExportAcceptance({ kind, id, label, disabled, onApproved }: {
     finally { setBusy(false); }
   }
 
+  // One-tap Approve (owner, 2026-10-19): you watched it, tap once. Serious problems open the full form.
+  const [quickRights, setQuickRights] = useState<string | null>(null);
+  async function quick(rights?: string) {
+    if (kind === "native") return;
+    setBusy(true); setMessage("");
+    try {
+      const v = await api.exportAcceptanceView(kind, id);
+      const q = v.quick || { severe: [], saved_rights: "" };
+      if (q.severe.length) {
+        setView(v); setChecks([]); setDecisions({}); setRights(q.saved_rights); setAck(null);
+        setMessage("Needs your decision first: " + q.severe.join("; ") + ". Fill in the detailed review below.");
+        return;
+      }
+      if (!q.saved_rights && !(rights && rights.trim().length >= 20)) { setQuickRights(""); return; }
+      await api.quickApproveExport(kind, Number(id), { expected_fingerprint: v.fingerprint, ...(rights ? { rights_rationale: rights } : {}) });
+      setQuickRights(null); setMessage("✓ Approved."); onApproved();
+    } catch (e: unknown) { setMessage(e instanceof Error ? e.message : "Approve failed"); }
+    finally { setBusy(false); }
+  }
+
   return <div>
-    <button disabled={disabled || busy} onClick={() => void open()}>{label}</button>
+    {kind !== "native" && <button className="primary" disabled={disabled || busy} onClick={() => void quick()}
+      title="You've watched it: approve for the queue in one tap (serious problems still ask for a decision)">✓ Approve</button>}{" "}
+    <button disabled={disabled || busy} onClick={() => void open()}>{kind === "native" ? label : "Detailed review"}</button>
+    {quickRights !== null && <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+      <label>Your standard rights statement — written once, saved for every future Approve
+        <textarea value={quickRights} onChange={e => setQuickRights(e.target.value)} minLength={20} maxLength={4000}
+          placeholder="e.g. Commentary and news coverage using official trailers, posters and promotional stills; my own narration and edit." />
+      </label>
+      <button className="primary" disabled={busy || quickRights.trim().length < 20} onClick={() => void quick(quickRights)}>Save and approve</button>
+    </div>}
     {message && <p role="status">{message}</p>}
     {view && <form aria-label="Exact export acceptance" style={{ display: "grid", gap: 10, marginTop: 12 }} onSubmit={async event => {
       event.preventDefault();
