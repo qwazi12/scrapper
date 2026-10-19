@@ -1,5 +1,7 @@
 # Live Shorts archive — 2026-10-19
 
+Owner update: the active Mac run now rotates through channels in repeated turns of **up to 25 verified Shorts each**, until available pending work is exhausted. Charan already had 57 verified uploads at the switch, so the first turn is AfridiAE. `scripts/archive_batch.py` uses the existing pending ledger and never resets successful entries. Runtime state is `artifacts/shorts-archive-20261019/round-robin/batch-state.json`; the older whole-channel continuation was stopped cleanly. This client-only change requires no server deployment. All 25 focused tests pass, including an isolated 26-video test proving 25 + 1 + 0 downloads across three visits with no duplicate media IDs.
+
 Owner resumed the ten-channel archive and explicitly chose the working LongForm Shared Drive connection. The archive resumed at 20:45 UTC after a successful playback and real Scrapper download check; it is not yet complete.
 
 Latest verified checkpoint, 21:00 UTC: **18 actual Shorts**, **71,024,790 video bytes**, stored and checksum-verified in Drive; **18 SocialPilot Review rows** assigned to `Cinama:*`, with no schedule. The live sync import/filter fixes are deployed at `148f8a9` (Railway `24232195-cf56-4310-853e-70846a849d88`). Two real repeat syncs each scanned 18 videos, skipped 18 and added zero duplicates. The ten JSON manifests are excluded; the ten temporary erroneous manifest Review rows were removed through the undo-backed app action without changing Drive files. All 109 focused isolated tests pass.

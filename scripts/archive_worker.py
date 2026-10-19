@@ -47,7 +47,9 @@ def download(cid,vid,directory,bound,cancelled):
     return source.download(cid,vid,directory,bound,cancelled=cancelled)
 
 
-def drain(server,token,cid,workdir):
+def drain(server,token,cid,workdir,*,max_videos=0):
+    if not isinstance(max_videos,int) or isinstance(max_videos,bool) or max_videos<0:
+        raise ValueError('max_videos must be a nonnegative integer (0 means all pending)')
     u=urlsplit(server)
     if u.scheme!='https' and not (u.scheme=='http' and u.hostname in ('127.0.0.1','localhost')):
         raise ValueError('Use HTTPS, or isolated localhost HTTP')
@@ -61,6 +63,7 @@ def drain(server,token,cid,workdir):
         with claimed(server,token,claim) as lost:
             while True:
                 if lost.is_set():raise RuntimeError('Archive lease lost; local files retained')
+                if max_videos and completed>=max_videos:break
                 items=api_get(server,token,base+'/pending?'+urlencode(auth))['items']
                 if not items:break
                 item=items[0];vid=item['video_id'];directory=Path(workdir).resolve()/cid/vid
@@ -108,6 +111,7 @@ def main():
     parser.add_argument('--inventory',help='Public channel URL; inventory only, no media download')
     parser.add_argument('--parent-folder',default='1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo')
     parser.add_argument('--workdir',default=str(Path(__file__).resolve().parents[1]/'data'/'archive-worker'))
+    parser.add_argument('--batch-size',type=int,default=0,help='Maximum verified videos in this turn; 0 drains the channel')
     args=parser.parse_args();token=os.environ.get('ACCESS_TOKEN') or env.get('ACCESS_TOKEN')
     if not args.server or not token:parser.error('Set SERVER_URL and ACCESS_TOKEN, or data/deploy.env')
     parsed=urlsplit(args.server)
@@ -117,7 +121,7 @@ def main():
         response=api_post(args.server,token,'/api/archive-workers/inventory',{**data,'parent_folder_id':args.parent_folder,'formats':['shorts']})
         print(json.dumps(response,indent=2));return
     if not args.channel:parser.error('Choose --inventory URL or --channel UC_ID')
-    print('Verified files:',drain(args.server,token,args.channel,args.workdir))
+    print('Verified files:',drain(args.server,token,args.channel,args.workdir,max_videos=args.batch_size))
 
 
 if __name__=='__main__':main()

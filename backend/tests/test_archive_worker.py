@@ -87,3 +87,45 @@ def test_local_inventory_validates_identities_and_never_queues(fixture):
     assert client.post('/api/archive-workers/inventory',headers=HEAD,json=payload).status_code==200
     payload['videos'][0]['video_id']='../../bad'
     assert client.post('/api/archive-workers/inventory',headers=HEAD,json=payload).status_code==422
+
+
+def test_mac_25_video_turn_releases_claim_and_resumes_without_redownload(fixture,tmp_path,monkeypatch):
+    from scripts import archive_worker as mac
+    data,drive,downloads=fixture
+    data['videos']=[data['videos'][0]]+[
+        {**data['videos'][0],'video_id':str(i).zfill(11)} for i in range(25)]
+    archive.discover(data['source_url'],'parent',['shorts'])
+    client=TestClient(app)
+
+    def get(server,token,path):
+        response=client.get(path,headers=HEAD)
+        assert response.status_code==200,response.text
+        return response.json()
+
+    def post(server,token,path,body):
+        response=client.post(path,headers=HEAD,json=body)
+        assert response.status_code==200,response.text
+        return response.json()
+
+    def send(server,token,path,video,fields,**kwargs):
+        with video.open('rb') as stream:
+            response=client.post(path,headers=HEAD,data=fields,
+                                 files={'file':('fixture.mp4',stream,'video/mp4')})
+        assert response.status_code==200,response.text
+        return response.json()
+
+    fixture_download=mac.source.download
+    monkeypatch.setattr(mac,'api_get',get)
+    monkeypatch.setattr(mac,'api_post',post)
+    monkeypatch.setattr(mac,'multipart_video',send)
+    monkeypatch.setattr(mac,'download',lambda cid,vid,directory,bound,cancelled:
+                        fixture_download(cid,vid,directory,bound))
+    assert mac.drain('http://localhost','test-token',CID,tmp_path/'mac',max_videos=25)==25
+    first=archive.view(CID)
+    assert first['status']=='partial' and first['counts']['uploaded']==25 and first['counts']['remaining']==1
+    assert not first['active_lease']
+    assert mac.drain('http://localhost','test-token',CID,tmp_path/'mac',max_videos=25)==1
+    assert archive.view(CID)['status']=='complete'
+    assert mac.drain('http://localhost','test-token',CID,tmp_path/'mac',max_videos=25)==0
+    assert len(downloads)==len(set(downloads))==26
+    assert len([f for f in drive.items.values() if f.get('appProperties')])==26

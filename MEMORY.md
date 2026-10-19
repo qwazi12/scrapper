@@ -1,5 +1,40 @@
 # Scrapper Memory
 
+## Owner requested 25-per-channel rotation — 2026-10-19 (Codex)
+
+Owner: “Do like 25 per account until u finish all. Dont redownload videos if
+already done.” This changes the local archive's turn size, not its full-library
+scope. Stopped only the owned whole-channel continuation cleanly with 57 actual
+Shorts verified in Drive and its lease released; 3,949 remain and 1 is skipped.
+The old continuation-state.json is now an interrupted historical run.
+
+Added optional max_videos to the existing Mac drain: 25 verified uploads ends
+that channel's turn through /finish, writing a truthful partial manifest and
+releasing ownership. The next visit requests only server-ledger pending items;
+verified uploaded IDs remain excluded, and local completed pending bytes can be
+reused. Default 0 preserves existing whole-channel drain behavior.
+
+Added scripts/archive_batch.py: repeated rounds of at most 25 verified Shorts
+per available channel, starting after Charan Ebenez (already 57), so AfridiAE is
+next. Complete channels are skipped; Tiny Friends TV remains explicitly
+incomplete. Each successful turn runs the owner-authorized Review-only Drive
+sync, with no approval/scheduling/publication. An access/quota/storage blocker
+or revoked lease stops the run; nonprogress cannot loop indefinitely.
+
+25 focused tests pass, including a real isolated 26-video/byte-validation/Drive-
+receipt handoff: first turn uploads 25 and releases its claim, next turn uploads
+only the remaining one, and a third turn downloads zero. All 26 download IDs and
+26 remote video intents are unique. Rotation, incomplete-channel handling,
+Review-only sync and owner Stop are separately tested with simulated services.
+These tests use original synthetic assets, not live YouTube/Drive.
+
+This is a Mac-only client change; it requires no Railway/server deployment.
+Source and notes are committed/pushed on codex/shorts-archive-20261019. New live
+state is artifacts/shorts-archive-20261019/round-robin/batch-state.json, with
+round-robin-log.txt and round-robin-launch.json in the operation artifacts root.
+Use that state/live ledger for subsequent status checks; do not use the retired
+whole-channel continuation-state.json as the current process.
+
 ## Verified live archive continuation — 2026-10-19 21:00 UTC (Codex)
 
 Both necessary Drive sync fixes are on GitHub main (7d7004a and 148f8a9) and
