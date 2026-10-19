@@ -93,6 +93,12 @@ def test_countdown_creates_own_segment_and_preserves_longform(client):
 
 
 def test_tick_makes_one_segment_when_idle_then_render_and_publish(client, monkeypatch):
+    from backend.app import queue_sources
+    bindings = []
+    # This routing-only fixture has no physical final file or review evidence.
+    # Real source retention/admission is covered separately, including UI E2E.
+    monkeypatch.setattr(queue_sources, "prepare_send", lambda s, p, item: item)
+    monkeypatch.setattr(queue_sources, "bind", lambda s, item, p: bindings.append((item.id, p.id)))
     # Orchestration unit lane: its stitch stub returns nonexistent files.
     # Physical final-file/approval contracts are tested in quality and real UI E2E.
     monkeypatch.setattr(countdown, "segment_fingerprints", lambda s, c: {"unit": "fixture"})
@@ -128,6 +134,7 @@ def test_tick_makes_one_segment_when_idle_then_render_and_publish(client, monkey
         q = s.get(QueueItem, r["queue_item_id"])
         assert q.pipeline == "Countdowns" and q.status == "ready" and q.video_path == "/v/final.mp4"
         assert q.accounts == ["default:*"] and "0:00 Intro" in q.description
+    assert bindings == [(r["queue_item_id"], cid)]
 
 
 def test_segment_failure_stops_the_countdown_with_the_reason(client):

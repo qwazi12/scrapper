@@ -213,6 +213,12 @@ def test_render_batch_runs_one_by_one_and_skips_unready(monkeypatch):
 
 
 def test_publish_batch_reports_each(client, tmp_path, monkeypatch):
+    from backend.app import queue_sources
+    # Batch-result routing uses an opaque stub. Actual reviewed source bytes
+    # and admission are exercised in test_queue_source_binding and UI E2E.
+    bindings = []
+    monkeypatch.setattr(queue_sources, "prepare_send", lambda s, p, item: item)
+    monkeypatch.setattr(queue_sources, "bind", lambda s, item, p: bindings.append((item.id, p.id)))
     from backend.app.studio import media_quality
     monkeypatch.setattr(media_quality, "require_export_approval", lambda p, root: None)  # batching unit only
 
@@ -229,6 +235,7 @@ def test_publish_batch_reports_each(client, tmp_path, monkeypatch):
     d = client.post("/api/studio/publish-batch", json={"ids": ids}).json()
     assert d["sent"] == 1
     assert [r["ok"] for r in d["results"]] == [True, False]
+    assert bindings == [(d["results"][0]["queue_item_id"], ids[0])]
     with SessionLocal() as s:
         s.query(QueueItem).filter(QueueItem.id == d["results"][0]["queue_item_id"]).delete()
         s.commit()

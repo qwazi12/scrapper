@@ -775,8 +775,8 @@ def _publish(s, c: CountdownProject) -> QueueItem:
     from ..social import queue_manager
     item = s.get(QueueItem, c.queue_item_id) if c.queue_item_id else None
     from ..social import enqueue
-    if item:
-        enqueue.rewrite_version(s,item)
+    from .. import queue_sources
+    item=queue_sources.prepare_send(s,c,item)
     if item and item.status in ("review", "ready", "retry", "error"):
         undo.record(s, "queue", f"Update countdown '{c.topic[:40]}'", rows=[item])
         for k, v in fields.items():
@@ -790,6 +790,7 @@ def _publish(s, c: CountdownProject) -> QueueItem:
         item, created = enqueue.claim(s, c, item)
         if created:
             undo.add_created(s, "queue", f"Add countdown '{c.topic[:40]}'", [item.id])
+    queue_sources.bind(s,item,c)
     s.commit()
     from ..social import queue_manager
     queue_manager.wake()

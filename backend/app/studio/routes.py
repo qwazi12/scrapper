@@ -640,8 +640,8 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
         from ..social import queue_manager
         from ..social import enqueue
         item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
-        if item:
-            enqueue.ensure_editable(item)
+        from .. import queue_sources
+        item=queue_sources.prepare_send(s,p,item)
         if item and item.status in ("review", "ready", "retry", "error"):
             undo.record(s, "queue", f"Update '{p.title}' from LongForm Studio", rows=[item])
             for k, v in fields.items():          # re-publishing a re-render updates the same row
@@ -657,6 +657,7 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
             item, created = enqueue.claim(s, p, item)
             if created:
                 undo.add_created(s, "queue", f"Add '{p.title}' from LongForm Studio", [item.id])
+        queue_sources.bind(s,item,p)
         s.commit()
         logbus.log("info", "studio_published", f"Studio #{p.id}: sent to Posting Queue as item #{item.id} (ready, default)",
                    project=p.id, queue_item=item.id)

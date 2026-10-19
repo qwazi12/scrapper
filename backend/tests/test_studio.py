@@ -379,6 +379,12 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
 
 
 def test_publish_sends_render_to_queue_once(client, monkeypatch):
+    from backend.app import queue_sources
+    # Routing-only lane uses opaque media. Real retained-source acceptance is
+    # exercised in test_queue_source_binding and the actual Studio UI flows.
+    bindings = []
+    monkeypatch.setattr(queue_sources, "prepare_send", lambda s, p, item: item)
+    monkeypatch.setattr(queue_sources, "bind", lambda s, item, p: bindings.append((item.id, p.id)))
     from backend.app.studio import media_quality
     monkeypatch.setattr(media_quality, "require_export_approval", lambda p, root: None)  # queue routing unit only; real approval in safety/E2E tests
 
@@ -402,6 +408,7 @@ def test_publish_sends_render_to_queue_once(client, monkeypatch):
         assert it.pipeline == "LongForm" and it.tags == "#sendhelp #samraimi"
         assert it.accounts == ["default:*"]                                    # Screen Central, never "mk"
     assert a["drive_job_id"] == "job1" and started == [pid, pid]  # not saved yet, so each publish retries Drive
+    assert bindings == [(a["queue_item_id"], pid)] * 2
 
 
 def test_publish_requires_a_render(client):

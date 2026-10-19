@@ -842,6 +842,10 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
     native_id = (item.research or {}).get("native_export_id")
     if native_id:require_native_queue(s,item)
+    from .. import queue_sources
+    from fastapi import HTTPException
+    try:queue_sources.required(s,item)
+    except HTTPException as exc:raise upload_post.UploadPostError(str(exc.detail),status_code=409) from exc
     images = [pathlib.Path(p) for p in (item.media_files or [])] if item.media_kind == "images" else []
     if item.media_kind == "images":
         if not native_id or not 1 <= len(images) <= 10 or any(not p.is_file() for p in images):
@@ -918,7 +922,8 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             raise upload_post.UploadPostError("Native transport changed while acquiring media; review it again",status_code=409)
     item_id=item.id
     from .. import publication_journal as journal
-    if needs_auto_seo(item) and auto_seo_enabled(s):
+    from .. import queue_sources
+    if not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
     import hashlib
@@ -928,15 +933,21 @@ async def _submit_owned_media(item,s,video_path,images,regular):
         "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
         "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path},
         sort_keys=True).encode()).hexdigest()
+    from fastapi import HTTPException
+    try:source_binding=queue_sources.verify(s,item)
+    except HTTPException as exc:raise upload_post.UploadPostError(str(exc.detail),status_code=409) from exc
     import uuid
     batch_key=uuid.uuid4().hex
     publication_identity=journal.identity(item)
     intent = [{"state": "intent", "client_request_id":batch_key, "accounts": list(item.accounts), "artifact_key": artifact_key,
                "submitted_at": datetime.datetime.now(UTC).isoformat()}]
+    source_binding_id=source_binding.id if source_binding else None
+    if source_binding_id:intent[0]['source_binding_id']=source_binding_id
     from sqlalchemy import String, cast, update
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
     # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
+                        QueueItem.created_at == item.created_at, queue_sources.admission_clause(item,source_binding),
                         QueueItem.status.in_(("ready", "retry", "review", "error")),
                         QueueItem.title == item.title, QueueItem.description == item.description,
                         QueueItem.tags == item.tags, cast(QueueItem.accounts, String) == json.dumps(item.accounts),
@@ -974,6 +985,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             from ..budget_reservations import lock
             from .. import worker_leases as leases
             entry = {**entry, "artifact_key": artifact_key}
+            if source_binding_id:entry['source_binding_id']=source_binding_id
             if result:
                 # A receipt arriving after ownership loss must survive even when
                 # the old generation is forbidden from changing the queue row.

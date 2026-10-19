@@ -45,6 +45,11 @@ def apply_ai(item: QueueItem, res: dict[str, Any], research: dict[str, Any] | No
         raise metadata.MetadataError("Submission unresolved; reconcile before rewriting")
     if (item.research or {}).get("native_export_id"):
         raise metadata.MetadataError("Native campaign copy is bound to its inspected export")
+    from sqlalchemy.orm import object_session
+    from .. import queue_sources
+    source_session=object_session(item)
+    if source_session is not None and queue_sources.controlled(source_session,item):
+        raise metadata.MetadataError('Studio source copy is bound to its reviewed export; revise and resend from its studio')
     item.title = res.get("title", item.title)
     item.description = res.get("caption", item.description)
     item.tags = " ".join(res.get("hashtags", []))
@@ -55,6 +60,8 @@ def apply_ai(item: QueueItem, res: dict[str, Any], research: dict[str, Any] | No
 async def ai_for(item: QueueItem, s, cache: dict | None = None) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Metadata for one item. Clips: TMDB-researched (clip_research). Compilations:
     the clip-titles prompt. Raises metadata.MetadataError with a readable reason."""
+    from .. import queue_sources
+    if queue_sources.controlled(s,item):raise metadata.MetadataError('Studio source copy is bound to its reviewed export; revise and resend from its studio')
     if item.compilation_id:
         return await metadata.generate_social_metadata(ai_inputs(item, s), strict=True), None
     from ..studio import gemini as sgem, tmdb

@@ -91,6 +91,8 @@ from .editorial import campaigns as campaign_routes
 app.include_router(campaign_routes.router)
 from .editorial import asset_catalog
 app.include_router(asset_catalog.router)
+from .queue_source_routes import router as queue_source_router
+app.include_router(queue_source_router)
 from .editorial import asset_annotations
 app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes
@@ -847,6 +849,9 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
     if (item.research or {}).get("native_export_id") and any(
             getattr(req, key) is not None and getattr(req, key) != getattr(item, key) for key in ("title", "description", "tags")):
         raise HTTPException(409, "Native campaign copy is approved with its media; create a revised treatment before changing copy")
+    from . import queue_sources
+    if any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','source','pipeline','media_url')):
+        queue_sources.require_copy_editable(s,item)
     undo.record(s, "queue", f"Edit #{item.id} '{(item.title or '')[:40]}'", rows=[item])
 
     if req.title is not None:
@@ -939,6 +944,8 @@ async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
+    from . import queue_sources
+    queue_sources.require_copy_editable(s,item)
 
     if not settings.gemini_api_key:
         raise HTTPException(502, "AI generation failed: GEMINI_API_KEY is not set on the server")
@@ -1031,6 +1038,8 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
+    from . import queue_sources
+    queue_sources.require_copy_editable(s,item)
     p = _studio_project_for(s, item)
     if not p:
         raise HTTPException(400, "this row didn't come from LongForm Studio — upload an image instead")
@@ -1065,6 +1074,8 @@ async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Sess
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
+    from . import queue_sources
+    queue_sources.require_copy_editable(s,item)
     if (item.research or {}).get('native_export_id'):raise HTTPException(409,'Native cover is bound to its approved export')
     s.rollback()
     data = await file.read(QUEUE_THUMB_MAX + 1)
@@ -1115,6 +1126,9 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
     items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
     for item in items:
         _require_queue_editable(item)
+        if req.action=='edit' and any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','pipeline')):
+            from . import queue_sources
+            queue_sources.require_copy_editable(s,item)
     count = len(items)
     what = {"approve": "Approve", "review": "Set to Review", "archive": "Archive", "posted": "Mark posted",
             "change_status": f"Set status {req.target_status}", "set_accounts": "Change targets",
