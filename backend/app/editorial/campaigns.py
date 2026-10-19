@@ -134,6 +134,7 @@ def create_campaign(req: CampaignIn, s: Session = Depends(get_session)):
 @router.post("/campaigns/{cid}/render/{fmt}")
 def render_campaign(cid: int, fmt: NATIVE, s: Session = Depends(get_session)):
     from ..worker_leases import scope, LeaseLost
+    from .. import costs
     try:
         with scope(f"native:{cid}"):
             from . import native
@@ -150,7 +151,9 @@ def render_campaign(cid: int, fmt: NATIVE, s: Session = Depends(get_session)):
             try:
                 with control.job("native", f"Campaign #{cid}: {fmt}", scope="editorial", ref=cid):
                     paths = {int(aid): Path(s.get(MediaAsset, int(aid)).file_path) for aid in frozen["assets"]}
-                    manifest = native.render(root, row.brief, fmt, paths)
+                    with costs.operation("native:render",ref=f"native:{cid}:{export_id}"):
+                        manifest = native.render(root, row.brief, fmt, paths)
+                    manifest["cost_ref"]=f"native:{cid}:{export_id}"
                 # Inputs are checked again after long-running render, before promotion.
                 s.expire_all(); row = get_campaign(s, cid)
                 if row.work_token != token or digest(inputs(s, row)) != digest(frozen): raise HTTPException(409, "Campaign inputs changed while rendering; this version was not promoted")

@@ -232,3 +232,24 @@ def test_mapping_correction_fences_an_inflight_metrics_worker(client,retained,mo
     assert len(called)==1  # second query is fenced before its provider boundary
     with SessionLocal() as s:
         assert not [record for record in s.query(PerformanceObservation) if record.provenance.get('lineage_id')==row['id']]
+
+
+def test_native_render_metering_has_distinct_export_references(client,monkeypatch):
+    from backend.tests.test_native_manual_formats import campaign
+    from backend.app.editorial import native
+    from backend.app import costs
+    cid,body=campaign(client,['image'])
+    original=native.render
+    def render(*args,**kwargs):
+        costs._record('synthetic-native-metering',.012,requests=1)
+        return original(*args,**kwargs)
+    monkeypatch.setattr(native,'render',render)
+    results=[client.post(f'/api/editorial/campaigns/{cid}/render/image').json() for _ in range(2)]
+    assert results[0]['manifest']['cost_ref']!=results[1]['manifest']['cost_ref']
+    snapshots=[]
+    for item in results:
+        row,_=binding(client,item['id'],source_kind='native_export')
+        snapshot=row['data']['cost_snapshot'];snapshots.append(snapshot)
+        assert snapshot['amount_usd']==pytest.approx(.012) and snapshot['status']=='native_request_reference'
+        assert snapshot['ref']==item['manifest']['cost_ref']
+    assert snapshots[0]['usage_event_ids']!=snapshots[1]['usage_event_ids']

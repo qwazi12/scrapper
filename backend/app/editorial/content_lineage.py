@@ -104,22 +104,30 @@ class BindingIn(Strict):
 
 
 def cost_snapshot(s,kind,row,manifest):
-    if kind!='export_version':return {'status':'unattributed','amount_usd':None,'reason':'No reliable request-to-original-project cost mapping is retained for this source'}
-    start=_utc(datetime.fromisoformat(manifest['project_created_at']))
-    end=_utc(row.created_at)
-    ref=f'{"studio" if row.kind=="studio" else "countdown"}:{row.project_id}'
-    attempts=[r.id for r in s.query(BudgetReservation).filter(BudgetReservation.ref==ref,
-        BudgetReservation.created_at>=start,BudgetReservation.created_at<=end)]
-    events=s.query(UsageEvent).filter(UsageEvent.ref==ref,or_(UsageEvent.reservation_id.in_(attempts),
-        (UsageEvent.created_at>=start)&(UsageEvent.created_at<=end))).all()
+    limitations=['Configured rates and owner attestations; provider invoices not independently verified',
+        'Local processing, hosting and other fixed costs are excluded']
+    if kind=='native_export' and manifest.get('cost_ref')==f'native:{row.campaign_id}:{row.id}':
+        ref=manifest['cost_ref']
+        attempts=[r.id for r in s.query(BudgetReservation).filter(BudgetReservation.ref==ref)]
+        events=s.query(UsageEvent).filter_by(ref=ref).all()
+        scope='Metered variable-cost requests for this exact native export reference, including matched later billing adjustments'
+    elif kind=='export_version':
+        start=_utc(datetime.fromisoformat(manifest['project_created_at']));end=_utc(row.created_at)
+        ref=f'{"studio" if row.kind=="studio" else "countdown"}:{row.project_id}'
+        attempts=[r.id for r in s.query(BudgetReservation).filter(BudgetReservation.ref==ref,
+            BudgetReservation.created_at>=start,BudgetReservation.created_at<=end)]
+        events=s.query(UsageEvent).filter(UsageEvent.ref==ref,or_(UsageEvent.reservation_id.in_(attempts),
+            (UsageEvent.created_at>=start)&(UsageEvent.created_at<=end))).all()
+        scope='Project request window through this retained version, including matched later billing adjustments; not marginal per-cut cost'
+        if row.kind=='countdown':limitations.append('Countdown reused-segment costs are not attributed here')
+    else:return {'status':'unattributed','amount_usd':None,'reason':'No reliable original request reference is retained for this source'}
     basis={}
     for event in events:basis[event.cost_basis or 'legacy_unknown']=basis.get(event.cost_basis or 'legacy_unknown',0)+(event.cost_usd or 0)
     holds=[r for r in s.query(BudgetReservation).filter(BudgetReservation.id.in_(attempts)) if r.state in ('reserved','dispatched','unknown','breach')]
-    return {'status':'local_project_window_snapshot' if events else 'unattributed_no_events','ref':ref,'amount_usd':sum(event.cost_usd or 0 for event in events) if events else None,
+    return {'status':('native_request_reference' if kind=='native_export' else 'local_project_window_snapshot') if events else 'no_metered_events',
+        'ref':ref,'amount_usd':sum(event.cost_usd or 0 for event in events) if events else None,
         'by_basis':basis,'usage_event_ids':[event.id for event in events],'unsettled_request_ids':[r.id for r in holds],
-        'as_of':clock(s).isoformat(),'scope':'Project request window through this retained version, including matched later billing adjustments; not marginal per-cut cost',
-        'limitations':['Configured rates and owner attestations; provider invoices not independently verified',
-            'Countdown reused-segment costs are not attributed here'] if row.kind=='countdown' else ['Configured rates and owner attestations; provider invoices not independently verified']}
+        'as_of':clock(s).isoformat(),'scope':scope,'limitations':limitations}
 
 
 @router.post('/content-lineage')
