@@ -34,18 +34,38 @@ def canonical_input(raw):
     return 'https://www.youtube.com/'+base
 
 
-def _execute(args, timeout=600):
+def _execute(args, timeout=600, cancelled=None):
     from .e2e_safety import deny_live
     deny_live('YouTube channel archive access')
     from backend.core.scraper import js_runtime_args
-    p=control.run([sys.executable,'-m','yt_dlp',*js_runtime_args(),'--ignore-config','--no-progress','--socket-timeout','30',
-        '--extractor-retries','1','--retries','2','--fragment-retries','2','--sleep-requests','1',*args],timeout=timeout)
+    cmd=[sys.executable,'-m','yt_dlp',*js_runtime_args(),'--ignore-config','--no-progress','--socket-timeout','30',
+        '--extractor-retries','1','--retries','2','--fragment-retries','2','--sleep-requests','1',*args]
+    p=control.run(cmd,timeout=timeout) if cancelled is None else _cancellable_run(cmd,timeout,cancelled)
     if p.returncode:
         message=(p.stderr or p.stdout or 'YouTube request failed')[-2000:]
         if any(x in message.lower() for x in ('not a bot','sign in','captcha','http error 403','http error 429','private video','members-only','drm','video unavailable','has been removed','age-restricted')):
             raise AccessRestricted(message)
         raise RuntimeError(message)
     return p.stdout
+
+
+def _cancellable_run(cmd,timeout,cancelled):
+    import subprocess,tempfile,time
+    if cancelled.is_set():raise RuntimeError('Archive worker lease lost')
+    with tempfile.TemporaryFile() as out,tempfile.TemporaryFile() as err:
+        child=subprocess.Popen(cmd,stdout=out,stderr=err)
+        try:
+            deadline=time.monotonic()+timeout
+            while child.poll() is None:
+                control.check()
+                if cancelled.is_set() or time.monotonic()>deadline:raise RuntimeError('Archive download stopped: lease lost or timeout')
+                try:child.wait(timeout=.5)
+                except subprocess.TimeoutExpired:pass
+            if cancelled.is_set():raise RuntimeError('Archive worker lease lost')
+            out.seek(0);err.seek(0)
+            return subprocess.CompletedProcess(cmd,child.returncode,out.read().decode(errors='replace'),err.read().decode(errors='replace'))
+        finally:
+            if child.poll() is None:child.kill();child.wait()
 
 
 def inventory(url, kinds):
@@ -81,12 +101,12 @@ def inventory(url, kinds):
     return {**result,'videos':list(entries.values()),'complete':True}
 
 
-def download(channel_id, video_id, destination: Path, max_bytes):
+def download(channel_id, video_id, destination: Path, max_bytes, cancelled=None):
     if not CHANNEL_ID.fullmatch(channel_id) or not VIDEO_ID.fullmatch(video_id): raise ValueError('Invalid media identity')
     destination.mkdir(parents=True,exist_ok=True)
     _execute(['--no-playlist','--write-info-json','--no-overwrites','--max-filesize',str(max_bytes),
         '--format','bv*[height<=1080]+ba/b[height<=1080]','--merge-output-format','mp4',
-        '--output',str(destination/'%(id)s.%(ext)s'),f'https://www.youtube.com/watch?v={video_id}'],timeout=1800)
+        '--output',str(destination/'%(id)s.%(ext)s'),f'https://www.youtube.com/watch?v={video_id}'],timeout=1800,cancelled=cancelled)
     info_path=destination/(video_id+'.info.json')
     if not info_path.is_file(): raise RuntimeError('Download has no metadata receipt')
     info=json.loads(info_path.read_text())

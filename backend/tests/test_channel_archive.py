@@ -68,6 +68,7 @@ def test_unknown_remote_outcome_reconciles_without_duplicate_or_redownload(fixtu
     with pytest.raises(TimeoutError):run()
     assert archive.local_path(CID,VID).is_file()
     assert run(True)['counts']['uploaded']==1 and calls==[VID]
+    assert archive.local_path(CID,VID) is None
     media=[r for r in drive.items.values() if r.get('appProperties')]
     assert len(media)==1
 
@@ -125,3 +126,25 @@ def test_api_is_authenticated_and_paginates_manifest(fixture):
     assert client.get('/api/channel-archives',headers=headers).json()['channels'][0]['channel_id']==CID
     assert client.get(f'/api/channel-archives/{CID}/capacity',headers=headers).json()['drive_available_bytes']>0
     assert client.get(f'/api/channel-archives/{CID}/manifest',headers=headers).json()['schema_version']==1
+
+
+def test_zero_quota_stops_before_downloading_any_media(fixture,monkeypatch):
+    _,drive,calls=fixture
+    original=drive.get
+    from scripts.e2e.fake_archive_drive import Reply
+    def get(**kw):
+        if 'fileId' not in kw:return Reply(lambda:{'storageQuota':{'limit':'0','usage':'0'}})
+        return original(**kw)
+    monkeypatch.setattr(drive,'get',get)
+    with pytest.raises(ValueError,match='zero available'):run()
+    assert calls==[] and not any(r.get('appProperties') for r in drive.items.values())
+
+
+def test_archive_remote_receipts_use_immutable_shared_evidence_journal(fixture):
+    from backend.app.models import RemoteCopyEvidence
+    run()
+    with SessionLocal() as s:
+        rows=s.query(RemoteCopyEvidence).filter_by(resource=f'ArchiveVideo:{CID}:{VID}').all()
+        assert {'remote_creation_receipt','verified_transfer_receipt'} <= {r.action for r in rows}
+        proof=next(r.evidence['verification'] for r in rows if r.action=='verified_transfer_receipt')
+        assert proof['sha256'] and proof['remote_md5'] and proof['bytes']>0

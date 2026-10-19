@@ -14,6 +14,7 @@ os.environ["ACCESS_TOKEN"] = "test-token"
 os.environ["UPLOADPOST_API_KEY"] = ""
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = ""
+os.environ["GOOGLE_DRIVE_AUTHORIZED_USER_JSON"] = ""
 os.environ["WORKER_MODE"] = "web_only"  # no background threads in tests
 for _key in ("VIDIQ_API_KEY", "TMDB_API_KEY", "API_READ_ACCESS_TOKEN", "TMDB_READ_ACCESS_TOKEN",
              "TMDB_API_READ_ACCESS_TOKEN", "YOUTUBE_API_KEY", "TTS_API_KEY", "UPLOAD_POST_API_KEY", "UPLOADPOST_KEY"):

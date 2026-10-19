@@ -95,8 +95,13 @@ export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
       {channel.error && <p role="alert">{channel.error}</p>}
       {channel.drive_folder_id && <p><a href={`https://drive.google.com/drive/folders/${encodeURIComponent(channel.drive_folder_id)}`} target="_blank" rel="noreferrer">Open channel Drive folder</a></p>}
       <button disabled={busy} onClick={() => preflight(channel.channel_id)}>Check storage capacity</button>{" "}
-      <button disabled={busy || !channel.inventory.complete} onClick={() => job(() => api.runArchive(channel.channel_id))}>Archive missing files</button>{" "}
-      <button disabled={busy || !channel.inventory.complete} onClick={() => job(() => api.runArchive(channel.channel_id, true))}>Retry failures / resume</button>{" "}
+      <button disabled={busy || channel.active_lease || !channel.inventory.complete} onClick={() => job(() => api.runArchive(channel.channel_id))}>Archive missing files</button>{" "}
+      <button disabled={busy || channel.active_lease || !channel.inventory.complete} onClick={() => job(() => api.runArchive(channel.channel_id, true))}>Retry failures / resume</button>{" "}
+      <button disabled={busy || channel.active_lease || !channel.inventory.complete} onClick={async () => {
+        try { await api.handoffArchive(channel.channel_id); await refresh(); setStatus("Waiting for the authorized Mac worker. Keep its local archive files until verified receipts arrive."); }
+        catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)); }
+      }}>Send to Mac worker</button>{" "}
+      {channel.status === "awaiting_worker" && <p>Mac worker command: <code>python scripts/archive_worker.py --channel {channel.channel_id}</code>. The configured local worker also processes explicit handoffs.</p>}
       <button onClick={() => downloadManifest(channel.channel_id)}>Download channel manifest</button>
       {capacity[channel.channel_id] && <p role="status">Local free: {bytes(capacity[channel.channel_id].local_free_bytes)}; Drive used: {bytes(capacity[channel.channel_id].drive_usage_bytes)}; Drive available: {bytes(capacity[channel.channel_id].drive_available_bytes)}. {capacity[channel.channel_id].quota_note}</p>}
     </article>)}

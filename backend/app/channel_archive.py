@@ -62,10 +62,22 @@ def serialize(row):
 
 
 def discover(url, parent, kinds):
+    return store_inventory(source.inventory(url,kinds),parent,kinds)
+
+
+def store_inventory(data,parent,kinds):
+    """Persist complete canonical metadata from server or authorized Mac worker."""
     from .drive_sync import extract_folder_id
     parent=extract_folder_id(parent)
     if not re.fullmatch(r'[\w-]+',parent,re.ASCII):raise ValueError('Invalid Drive parent folder')
-    data=source.inventory(url,kinds);cid=data['channel_id'];revision=uuid.uuid4().hex
+    cid=data['channel_id'];revision=uuid.uuid4().hex
+    if not source.CHANNEL_ID.fullmatch(cid):raise ValueError('Invalid canonical channel ID')
+    data['source_url']=source.canonical_input(data['source_url'])
+    if not kinds or any(k not in source.KINDS for k in kinds):raise ValueError('Invalid archive formats')
+    for video in data['videos']:
+        if not source.VIDEO_ID.fullmatch(video['video_id']) or video['media_kind'] not in kinds:
+            raise ValueError('Invalid video identity or tab membership')
+        video['original_url']='https://www.youtube.com/watch?v='+video['video_id']
     with leases.scope('archive:'+cid), SessionLocal() as s:
         c=s.get(ArchiveChannel,cid)
         if c and c.parent_folder_id!=parent:raise ValueError('Channel already has an archive parent; moving archives requires explicit reconciliation')
@@ -180,9 +192,14 @@ def upload_one(service,cid,vid,folder):
             remote=service.files().get(fileId=row.drive_file_id,fields='size,trashed',**ALL).execute()
             if remote.get('trashed') or int(remote.get('size',-1))!=0:raise
         else:
+            record_verified(row)
             persist(cid,vid,status='uploaded',verified_at=dt.datetime.now(dt.timezone.utc),error=None)
+            cleanup_verified(service,cid,vid)
             return
     if not path:raise ValueError('No validated local file is available; resume on its original local worker')
+    available=capacity(service,cid)['drive_available_bytes']
+    if available is not None and row.file_size>available:
+        raise ValueError('Drive available capacity cannot hold this file; verified local bytes retained')
     with pin([path]):
         if hashes(path)!=(row.sha256,row.md5,row.file_size):raise ValueError('Local archive bytes changed')
         if not row.drive_file_id:
@@ -201,6 +218,9 @@ def upload_one(service,cid,vid,folder):
                 except BaseException:
                     persist(cid,vid,status='ambiguous',error='Drive metadata creation has an unknown outcome; reconcile before retry')
                     raise
+                from .delivery_archive import transfer_scope,record_created
+                with transfer_scope(f'ArchiveVideo:{cid}:{vid}',None):
+                    record_created(created,row.sha256,row.md5,row.file_size,name)
                 row.drive_file_id=created['id'];persist(cid,vid,drive_file_id=row.drive_file_id,status='downloaded')
         remote=service.files().get(fileId=row.drive_file_id,fields='size,trashed,parents,appProperties',**ALL).execute()
         if remote.get('trashed'):raise ValueError('Remote file was trashed')
@@ -217,9 +237,27 @@ def upload_one(service,cid,vid,folder):
                 control.check();_,response=request.next_chunk()
             if hashes(path)!=(row.sha256,row.md5,row.file_size):raise ValueError('Local file changed during upload')
             _verify(service,row)
+        record_verified(row)
         persist(cid,vid,status='uploaded',verified_at=dt.datetime.now(dt.timezone.utc),error=None)
-    # Exclusive reclamation only after committed independent remote verification.
-    with pin([path],exclusive=True):
+    cleanup_verified(service,cid,vid)
+
+
+def record_verified(row):
+    from .delivery_archive import record_transfer
+    record_transfer(f'ArchiveVideo:{row.channel_id}:{row.video_id}',None,
+        {'id':row.drive_file_id,'verification':{'sha256':row.sha256,'remote_md5':row.md5,
+         'bytes':row.file_size,'remote_file_id':row.drive_file_id,'checked_at':dt.datetime.now(dt.timezone.utc).isoformat()}},'source_archive')
+
+
+def cleanup_verified(service,cid,vid):
+    from .file_use import pin
+    path=local_path(cid,vid)
+    if not path:return
+    with pin([path],exclusive=True),SessionLocal() as s:
+        row=s.get(ArchiveVideo,(cid,vid))
+        if row.status!='uploaded':raise ValueError('Local archive is not verified in Drive')
+        _verify(service,row)
+        if hashes(path)!=(row.sha256,row.md5,row.file_size):raise ValueError('Local bytes changed; retained for owner review')
         control.check();path.unlink()
     persist(cid,vid,local_path=None)
 
@@ -264,6 +302,10 @@ def run(cid, retry=False):
         if not channel or not channel.inventory.get('complete'):raise ValueError('Complete channel inventory is required first')
         title,parent,folder,revision=channel.title,channel.parent_folder_id,channel.drive_folder_id,channel.inventory['revision']
     cap=capacity(service,cid)
+    with SessionLocal() as s:
+        needs_new_copy=s.query(ArchiveVideo).filter(ArchiveVideo.channel_id==cid,ArchiveVideo.status!='uploaded',ArchiveVideo.drive_file_id.is_(None)).count()
+    if cap['drive_available_bytes']==0 and needs_new_copy:
+        raise ValueError('Drive reports zero available upload capacity. Use an existing owner OAuth grant or a writable Shared Drive; no media downloaded')
     if cap['drive_available_bytes'] is not None and cap['estimate_known_bytes']>cap['drive_available_bytes']:
         raise ValueError('Drive quota cannot fit the known remaining estimate')
     if cap['local_free_bytes']<2*settings.max_upload_bytes+RESERVE:raise ValueError('Not enough local temporary space for one bounded transfer')
@@ -277,7 +319,8 @@ def run(cid, retry=False):
         for n,vid in enumerate(ids,1):
             control.check();control.progress(f'Archiving {n}/{len(ids)}: {vid}')
             with SessionLocal() as s:row=s.get(ArchiveVideo,(cid,vid));s.expunge(row)
-            if row.status=='uploaded':continue
+            if row.status=='uploaded':
+                cleanup_verified(service,cid,vid);continue
             if row.seen_inventory!=revision:continue  # preserve deleted/missing history
             if row.status in ('restricted','unavailable','failed') and not retry:continue
             if (row.metadata_snapshot or {}).get('live_status') in ('is_live','is_upcoming'):
@@ -292,11 +335,10 @@ def run(cid, retry=False):
                 upload_one(service,cid,vid,folder)
             except control.Cancelled:raise
             except source.AccessRestricted as exc:
-                persist(cid,vid,status='restricted',error=str(exc)[-2000:])
-                # Private/removed/age-restricted items are recorded and skipped.
-                # Challenges/rate limits stop the channel; no proxy/token evasion.
                 low=str(exc).lower()
-                if any(x in low for x in ('not a bot','captcha','http error 403','http error 429')):raise
+                challenge=any(x in low for x in ('not a bot','captcha','http error 403','http error 429'))
+                persist(cid,vid,status='awaiting_worker' if challenge else 'restricted',error=str(exc)[-2000:])
+                if challenge:raise  # explicit local handoff; no proxy/token evasion
                 continue
             except Exception as exc:
                 with SessionLocal() as s:current=s.get(ArchiveVideo,(cid,vid)).status

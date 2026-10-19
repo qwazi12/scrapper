@@ -289,6 +289,7 @@ def financial_holds_fixture():
 from backend.app import channel_archive, channel_sources, drive_sync
 from scripts.e2e.fake_archive_drive import Drive as ArchiveDrive
 ARCHIVE_CHANNEL='UC'+'x'*22
+archive_inventory_count=63
 archive_drive=ArchiveDrive()
 archive_downloads=[]
 
@@ -297,7 +298,7 @@ def archive_inventory(url,kinds):
     return {'channel_id':ARCHIVE_CHANNEL,'title':'Original Archive Fixture','handle':'@archive-fixture',
         'source_url':url,'complete':True,'videos':[{'video_id':str(n).zfill(11),'title':f'Original shapes {n}',
             'media_kind':'shorts','original_url':f'https://www.youtube.com/watch?v={n:011}',
-            'estimated_bytes':TRAILER.stat().st_size} for n in range(63)]}
+            'estimated_bytes':TRAILER.stat().st_size} for n in range(archive_inventory_count)]}
 
 def archive_download(cid,vid,destination,bound):
     if cid!=ARCHIVE_CHANNEL:raise ValueError('Unknown archive fixture')
@@ -322,3 +323,24 @@ def archive_evidence():
         'cloud_media_files':sum(bool(x.get('appProperties')) for x in archive_drive.items.values()),
         'checksummed_media_bytes':sum(len(x.get('bytes',b'')) for x in archive_drive.items.values() if x.get('appProperties')),
         'queue_rows':queued,'external_spend_usd':0}
+
+
+@app.post('/api/e2e/archive-addition')
+def archive_addition():
+    global archive_inventory_count
+    archive_inventory_count=64
+    return {'new_total':64}
+
+@app.post('/api/e2e/archive-local-run')
+def archive_local_run():
+    from scripts import archive_worker
+    previous_download,previous_upload=archive_worker.download,archive_worker.multipart_video
+    def download(cid,vid,directory,bound,cancelled):return archive_download(cid,vid,directory,bound)
+    def lost_receipt(*args,**kwargs):
+        response=previous_upload(*args,**kwargs)
+        raise TimeoutError('Simulated server response loss after verified Drive receipt')
+    try:
+        archive_worker.download=download;archive_worker.multipart_video=lost_receipt
+        count=archive_worker.drain(os.environ['SAFE_E2E_API_URL'],settings.access_token,ARCHIVE_CHANNEL,ROOT/'mac-archive')
+        return {'verified':count,'simulated_drive':True,'actual_drive_uploads':0}
+    finally:archive_worker.download=previous_download;archive_worker.multipart_video=previous_upload

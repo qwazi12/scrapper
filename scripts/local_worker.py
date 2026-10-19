@@ -171,14 +171,19 @@ def download(url: str, workdir: pathlib.Path, browser: str | None, cancelled=Non
 
 def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dict, claim: dict) -> dict:
     """Multipart-upload the video (+thumb, +metadata) back to the server."""
-    boundary = f"----scrapperLocalWorker{uuid.uuid4().hex}"
     thumb = video.with_suffix(".jpg")
     keep=("id","title","uploader","uploader_id","duration","width","height","extractor","webpage_url","original_url")
     fields={'meta':json.dumps({k:info[k] for k in keep if k in info}), 'worker_token':claim['token'],
             'worker_id':WORKER_ID,'worker_generation':str(claim['generation'])}
+    return multipart_video(server,token,f"/api/clips/{clip_id}/upload",video,fields,thumbnail=thumb)
+
+
+def multipart_video(server,token,endpoint,video,fields,*,max_bytes=500*1024*1024,thumbnail=None):
+    """Bounded streaming transport shared by clip recovery and channel archives."""
+    boundary=f"----scrapperLocalWorker{uuid.uuid4().hex}"
     pieces=[]
-    for field,path,ctype in [('file',video,'video/mp4'),*([('thumb',thumb,'image/jpeg')] if thumb.exists() else [])]:
-        if path.stat().st_size > (500*1024*1024 if field=='file' else 5*1024*1024):
+    for field,path,ctype in [('file',video,'video/mp4'),*([('thumb',thumbnail,'image/jpeg')] if thumbnail and thumbnail.exists() else [])]:
+        if path.stat().st_size > (max_bytes if field=='file' else 5*1024*1024):
             raise RuntimeError('Local media exceeds the bounded worker upload limit')
         # The generated local filename is not a transport header supplied by a website.
         header=f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{field}.bin"\r\nContent-Type: {ctype}\r\n\r\n'.encode()
@@ -195,7 +200,7 @@ def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dic
             else:yield piece
 
     req = urllib.request.Request(
-        f"{server.rstrip('/')}/api/clips/{clip_id}/upload",
+        f"{server.rstrip('/')}{endpoint}",
         data=body(),
         method="POST",
         headers={
@@ -259,6 +264,19 @@ def drain(server: str, token: str, browser: str | None) -> int:
     return done
 
 
+def drain_archives(server,token):
+    """Only explicit owner handoffs; challenge failures do not auto-loop."""
+    if str(REPO) not in sys.path:sys.path.insert(0,str(REPO))
+    from scripts import archive_worker
+    done=0
+    channels=api_get(server,token,'/api/channel-archives')['channels']
+    for channel in channels:
+        if channel['status']!='awaiting_worker' or channel['active_lease']:continue
+        try:done+=archive_worker.drain(server,token,channel['channel_id'],REPO/'data'/'archive-worker')
+        except Exception as exc:log_msg(f"Archive {channel['channel_id']} stopped: {exc}")
+    return done
+
+
 def main() -> int:
     env = load_env()
     ap = argparse.ArgumentParser(description=__doc__,
@@ -279,6 +297,8 @@ def main() -> int:
     browser = args.browser or None
     if not args.watch:
         n = drain(args.server, args.token, browser)
+        archived = drain_archives(args.server,args.token)
+        log_msg(f"verified archive files: {archived}")
         log_msg(f"done — {n} clip(s) recovered")
         return 0
 
@@ -286,6 +306,7 @@ def main() -> int:
     while True:
         try:
             drain(args.server, args.token, browser)
+            drain_archives(args.server,args.token)
         except KeyboardInterrupt:
             return 0
         except Exception as exc:

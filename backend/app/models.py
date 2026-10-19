@@ -574,3 +574,14 @@ class ArchiveVideo(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     seen_inventory: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ArchiveWorkerClaim(Base):
+    __tablename__ = 'archive_worker_claims'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String(32), index=True)
+    worker_id: Mapped[str] = mapped_column(String(80))
+    generation: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default='claimed')
+    receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)

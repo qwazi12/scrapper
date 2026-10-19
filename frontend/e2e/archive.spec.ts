@@ -42,6 +42,20 @@ test("Archive UI: complete inventory, verified bytes, interrupted upload, recove
   await channel.getByRole("button", { name: "Archive missing files" }).click();
   await expect(channel.getByRole("button", { name: "Archive missing files" })).toBeEnabled();
   expect((await readEvidence()).download_calls).toBe(63);
+  // A later new Short goes through the actual authenticated Mac HTTP handoff.
+  await request.post(`${stack.api}/api/e2e/archive-addition`, { headers });
+  await page.getByRole("button", { name: "Inventory complete channel", exact: true }).click();
+  await expect(channel.getByTestId("archive-counts")).toContainText("Discovered 64");
+  await channel.getByRole("button", { name: "Send to Mac worker" }).click();
+  await expect(channel).toContainText("Mac worker command:");
+  const mac = await request.post(`${stack.api}/api/e2e/archive-local-run`, { headers });
+  expect(mac.ok(), await mac.text()).toBe(true);
+  expect((await mac.json()).verified).toBe(1);
+  await page.getByRole("button", { name: "Refresh archive progress" }).click();
+  await expect(channel.getByTestId("archive-counts")).toContainText("Uploaded 64");
+  const final = await readEvidence();
+  expect(final.download_calls).toBe(64);expect(final.cloud_media_files).toBe(64);
+  expect(final.queue_rows).toBe(before.queue_rows);
   const [download] = await Promise.all([page.waitForEvent("download"), channel.getByRole("button", { name: "Download channel manifest" }).click()]);
   await download.saveAs(path.join(evidence, "archive-channel-manifest.json"));
   await page.screenshot({ path: path.join(evidence, "archive-complete.png"), fullPage: true });

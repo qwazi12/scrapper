@@ -1565,6 +1565,7 @@ export const api = {
   archiveChannels: () => req<{ channels: ChannelArchive[] }>("/api/channel-archives", { headers: headers(false) }),
   inventoryArchive: (data: { url: string; parent_folder_id: string; formats: string[] }) => req<{ job_id: string }>("/api/channel-archives/inventory", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   runArchive: (id: string, retry_failures = false) => req<{ job_id: string }>(`/api/channel-archives/${encodeURIComponent(id)}/run`, { method: "POST", headers: headers(), body: JSON.stringify({ retry_failures }) }),
+  handoffArchive: (id: string) => req<{ awaiting_worker: boolean }>(`/api/channel-archives/${encodeURIComponent(id)}/handoff`, { method: "POST", headers: headers() }),
   stopArchive: (id: string) => req<{ stopped: boolean }>(`/api/channel-archives/${encodeURIComponent(id)}/stop`, { method: "POST", headers: headers() }),
   archiveCapacity: (id: string) => req<ArchiveCapacity>(`/api/channel-archives/${encodeURIComponent(id)}/capacity`, { headers: headers(false) }),
   archiveManifest: (id: string) => req<ChannelArchive>(`/api/channel-archives/${encodeURIComponent(id)}/manifest`, { headers: headers(false) }),

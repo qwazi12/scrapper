@@ -75,3 +75,35 @@ API references checked during implementation:
 [Drive files.create](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/create),
 [Drive about.get](https://developers.google.com/workspace/drive/api/reference/rest/v3/about/get),
 [yt-dlp options](https://github.com/yt-dlp/yt-dlp/blob/master/README.md).
+
+
+## Mac handoff and actual inventory
+
+The owner UI's Send to Mac worker action queues an explicit archive handoff. The
+existing local_worker --watch loop handles those channels; it does not auto-retry
+challenged channels. A direct command is:
+
+```
+python scripts/archive_worker.py --channel CANONICAL_UC_ID
+python scripts/archive_worker.py --inventory https://www.youtube.com/@handle
+```
+
+SERVER_URL and ACCESS_TOKEN come from environment or local ignored deploy.env.
+Keep server tokens out of public command examples. No Drive credentials are sent
+to the worker. It renews the channel claim, takes one missing item, retains local
+bytes until a verified matching server receipt, and preserves files after an
+uncertain response. Stop in the UI revokes the generation. The download process
+also terminates on lease loss. Multiple Macs and a server archive cannot own the
+same canonical channel simultaneously.
+
+ARCHIVE_INVENTORY.json records the actual public enumeration:4004 Shorts across
+nine complete channels, all byte-size estimates unknown. Tiny Friends TV currently
+has no public Shorts tab and its visible content differs from the screenshot.
+That source remains incomplete. No actual source video or real upload is claimed.
+
+The real Movie Clips folder is a personal My Drive folder. The currently configured
+service account can read it but reports zero storage quota. Actual uploads need an
+existing owner-authenticated path or a writable Shared Drive. The optional
+GOOGLE_DRIVE_AUTHORIZED_USER_JSON setting accepts an existing authorized-user
+credential or local path; it does not establish new scopes/grants. Owner input on
+the usable upload path is pending. Quota0 preflight stops before media download.

@@ -84,3 +84,14 @@ def stop(cid:str):
         worker_leases.revoke(s,'archive:'+cid);s.commit()
     archive.persist(cid,status='stopped',error='Stopped by owner; verified copies and unfinished local files retained')
     return {'stopped':True}
+
+
+@router.post('/{cid}/handoff')
+def handoff(cid:str):
+    try:
+        current=archive.view(cid,limit=0)
+        if not current['inventory']['complete']:raise HTTPException(409,'Complete inventory required before Mac handoff')
+    except ValueError as exc:raise HTTPException(404,str(exc))
+    stop(cid)
+    archive.persist(cid,status='awaiting_worker',error=None)
+    return {'awaiting_worker':True,'channel_id':cid}

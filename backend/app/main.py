@@ -273,6 +273,8 @@ from .export_history import router as export_history_router
 app.include_router(export_history_router)
 from .archive_routes import router as archive_router
 app.include_router(archive_router)
+from .archive_worker import router as archive_worker_router
+app.include_router(archive_worker_router)
 
 
 # --- hybrid local worker (Reliability Layer 5) -------------------------------

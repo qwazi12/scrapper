@@ -68,6 +68,18 @@ def get_drive_service():
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
+    # An existing owner OAuth grant can write personal My Drive storage. This
+    # does not create grants, broaden scopes or transmit credentials to workers.
+    authorized_user = os.environ.get("GOOGLE_DRIVE_AUTHORIZED_USER_JSON", "").strip()
+    if authorized_user:
+        from google.oauth2.credentials import Credentials
+        try:
+            info = json.loads(authorized_user) if authorized_user.startswith("{") else json.loads(Path(authorized_user).read_text())
+            creds = Credentials.from_authorized_user_info(info, scopes=SCOPES)
+            return build("drive", "v3", credentials=creds)
+        except Exception as exc:
+            raise RuntimeError("The configured owner Drive OAuth credential could not be loaded; check local configuration") from exc
+
     sa_env = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     creds = None
 

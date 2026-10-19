@@ -34,6 +34,6 @@ Keep those lanes disabled and continue all independent local work. Docker/Linux
 and PostgreSQL must have actual execution evidence before being marked passed.
 
 
-| A01 Full-channel archive | Full inventory/pagination, canonical channel/video ledger, quota/storage preflight, sequential validated media transfers, checksum receipts, resumability, channel manifests and owner UI | AUDITED; implementation pending; exact Tiny Friends TV/tenth channel, format and publication clarification requested |
+| A01 Full-channel archive | Full inventory/pagination, canonical channel/video ledger, quota/storage preflight, sequential validated media transfers, checksum receipts, resumability, channel manifests and owner UI | PARTIAL; independent ledger/UI/Mac handoff and simulated-cloud media E2E verified;10 canonical identities and4004 public Shorts inventoried; actual upload blocked by current service-account quota0; Tiny Friends TV current Shorts unavailable. Owner confirmed Shorts-only/archive-only |
 
 Archive access challenges/restricted items must be logged; do not evade DRM, authentication, CAPTCHA or platform controls. Existing posting ingestion is not proof of an archival workflow. Real Drive transfer and actual channel verification remain unexecuted.

@@ -14,7 +14,7 @@ if (not root.name.startswith('scpg-') or not (root / '.scrapper-postgres-fixture
         or url.hostname or url.path != '/scrapper_fixture' or query.get('host') != [str(root / 'socket')]):
     raise RuntimeError('PostgreSQL tests require a newly created marked local Unix-socket cluster')
 for key in ('GEMINI_API_KEY','VIDIQ_API_KEY','TMDB_API_KEY','API_READ_ACCESS_TOKEN','TMDB_READ_ACCESS_TOKEN',
-            'UPLOADPOST_API_KEY','UPLOAD_POST_API_KEY','GOOGLE_SERVICE_ACCOUNT_JSON','YOUTUBE_API_KEY','TTS_API_KEY'):
+            'UPLOADPOST_API_KEY','UPLOAD_POST_API_KEY','GOOGLE_SERVICE_ACCOUNT_JSON','GOOGLE_DRIVE_AUTHORIZED_USER_JSON','YOUTUBE_API_KEY','TTS_API_KEY'):
     os.environ[key] = ''
 os.environ.update(ACCESS_TOKEN='test-token',WORKER_MODE='web_only',SAFE_E2E_MODE='false',
     DATA_DIR=str(root/'app-data'),BACKUP_ENABLED='false',MAX_DISK_USAGE_PERCENT='101',

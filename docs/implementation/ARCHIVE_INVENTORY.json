@@ -1,0 +1,99 @@
+{
+  "observed_at": "2026-10-18",
+  "actual_media_downloads": 0,
+  "actual_drive_uploads": 0,
+  "channels": [
+    {
+      "handle": "@CharanEbenez",
+      "channel_id": "UCeXBEiflofPEDIHghvR1ugA",
+      "complete": true,
+      "shorts": 298,
+      "estimated_bytes": 0,
+      "unknown_size_count": 298,
+      "warnings": []
+    },
+    {
+      "handle": "@AfridiAE",
+      "channel_id": "UCKdzRZbkyT--dJcVvOhIK_w",
+      "complete": true,
+      "shorts": 208,
+      "estimated_bytes": 0,
+      "unknown_size_count": 208,
+      "warnings": []
+    },
+    {
+      "handle": "@RockMovie777",
+      "channel_id": "UCrKyDViaxVNmVjtTHAbrUvg",
+      "complete": true,
+      "shorts": 129,
+      "estimated_bytes": 0,
+      "unknown_size_count": 129,
+      "warnings": []
+    },
+    {
+      "handle": "@Agi3D3",
+      "channel_id": "UCt14iIpZ17j0I1ORfitpfig",
+      "complete": true,
+      "shorts": 277,
+      "estimated_bytes": 0,
+      "unknown_size_count": 277,
+      "warnings": []
+    },
+    {
+      "handle": "@sir7076",
+      "channel_id": "UCEYPth-uCtCs7uGqVKUk7aw",
+      "complete": true,
+      "shorts": 259,
+      "estimated_bytes": 0,
+      "unknown_size_count": 259,
+      "warnings": []
+    },
+    {
+      "handle": "@FLICKSFYP",
+      "channel_id": "UC-t9JzBmFv_P5D9bIKZI-IQ",
+      "complete": true,
+      "shorts": 1120,
+      "estimated_bytes": 0,
+      "unknown_size_count": 1120,
+      "warnings": []
+    },
+    {
+      "handle": "@theaiplot",
+      "channel_id": "UCEh4n8OFGogkF9Giv-jUdOg",
+      "complete": true,
+      "shorts": 674,
+      "estimated_bytes": 0,
+      "unknown_size_count": 674,
+      "warnings": []
+    },
+    {
+      "handle": "@nfiqjfoiqhfqnfi131",
+      "channel_id": "UCpc3WsozCCi1Cd1tf_Ne1RQ",
+      "complete": false,
+      "shorts": 0,
+      "estimated_bytes": 0,
+      "unknown_size_count": 0,
+      "warnings": [
+        "ERROR: [youtube:tab] @nfiqjfoiqhfqnfi131: This channel does not have a shorts tab\n"
+      ]
+    },
+    {
+      "handle": "@DoctorWhoShorts",
+      "channel_id": "UCJ7rzUjITOhlRylVvcMQ9Fw",
+      "complete": true,
+      "shorts": 1023,
+      "estimated_bytes": 0,
+      "unknown_size_count": 1023,
+      "warnings": []
+    },
+    {
+      "handle": "@ArliStoryTime",
+      "channel_id": "UCOtbkS56jbV39IZ7osaSDBA",
+      "complete": true,
+      "shorts": 16,
+      "estimated_bytes": 0,
+      "unknown_size_count": 16,
+      "warnings": []
+    }
+  ]
+}
