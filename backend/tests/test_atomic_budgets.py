@@ -96,3 +96,16 @@ except costs.DailyCapReached:
     assert all(p.returncode==0 for p in children), results
     assert sum(out.strip()!='DENIED' for out,err in results)==1
     with SessionLocal() as s: assert br.held_micros(s)==600000
+
+
+def test_concurrent_today_extras_are_added_without_lost_updates(monkeypatch):
+    import threading
+    barrier=threading.Barrier(6)
+    original=br.lock
+    def synchronized_lock(s):
+        barrier.wait(timeout=10)
+        return original(s)
+    monkeypatch.setattr(br,'lock',synchronized_lock)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(lambda _:costs.add_today_extra(1),range(6)))
+    assert costs.daily_status()['extra_today_usd']==6

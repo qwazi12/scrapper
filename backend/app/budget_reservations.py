@@ -52,19 +52,20 @@ def reserve(service: str, upper_usd) -> str:
     amount = micros(upper_usd)
     with SessionLocal() as s:
         lock(s)
+        asof=costs.clock(s)
         cfg = costs.settings_dict(s)
         if s.query(BudgetReservation).filter_by(state="breach").first():
             raise costs.BudgetExceeded("Unresolved request budget breach")
         holds = held_micros(s)
-        monthly = micros(costs.month_spend(s) + costs.fixed_monthly(cfg))
+        monthly = micros(costs.month_spend(s,costs.month_key(asof)) + costs.fixed_monthly(cfg))
         if cfg.get("hard_stop") and cfg.get("budget_usd") and monthly + holds + amount > micros(cfg["budget_usd"]):
             raise costs.BudgetExceeded("Monthly budget cannot cover this attempt and unsettled holds")
-        cap = costs.effective_cap(cfg)
-        if cap and micros(costs.today_spend(s)) + holds + amount > micros(cap):
+        cap = costs.effective_cap(cfg,asof)
+        if cap and micros(costs.today_spend(s,asof)) + holds + amount > micros(cap):
             raise costs.DailyCapReached("Daily cap cannot cover this attempt and unsettled holds; unknown charges remain reserved")
         op, ref = costs._op.get()
         row = BudgetReservation(id=str(uuid.uuid4()), service=service, operation=op, ref=ref,
-                                reserved_micros=amount, state="reserved")
+                                reserved_micros=amount, state="reserved",created_at=asof)
         s.add(row)
         from .worker_leases import acquire
         from .resume import BOOT
@@ -144,7 +145,9 @@ def request_bound(service: str, body: dict, model: str | None = None) -> float:
     deducted from an estimate while concurrent attempts may consume it.
     """
     from . import costs
-    cfg = costs.settings_dict()
+    with SessionLocal() as s:
+        cfg = costs.settings_dict(s)
+        price_at=costs.clock(s)
     declared = (cfg.get("request_bounds") or {}).get(service + (":" + model if model else ""))
     if declared is not None:
         value = micros(declared)
@@ -156,7 +159,7 @@ def request_bound(service: str, body: dict, model: str | None = None) -> float:
     if (service != "gemini" or model not in cfg["gemini"] or 'inline_data' in encoded
             or 'inlineData' in encoded or body.get("tools") or type(output) is not int or not 1 <= output <= 65536):
         raise costs.BudgetExceeded(f"No bounded cost contract for {service}:{model or 'default'}; configure costs.request_bounds before paid calls")
-    pin, pout = costs.gemini_price(model, cfg)
+    pin, pout = costs.gemini_price(model, cfg,price_at)
     # UTF-8 bytes plus JSON overhead safely overcounts ordinary text tokens.
     return micros(len(encoded.encode()) / 1e6 * pin + output / 1e6 * pout) / 1e6
 
@@ -186,7 +189,7 @@ def resolve(rid, actual_usd, receipt, rationale, *, confirm_interrupted=False, e
         save_decision(s,'usd',rid,amount,receipt,rationale,request_key)
         previous=row.actual_micros or 0
         s.add(UsageEvent(service=row.service,operation=row.operation,ref=row.ref,
-                         month=costs.month_key(),cost_usd=(amount-previous)/1e6,requests=0))
+                         month=costs.month_key(costs.clock(s)),created_at=costs.clock(s),cost_usd=(amount-previous)/1e6,requests=0))
         if not s.get(BudgetResolution,rid):
             s.add(BudgetResolution(reservation_id=rid,actual_micros=amount,receipt=receipt,rationale=rationale))
         row.actual_micros,row.state=amount,'settled'

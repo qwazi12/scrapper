@@ -85,9 +85,11 @@ def _ledger(s) -> dict[str, Any]:
     return dict(row.value or {}) if row else {}
 
 
-def _day() -> str:
+def _day(s=None) -> str:
     from . import costs
-    return datetime.datetime.now(UTC).astimezone(costs.day_tz()).date().isoformat()
+    if s is None:
+        with SessionLocal() as own:return _day(own)
+    return costs.clock(s).astimezone(costs.day_tz()).date().isoformat()
 
 
 def usage(s=None) -> dict[str, Any]:
@@ -95,7 +97,8 @@ def usage(s=None) -> dict[str, Any]:
     s = s or SessionLocal()
     try:
         led = _ledger(s)
-        day, month = _day(), _day()[:7]
+        day = _day(s)
+        month=day[:7]
         held = sum(r.credits for r in s.query(CreditReservation).filter(CreditReservation.state.in_(("reserved","dispatched","unknown"))).all())
         return {"held": held, "today": int((led.get("days") or {}).get(day, 0)),
                 "month": sum(int(v) for k, v in (led.get("days") or {}).items() if k.startswith(month)),
@@ -107,7 +110,7 @@ def usage(s=None) -> dict[str, Any]:
 
 def _update_ledger(s, credits):
     led = _ledger(s)
-    day = _day()
+    day = _day(s)
     days, calls = dict(led.get('days') or {}), dict(led.get('calls') or {})
     days[day] = int(days.get(day, 0)) + credits
     calls[day] = int(calls.get(day, 0)) + 1
@@ -333,7 +336,7 @@ def call(tool: str, args: dict | None = None, *, cache_hours: float | None = Non
         lock(s)
         credits=_check_credits(tool,s)
         if credits:
-            hold=CreditReservation(id=str(uuid.uuid4()),tool=tool,credits=credits,state="reserved")
+            hold=CreditReservation(id=str(uuid.uuid4()),tool=tool,credits=credits,state="reserved",created_at=leases.clock(s))
             s.add(hold); rid=hold.id
             handle=leases.acquire(s,"credit:"+rid,BOOT)
         s.commit()

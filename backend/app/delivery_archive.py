@@ -92,7 +92,8 @@ def _readable(s, paths):
     from .file_use import _active, overlap
     own = {h.resource for h in _active.get()}
     paths = [Path(p).resolve() for p in paths]
-    now = dt.datetime.now(dt.timezone.utc)
+    from .worker_leases import clock
+    now = clock(s)
     for use in s.query(FileUse).join(WorkerLease, WorkerLease.resource == FileUse.resource).filter(
             FileUse.exclusive.is_(True), WorkerLease.expires_at > now):
         if use.resource not in own and any(overlap(p, other) for p in paths for other in use.paths):

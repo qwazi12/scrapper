@@ -68,7 +68,7 @@ def begin(kind: str, label: str, params: dict) -> int:
             if leases.resource(previous.kind, previous.params) == key:
                 previous.status = "stopped"
                 previous.last_error = "Superseded by an explicit new invocation of the same resource"
-        row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT)
+        row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT,created_at=leases.clock(s),updated_at=leases.clock(s))
         s.add(row); s.commit(); _claims[row.id] = h
         return row.id
 
@@ -82,6 +82,7 @@ def reopen(rid: int) -> None:
             leases.guard(s, _claims[rid]); s.commit(); return
         h=leases.acquire(s, leases.resource(row.kind,row.params), BOOT)
         row.status, row.owner = "running", BOOT
+        row.updated_at=leases.clock(s)
         s.commit(); _claims[rid]=h
 
 
@@ -105,7 +106,7 @@ def _mutate(rid, fn):
             leases.guard(s,h)
         elif leases.current():
             raise leases.LeaseLost("Job is no longer running")
-        fn(row); s.commit(); return True
+        fn(row);row.updated_at=leases.clock(s); s.commit(); return True
 
 
 def checkpoint(rid: int | None, **data) -> None:
@@ -131,7 +132,7 @@ def finish(rid: int | None, status: str, error: str | None = None) -> None:
                 leases.guard(s,h)
                 row=s.get(ResumableJob,rid)
                 if row and row.owner == h.owner:
-                    apply(row); leases.release(s,h); s.commit()
+                    apply(row);row.updated_at=leases.clock(s); leases.release(s,h); s.commit()
         else:
             _mutate(rid,apply)
     except leases.LeaseLost:
@@ -180,8 +181,8 @@ def tracked_thread(kind: str, label: str, scope: str, params: dict, fn: Callable
 
 
 def _heartbeat_once() -> None:
-    now = datetime.datetime.now(datetime.timezone.utc)
     with _lock, SessionLocal() as s:
+        now=leases.clock(s)
         for rid,h in list(_claims.items()):
             row=s.get(ResumableJob,rid)
             if row and row.status == "running" and row.owner == BOOT and leases.renew(s,h):
@@ -231,8 +232,8 @@ def mark_shutdown() -> int:
 
 def resume_interrupted(stale: int = STALE) -> int:
     """Relaunch jobs whose server died. Returns how many were resumed."""
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=stale)
     with SessionLocal() as s:
+        cutoff = leases.clock(s) - datetime.timedelta(seconds=stale)
         rows = [r for r in s.query(ResumableJob).filter(ResumableJob.status == "running").order_by(ResumableJob.id).all()
                 if _aware(r.updated_at) < cutoff]
         todo = []
@@ -249,7 +250,7 @@ def resume_interrupted(stale: int = STALE) -> int:
                         ResumableJob.status=="running", ResumableJob.owner==row.owner,
                         ResumableJob.updated_at==row.updated_at).values(owner=BOOT,
                         attempts=row.attempts+(0 if shutdown or exhausted else 1),checkpoint=cp,
-                        updated_at=datetime.datetime.now(datetime.timezone.utc))).rowcount
+                        updated_at=leases.instant(s))).rowcount
                     if won != 1: raise leases.LeaseLost("Job was claimed concurrently")
                 if exhausted or row.kind not in _launchers:
                     row.status="failed"

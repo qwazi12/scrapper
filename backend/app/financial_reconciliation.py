@@ -26,7 +26,8 @@ def ownership(s,kind,row):
     from .worker_leases import TTL
     key=('budget:' if kind=='usd' else 'credit:')+row.id
     lease=s.get(WorkerLease,key,populate_existing=True)
-    now=datetime.now(timezone.utc)
+    from .worker_leases import clock
+    now=clock(s)
     expiry=lease.expires_at.replace(tzinfo=timezone.utc) if lease and not lease.expires_at.tzinfo else lease.expires_at if lease else None
     live=bool(expiry and expiry>now)
     created=row.created_at.replace(tzinfo=timezone.utc) if not row.created_at.tzinfo else row.created_at
