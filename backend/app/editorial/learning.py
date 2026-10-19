@@ -18,12 +18,22 @@ from .routes import Format, Strict, _utc, digest, out
 router = APIRouter(prefix="/api/editorial", dependencies=[Depends(require_token)])
 
 
-def deidentify(text):
+def deidentify(text,*,collapse=True):
     text = re.sub(r"https?://\S+|www\.\S+", "[link removed]", text, flags=re.I)
     text = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b", "[email removed]", text)
     text = re.sub(r"(?<!\w)@[\w.]+", "[handle removed]", text)
+    dates={}
+    marker="__SC_DATE_"
+    while marker in text:marker="_"+marker
+    def protect_date(match):
+        value=match.group(0)
+        try:datetime.strptime(value,'%Y-%m-%d')
+        except ValueError:return value
+        key=f'{marker}{len(dates)}__';dates[key]=value;return key
+    text=re.sub(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)',protect_date,text)
     text = re.sub(r"(?<!\w)(?:\+?\d[\d ()-]{5,}\d)(?!\w)", "[number removed]", text)
-    return " ".join(text.split())
+    for key,value in dates.items():text=text.replace(key,value)
+    return " ".join(text.split()) if collapse else text.replace("\r\n","\n").strip()
 
 
 def classify(text):
@@ -71,19 +81,13 @@ def import_feedback(req: CommentImport, s: Session = Depends(get_session)):
     return {"created": created, "delivery": "private_drafts_only"}
 
 
-class ReplyDraft(Strict):
-    text: str = Field(min_length=5, max_length=2000)
-    approved_for_manual_use: bool = False
+from .feedback_review import ReplyDraft
 
 
-@router.put("/feedback/{fid}/draft")
-def edit_reply(fid: int, req: ReplyDraft, s: Session = Depends(get_session)):
-    row = s.get(EditorialRecord, fid)
-    if not row or row.kind != "feedback": raise HTTPException(404, "Feedback not found")
-    row.data = {**row.data, "reply_draft": deidentify(req.text), "approved_for_manual_use": req.approved_for_manual_use,
-                "reviewed_at": datetime.now(timezone.utc).isoformat() if req.approved_for_manual_use else None}
-    s.commit()
-    return out(row)
+@router.put('/feedback/{fid}/draft')
+def edit_reply(fid:int,req:ReplyDraft,s:Session=Depends(get_session)):
+    from .feedback_review import save_reply
+    return save_reply(s,fid,req)
 
 
 class ExperimentIn(Strict):
@@ -158,8 +162,10 @@ def learning(s: Session = Depends(get_session)):
         tokens = [t for t in re.findall(r"[a-z]{4,}", row.data["text"].lower()) if t not in stopwords]
         topic = tokens[0] if tokens else "unclassified"
         clusters.setdefault(topic, []).append(row)
-    return {"feedback": [out(r) for r in feedback], "experiments": [{**out(r), "result": experiment_result(r.data, observations)} for r in experiments],
+    from .feedback_review import enriched
+    manual=s.query(EditorialRecord).filter(EditorialRecord.kind=="feedback",EditorialRecord.data["latest_evidence_id"].as_string().is_(None)).order_by(EditorialRecord.id.desc()).limit(500).all()
+    return {"feedback": [enriched(s,r) for r in manual], "experiments": [{**out(r), "result": experiment_result(r.data, observations)} for r in experiments],
             "question_groups": [{"topic_token": key, "n": len(rows), "feedback_ids": [r.id for r in rows],
                                 "suggestion": f"Research an original follow-up addressing {key}", "confidence": "manual_review"}
                                for key, rows in clusters.items()],
-            "delivery": "private_drafts_only", "live_comment_ingestion": "unavailable; import an authorized export"}
+            "delivery": "private_drafts_only", "live_comment_ingestion": "explicit_read_only_youtube_pages; actual account/provider verification unexecuted"}

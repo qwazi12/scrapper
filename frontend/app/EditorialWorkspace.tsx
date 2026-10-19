@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, ContentBinding, EditorialInsights, EditorialOpportunity } from "@/lib/api";
+import { allowLocalNavigation } from "../lib/navigationGuard";
 import { askConfirm } from "@/lib/dialogs";
 import { ContentLineage } from "./ContentLineage";
 import { AssetLibrary } from "./AssetLibrary";
@@ -59,18 +60,18 @@ export function EditorialWorkspace() {
   return <div style={{ display: "grid", gap: 16 }}>
     <div><h1>Editorial desk</h1><p>Choose an original angle, review the research, and plan suitable formats. Calendar entries are drafts.</p></div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <button aria-pressed={tab === "plan"} onClick={() => setTab("plan")}>Opportunities & calendar</button>
-      <button aria-pressed={tab === "performance"} onClick={() => setTab("performance")}>Performance evidence</button>
-      <button aria-pressed={tab === "campaigns"} onClick={() => setTab("campaigns")}>Native campaigns</button>
-      <button aria-pressed={tab === "assets"} onClick={() => setTab("assets")}>Asset library</button>
-      <button aria-pressed={tab === "learning"} onClick={() => setTab("learning")}>Audience & experiments</button>
+      <button aria-pressed={tab === "plan"} onClick={() => void allowLocalNavigation().then(allowed => { if (allowed) setTab("plan"); })}>Opportunities & calendar</button>
+      <button aria-pressed={tab === "performance"} onClick={() => void allowLocalNavigation().then(allowed => { if (allowed) setTab("performance"); })}>Performance evidence</button>
+      <button aria-pressed={tab === "campaigns"} onClick={() => void allowLocalNavigation().then(allowed => { if (allowed) setTab("campaigns"); })}>Native campaigns</button>
+      <button aria-pressed={tab === "assets"} onClick={() => void allowLocalNavigation().then(allowed => { if (allowed) setTab("assets"); })}>Asset library</button>
+      <button aria-pressed={tab === "learning"} onClick={() => void allowLocalNavigation().then(allowed => { if (allowed) setTab("learning"); })}>Audience & experiments</button>
     </div>
     {message && <p role="status">{message}</p>}
     {tab === "assets" && <AssetLibrary />}
     {tab === "campaigns" && <NativeCampaigns opportunities={rows} />}
-    {tab === "learning" && <AudienceLearning onFollowup={question => {
+    {tab === "learning" && <AudienceLearning onEvidenceChanged={() => void load()} onFollowup={question => { void allowLocalNavigation().then(allowed => { if (!allowed) return;
       setEditing(undefined); setForm({ ...empty, title: question.text.slice(0, 255), angle: "Research a sourced response to this audience question; choose an original explanation.",
-        audience: "Viewers asking: " + question.text.slice(0, 500), feedback_refs: [question.id] }); setTab("plan");
+        audience: "Viewers asking: " + question.text.slice(0, 500), feedback_refs: [question.id] }); setTab("plan"); });
     }} />}
     {tab === "plan" && <>
       <form onSubmit={save} style={{ ...panel, display: "grid", gap: 12 }}>

@@ -86,6 +86,10 @@ app.include_router(learning_routes.router)
 from .editorial import content_lineage,audience
 app.include_router(content_lineage.router)
 app.include_router(audience.router)
+from .editorial import comments
+app.include_router(comments.router)
+from .editorial import feedback_review
+app.include_router(feedback_review.router)
 
 
 @app.middleware("http")

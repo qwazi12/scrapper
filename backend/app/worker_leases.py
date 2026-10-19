@@ -151,12 +151,17 @@ def keepalive(h):
 
 
 @contextlib.contextmanager
-def scope(key):
+def scope(key,*,session=None):
     from .resume import BOOT
     with SessionLocal() as s:
         h=acquire(s,key,BOOT); s.commit()
     try:
         with bind(h), keepalive(h): yield h
+    except BaseException:
+        # An endpoint writer must roll back before a different session can
+        # release its lease; otherwise SQLite cleanup blocks behind itself.
+        if session is not None:session.rollback()
+        raise
     finally:
         with SessionLocal() as s:
             release(s,h); s.commit()

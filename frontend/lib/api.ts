@@ -40,7 +40,15 @@ export type IndexedAsset = { id: number; sha256: string; kind: string; tags: str
 export type CatalogAsset = IndexedAsset & { score: number; matching_spans: { start: number; end: number; text: string }[];
   provenance: IndexedAsset["provenance"] & { description?: string; people?: string[];
     media?: { seconds: number; bytes: number; caption_count: number; frames: { at: number; sha256: string }[] } } };
-export type AudienceFeedback = { id: number; text: string; category: string; classification: string; reply_draft: string; approved_for_manual_use: boolean; privacy_note: string };
+export type CommentCursorView = { id: string; version: string; pages: number; pagination_exhausted: boolean; can_resume: boolean; status: string; last_error: string | null; seen_entries: number; new_versions: number; duplicates: number; scope: string };
+export type FeedbackCoverage = { reported_replies: number | null; retained_replies: number; pagination_exhausted: boolean; requires_decision: boolean; parent_evidence_id: string; scope: string };
+export type AudienceFeedback = { id: number; feedback_identity: string; text: string; category: string; classification: string;
+  reply_draft: string; reply_version: string; approved_for_manual_use: boolean; privacy_note: string;
+  lineage_id?: string; latest_evidence_id?: string; context_lineage_id: string | null; context_title: string | null;
+  context_mapping_superseded: boolean; coverage: FeedbackCoverage | null };
+export type FeedbackContext = AudienceFeedback & { thread_members: { feedback_id: number; evidence_id: string; text: string; reply: boolean; provider_updated_at: string }[];
+  thread_total: number; claim_total: number; claims: { key: string; kind: string; index: number; text: string }[];
+  decisions: { id: string; action: string; data: Record<string, unknown>; at: string }[] };
 export type LearningReport = { delivery: string; live_comment_ingestion: string; feedback: AudienceFeedback[];
   question_groups: { topic_token: string; n: number; suggestion: string; feedback_ids: number[] }[];
   experiments: { id: number; name: string; hypothesis: string; metric: string; age_hours: number;
@@ -1088,8 +1096,12 @@ export const api = {
   retainedFile: (id: string, role: string) => mediaUrl(`/api/export-history/${id}/file/${role}`),
   editorialLearning: () => req<LearningReport>("/api/editorial/learning", { headers: headers(false) }),
   editorialFeedback: (data: unknown) => req<{ created: number[] }>("/api/editorial/feedback/import", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
-  editorialReply: (id: number, text: string, approved: boolean) => req<AudienceFeedback>(`/api/editorial/feedback/${id}/draft`,
-    { method: "PUT", headers: headers(), body: JSON.stringify({ text, approved_for_manual_use: approved }) }),
+  editorialReply: (id: number, data: { text: string; expected_version: string; approved_for_manual_use: boolean; reviewed: boolean; context_lineage_id: string | null; coverage_rationale: string }) => req<AudienceFeedback>(`/api/editorial/feedback/${id}/draft`, { method: "PUT", headers: headers(), body: JSON.stringify(data) }),
+  feedbackContext: (id: number, offset = 0) => req<FeedbackContext>(`/api/editorial/feedback/${id}/context?offset=${offset}`, { headers: headers(false) }),
+  feedbackList: (lineage_id: string, q = "", offset = 0) => req<{ feedback: AudienceFeedback[]; total: number }>(`/api/editorial/feedback?${new URLSearchParams({ lineage_id, q, offset: String(offset) })}`, { headers: headers(false) }),
+  feedbackCorrection: (id: number, data: { expected_version: string; claim_key: string; proposal: string; evidence_url: string; evidence_excerpt: string; rationale: string; reviewed: true; create_followup: boolean }) => req<{ id: string; followup_opportunity_id: number | null; status: string }>(`/api/editorial/feedback/${id}/correction`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  commentProgress: (id: string, parent_id?: string) => req<{ cursor: CommentCursorView; configured: boolean }>(`/api/editorial/comments/${id}${parent_id ? `?parent_id=${encodeURIComponent(parent_id)}` : ""}`, { headers: headers(false) }),
+  commentAction: (id: string, action: "page" | "restart" | "stop", data: { expected_version: string; parent_id?: string; reviewed: true }) => req<{ cursor: CommentCursorView }>(`/api/editorial/comments/${id}/${action}`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   editorialExperiment: (data: unknown) => req<unknown>("/api/editorial/experiments", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   nativeCampaigns: () => req<NativeCampaign[]>("/api/editorial/campaigns", { headers: headers(false) }),
   nativeCreate: (data: unknown) => req<NativeCampaign>("/api/editorial/campaigns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),

@@ -24,12 +24,15 @@ def test_feedback_is_deidentified_deduped_and_private(client):
     assert client.post("/api/editorial/feedback/import", json=payload).json()["created"] == []
     data = client.get("/api/editorial/learning").json()
     text = str(data)
-    for private in ("person@example.org", "@viewer", "555", "https://example.org/me"):
+    for private in ("person@example.org", "@viewer", "+1 (555) 123-4567", "https://example.org/me"):
         assert private not in text
+    # Numeric substrings can occur by chance inside opaque SHA identities.
+    assert all("555" not in row["text"] and "555" not in row["reply_draft"] for row in data["feedback"])
     assert {r["category"] for r in data["feedback"]} == {"question", "correction", "possible_spam"}
     assert all(not r["approved_for_manual_use"] for r in data["feedback"])
     fid = first["created"][0]
-    result = client.put(f"/api/editorial/feedback/{fid}/draft", json={"text": "We will review the framing examples with the cited sources.", "approved_for_manual_use": True}).json()
+    current=next(row for row in client.get("/api/editorial/learning").json()["feedback"] if row["id"]==fid)
+    result = client.put(f"/api/editorial/feedback/{fid}/draft", json={"expected_version":current["reply_version"],"reviewed":True,"text": "We will review the framing examples with the cited sources.", "approved_for_manual_use": True}).json()
     assert result["approved_for_manual_use"] is True and result["reviewed_at"]
     # No sending route exists; owner approval is only for manual copy/use.
     assert client.post(f"/api/editorial/feedback/{fid}/send").status_code == 404

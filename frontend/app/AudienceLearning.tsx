@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { CommentInbox } from "./CommentInbox";
+import { FeedbackCard } from "./FeedbackCard";
 import { api, AudienceFeedback, LearningReport } from "@/lib/api";
 
 const box = { border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--panel)" };
 const field = { display: "grid", gap: 5 };
 
-export function AudienceLearning({ onFollowup }: { onFollowup: (question: AudienceFeedback) => void }) {
+export function AudienceLearning({ onFollowup, onEvidenceChanged }: { onFollowup: (question: AudienceFeedback) => void; onEvidenceChanged?: () => void }) {
   const [report, setReport] = useState<LearningReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -26,6 +28,7 @@ export function AudienceLearning({ onFollowup }: { onFollowup: (question: Audien
   return <div style={{ display: "grid", gap: 16 }}>
     <h2>Audience evidence & experiments</h2><p>Comments and reply drafts stay private. Classification and recurring-question groups need review.</p>
     {message && <p role="status">{message}</p>}
+    <CommentInbox onFollowup={onFollowup} onEvidenceChanged={onEvidenceChanged} />
     <form style={{ ...box, display: "grid", gap: 10 }} onSubmit={e => {
       e.preventDefault(); act(() => api.editorialFeedback({ platform, content_id: content, source,
         comments: comments.split("\n").map(c => c.trim()).filter(Boolean) }), "Deidentified comments imported. Inspect for any remaining personal details before reusing them.");
@@ -36,7 +39,7 @@ export function AudienceLearning({ onFollowup }: { onFollowup: (question: Audien
       <label style={field}>Comment texts<textarea required rows={5} maxLength={200000} value={comments} onChange={e => setComments(e.target.value)} /></label>
       <div><button disabled={busy}>Import private feedback</button></div>
     </form>
-    {report?.feedback.map(row => <FeedbackCard key={`${row.id}/${row.reply_draft}/${row.approved_for_manual_use}`} row={row} busy={busy} save={(text, approved) => act(() => api.editorialReply(row.id, text, approved), "Reply draft saved for manual use. Nothing was sent.")} onFollowup={onFollowup} />)}
+    {report?.feedback.map(row => <FeedbackCard key={row.feedback_identity} row={row} busy={busy} onChanged={load} onFollowup={onFollowup} onEvidenceChanged={onEvidenceChanged} />)}
     {!!report?.question_groups.length && <section style={box}><h3>Recurring question candidates</h3>{report.question_groups.map(g => <p key={g.topic_token}>{g.topic_token}: {g.n} imported comments. {g.suggestion}. Manual review required.</p>)}</section>}
     <form style={{ ...box, display: "grid", gap: 10 }} onSubmit={e => {
       e.preventDefault(); act(() => api.editorialExperiment({ name: experiment.name, hypothesis: experiment.hypothesis, platform: experiment.platform,
@@ -63,15 +66,4 @@ export function AudienceLearning({ onFollowup }: { onFollowup: (question: Audien
       <p>{x.result.next_action}. No causal conclusion or automatic winner.</p>
     </article>)}
   </div>;
-}
-
-function FeedbackCard({ row, busy, save, onFollowup }: { row: AudienceFeedback; busy: boolean; save: (text: string, approved: boolean) => void; onFollowup: (question: AudienceFeedback) => void }) {
-  const [text, setText] = useState(row.reply_draft);
-  return <article style={box}><h3>{row.category.replaceAll("_", " ")}</h3><blockquote>{row.text}</blockquote><p>{row.privacy_note}</p>
-    <label style={field}>Private reply draft #{row.id}<textarea maxLength={2000} value={text} onChange={e => setText(e.target.value)} /></label>
-    <p>{row.approved_for_manual_use ? "Reviewed for manual use. Nothing sent." : "Owner review required."}</p>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><button disabled={busy || text.length < 5} onClick={() => save(text, false)}>Save private draft</button>
-      <button disabled={busy || text.length < 5} onClick={() => save(text, true)}>Mark reviewed for manual use</button>
-      <button disabled={busy} onClick={() => onFollowup(row)}>Draft follow-up opportunity</button></div>
-  </article>;
 }

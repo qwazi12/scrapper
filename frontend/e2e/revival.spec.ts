@@ -331,6 +331,7 @@ test("Editorial UI: reviewed research, cleared still, native Short and carousel,
   await expect(page.getByRole("blockquote").filter({ hasText: "How does framing" })).not.toContainText("viewer@example.org");
   const question = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "question", exact: true }) });
   await question.getByRole("textbox").fill("Thanks for the question. We will inspect the original framing examples before drafting a follow-up.");
+  await question.getByRole("checkbox", { name: "I reviewed this exact private draft and current source/thread context.", exact: true }).check();
   await question.getByRole("button", { name: "Mark reviewed for manual use", exact: true }).click();
   await expect(question).toContainText("Nothing sent.");
   await page.getByLabel("Experiment name", { exact: true }).fill("Synthetic opening question experiment");
@@ -703,7 +704,8 @@ test("retained export UI recovers prior words and media after invalidation and p
   await rateAware(`${stack.api}/api/export-history?kind=studio&project_id=1`, "GET",
     () => history.getByText("Retained export history", { exact: true }).click(),
     () => history.getByRole("button", { name: "Refresh history", exact: true }).click());
-  await history.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click();
+  await rateAware(`${stack.api}/api/export-history/${original.id}`, "GET",
+    () => history.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click());
   await expect(history.getByTestId("retained-version-detail")).toContainText("Original colored shapes");
   await rateAware(`${stack.api}/api/export-history/${original.id}/restore-draft`, "POST", async () => {
     await history.getByRole("button", { name: "Restore saved script as draft", exact: true }).click();
@@ -723,11 +725,14 @@ test("retained export UI recovers prior words and media after invalidation and p
   await expect.poll(async () => (await request.get(`${stack.api}/api/studio/projects/1`, { headers })).status()).toBe(404);
   expect((await request.get(`${stack.api}/api/export-history/${original.id}/file/video`, { headers })).status()).toBe(200);
   await page.goto("/#settings");
+  await expect(page.getByText("Invalid Date", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/automatic remote deletion is disabled/)).toBeVisible();
   const archive = page.getByTestId("export-history");
   await rateAware(`${stack.api}/api/export-history`, "GET",
     () => archive.getByText("Retained export history", { exact: true }).click(),
     () => archive.getByRole("button", { name: "Refresh history", exact: true }).click());
-  await archive.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click();
+  await rateAware(`${stack.api}/api/export-history/${original.id}`, "GET",
+    () => archive.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click());
   await expect(archive.getByTestId("retained-version-detail")).toContainText("Original colored shapes");
   await page.screenshot({ path: path.join(evidence, "deleted-project-export-history.png"), fullPage: true });
 });
@@ -915,4 +920,99 @@ test("Audience lineage UI maps exact native bytes, syncs processed-day fixtures 
   await expect.poll(async () => (await mappings()).bindings.find((row: any) => row.content_id === "fixture0001").revision).toBe(2);
   expect((await mappings()).versions.filter((row: any) => row.content_id === "fixture0001")).toHaveLength(2);
   await page.screenshot({ path: path.join(evidence, "audience-content-lineage.png"), fullPage: true });
+});
+
+test("Comment inbox UI resumes read-only pages, preserves drafts and records exact-source correction proposals", async ({ page, request }) => {
+  const opportunity = await request.post(`${stack.api}/api/editorial/opportunities`, { headers, data: {
+    title: "Original comment context fixture", angle: "Examine original shape composition with retained local source context.",
+    audience: "Viewers comparing original generated shapes", formats: ["image"], evidence: [{ url: "https://example.invalid/comment-fixture",
+      excerpt: "Original procedural shapes were generated in the isolated local test; no borrowed media is included.", entity: "Original shapes", retrieved_at: new Date().toISOString() }],
+  } });
+  expect(opportunity.ok()).toBe(true); const oid = (await opportunity.json()).id;
+  expect((await request.post(`${stack.api}/api/editorial/opportunities/${oid}/approve`, { headers })).ok()).toBe(true);
+  const created = await request.post(`${stack.api}/api/editorial/campaigns`, { headers, data: {
+    opportunity_id: oid, title: "Original comment context fixture", formats: ["image"],
+    beats: [{ role: "hook", text: "Can one original shape shift your attention?", source_refs: [1] },
+      { role: "body", text: "The original composition moves attention toward a quiet corner.", source_refs: [1] },
+      { role: "payoff", text: "Choose the shape composition with the clearest message.", source_refs: [1] }],
+    image_text: "One original shape changes the frame.", image_caption: "Which original composition makes the clearest choice?",
+  } });
+  expect(created.ok()).toBe(true); const cid = (await created.json()).id;
+  const rendered = await request.post(`${stack.api}/api/editorial/campaigns/${cid}/render/image`, { headers });
+  expect(rendered.ok()).toBe(true); const eid = (await rendered.json()).id;
+  const source = (await (await request.get(`${stack.api}/api/editorial/content-sources`, { headers })).json()).sources.find((row: any) => row.id === eid);
+  const mapped = await request.post(`${stack.api}/api/editorial/content-lineage`, { headers, data: {
+    platform: "youtube", account_id: "UC" + "f".repeat(22), content_id: "fixture0002", format: "image",
+    published_at: new Date(Date.now() - 4 * 86400000).toISOString(), source_kind: "native_export", source_id: eid,
+    expected_source_fingerprint: source.fingerprint, mapping_evidence: "Owner reviewed the exact synthetic image and its local original source before mapping.", reviewed: true,
+  } });
+  expect(mapped.ok()).toBe(true); const lid = (await mapped.json()).id;
+  await request.post(`${stack.api}/api/e2e/enable-comment-fixture`);
+  const feedback = async () => (await (await request.get(`${stack.api}/api/editorial/feedback?lineage_id=${lid}`, { headers })).json()).feedback;
+  const open = async () => {
+    await page.goto("/#editorial"); await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+    await page.getByLabel("Comment content mapping", { exact: true }).selectOption(lid);
+  };
+  await open();
+  const read = page.getByRole("button", { name: "Read next comment page", exact: true });
+  await read.click(); await expect.poll(async () => (await feedback()).length).toBe(1);
+  await expect(page.getByText(/1 pages · 1 provider rows · 1 new versions · 0 duplicates/)).toBeVisible();
+  await page.reload(); await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+  await page.getByLabel("Comment content mapping", { exact: true }).selectOption(lid);
+  await read.click(); await expect.poll(async () => (await feedback()).length).toBe(2);
+  await expect(page.getByText(/2 pages · 3 provider rows · 2 new versions · 1 duplicates/)).toBeVisible();
+  const parent = (await feedback()).find((row: any) => row.text.includes("original shape?"));
+  expect(JSON.stringify(parent)).not.toContain("owner@example.org"); expect(JSON.stringify(parent)).not.toContain("@hiddenviewer"); expect(JSON.stringify(parent)).not.toContain("ExcludedAuthor");
+  await page.getByLabel("Comment page scope", { exact: true }).selectOption(parent.latest_evidence_id);
+  await read.click(); await expect.poll(async () => (await feedback()).length).toBe(3);
+  const card = page.getByTestId(`feedback-${parent.id}`);
+  await card.getByRole("button", { name: "Inspect thread & correction targets", exact: true }).click();
+  const editor = card.getByRole("textbox", { name: `Private reply draft #${parent.id}`, exact: true });
+  const words = "I will compare the quieter corner against the exact retained original composition before answering.";
+  await editor.fill(words);
+  await expect(card.getByRole("status").filter({ hasText: "Unsaved draft stored" })).toBeVisible();
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+  await page.getByLabel("Comment content mapping", { exact: true }).selectOption(lid);
+  await card.getByRole("button", { name: "Restore unsaved draft", exact: true }).click(); await expect(editor).toHaveValue(words);
+  await card.getByRole("button", { name: "Inspect thread & correction targets", exact: true }).click();
+  const ack = card.getByRole("checkbox", { name: "I reviewed this exact private draft and current source/thread context.", exact: true });
+  const reviewed = card.getByRole("button", { name: "Mark reviewed for manual use", exact: true });
+  await ack.check(); await editor.fill(words + " Thank you."); await expect(ack).not.toBeChecked(); await expect(reviewed).toBeDisabled();
+  await ack.check(); await reviewed.click(); await expect(card.getByRole("status").filter({ hasText: "Reviewed for manual use. Nothing sent." })).toBeVisible();
+  await request.post(`${stack.api}/api/e2e/edit-comment-fixture`);
+  await page.getByRole("button", { name: "Restart reviewed comment scan", exact: true }).click();
+  await read.click(); await expect(card.getByRole("blockquote").first()).toContainText("quieter corner instead");
+  await expect(editor).toHaveValue(words + " Thank you."); await expect(card.getByText("Owner review required.", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Inspect thread & correction targets", exact: true }).click();
+  await card.getByText("Propose a source correction", { exact: true }).click();
+  const targets = card.getByLabel("Exact retained correction target", { exact: true });
+  const value = await targets.locator("option").nth(1).getAttribute("value"); await targets.selectOption(value!);
+  await card.getByLabel("Proposed clarification", { exact: true }).fill("Compare the quieter corner against the retained original composition before revising any claim.");
+  await card.getByLabel("Correction reference URL", { exact: true }).fill("https://example.invalid/owner-reference");
+  await card.getByLabel("Correction reference excerpt", { exact: true }).fill("The original shape composition has a quieter corner and was generated for the local fixture.");
+  await card.getByLabel("Correction proposal rationale", { exact: true }).fill("This proposes an independent review of the exact retained native beat and does not certify it as a correction.");
+  await card.getByRole("checkbox", { name: "I reviewed this exact retained target and the unverified proposal evidence.", exact: true }).check();
+  await card.getByRole("button", { name: "Record private correction proposal", exact: true }).click();
+  await expect(card.getByRole("status").filter({ hasText: "Private correction proposal saved for independent source review" })).toBeVisible();
+  const queries = await (await request.get(`${stack.api}/api/e2e/comment-queries`)).json();
+  expect(queries.real_account_access).toBe(false); expect(queries.queries.map((q: any) => q.endpoint)).toEqual(["commentThreads", "commentThreads", "comments", "commentThreads"]);
+  expect(queries.queries[1].params.pageToken).toBe("fixture-next-comment-page");
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    (window as any).restoreFeedbackStorage = () => { Storage.prototype.setItem = original; };
+    Storage.prototype.setItem = function(key, value) {
+      if (key.startsWith("screen-central:feedback-reply:")) throw new DOMException("Synthetic draft storage failure", "QuotaExceededError");
+      original.call(this, key, value);
+    };
+  });
+  await editor.fill("This private draft remains on screen while browser storage is unavailable.");
+  await expect(card.getByRole("alert").filter({ hasText: "Browser draft storage is unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("will lose unsaved changes");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editor).toHaveValue("This private draft remains on screen while browser storage is unavailable.");
+  await card.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  await page.evaluate(() => { (window as any).restoreFeedbackStorage(); });
+  await page.screenshot({ path: path.join(evidence, "comment-inbox-private-review.png"), fullPage: true });
 });

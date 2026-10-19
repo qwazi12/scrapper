@@ -143,7 +143,7 @@ def adapter_status():return status()
 @router.post('/{lineage_id}/sync')
 def sync(lineage_id:str,req:SyncIn,s:Session=Depends(get_session)):
     try:
-        with scope('audience-sync:'+lineage_id):
+        with scope('audience-sync:'+lineage_id,session=s):
             binding=s.get(ContentLineage,lineage_id)
             if not binding:raise HTTPException(404,'Content mapping not found')
             if latest(s).get(binding.binding_key).id!=lineage_id:raise HTTPException(409,'Mapping was superseded; sync the current mapping')

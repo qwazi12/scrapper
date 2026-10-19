@@ -15,8 +15,11 @@ function fmtHour(h: number): string {
   return `${h12}${ampm}`;
 }
 
-function fmtSlot(iso: string, tz: string): string {
-  return new Date(parseApiDate(iso)).toLocaleString("en-US", {
+function fmtSlot(iso: string | null | undefined, tz: string): string {
+  if (!iso) return "Awaiting scheduler";
+  const date = new Date(parseApiDate(iso));
+  if (!Number.isFinite(date.getTime())) return "Schedule time unavailable";
+  return date.toLocaleString("en-US", {
     timeZone: tz, weekday: "short", hour: "numeric", minute: "2-digit",
   });
 }
@@ -220,8 +223,9 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
       )}
 
       <p style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
-        Lock-free SQLite snapshots taken nightly at <b>3:00 am Eastern</b> with automated <code>PRAGMA integrity_check</code>,
-        gzip compression, <b>7-day local disk retention</b> on Railway, and <b>30-day off-disk retention</b> in Google Drive.
+        SQLite online snapshots include committed WAL data and are checked for integrity and checksums before retention.
+        Local retention uses the configured copy count. Drive copies are kept; automatic remote deletion is disabled.
+        Scheduled backups require an active scheduler. PostgreSQL recovery needs a separate verified procedure.
       </p>
 
       {status && (
@@ -229,14 +233,14 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
           <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Database File</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-              {status.database_type.toUpperCase()} <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>(/data/scrapper.db)</span>
+              {status.database_type.toUpperCase()}
             </div>
           </div>
 
           <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Local Retention</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-              {status.local_copies_count} / {status.retention.keep_local} daily snapshots <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>(/data/backups/)</span>
+              {status.local_copies_count} / {status.retention.keep_local} retained snapshot copies
             </div>
           </div>
 
@@ -305,8 +309,8 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
       )}
 
       <div style={{ marginTop: 12, padding: "8px 12px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11, color: "var(--muted)" }}>
-        🛠️ <b>Safe Recovery CLI:</b> To dry-run inspect or restore a backup on Railway, run:
-        <code style={{ display: "block", marginTop: 4, color: "#38bdf8" }}>python scripts/restore_db.py --from /data/backups/&lt;filename&gt;</code>
+        🛠️ <b>Recovery inspection:</b> Use exact absolute paths to compare a SQLite snapshot. Applying a restore requires stopping every app and worker, then adding --confirm --offline-confirmed.
+        <code style={{ display: "block", marginTop: 4, color: "#38bdf8" }}>python scripts/restore_db.py --from /absolute/snapshot.db.gz --to /absolute/scrapper.db</code>
       </div>
     </div>
   );

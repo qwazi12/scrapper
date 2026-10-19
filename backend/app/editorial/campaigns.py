@@ -136,7 +136,7 @@ def render_campaign(cid: int, fmt: NATIVE, s: Session = Depends(get_session)):
     from ..worker_leases import scope, LeaseLost
     from .. import costs
     try:
-        with scope(f"native:{cid}"):
+        with scope(f"native:{cid}",session=s):
             from . import native
             row = get_campaign(s, cid)
             if fmt not in row.brief["formats"]: raise HTTPException(409, "This format is not selected for this campaign")

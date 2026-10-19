@@ -381,3 +381,56 @@ def enable_audience_fixture():
 
 @app.get('/api/e2e/audience-queries')
 def audience_queries():return {'queries':_audience_queries,'real_account_access':False}
+
+# Explicit synthetic comment boundary; never enables real YouTube credentials.
+from backend.app.editorial import comments as comment_adapter
+_comment_fixture_enabled=False
+_comment_edited=False
+_comment_queries=[]
+_comment_original_configured=comment_adapter.configured
+from datetime import datetime,timedelta,timezone
+_comment_published=(datetime.now(timezone.utc)-timedelta(hours=3)).isoformat()
+_comment_updated=(datetime.now(timezone.utc)-timedelta(minutes=1)).isoformat()
+
+
+def _comment_configured():return _comment_fixture_enabled or _comment_original_configured()
+
+
+def _comment_request(endpoint,params):
+    if not _comment_fixture_enabled:raise IsolationError('Comment fixture must be explicitly enabled')
+    _comment_queries.append({'endpoint':endpoint,'params':dict(params)})
+    assert endpoint in ('commentThreads','comments') and 'author' not in params['fields']
+    if endpoint=='comments':
+        assert params['parentId']=='fixture-parent'
+        return {'items':[{'id':'fixture-reply','snippet':{'parentId':'fixture-parent','textDisplay':'Please compare the exact original composition before changing the explanation.',
+            'publishedAt':_comment_published,'updatedAt':_comment_published,'authorDisplayName':'ExcludedReplyAuthor'}}]}
+    assert params['videoId']=='fixture0002'
+    def thread(remote,text,count=0):return {'id':'thread-'+remote,'snippet':{'channelId':'UC'+'f'*22,'videoId':params['videoId'],'isPublic':True,'totalReplyCount':count,
+        'topLevelComment':{'id':remote,'snippet':{'textDisplay':text,'publishedAt':_comment_published,
+            'updatedAt':_comment_updated if _comment_edited else _comment_published,'authorDisplayName':'ExcludedAuthor',
+            'authorChannelId':{'value':'ExcludedAuthorChannel'}}}}}
+    first=thread('fixture-parent','Actually inspect the quieter corner instead.' if _comment_edited else 'Actually can you explain the original shape? Contact owner@example.org or @hiddenviewer.',1)
+    if params.get('pageToken'):return {'items':[first,thread('fixture-second','Why choose the centered composition?')]}
+    return {'items':[first],'nextPageToken':'fixture-next-comment-page'}
+
+
+comment_adapter.configured=_comment_configured
+comment_adapter._request=_comment_request
+
+
+@app.post('/api/e2e/enable-comment-fixture')
+def enable_comment_fixture():
+    global _comment_fixture_enabled
+    _comment_fixture_enabled=True
+    return {'mode':'fixture_only','real_account_access':False}
+
+
+@app.post('/api/e2e/edit-comment-fixture')
+def edit_comment_fixture():
+    global _comment_edited
+    _comment_edited=True
+    return {'mode':'fixture_only','real_account_access':False}
+
+
+@app.get('/api/e2e/comment-queries')
+def comment_queries():return {'queries':_comment_queries,'real_account_access':False}

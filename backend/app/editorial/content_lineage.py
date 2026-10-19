@@ -151,5 +151,7 @@ def bind(req:BindingIn,s:Session=Depends(get_session)):
     if prior:
         from ..worker_leases import revoke
         revoke(s,'audience-sync:'+prior.id)
+        from ..models import CommentCursor
+        for cursor in s.query(CommentCursor).filter_by(lineage_id=prior.id):revoke(s,'comment-sync:'+cursor.id)
     s.add(record);s.commit()
     return {**out(record),'created':True}
