@@ -35,6 +35,18 @@ class Beat(Strict):
     text: str = Field(min_length=12, max_length=140)
     source_refs: list[int] = Field(min_length=1, max_length=10)
     asset_id: int | None = Field(default=None, gt=0)
+    clip_start: float | None = Field(default=None,ge=0,le=300,strict=True,allow_inf_nan=False)
+    clip_end: float | None = Field(default=None,gt=0,le=300,strict=True,allow_inf_nan=False)
+    clip_end_policy: Literal['hold','loop'] | None = None
+
+    @model_validator(mode='after')
+    def clip_selection(self):
+        if any(value is not None for value in (self.clip_start,self.clip_end,self.clip_end_policy)):
+            if self.asset_id is None or self.clip_start is None or self.clip_end is None or self.clip_end_policy is None:
+                raise ValueError('Video selection needs an asset, start, end and explicit hold/loop policy')
+            if not .25<=self.clip_end-self.clip_start<=12:
+                raise ValueError('Select a video interval of 0.25–12 seconds')
+        return self
 
 
 class CampaignIn(Strict):
@@ -99,7 +111,19 @@ def inputs(s, campaign):
             path = Path(asset.file_path).resolve() if asset else None
             if not asset or not path.is_relative_to(settings.data_path.resolve() / "editorial" / "assets") or not path.is_file() or file_hash(path) != asset.sha256:
                 raise HTTPException(409, "A selected asset is missing or changed; reimport and inspect it")
-            if asset.kind!="image":raise HTTPException(409,"Beat-card visuals require an indexed still image; video/audio assets need a compatible treatment")
+            if asset.kind=='video':
+                if not set(campaign.brief['formats']).issubset({'short','reel'}):
+                    raise HTTPException(409,'Selected video clips currently require Short/Reel-only campaigns; choose a still for image/manual formats')
+                from .asset_catalog import verify_existing
+                verify_existing(asset)
+                start,end,policy=(beat.get(key) for key in ('clip_start','clip_end','clip_end_policy'))
+                seconds=asset.provenance.get('media',{}).get('seconds')
+                if (type(start) not in (int,float) or type(end) not in (int,float) or policy not in ('hold','loop')
+                    or not isinstance(seconds,(int,float)) or not 0<=start<end<=seconds or not .25<=end-start<=12):
+                    raise HTTPException(409,'Select an explicit 0.25–12 second video interval inside the indexed duration and choose hold or loop')
+            elif asset.kind!='image':raise HTTPException(409,'Audio cannot be used as a visual; choose an indexed still or explicit video clip')
+            elif any(beat.get(key) is not None for key in ('clip_start','clip_end','clip_end_policy')):
+                raise HTTPException(409,'Still images cannot carry video interval settings')
             if not asset.provenance.get("attestation"): raise HTTPException(409, "Asset rights attestation missing")
             assets[str(aid)] = {"sha256": asset.sha256, "provenance": asset.provenance}
     return {"brief": campaign.brief, "research_fingerprint": fingerprint, "assets": assets}
@@ -150,20 +174,25 @@ def render_campaign(cid: int, fmt: NATIVE, s: Session = Depends(get_session)):
             export_id = uuid.uuid4().hex
             root = settings.data_path / "editorial" / "campaigns" / str(cid) / export_id
             try:
-                with control.job("native", f"Campaign #{cid}: {fmt}", scope="editorial", ref=cid):
-                    paths = {int(aid): Path(s.get(MediaAsset, int(aid)).file_path) for aid in frozen["assets"]}
-                    with costs.operation("native:render",ref=f"native:{cid}:{export_id}"):
-                        manifest = native.render(root, row.brief, fmt, paths)
-                    manifest["cost_ref"]=f"native:{cid}:{export_id}"
-                # Inputs are checked again after long-running render, before promotion.
-                s.expire_all(); row = get_campaign(s, cid)
-                if row.work_token != token or digest(inputs(s, row)) != digest(frozen): raise HTTPException(409, "Campaign inputs changed while rendering; this version was not promoted")
-                manifest.update(input_sha256=digest(frozen), inputs=frozen)
-                item = CreativeExport(id=export_id, campaign_id=cid, format=fmt, manifest=manifest)
-                s.add(item)
-                row.stage_status, row.stage_message, row.work_token = "ready", f"{fmt} rendered; inspect every card, captions and sound before approval", None
-                s.commit()
-                return export_out(item)
+                from ..file_use import pin
+                paths = {int(aid): Path(s.get(MediaAsset, int(aid)).file_path) for aid in frozen["assets"]}
+                with pin([root,*paths.values()],session=s):
+                    s.expire_all();row=get_campaign(s,cid)
+                    if row.work_token!=token or digest(inputs(s,row))!=digest(frozen):
+                        raise HTTPException(409,'Campaign inputs changed before media use; render a new version')
+                    with control.job("native", f"Campaign #{cid}: {fmt}", scope="editorial", ref=cid):
+                        with costs.operation("native:render",ref=f"native:{cid}:{export_id}"):
+                            manifest = native.render(root, row.brief, fmt, paths)
+                        manifest["cost_ref"]=f"native:{cid}:{export_id}"
+                    # Inputs are checked again after long-running render, before promotion.
+                    s.expire_all(); row = get_campaign(s, cid)
+                    if row.work_token != token or digest(inputs(s, row)) != digest(frozen): raise HTTPException(409, "Campaign inputs changed while rendering; this version was not promoted")
+                    manifest.update(input_sha256=digest(frozen), inputs=frozen)
+                    item = CreativeExport(id=export_id, campaign_id=cid, format=fmt, manifest=manifest)
+                    s.add(item)
+                    row.stage_status, row.stage_message, row.work_token = "ready", f"{fmt} rendered; inspect every card, captions and sound before approval", None
+                    s.commit()
+                    return export_out(item)
             except BaseException as exc:
                 s.rollback()
                 s.execute(update(CreativeCampaign).where(CreativeCampaign.id == cid, CreativeCampaign.work_token == token)
@@ -184,7 +213,7 @@ def exact_export(s, eid):
     quality = row.manifest.get("quality", {})
     if quality.get("errors") or quality.get("decode") != "passed": raise HTTPException(409, "Export quality checks did not pass")
     root = (settings.data_path / "editorial" / "campaigns" / str(campaign.id) / row.id).resolve()
-    files = [*row.manifest["cards"], row.manifest["cover"],*row.manifest.get("manual_assets",[])]
+    files = [*row.manifest["cards"], row.manifest["cover"],*row.manifest.get("manual_assets",[]),*row.manifest.get('visual_sources',[])]
     if row.manifest.get("video"): files.append(row.manifest["video"])
     for item in files:
         path = Path(item["file"]).resolve()
@@ -215,6 +244,11 @@ def review_view(row,fingerprint):
             finding={"kind":"visual_repetition","message":f"Card {index} reuses the asset from card {used[sha]}; inspect whether repetition is intentional."}
             rows.append({"id":digest(finding),**finding})
         elif sha:used[sha]=index
+    for source in row.manifest.get('visual_sources',[]):
+        if source['presentation_seconds']>source['excerpt_seconds']+.05:
+            treatment='holds the last frame' if source['end_policy']=='hold' else 'loops the selected interval'
+            finding={'kind':'clip_end_treatment','message':f"Card {source['card']} {treatment}: selected {source['source_start']:.3f}–{source['source_end']:.3f}s, presented for {source['presentation_seconds']:.3f}s. Source audio is excluded; review the complete treatment."}
+            rows.append({'id':digest(finding),**finding})
     return {"fingerprint":fingerprint,"checks":NATIVE_CHECKS,"findings":rows,
         "measurements":row.manifest['quality'],"rights_status":"owner_attestation_required; automated measurements do not prove permission",
         "source":{"title":f"Campaign #{row.campaign_id} · {row.format}","source":"Retained research, asset provenance and format copy"}}

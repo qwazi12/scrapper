@@ -37,11 +37,12 @@ export type ContentBinding = { id: string; revision: number; platform: string; a
   data: { decision: ContentMappingDecision; source_fingerprint: string; supersedes: string | null;
     cost_snapshot: { status: string; amount_usd: number | null; scope?: string; reason?: string; limitations?: string[]; by_basis?: Record<string, number> }; mapping_basis: string; public_bytes_verified: boolean } };
 export type AudienceAdapterStatus = { platform: string; status: string; reason: string; mode: string; real_account_verified: boolean; latency: string };
-export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null };
+export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null; clip_start?: number | null; clip_end?: number | null; clip_end_policy?: "hold" | "loop" | null };
 export type NativeExport = { id: string; campaign_id: number; format: string; queue_item_id: number | null;
-  approval: { fingerprint: string; at: string } | null;
+  approval: { fingerprint: string; approved_at?: string; schema?: number; at?: string } | null;
   manifest: { cards: { file: string; alt: string; sha256: string; caption_lines: number }[];
     video?: { file: string }; cover: { file: string }; quality: { decode: string; errors: string[]; warnings: string[]; seconds?: number; width?: number; height?: number };
+    visual_sources?: { asset_id: number; card: number; source_start: number; source_end: number; excerpt_seconds: number; presentation_seconds: number; end_policy: "hold" | "loop"; source_audio: string; source_sha256: string }[];
     delivery?: string; platform_copy?: string;
     manual_post?: { format: string; title: string; text: string; options: string[]; delivery: string; publication_status: string };
     manual_assets?: { file: string; sha256: string; content_type: string }[];
@@ -49,7 +50,7 @@ export type NativeExport = { id: string; campaign_id: number; format: string; qu
 export type NativeCampaign = { id: number; opportunity_id: number; stage_status: string; stage_message: string | null;
   brief: { title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; reel_caption?: string; carousel_caption: string; community_question: string; image_text?: string; image_caption?: string; community_text?: string; poll_question?: string; poll_options?: string[] };
   exports: NativeExport[] };
-export type IndexedAsset = { id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string } };
+export type IndexedAsset = { id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string; media?: { seconds: number } } };
 export type CatalogAsset = IndexedAsset & { score: number; matching_spans: { start: number; end: number; text: string }[];
   provenance: IndexedAsset["provenance"] & { description?: string; people?: string[];
     media?: { seconds: number; bytes: number; caption_count: number; frames: { at: number; sha256: string }[] } } };

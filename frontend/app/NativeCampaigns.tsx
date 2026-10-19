@@ -27,6 +27,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   const [tags, setTags] = useState("");
   const [license, setLicense] = useState("owner_created");
   const [file, setFile] = useState<File | null>(null);
+  const incompatibleClips = beats.some(beat => assets.find(a => a.id === beat.asset_id)?.kind === "video") && selected.some(fmt => !["short", "reel"].includes(fmt));
   const chosen = approved.find(o => String(o.id) === oid);
   async function load() {
     const [campaigns, media] = await Promise.all([api.nativeCampaigns(), api.nativeAssets()]);
@@ -50,7 +51,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question, ...copy, poll_options: copy.poll_options.split("\n").filter(text => text.trim()) }), "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
   }
   return <div style={{ display: "grid", gap: 16 }}>
-    <h2>Native campaigns</h2><p>Use reviewed research for Short/Reel, carousel, single-image, community and poll treatments. Images use original cards and optional cleared stills. Community/polls produce private manual packages; they cannot create publishing queue items.</p>
+    <h2>Native campaigns</h2><p>Use reviewed research for Short/Reel, carousel, single-image, community and poll treatments. Images use original cards and optional cleared stills. Short/Reel visuals can use explicit authorized video intervals; source audio stays muted. Community/polls produce private manual packages; they cannot create publishing queue items.</p>
     {message && <p role="status">{message}</p>}
     <details style={box}><summary>Import a cleared still</summary><form style={{ display: "grid", gap: 10, marginTop: 12 }} onSubmit={e => {
       e.preventDefault(); if (file) act(() => api.nativeAssetUpload(file, license, attestation, tags), "Still indexed by content hash; duplicate imports reuse the existing asset.");
@@ -75,8 +76,16 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
         <label style={field}>Beat text {i + 1}<textarea required minLength={12} maxLength={140} value={beat.text} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, text: e.target.value } : b))} /></label>
         <label style={field}>Research excerpt {i + 1}<select aria-label={`Research excerpt ${i + 1}`} value={beat.source_refs[0]} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, source_refs: [Number(e.target.value)] } : b))}>
           {(chosen?.evidence || []).map((e, n) => <option key={n} value={n + 1}>{n + 1}: {e.excerpt.slice(0, 80)}</option>)}</select></label>
-        <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null } : b))}>
-          <option value="">Original graphic</option>{assets.filter(a => a.kind === "image").map(a => <option key={a.id} value={a.id}>#{a.id}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
+        <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null, clip_start: null, clip_end: null, clip_end_policy: null } : b))}>
+          <option value="">Original graphic</option>{assets.filter(a => ["image", "video"].includes(a.kind)).map(a => <option key={a.id} value={a.id}>#{a.id} · {a.kind}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
+        {assets.find(a => a.id === beat.asset_id)?.kind === "video" && <div style={{ display: "grid", gap: 8 }}>
+          <video controls preload="metadata" style={{ maxWidth: 360, width: "100%" }} src={api.assetMedia(beat.asset_id!)} />
+          <p>Indexed duration: {assets.find(a => a.id === beat.asset_id)?.provenance.media?.seconds.toFixed(3)}s. Select 0.25–12 seconds. The complete frame appears in an inset; source audio is excluded. Review all narration, text and visuals after rendering.</p>
+          {(["clip_start", "clip_end"] as const).map(key => <label key={key}>{`Video ${key === "clip_start" ? "start" : "end"} for beat ${i + 1}`}<input aria-label={`Video ${key === "clip_start" ? "start" : "end"} for beat ${i + 1}`} type="number" required min={0} max={assets.find(a => a.id === beat.asset_id)?.provenance.media?.seconds} step="0.001" value={beat[key] ?? ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, [key]: e.target.value === "" ? null : Number(e.target.value) } : b))} /></label>)}
+          <label>Video end treatment for beat {i + 1}<select aria-label={`Video end treatment for beat ${i + 1}`} required value={beat.clip_end_policy || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, clip_end_policy: e.target.value as "hold" | "loop" || null } : b))}>
+            <option value="">Choose intentionally</option><option value="hold">Hold the last frame if narration continues</option><option value="loop">Loop this interval if narration continues</option>
+          </select></label>
+        </div>}
       </fieldset>)}
       <label style={field}>Short caption<textarea required={selected.includes("short")} minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
       <label style={field}>Carousel caption<textarea required={selected.includes("carousel")} minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
@@ -91,11 +100,12 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
         <label style={field}>Poll options (one per line, 2–4)<textarea required value={copy.poll_options} onChange={e => setCopy({ ...copy, poll_options: e.target.value })} /></label>
       </>}
       <label style={field}>Community question draft<textarea maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
-      <div><button disabled={busy || !oid || !selected.length}>Create native campaign</button></div>
+      {incompatibleClips && <p role="alert">Video intervals currently require a Short/Reel-only campaign. Choose stills for image, carousel or manual formats.</p>}
+      <div><button disabled={busy || !oid || !selected.length || incompatibleClips}>Create native campaign</button></div>
     </form>
     {rows.map(c => <article key={c.id} style={box} data-testid={`campaign-${c.id}`}>
       <h3>{c.brief.title}</h3><p>Campaign #{c.id} · {c.stage_status} · {c.stage_message}</p>
-      <p><strong>Short/Reel:</strong> {c.brief.short_caption}</p><p><strong>Carousel:</strong> {c.brief.carousel_caption}</p>
+      <p><strong>Short:</strong> {c.brief.short_caption}</p>{c.brief.reel_caption && <p><strong>Reel:</strong> {c.brief.reel_caption}</p>}<p><strong>Carousel:</strong> {c.brief.carousel_caption}</p>
       {c.brief.community_question && <p><strong>Private community draft:</strong> {c.brief.community_question}</p>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{c.brief.formats.map(f => <button key={f} disabled={busy || c.stage_status === "running"}
         onClick={() => act(() => api.nativeRender(c.id, f), `${f} export rendered. Watch the whole video or inspect every slide before approving.`)}>Render {f}</button>)}</div>
@@ -118,6 +128,7 @@ function ExportReview({ item, accounts, busy, act }: { item: NativeExport; accou
     <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "12px 0" }}>{item.manifest.cards.map((card, i) => <figure key={card.file} style={{ margin: 0, minWidth: 170, maxWidth: 220 }}>
       <img src={api.nativeFile(item.id, card.file)} alt={card.alt} style={{ width: "100%", borderRadius: 8 }} /><figcaption>Card {i + 1}: {card.alt}</figcaption>
     </figure>)}</div>
+    {!!item.manifest.visual_sources?.length && <div><strong>Selected video intervals</strong><ul>{item.manifest.visual_sources.map(source => <li key={source.card}>Card {source.card} · asset #{source.asset_id} · {source.source_start.toFixed(3)}–{source.source_end.toFixed(3)}s · {source.end_policy === "hold" ? "hold last frame" : "loop selected interval"} · {source.presentation_seconds.toFixed(3)}s presentation · source audio excluded</li>)}</ul></div>}
     {item.manifest.platform_copy && <p><strong>Format copy:</strong> {item.manifest.platform_copy}</p>}
     {item.manifest.manual_post && <div><p>{item.manifest.manual_post.text}</p><ol>{item.manifest.manual_post.options.map(option => <li key={option}>{option}</li>)}</ol>
       <p>Private manual export. No account, queue item, scheduled upload or publication has been created.</p></div>}

@@ -79,7 +79,7 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
     root.mkdir(parents=True, exist_ok=False)
     manifest = {"schema": 1, "input_sha256": digest(brief), "format": fmt, "cards": [],
                 "quality": {"errors": [], "warnings": [], "status": "needs_owner_review"},
-                "limitations": ["Beat-card treatment; no semantic footage search or word-aligned karaoke captions",
+                "limitations": ["Original cards with explicit video insets; no semantic footage search or word-aligned karaoke captions",
                                 "Owner must inspect narration, relevance, originality and all rights"]}
     manifest['platform_copy']={
         'short':brief.get('short_caption'),'reel':brief.get('reel_caption'),
@@ -95,8 +95,30 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
     for i, beat in enumerate(beats):
         control.check()
         path = root / f"card-{i + 1}.png"
+        asset=assets.get(beat.get('asset_id'));clip=None;visual=None
+        if beat.get('clip_start') is not None:
+            if not vertical or not asset:raise ValueError('Video intervals require a selected asset and vertical treatment')
+            start,end,policy=beat['clip_start'],beat['clip_end'],beat['clip_end_policy']
+            if policy not in ('hold','loop') or not 0<=start<end or not .25<=end-start<=12:
+                raise ValueError('Invalid selected video interval or end treatment')
+            clip=root/f'visual-{i + 1}.mp4'
+            # Map only video: source music/dialogue is never mixed into the output.
+            media.run(['ffmpeg','-v','error','-y','-ss',str(start),'-i',str(asset),'-t',str(end-start),
+                '-map','0:v:0','-an','-sn','-dn','-map_metadata','-1','-vf','setpts=PTS-STARTPTS',
+                '-r','30','-c:v','libx264','-preset','veryfast','-crf','20',str(clip)],timeout=90)
+            actual=media.duration(clip)
+            if not .2<=actual<=12.1 or abs(actual-(end-start))>.1:
+                raise ValueError('Selected source interval was truncated; no export can be promoted')
+            visual={'file':str(clip),'sha256':file_hash(clip),'asset_id':beat['asset_id'],
+                'source_sha256':file_hash(asset),'source_start':start,'source_end':end,'excerpt_seconds':actual,
+                'end_policy':policy,'source_audio':'excluded','card':i+1}
+            manifest.setdefault('visual_sources',[]).append(visual)
+            asset=root/f'poster-{i + 1}.png'
+            media.run(['ffmpeg','-v','error','-y','-i',str(clip),'-frames:v','1','-vf',
+                'scale=810:440:force_original_aspect_ratio=decrease,pad=810:440:(ow-iw)/2:(oh-ih)/2:color=0x0d1523',str(asset)],timeout=30)
         manifest["cards"].append(card(path, brief["title"], beat, i, len(beats), vertical=vertical,
-                                      asset=assets.get(beat.get("asset_id"))))
+                                      asset=asset))
+        if clip:manifest['cards'][-1]['visual']='owner_selected_video_interval'
         if vertical:
             narration = root / f"voice-{i + 1}.mp3"
             tts.synth(beat["text"], narration)
@@ -114,8 +136,17 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
             seconds = readable
             seconds = math.ceil((seconds + .15) * 30) / 30
             segment = root / f"beat-{i + 1}.mp4"
-            media.run(["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", "30", "-i", str(path),
-                       "-i", str(narration), "-t", str(seconds), "-vf", "scale=1080:1920,setsar=1",
+            args=['ffmpeg','-v','error','-y','-loop','1','-framerate','30','-i',str(path)]
+            if clip:
+                if visual['end_policy']=='loop':args+=['-stream_loop','-1']
+                args+=['-i',str(clip),'-i',str(narration)]
+                footprint='scale=810:440:force_original_aspect_ratio=decrease,pad=810:440:(ow-iw)/2:(oh-ih)/2:color=0x0d1523,setsar=1,setpts=PTS-STARTPTS'
+                if visual['end_policy']=='hold':footprint+=f',tpad=stop_mode=clone:stop_duration={seconds:.6f}'
+                args+=['-filter_complex',f'[1:v]{footprint}[excerpt];[0:v][excerpt]overlay=90:500:shortest=1[v]',
+                    '-map','[v]','-map','2:a:0']
+                visual['presentation_seconds']=seconds
+            else:args+=['-i',str(narration),'-map','0:v:0','-map','1:a:0','-vf','scale=1080:1920,setsar=1']
+            media.run([*args, "-t", str(seconds),
                        "-af", ",".join([*filters, "apad", "alimiter=limit=0.85"]), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", str(segment)], timeout=180)
             segments.append(segment)

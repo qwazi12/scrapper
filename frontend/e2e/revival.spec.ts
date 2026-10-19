@@ -1240,3 +1240,79 @@ test("Queue read recovery uses the real limiter with a seeded exhausted fixture 
   expect(stored.status).toBe("review"); expect(stored.title).toBe(fixture.title);
   await page.screenshot({ path: path.join(evidence, "queue-read-recovery.png"), fullPage: true });
 });
+
+test("Native selected-video UI imports authorized media, chooses an interval and reviews its intentional loop", async ({ page, request }) => {
+  const isolationBefore = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  await page.goto("/#editorial");
+  await page.getByRole("button", { name: "Asset library", exact: true }).click();
+  await page.getByText("Index a local video or audio asset", { exact: true }).click();
+  await page.getByLabel("Local media file", { exact: true }).setInputFiles(path.join(stack.root, "fixtures/trailer.mp4"));
+  await page.getByLabel("Asset rights and intended use", { exact: true }).fill("Original procedural shape media from this isolated harness, authorized for this private local clip treatment.");
+  await page.getByLabel("Asset scene description", { exact: true }).fill("Original red and blue color panels with geometric shapes; an owner-selected interval, not semantic search.");
+  await page.getByLabel("Asset tags", { exact: true }).fill("original clip, source interval");
+  const [indexed] = await Promise.all([
+    page.waitForResponse(r => r.url().endsWith("/api/editorial/assets/media") && r.request().method() === "POST"),
+    page.getByRole("button", { name: "Index local media", exact: true }).click(),
+  ]);
+  expect(indexed.ok()).toBe(true); const aid = (await indexed.json()).id;
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.getByLabel("Topic", { exact: true }).fill("Original selected-video treatment fixture");
+  await page.getByLabel("Original angle", { exact: true }).fill("Use an explicit original source interval while separately narrating a new visual composition lesson.");
+  await page.getByLabel("Audience and question", { exact: true }).fill("Viewers comparing deliberate original color and shape treatments.");
+  await page.getByLabel("Research source URL", { exact: true }).fill("https://example.invalid/original-selected-interval");
+  await page.getByLabel("Supporting excerpt", { exact: true }).fill("These original shapes and color panels were generated locally for this fixture; no borrowed footage or factual film claims are used.");
+  await page.getByRole("button", { name: "Create opportunity", exact: true }).click();
+  const opportunity = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Original selected-video treatment fixture", exact: true }) });
+  await opportunity.getByRole("button", { name: "Approve research brief", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  await expect(opportunity).toContainText("approved");
+  const opportunities = await (await request.get(`${stack.api}/api/editorial/opportunities`, { headers })).json();
+  const oid = opportunities.find((row: any) => row.title === "Original selected-video treatment fixture").id;
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByLabel("Approved research", { exact: true }).selectOption(String(oid));
+  for (const [index, text] of ["Can an original color change the emphasis of this frame?", "Choose an interval that supports the point instead of copying someone else's story.", "Keep the final composition clear. Which original choice would you keep?"].entries())
+    await page.getByLabel(`Beat text ${index + 1}`, { exact: true }).fill(text);
+  await page.getByLabel("Visual for beat 1", { exact: true }).selectOption(String(aid));
+  const create = page.getByRole("button", { name: "Create native campaign", exact: true });
+  await expect(create).toBeDisabled();
+  await expect(page.getByRole("alert").filter({ hasText: "Video intervals currently require" })).toContainText("Short/Reel-only");
+  await page.getByRole("group", { name: "Treatments to make", exact: true }).getByRole("checkbox", { name: "carousel", exact: true }).uncheck();
+  await page.getByLabel("Video start for beat 1", { exact: true }).fill("1");
+  await page.getByLabel("Video end for beat 1", { exact: true }).fill("3");
+  await page.getByLabel("Video end treatment for beat 1", { exact: true }).selectOption("loop");
+  await page.getByLabel("Short caption", { exact: true }).fill("Compare this original interval with the new narrated visual point. Which composition reads most clearly?");
+  const [saved] = await Promise.all([
+    page.waitForResponse(r => r.url().endsWith("/api/editorial/campaigns") && r.request().method() === "POST"), create.click(),
+  ]);
+  expect(saved.ok()).toBe(true); const cid = (await saved.json()).id;
+  const campaign = page.getByTestId(`campaign-${cid}`);
+  await campaign.getByRole("button", { name: "Render short", exact: true }).click();
+  const review = campaign.getByTestId("native-export-short");
+  await expect(review).toContainText("Final decode: passed");
+  await expect(review).toContainText("1.000–3.000s");
+  await expect(review).toContainText("loop selected interval");
+  await expect(review).toContainText("source audio excluded");
+  const player = review.locator("video");
+  await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+  await player.evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
+  await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.3);
+  await player.evaluate((video: HTMLVideoElement) => video.pause());
+  const campaigns = await (await request.get(`${stack.api}/api/editorial/campaigns`, { headers })).json();
+  const exported = campaigns.find((row: any) => row.id === cid).exports[0];
+  expect(exported.manifest.visual_sources[0]).toMatchObject({ asset_id: aid, source_start: 1, source_end: 3, end_policy: "loop", source_audio: "excluded" });
+  copyFileSync(exported.manifest.video.file, path.join(evidence, "native-selected-clip-final.mp4"));
+  writeFileSync(path.join(evidence, "native-selected-clip-manifest.json"), JSON.stringify(exported.manifest, null, 2));
+  execFileSync("ffmpeg", ["-v", "error", "-xerror", "-i", exported.manifest.video.file, "-f", "null", "-"]);
+  await review.getByRole("button", { name: "Approve inspected short", exact: true }).click();
+  await expect(page.getByRole("form", { name: "Exact export acceptance" })).toContainText("loops the selected interval");
+  await acceptExactExport(page, "native-selected-clip-acceptance.png");
+  await review.getByRole("checkbox", { name: "default:instagram", exact: true }).check();
+  await review.getByRole("button", { name: "Add short to review queue", exact: true }).click();
+  await expect(review).toContainText("Queue item #");
+  await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+  await player.evaluate((video: HTMLVideoElement) => { video.currentTime = 1.5; });
+  await expect.poll(() => player.evaluate((video: HTMLVideoElement) => !video.seeking && video.readyState >= 2)).toBe(true);
+  await review.screenshot({ path: path.join(evidence, "native-selected-clip-review.png") });
+  const isolationAfter = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(isolationAfter.fake_publish_receipts).toBe(isolationBefore.fake_publish_receipts);
+});

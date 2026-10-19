@@ -40,12 +40,14 @@ analytics/comment adapters; context-bound private comment/correction workflow;
 descriptive diagnostics and reviewed manual experiments; WAL-aware SQLite recovery
 and actual private PostgreSQL logical recovery; browser draft and queue recovery;
 supported lifespan/schema/image interfaces; structured native exact acceptance and
-format-correct image/Reel dispatch. Do not restart these from older plans.
-Latest completed feature commit304b5ae contains native acceptance; inspect Git
+format-correct image/Reel dispatch; explicit authorized video intervals, source
+claims, muted excerpts and actual hold/loop/browser playback proof. Do not restart these from older plans.
+Native acceptance is saved in304b5ae and selected video intervals have completed
+local verification; inspect the current local commit/Git
 history/state for later saved work before choosing the next slice.
 
-Latest completed broad evidence: **661 backend passes /1 optional skip**,
-**185 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+Latest completed broad evidence: **665 backend passes /1 optional skip**,
+**189 actual PostgreSQL passes** plus native restore, **6 frontend error unit
 passes**, production build passed, **20 actual browser scenarios passed** before
 the native slice and **4 full media workflows passed** afterward plus1 fresh
 manual-format visual-capture pass.
