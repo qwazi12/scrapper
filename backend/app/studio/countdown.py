@@ -708,7 +708,7 @@ def render_job(cid: int) -> dict[str, Any]:
     from ..config import settings
     from ..file_use import pin
     with media_use(cid, exclusive=True, segments=True), pin([
-            settings.data_path/'studio'/'_motioncache', settings.data_path/'audio']):
+            settings.data_path/'audio']):
         return _render_job(cid)
 
 

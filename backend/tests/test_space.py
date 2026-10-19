@@ -12,12 +12,15 @@ def fake(monkeypatch):
     from backend.app import backup, cleanup
     from backend.app.studio import archive, drive_store
     calls = []
-    usage = iter([85.0, 75.0, 72.0, 68.0, 68.0, 68.0])   # start, before footage, before motion, before backups …
-    monkeypatch.setattr(space, "usage_pct", lambda: next(usage))
+    usage = [85.0]
+    monkeypatch.setattr(space, "usage_pct", lambda: usage[0])
+    def free(label,after):
+        calls.append(label);usage[0]=after;return {}
     monkeypatch.setattr(backup, "create_backup", lambda tag="manual", upload_to_drive=True: calls.append("backup") or {"filename": "b.gz"})
     monkeypatch.setattr(drive_store, "save", lambda pid: calls.append(f"drive:{pid}"))
-    monkeypatch.setattr(archive, "free_footage_sweep", lambda: calls.append("footage") or [])
-    monkeypatch.setattr(cleanup, "prune_lru_cache", lambda d, n, target_ratio=0.8: calls.append("motion") or {})
+    monkeypatch.setattr(archive, "free_footage_sweep", lambda: free('footage',75.0))
+    monkeypatch.setattr(cleanup, "prune_motion_workdirs", lambda d: free('motion_work',72.0))
+    monkeypatch.setattr(cleanup, "prune_lru_cache", lambda d, n, target_ratio=0.8: free('motion',68.0))
     monkeypatch.setattr(backup, "prune_local_backups", lambda keep=7: calls.append("backups") or [])
     monkeypatch.setattr(space, "_purge_expired", lambda: calls.append("clips") or {})
     return calls
@@ -32,7 +35,7 @@ def test_backs_up_first_then_frees_until_under_70(fake, session):
     did = space.run()
     assert fake[0] == "backup"                                 # nothing before the backup
     assert f"drive:{p.id}" in fake and fake.index(f"drive:{p.id}") < fake.index("footage")
-    assert fake[-2:] == ["footage", "motion"] and "backups" not in fake   # stopped once under 70%
+    assert fake[-3:] == ["footage", "motion_work", "motion"] and "backups" not in fake   # stopped once under 70%
     assert did["after_pct"] == 68.0
     session.delete(p)
     session.commit()

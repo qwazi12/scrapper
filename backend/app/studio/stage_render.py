@@ -412,6 +412,7 @@ def render(project_id: int) -> str:
         if f.stem not in keys:
             f.unlink(missing_ok=True)
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
+    shutil.rmtree(out_dir/'motion_inputs',ignore_errors=True)  # owned copies were fully consumed
     video.unlink(missing_ok=True)
     cleanup.cleanup_render_intermediates(out_dir)
     live = attempt / "render"
@@ -597,13 +598,16 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
     overlays: list[tuple[pathlib.Path, float]] = []
     busy: list[tuple[float, float]] = []
     pieces = 0
+    def owned_piece(kind,values,assets=None):
+        ext='mov' if kind in motion.OVERLAY_KINDS else 'mp4'
+        destination=out_dir/'motion_inputs'/f'{kind}-{len(overlays)}.{ext}'
+        return motion.try_piece(kind,values,assets,failures,destination=destination)
     _prewarm_motion(facts, plan, shots_by_id, poster_slots, windows, rel_line, backdrop, channel)
 
     first = next((it for it in plan if it.get("kind") in ("clip", "still") and shots_by_id.get(it.get("shot") or "")), None)
     if first:
         d = 3.8
-        f = motion.try_piece("intro", {"title": facts.get("title", ""), "meta": motion.intro_meta(facts), "duration": d},
-                             None, failures)
+        f = owned_piece("intro", {"title": facts.get("title", ""), "meta": motion.intro_meta(facts), "duration": d})
         if f:
             start = float(first["start"])
             overlays.append((f, start)); busy.append((start, start + d)); pieces += 1
@@ -613,7 +617,7 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
         if not rel_line:
             break
         d = round(min(dur, 6.0), 2)
-        f = motion.try_piece("release", {"where": where, "date": date, "duration": d}, None, failures)
+        f = owned_piece("release", {"where": where, "date": date, "duration": d})
         if f:
             pieces += 1
         else:  # the motion version's poster has no baked banner: lay the static one on instead
@@ -623,7 +627,7 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
 
     for i, (a, b) in enumerate(windows):
         d = round(b - a, 2)
-        f = motion.try_piece("subscribe", {"channel": channel, "duration": d}, None, failures)
+        f = owned_piece("subscribe", {"channel": channel, "duration": d})
         if f:
             pieces += 1
         overlays.append((f or sub_movs[i][0], a))
@@ -631,13 +635,12 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
 
     cast = motion.cast_cards(plan, shots_by_id, facts.get("cast", []), motion_cast_cards(), busy)
     for c in cast:
-        f = motion.try_piece("cast", {"actor": c["actor"], "character": c["character"], "duration": c["duration"]},
-                             None, failures)
+        f = owned_piece("cast", {"actor": c["actor"], "character": c["character"], "duration": c["duration"]})
         if f:
             overlays.append((f, c["start"])); pieces += 1
 
-    end_motion = motion.try_piece("endscreen", {"channel": channel, "duration": END_CARD},
-                                  {"backdrop.jpg": backdrop} if backdrop else None, failures)
+    end_motion = owned_piece("endscreen", {"channel": channel, "duration": END_CARD},
+                                  {"backdrop.jpg": backdrop} if backdrop else None)
     if end_motion:
         pieces += 1
     ok, why = motion.available()

@@ -105,7 +105,7 @@ def run_one(project_id: int, name: str, stop_event: threading.Event | None = Non
     """Run a single stage synchronously (used by the thread and by tests)."""
     from ..file_use import pin
     from . import countdown
-    with pin([project_dir(project_id)], exclusive=True), pin([settings.data_path/"studio"/"_motioncache", settings.data_path/"audio",*countdown.segment_use_paths(project_id)]):
+    with pin([project_dir(project_id)], exclusive=True), pin([settings.data_path/"audio",*countdown.segment_use_paths(project_id)]):
         if name not in STAGES:
             raise ValueError(f"Unknown stage '{name}'. Stages: {', '.join(STAGES)}")
         with SessionLocal() as s:countdown.require_segment_context(s,s.get(StudioProject,project_id),name)

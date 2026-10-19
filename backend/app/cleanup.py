@@ -282,10 +282,46 @@ def prune_lru_cache(cache_dir: pathlib.Path, max_bytes: int, target_ratio: float
     return {"files_removed": removed, "bytes_freed": freed, "remaining_bytes": total_bytes}
 
 
+def prune_motion_workdirs(cache_dir: pathlib.Path) -> dict:
+    """Reclaim only declared disposable work with no current file owner."""
+    import json,re,shutil
+    from .file_use import pin,FileBusy,assert_current,overlap
+    from .db import SessionLocal
+    from .models import FileUse,WorkerLease
+    from .worker_leases import clock
+    result={'work_dirs_removed':0,'bytes_freed':0}
+    if not cache_dir.is_dir():return result
+    pattern=re.compile(r'_work-((?:intro|release|cast|subscribe|endscreen)-[0-9a-f]{20})-[0-9a-f]{32}')
+    for path in cache_dir.iterdir():
+        match=pattern.fullmatch(path.name)
+        if not match or path.is_symlink() or not path.is_dir():continue
+        try:
+            with pin([path],exclusive=True) as claim:
+                if path.is_symlink() or path.resolve().parent!=cache_dir.resolve():continue
+                # Nested ordinary mutations share an invocation's claims. A
+                # reclaimer must also preserve that invocation's live work.
+                with SessionLocal() as session:
+                    uses=session.query(FileUse).join(WorkerLease,WorkerLease.resource==FileUse.resource).filter(
+                        FileUse.resource!=claim.resource,WorkerLease.expires_at>clock(session)).all()
+                    if any(overlap(path.resolve(),other) for use in uses for other in use.paths):continue
+                marker=path/'.scrapper-motion-work.json'
+                if marker.is_symlink() or not marker.is_file() or marker.stat().st_size>1024:continue
+                data=json.loads(marker.read_text())
+                if (not isinstance(data,dict) or type(data.get('schema')) is not int or data['schema']!=1
+                        or data.get('kind')!='motion_cache_work' or data.get('cache_key')!=match[1]):continue
+                size=sum(p.stat().st_size for p in path.rglob('*') if not p.is_symlink() and p.is_file())
+                assert_current();shutil.rmtree(path)
+                result['work_dirs_removed']+=1;result['bytes_freed']+=size
+        except FileBusy:continue
+        except (OSError,ValueError) as exc:log('warning','motion_work_cleanup_failed',str(exc)[:200],path=str(path))
+    return result
+
+
 def prune_all_caches() -> dict:
     """Enforce LRU cache caps across studio motion graphics, TTS, and temporary audio."""
     res = {}
     motion_dir = settings.data_path / "studio" / "_motioncache"
+    res['motion_work']=prune_motion_workdirs(motion_dir)
     res["motion"] = prune_lru_cache(motion_dir, settings.max_motion_cache_mb * 1024 * 1024)
 
     tts_dir = settings.data_path / "studio" / "_ttscache"

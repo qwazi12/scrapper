@@ -322,3 +322,55 @@ evidence history/tts-cache-ownership1; full reports/traces/media/source/runtime
 ledgers/fakeDrive/verified snapshot retained; owned stack stopped. Prior full32
 is separate pre-cache source5fc. The wider C01-C14 roadmap remains unfinished.
 No archive/auth/paid/public/account/push/deploy action.
+
+## Motion cache ownership, private inputs and abandoned work verified
+
+Motion pieces now use one database-fenced producer per key and a unique work
+namespace. Source assets stay pinned across digest/input copying. A lost owner
+cannot promote completed CLI bytes. Main render consumers receive private,
+atomically completed input copies before the cache claim is released; global
+cache eviction afterward cannot remove their inputs. Copy failure preserves a
+prior private piece and removes partial-copy space. Successful final inspection
+releases the consumed private intermediates. Static piece fallback and explicit
+cancellation keep their existing boundaries.
+
+Broad motion-directory readers were removed after converting consumers. Per-key
+claims avoid the former shared-reader upgrade deadlock. Cache warmup returns a
+transient cache handle; later composition explicitly materializes its own input.
+Ordinary cache reclamation now recognizes only declared schema1 kind/hash/UUID
+work directories, matching their marker. Live claims, including the current
+invocation's own work, prevent deletion. Expired work may be reclaimed and the
+old owner is fenced. Unmarked/future/bool-schema/symlinked paths stay untouched.
+This is managed disposable-work cleanup, not remote or arbitrary asset deletion.
+
+Initial4failures reproduced simultaneous work deletion, missing owned-copy
+capability and stale-owner promotion. A new nested-cleanup case reproduced and
+fixed same-invocation deletion. Focused12passed6.35s includes actual FFmpeg
+composition after every shared motion-cache file was evicted. The CLI boundary
+supplies original generated MP4/ProRes fixtures; it does not run HyperFrames/Chrome.
+Existing compositor/fallback/lease tests also passed. Broad1 had867passes plus an
+outdated disk-test fixture failure; corrected capacity-state fixture preserves
+backup-first/Drive-before-delete/stop-under70% behavior. Final full backend
+868passed/1optional skip93.51s; realPG390passed53.87s/native restore1.183s,
+222183bytes/source unchanged/SHA
+a917686daf760377684b5db26bc0884977f9760bd0585f4e11611e86e848dfb0.
+Fresh full32 browser passed6.8min on frozen sourceSHA
+a480e0ea8459e3340e2ccc7a368770345173cc47b1c125670abe7f3f5dbb0c63.
+Only the unit disk-fixture correction is later; production code is identical.
+Safe E2E motion mode remains explicitly off: browser evidence is regression and
+production-TTS-cache proof, not real HyperFrames environment proof. Frontend
+unchanged from durationbuild2/TTStsc1. Evidence history/motion-cache-ownership1
+includes source/spec/media/traces/runtime ledgers/fakeDrive and verified snapshot
+SHA40204406b1593a13fc9c9192ad05ad3f00caa38101758721f038820a611200a2;
+owned stack stopped.
+
+A retained single compositor run passed5.22s. Actual4.0s MP4, measurements, probe,
+frames, complete test data/snapshot and exact source are saved in
+artifacts/motion-cache-media1. VideoSHA
+9de98f6d76e6a311fd59d6efe6422248c4c0f0cc2cb717f92c9c3cc550799fde,
+sourceSHAf4dd7bbb2091007271b6ec92f648c175cb52543f8c538702f0ef98eb24810709.
+Inspected frames show the intended synthetic alpha-overlay/color fixture; this
+is not an editorial/design/speech-quality example. Original local footage/tone,
+actual FFmpeg, simulated CLI/provider/cloud, externalspend0. The real renderer
+environment and wider roadmap remain unverified. No archive/auth/paid/public/
+account/push/deploy action.

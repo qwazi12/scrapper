@@ -80,6 +80,7 @@ def run() -> dict[str, Any]:
 
     steps = [
         ("footage", lambda: archive.free_footage_sweep()),
+        ("motion_work", lambda: cleanup.prune_motion_workdirs(settings.data_path / "studio" / "_motioncache")),
         ("motion_cache", lambda: cleanup.prune_lru_cache(settings.data_path / "studio" / "_motioncache", 0)),
         ("old_backups", lambda: backup.prune_local_backups(keep=KEEP_BACKUPS)),
         ("expired_clips", lambda: _purge_expired()),

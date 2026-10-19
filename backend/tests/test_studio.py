@@ -606,7 +606,7 @@ def test_compare_mode_makes_both_versions_and_survives_motion_failure(monkeypatc
     monkeypatch.setattr(stage_render, "END_CARD", 1.0)
     monkeypatch.setattr(stage_render, "motion_mode", lambda: "compare")
 
-    def boom(kind, values, assets=None):
+    def boom(kind, values, assets=None, *, destination=None):
         raise motion.MotionError(f"{kind}: HyperFrames render failed — no chrome")
 
     monkeypatch.setattr(motion, "render_piece", boom)
@@ -627,9 +627,10 @@ def test_motion_overlays_are_composited(monkeypatch, three_scene_video, tmp_path
     monkeypatch.setattr(stage_render, "motion_mode", lambda: "on")
     used = []
 
-    def fake(kind, values, assets=None):
+    def fake(kind, values, assets=None, *, destination=None):
         used.append(kind)
-        dest = tmp_path / f"{kind}.{'mp4' if kind == 'endscreen' else 'mov'}"
+        dest = destination or tmp_path / f"{kind}.{'mp4' if kind == 'endscreen' else 'mov'}"
+        dest.parent.mkdir(parents=True,exist_ok=True)
         if kind == "endscreen":
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=1920x1080:d=1:r=30",
                             "-pix_fmt", "yuv420p", str(dest)], check=True)

@@ -1995,3 +1995,75 @@ real provider invoices and operational recovery remain open. No new browser,
 production, billing or deployment claim follows from these process tests.
 
 Next motion corpus independently reproduced4failed0.48s: deterministic shared_work namespace causes simultaneous same-key builders (direct andactualrunner) todeleteoneanother'swork; no ownedmaterializedcopy API; revokedowner stillpromotescompletedCLIbytes. CLIboundary fixture usesactualoriginalproceduralMP4bytes butdoesnotrunHyperFrames. No motion productionfixyet. Leave backend/tests/test_motion_cache_ownership.py out ofC11tests-onlycommit. Plan: uniqueattemptwork +commonDBcachewriter, ownedpiececopiesbeforeclaimrelease, explicitassetreadpin, removebroadmotiondirreaderafterallmainconsumersmaterialize; preserve staticfallback/cancel semantics. Neednormalcompositor/fallbackregression plusactualtypedtests/PG beforeclaim. C01-C14 stillopen, no archive/auth/paid/public/account/push/deploy.
+
+## Motion cache ownership/reclamation — current uncommitted C04 slice
+
+HEADc6d8c40 processproof saved. Newmotion corpus reproduced4failed0.48s (two same-key builders share/delete deterministicwork, missingownedcopy capability, revokedownerpromotion). Currentmotion uses commonDBcachewriter, unique_workUUID +schema1disposablemarker, sharedassetpin acrossdigest/inputcopy, sourcegenerationguardbeforecachepromotion, atomicprivatedestinationcopyunderclaims withuniquetempfile cleanedonerror. Every mainstage_render motionconsumer nowmaterializes intoitsownattemptbeforecomposer; warmup returnsignoredcachehandle. Removedbroadmotiondirreaders fromStudio/Countdown onlyafterconsumerconversion; commonaudio protectionremains. Completedownedmotioninputs removedonlyafterfullfinaldecode/inspection succeeds; failedcopykeepspriorownedpieceandfreespartialspace, staticfallback/Cancelledsemanticsretained. Existingcompositorfixtures nowacceptowneddestination, don'toverridecommoncopytests.
+
+Addedstrictorphanworkcleanup tocache/space sweeps: onlyrecognizedkind/hash/UUID schema1marker withmatchingkey, no symlinks/unmarked/future/bool-schema directories. Currentproducer/readerclaimsprotectwork. Review caughtnewnestedreclaimer hazard: ordinaryFileUse intentionallyignoresownnestedclaims, so newhelpercoulddeleteitsownlivework ifcalledwithinspacecleanup. Newselfcase reproduced1failed0.22s; helpernowchecksallotherliveclaims includingcurrentinvocation beforedeleting. Currentowner/generationfence preserved. Addedexplicitexpiredworkreclaim+staleownerrefusal andactualFFmpeg compositor test that deletesglobalcache beforeconsumingownedpieces. CLIboundary usesactualoriginalproceduralMP4/ProResbytes, doesnotexecuteHyperFrames orproveChrome/HTMLquality.
+
+Initialfocused75passed27.42s (4motion+Studio), next34passed2.83s(copy/orphan+TTS/file), afterselfcleanupfix83passed29.21s(10motion+Studio+process). Currentexpanded12motionfocused4session67038active, notyetfinalresult. NobroadPG/currentUIproofyet; stablePythonforrun. Needfinalfocusedoutcome, thenfullbackend/realPG/currentregression/evidence/docs/commit beforeclaimingcurrentclosure. No archive/auth/paid/public/account/push/deploy; entireC01-C14roadmapunfinished. NextC05auditnotedlegacyTTSspeakable changesquotes/profanity whilecaptionskeepsavedwords; surfaceactualspoken-transform evidence beforeanynewqualityclaim. Keepthatseparatefromcachework.
+
+Expandedmotionfocused12passed6.35s, includingactualFFmpegcompositorafterallglobalmotioncachefilesweredeleted. Realprocessbyte/DBscopeusesCLIboundaryfixture, not actualHyperFrames/Chrome. Newbroadbackend1session(nextoutput) andactualPG1session(nextoutput) active, artifacts/motion-cache-ownership-backend1/pg1; Pythonstablesincelaunch. Freshfull32 browser1next viafrozenstack(nextoutput) motion-cache-ownership1-stack.txt; existingUIproductionfrontendunchangeddurationbuild2/TTStsc1, no rebuildneeded. SafeE2Emotionmodeoffexplicitly, sofullbrowserprovesregression/currentcommonTTScontext butnotHyperFramesrendering. Separateunitactualcompositor+ownedcopy contractscovermotioncachewithsimulatedCLI. Exactprelaunchspecsaved. Needsoutcomes/archive/allruntimeextras/WALsnapshot/stop/docs/commit. ContinueindependentC05spoken-textauditwithoutproductionPythoneditsduringbroad.
+
+Motion broad1:867passed/1optional skip +1failed107.67s. Failuretest_space.py simulatedusage viaiteratorreadingcounts, so legitimate neworphanworkcheck consumedtheoldfinal68% readingbeforecache step andoldassertexpectedcachecall. Convertedfixturetocapacitystate changedbyactualfakecleanupactions, explicitlyrecordsnewmotion_workstep, retainsbackup-first/Drive-beforedelete/stop-under70% guarantees. ProductionPythonunchanged. Newfocused5space+12motion andfullbackend2sessions(nextoutputs) active; no fakepassclaimuntilresults.
+
+ActualPG390passed53.87s/native restore1.183s222183bytes/source unchanged/SHAa917686daf760377684b5db26bc0884977f9760bd0585f4e11611e86e848dfb0, foridenticalproductioncode; noPG rerun neededfortest_spacefixture-onlycorrection. Full32frozenbrowser1stillactive stack40096/browser41980 root scrapper-e2e-o1w21c3q, sourcea480e0ea8459e3340e2ccc7a368770345173cc47b1c125670abe7f3f5dbb0c63. Exactprelaunchspecpreserved. Unitcodeisnot currentbrowserruntime; appunchangedfromsourcea480 (test_spacechangeonly). No buildwhileactive; archiveeverythingbefore nextbrowser command.
+
+Motionfinalbroad2 **868passed/1optional skip93.51s**; correctedstate-basedspacefixturefocused5 **15passed7.32s**. ActualPG **390passed53.87s**, native restore1.183s222183bytes/sourceunchanged/SHAa917686daf760377684b5db26bc0884977f9760bd0585f4e11611e86e848dfb0. Freshfull32browser **32passed6.8min**, frozena480e0ea8459e3340e2ccc7a368770345173cc47b1c125670abe7f3f5dbb0c63; appidenticaltocorrectedunitfixturecurrent. SafeE2Emotionoffexplicit; actualcommonTTScacheandallUIcurrentregression, notHyperFrames/Chromeproof. Allcurrentreports/traces/source/spec/originalmedia/runtimeledgers/fakeDrive/verifiedWALsnapshot archivedhistory/motion-cache-ownership1 (hashnextoutput), ownedstack40096stopped. Productionfrontendunchangeddurationbuild2,TTStsc1. AllMotionproduction/tests staged; docs/MEMORYnotyetstagedforcommit.
+
+Beforecommit, retainedsingleactualcompositor test KEEP_TEST_DATA=1 launching artifacts/motion-cache-media1.txt/xml; goalpreserveactualfinalMP4/quality/ffprobe/selectedframe forvisualQA, notrerunentiresuite. CLIboundarysimulatedwhileFFmpegactual. Do noteditPythonuntilthissmallrunfinishes+mediaarchived. Currentmotionunitpipelineoriginalrootisprivatepytest-created, noexistingDB/liveaccounts. No roadmapcompletioninferred; no archive/auth/paid/public/account/push/deploy.
+
+## Motion cache ownership, private inputs and abandoned work verified
+
+Motion pieces now use one database-fenced producer per key and a unique work
+namespace. Source assets stay pinned across digest/input copying. A lost owner
+cannot promote completed CLI bytes. Main render consumers receive private,
+atomically completed input copies before the cache claim is released; global
+cache eviction afterward cannot remove their inputs. Copy failure preserves a
+prior private piece and removes partial-copy space. Successful final inspection
+releases the consumed private intermediates. Static piece fallback and explicit
+cancellation keep their existing boundaries.
+
+Broad motion-directory readers were removed after converting consumers. Per-key
+claims avoid the former shared-reader upgrade deadlock. Cache warmup returns a
+transient cache handle; later composition explicitly materializes its own input.
+Ordinary cache reclamation now recognizes only declared schema1 kind/hash/UUID
+work directories, matching their marker. Live claims, including the current
+invocation's own work, prevent deletion. Expired work may be reclaimed and the
+old owner is fenced. Unmarked/future/bool-schema/symlinked paths stay untouched.
+This is managed disposable-work cleanup, not remote or arbitrary asset deletion.
+
+Initial4failures reproduced simultaneous work deletion, missing owned-copy
+capability and stale-owner promotion. A new nested-cleanup case reproduced and
+fixed same-invocation deletion. Focused12passed6.35s includes actual FFmpeg
+composition after every shared motion-cache file was evicted. The CLI boundary
+supplies original generated MP4/ProRes fixtures; it does not run HyperFrames/Chrome.
+Existing compositor/fallback/lease tests also passed. Broad1 had867passes plus an
+outdated disk-test fixture failure; corrected capacity-state fixture preserves
+backup-first/Drive-before-delete/stop-under70% behavior. Final full backend
+868passed/1optional skip93.51s; realPG390passed53.87s/native restore1.183s,
+222183bytes/source unchanged/SHA
+a917686daf760377684b5db26bc0884977f9760bd0585f4e11611e86e848dfb0.
+Fresh full32 browser passed6.8min on frozen sourceSHA
+a480e0ea8459e3340e2ccc7a368770345173cc47b1c125670abe7f3f5dbb0c63.
+Only the unit disk-fixture correction is later; production code is identical.
+Safe E2E motion mode remains explicitly off: browser evidence is regression and
+production-TTS-cache proof, not real HyperFrames environment proof. Frontend
+unchanged from durationbuild2/TTStsc1. Evidence history/motion-cache-ownership1
+includes source/spec/media/traces/runtime ledgers/fakeDrive and verified snapshot
+SHA40204406b1593a13fc9c9192ad05ad3f00caa38101758721f038820a611200a2;
+owned stack stopped.
+
+A retained single compositor run passed5.22s. Actual4.0s MP4, measurements, probe,
+frames, complete test data/snapshot and exact source are saved in
+artifacts/motion-cache-media1. VideoSHA
+9de98f6d76e6a311fd59d6efe6422248c4c0f0cc2cb717f92c9c3cc550799fde,
+sourceSHAf4dd7bbb2091007271b6ec92f648c175cb52543f8c538702f0ef98eb24810709.
+Inspected frames show the intended synthetic alpha-overlay/color fixture; this
+is not an editorial/design/speech-quality example. Original local footage/tone,
+actual FFmpeg, simulated CLI/provider/cloud, externalspend0. The real renderer
+environment and wider roadmap remain unverified. No archive/auth/paid/public/
+account/push/deploy action.
+
+Owner status question answered in commentary: whole roadmap remains unfinished, broad factual/category, speech/caption/editorial, semanticasset/music/recut, audience/comment/learning, crash/Linux/provider, UX/docs/release lanes stilllisted; push/deploy/livetest onlyaftercompletion, Shortsdeferred. Continuewithoutcheckpointstop. Currentmotionexistingindex +docs/MEMORY tocommitnow. NextC05evidencegap: existingtts.speakable silentlysoftensprofanity/removesquotes whilecaption/scriptretainraw words. Planrecords desiredspoken text/voice/audio-inputhash atcurrentgeneration, makeslexicalsubstitution anexplicitreviewfinding, leaveslegacyrequestedtextunconfirmed withoutguessingcurrentrules. Do notclaimrequestmetadata is a transcript/providerreceipt. ExtendStudio/native/Countdown coherently, protectretainedfacts/fingerprints/wordpreservation, preservecurrentlanguagepolicy untilownerchoice ratherthanrewriteapprovedwords. No C05code/test yet. Then contract/docs consolidation andotherC01-C14 remain.
