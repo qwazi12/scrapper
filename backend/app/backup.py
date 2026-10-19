@@ -1,12 +1,11 @@
 """Database Backups & Point-in-Time Snapshots.
 
 Provides:
-1. Online, lock-free SQLite snapshot via `sqlite3.Connection.backup`
+1. Online SQLite snapshot via `sqlite3.Connection.backup`
 2. Integrity check via `PRAGMA integrity_check;`
 3. Gzip compression (.db.gz) and SHA-256 validation
 4. Local disk retention: keep 7 daily copies in `/data/backups/`
-5. Off-disk Google Drive snapshots retained in Shared Drive folder
-   (Scrapper Backups, folder id: 14z17C-cYIqUK8teqeOOVtnITx0GHHl8E)
+5. Checksum-verified Google Drive uploads when configured; no automatic remote pruning
 6. Automatic pre-migration snapshot in `init_db()`
 7. Nightly 3:00 AM Eastern automated trigger in scheduler
 8. Dry-run and confirmed restore engine (`scripts/restore_db.py`)
@@ -16,14 +15,10 @@ from __future__ import annotations
 
 import datetime
 from datetime import timezone
-import gzip
-import hashlib
 import json
 import logging
 import os
 import pathlib
-import shutil
-import sqlite3
 import tempfile
 import time
 from typing import Any
@@ -72,14 +67,30 @@ def _read_persisted_status() -> dict[str, Any] | None:
 
 
 def _write_persisted_status(data: dict[str, Any]) -> None:
+    """Publish whole JSON atomically; an older completion cannot replace newer evidence."""
+    import fcntl
+    from .sqlite_snapshots import fsync_directory
     f = _get_status_cache_file()
+    temporary = None
     try:
-        f.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        with (f.parent / '.status.lock').open('a+b') as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            old = _read_persisted_status()
+            if old and str(old.get('created_at', '')) > str(data.get('created_at', '')):
+                return
+            fd, temporary = tempfile.mkstemp(prefix='.status-', dir=f.parent)
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                json.dump(data, stream, indent=2)
+                stream.flush(); os.fsync(stream.fileno())
+            os.replace(temporary, f)
+            fsync_directory(f.parent)
     except Exception as exc:
         logger.warning("Could not persist backup status to disk: %s", exc)
+    finally:
+        if temporary: pathlib.Path(temporary).unlink(missing_ok=True)
 
 
-def create_backup(tag: str = "manual", upload_to_drive: bool = True) -> dict[str, Any]:
+def create_backup(tag: str = "manual", upload_to_drive: bool = True, *, rotate: bool = True) -> dict[str, Any]:
     """Create a verified, compressed point-in-time snapshot of the database.
 
     Args:
@@ -93,77 +104,40 @@ def create_backup(tag: str = "manual", upload_to_drive: bool = True) -> dict[str
     if not db_path:
         return {
             "ok": False,
-            "error": "Database is not SQLite; cloud-managed backups apply",
+            "error": "SQLite snapshot is unavailable for PostgreSQL; no cloud backup or restore coverage has been verified",
             "type": "postgres",
         }
 
     if not db_path.is_file():
         raise BackupError(f"Database file does not exist: {db_path}")
 
-    start_time = time.time()
-    now_utc = datetime.datetime.now(timezone.utc)
-    now_local = datetime.datetime.now(ZoneInfo(settings.backup_timezone))
-    ts_str = now_local.strftime("%Y%m%d_%H%M%S")
-
-    backups_dir = get_local_backups_dir()
-    final_gz_name = f"scrapper_{ts_str}_{tag}.db.gz"
-    final_gz_path = backups_dir / final_gz_name
-
-    logger.info("Starting database backup (%s) to %s...", tag, final_gz_name)
-
-    # 1. Take snapshot into a temporary raw SQLite file
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-        temp_raw_path = pathlib.Path(tmp.name)
-
+    from contextlib import nullcontext
+    from .sqlite_snapshots import compressed_snapshot,unique_stem,lock_handle
+    stem=unique_stem('scrapper',tag)
+    final_path=get_local_backups_dir()/(stem+'.db.gz')
+    # Pin the final name before it becomes visible to concurrent retention.
+    # Before migrations, there are no claim tables and rotation is disabled.
+    from .file_use import pin
+    fd=lock_handle(db_path)
     try:
-        # Use SQLite's online backup API (safe while active writes are occurring)
-        src_conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        dst_conn = sqlite3.connect(temp_raw_path)
-        try:
-            src_conn.backup(dst_conn)
-        finally:
-            dst_conn.close()
-            src_conn.close()
+        with pin([final_path]) if rotate else nullcontext():
+            return _create_backup(db_path,tag,upload_to_drive,rotate,stem)
+    finally:os.close(fd)
 
-        # 2. Check integrity of the snapshot
-        chk_conn = sqlite3.connect(temp_raw_path)
-        try:
-            cur = chk_conn.cursor()
-            cur.execute("PRAGMA integrity_check;")
-            rows = cur.fetchall()
-            if not rows or rows[0][0].lower() != "ok":
-                raise BackupError(f"Snapshot integrity check failed: {rows}")
-        finally:
-            chk_conn.close()
 
-        uncompressed_size = temp_raw_path.stat().st_size
-
-        # 3. Compress to .db.gz
-        hasher = hashlib.sha256()
-        with open(temp_raw_path, "rb") as f_in, gzip.open(final_gz_path, "wb", compresslevel=6) as f_out:
-            while chunk := f_in.read(64 * 1024):
-                hasher.update(chunk)
-                f_out.write(chunk)
-
-        compressed_size = final_gz_path.stat().st_size
-        sha256_hash = hasher.hexdigest()
-
-    finally:
-        if temp_raw_path.exists():
-            temp_raw_path.unlink()
-
-    duration = round(time.time() - start_time, 2)
-    logger.info(
-        "Backup verified & compressed (%s): %s bytes -> %s bytes in %.2fs (sha256: %s)",
-        final_gz_name,
-        uncompressed_size,
-        compressed_size,
-        duration,
-        sha256_hash[:12],
-    )
+def _create_backup(db_path,tag,upload_to_drive,rotate,stem):
+    from .sqlite_snapshots import compressed_snapshot
+    start_time=time.time()
+    now_utc=datetime.datetime.now(timezone.utc)
+    now_local=now_utc.astimezone(ZoneInfo(settings.backup_timezone))
+    backups_dir=get_local_backups_dir()
+    snapshot=compressed_snapshot(db_path,backups_dir,stem)
+    final_gz_path=pathlib.Path(snapshot['path']);final_gz_name=snapshot['filename']
+    uncompressed_size=snapshot['uncompressed_bytes'];compressed_size=snapshot['compressed_bytes'];sha256_hash=snapshot['sha256']
+    duration=round(time.time()-start_time,2)
 
     # 4. Prune local disk copies (keep settings.backup_keep_local)
-    pruned_local = prune_local_backups(keep=settings.backup_keep_local)
+    pruned_local = prune_local_backups(keep=settings.backup_keep_local,protected=[final_gz_path]) if rotate else []
 
     # 5. Off-disk upload to Google Shared Drive
     drive_info: dict[str, Any] = {
@@ -195,6 +169,7 @@ def create_backup(tag: str = "manual", upload_to_drive: bool = True) -> dict[str
         "uncompressed_bytes": uncompressed_size,
         "compressed_bytes": compressed_size,
         "sha256": sha256_hash,
+        "compressed_sha256":snapshot["compressed_sha256"],
         "duration_seconds": duration,
         "pruned_local": pruned_local,
         "drive": drive_info,
@@ -208,31 +183,30 @@ def create_backup(tag: str = "manual", upload_to_drive: bool = True) -> dict[str
 
 
 def create_pre_migration_backup() -> dict[str, Any] | None:
-    """Invoked right before database schema migrations run in init_db()."""
-    try:
-        db_path = get_sqlite_db_path()
-        if not db_path or not db_path.is_file():
-            return None
-        # Don't upload pre-migration to Drive to save quota / time; keep on local disk
-        return create_backup(tag="pre_migration", upload_to_drive=False)
-    except Exception as exc:
-        logger.warning("Pre-migration backup warning (continuing migration): %s", exc)
-        return None
+    """Fail closed before the first schema mutation of an existing database."""
+    db_path=get_sqlite_db_path()
+    if not db_path or not db_path.is_file() or db_path.stat().st_size==0:return None
+    try:return create_backup(tag='pre_migration',upload_to_drive=False,rotate=False)
+    except Exception as exc:raise BackupError('Pre-migration snapshot failed; database schema was not changed') from exc
 
 
-def prune_local_backups(keep: int = 7) -> list[str]:
+def prune_local_backups(keep: int = 7, *, protected=()) -> list[str]:
     """Delete oldest local backups, retaining the newest `keep` copies."""
     backups_dir = get_local_backups_dir()
+    keep=max(1,int(keep))  # never remove the only local recovery copy
     files = [f for f in backups_dir.glob("scrapper_*.db.gz") if f.is_file()]
     # Sort descending by mtime (newest first)
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
 
+    protected={pathlib.Path(p).resolve() for p in protected}
     pruned = []
     if len(files) > keep:
         to_delete = files[keep:]
         for f in to_delete:
+            if f.resolve() in protected:continue
             try:
-                f.unlink()
+                from .file_use import pin
+                with pin([f],exclusive=True):f.unlink()
                 pruned.append(f.name)
                 logger.info("Pruned old local backup: %s", f.name)
             except Exception as exc:
@@ -243,28 +217,14 @@ def prune_local_backups(keep: int = 7) -> list[str]:
 def _upload_to_google_drive(file_path: pathlib.Path, folder_id: str) -> dict[str, Any]:
     """Upload a backup file into the Google Drive folder."""
     try:
-        from googleapiclient.http import MediaFileUpload
         from .drive_sync import get_drive_service
-
-        service = get_drive_service()
-        file_metadata = {
-            "name": file_path.name,
-            "parents": [folder_id],
-            "description": f"Automated Scrapper database snapshot ({file_path.name})",
-        }
-        media = MediaFileUpload(str(file_path), mimetype="application/gzip", resumable=True)
-
-        drive_file = (
-            service.files()
-            .create(
-                body=file_metadata,
-                media_body=media,
-                fields="id, name, webViewLink",
-                supportsAllDrives=True,
-            )
-            .execute()
-        )
-
+        from .studio.drive_store import _upload
+        from .delivery_archive import record_transfer,transfer_scope
+        from .file_use import pin
+        service=get_drive_service()
+        with pin([file_path]),transfer_scope('DatabaseBackup:'+file_path.name[:75],None):
+            drive_file=_upload(service,file_path,folder_id,file_path.name)
+            record_transfer('DatabaseBackup:'+file_path.name[:75],None,drive_file,'sqlite_snapshot')
         file_id = drive_file.get("id")
         link = drive_file.get("webViewLink")
         logger.info("Successfully uploaded backup to Google Drive folder %s: %s (%s)", folder_id, file_path.name, file_id)
@@ -272,6 +232,7 @@ def _upload_to_google_drive(file_path: pathlib.Path, folder_id: str) -> dict[str
         return {
             "uploaded": True,
             "status": "synced",
+            "verification":drive_file["verification"],
             "file_id": file_id,
             "link": link,
             "error": None,
@@ -308,7 +269,7 @@ def prune_drive_backups(folder_id: str, keep_days: int = 30) -> list[str]:
 def get_backup_status() -> dict[str, Any]:
     """Return comprehensive status for settings UI and health checks."""
     global _last_backup_cache
-    last = _last_backup_cache or _read_persisted_status()
+    last = _read_persisted_status()  # persisted evidence is shared across app processes
 
     backups_dir = get_local_backups_dir()
     local_files = [f for f in backups_dir.glob("scrapper_*.db.gz") if f.is_file()]

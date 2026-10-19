@@ -161,7 +161,7 @@ class TestDatabaseBackup(unittest.TestCase):
 
         # 4. Test confirmed restore
         captured_out2 = io.StringIO()
-        with patch.object(sys, "argv", ["restore_db.py", "--from", str(gz_file), "--to", str(self.db_file), "--confirm"]):
+        with patch.object(sys, "argv", ["restore_db.py", "--from", str(gz_file), "--to", str(self.db_file), "--confirm", "--offline-confirmed"]):
             with patch("sys.stdout", captured_out2):
                 ret_confirm = restore_db.main()
         self.assertEqual(ret_confirm, 0)

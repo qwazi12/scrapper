@@ -27,6 +27,7 @@ if _url.startswith("sqlite"):
 else:
     engine = create_engine(_url, pool_pre_ping=True, pool_size=10, max_overflow=20, pool_timeout=15)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+_runtime_locks = {}
 
 
 def init_db() -> None:
@@ -35,9 +36,14 @@ def init_db() -> None:
     from . import delivery_archive  # noqa: F401 (retain settled delivery evidence on deletion)
     from . import backup
 
-    Base.metadata.create_all(engine)
-    # Automatically take a pre-migration snapshot before running additive migrations
+    if engine.dialect.name=='sqlite':
+        from pathlib import Path
+        from .sqlite_snapshots import lock_handle
+        path=str(Path(engine.url.database).resolve())
+        if path not in _runtime_locks:_runtime_locks[path]=lock_handle(path)
+    # The snapshot must precede create_all, which can itself mutate the schema.
     backup.create_pre_migration_backup()
+    Base.metadata.create_all(engine)
     _migrate()
 
 
