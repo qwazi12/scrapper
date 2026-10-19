@@ -241,3 +241,27 @@ def invalidate(script: dict | None, reason: str) -> dict | None:
         return script
     return {**script, "sentences": [{**x, "check": "unchecked"} for x in script.get("sentences", [])],
             "check_issues": [reason]}
+
+
+# Owner (2026-10-19): one failing sentence must not stop a whole breakdown. Sentences that fail the
+# storyboard or credit checks are dropped and kept for review; the rest carries on. Too many failures
+# (more than 40%) still stop it — that script needs a person.
+MIN_KEEP = 0.6
+_SENTENCE = re.compile(r"Sentence (\d+): (.*)")
+
+
+def drop_failing(sentences: list[dict], issues: list[str]) -> tuple[list[dict], list[dict], list[str]]:
+    reasons: dict[int, str] = {}
+    for issue in issues:
+        m = _SENTENCE.match(issue)
+        if m:
+            reasons.setdefault(int(m[1]), m[2])
+    bad = set(reasons) | {i for i, s in enumerate(sentences, 1) if s.get("check") != "ok"}
+    if not bad:
+        return sentences, [], issues
+    keep = [s for i, s in enumerate(sentences, 1) if i not in bad]
+    if len(keep) < max(1, MIN_KEEP * len(sentences)):
+        return sentences, [], [*issues, f"{len(bad)} of {len(sentences)} sentences failed the checks — too many to drop; review the script"]
+    dropped = [{"text": s["text"], "reason": reasons.get(i) or s.get("check_reason") or "failed the check"}
+               for i, s in enumerate(sentences, 1) if i in bad]
+    return keep, dropped, [x for x in issues if not _SENTENCE.match(x)]

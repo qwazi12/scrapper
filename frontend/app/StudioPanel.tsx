@@ -827,6 +827,16 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
           </ul>
         </div>
       )}
+      {!!sc.dropped?.length && (
+        <div style={{ fontSize: 11, marginBottom: 10, padding: 8, background: "var(--row)", borderRadius: 6 }}>
+          <b>Left out — failed the source/credit checks ({sc.dropped.length}):</b>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+            {sc.dropped.map((d, i) => (
+              <li key={i}><s style={{ color: "var(--muted)" }}>{d.text}</s> <span style={muted}>({d.reason})</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div style={muted}>One sentence per line; a blank line starts a new paragraph. Paragraph 1 names the title, paragraph 2 gives the release date.</div>
       <textarea data-testid="script-editor" aria-label="Narration script" value={text} onChange={(e) => setText(e.target.value)} rows={16} style={{ width: "100%", marginTop: 6, fontSize: 13, lineHeight: 1.5 }} disabled={running} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, marginTop: 10 }}>

@@ -246,6 +246,14 @@ def script(project_id: int) -> str:
     check_issues += research_gate.structured_conflicts(final, facts)
     if not final:
         check_issues.append("No supported narration remains")
+    # Owner (2026-10-19): a malformed checker reply gets one more try, then sentences that still fail
+    # are dropped (kept in "dropped" for review) instead of stopping the whole breakdown.
+    if final and any(x.startswith("Fact checker returned") for x in check_issues):
+        control.check()
+        verdicts = gemini.ask_json(check_prompt(board_txt, final), temperature=0.1)
+        final, check_issues = research_gate.checked_sentences(final, verdicts, board)
+        check_issues += research_gate.structured_conflicts(final, facts)
+    final, dropped, check_issues = research_gate.drop_failing(final, check_issues)
 
     for i, sen in enumerate(final):
         sen["i"] = i + 1
@@ -263,6 +271,7 @@ def script(project_id: int) -> str:
         "check_issues": check_issues,
         "check_scope": "storyboard_only",
         "changes": changes,
+        "dropped": dropped,
         "word_count": words,
         "est_seconds": round(words / WPM * 60),
         "youtube_title": str(draft.get("youtube_title") or f"{facts['title']} Trailer Breakdown")[:100],
@@ -280,7 +289,8 @@ def script(project_id: int) -> str:
     if check_issues:
         raise gemini.GeminiError("Research blocked: " + "; ".join(check_issues[:5]))
     return (f"{len(final)} sentences, {words} words (~{result['est_seconds'] // 60}m{result['est_seconds'] % 60:02d}s); "
-            f"fact-check fixed {sum(1 for c in changes if c['fix'])}, dropped {sum(1 for c in changes if not c['fix'])}")
+            f"fact-check fixed {sum(1 for c in changes if c['fix'])}, dropped {sum(1 for c in changes if not c['fix'])}"
+            + (f"; {len(dropped)} sentence(s) failed the source/credit checks and were left out — see the script" if dropped else ""))
 
 
 @stage("verify")
