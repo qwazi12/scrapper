@@ -248,3 +248,42 @@ screenshot inspected. Providers/cloud simulated, externalspend0. Subsequent
 requested-duration work is a separate unstaged source; no proof inferred for it.
 Specialized categories/semantic/editorial quality and the wider roadmap remain.
 No archive/auth/paid/public/account/push/deploy action.
+
+## Requested/delivered length and permanent acknowledgment verified
+
+Requested length is independent of the mux timeline. Studio final review shows
+its saved approximate export target; Countdown review retains the exact requested
+per-title/total segment length, excluding added bookends. Actual measured length
+outside a25% band requires an explicit editorial decision. This is a review
+heuristic, not a quality score or hard length requirement. No words are padded or
+rewritten. Exact fingerprints and immutable export inputs retain the target;
+custom Countdown length changes preserve old bytes/intent and revoke current
+render/acceptance. Normal36s Top15 children remain valid. Explicit invalid0/False
+historical settings remain unconfirmed rather than inheriting a default.
+Retained delivery refuses missing/malformed/future target proof; it never borrows
+a changed live draft's target. Owner source inspection displays retained intent.
+
+A real browser regression also reproduced acknowledgment returning silently when
+an edited decision was restored to identical text. Every checklist/decision/rights
+edit now clears acknowledgment permanently until the owner checks it again.
+Actual browser tests cover clearing and restoring each field, required deviation
+decisions, requested/delivered display, retained main/child targets and ordinary
+LongForm/Top5/legacy/native delivery boundaries.
+
+Initial duration corpus6failed/3passed; extra subminute/invalidsaved cases3failed,
+then focused16passed1.87s and compatibility74passed1.83s. Final backend
+846passed/1optional skip82.87s; actualPG368passed39.55s/native restore1.163s,
+219072bytes/source unchanged/SHA
+a45b7ef4e6ad9a88d509d4133448ad39b2c693d785676dea361be9f5c7d4ec05.
+Production build2/tsc2passed. Fresh full browser32passed6.6min, sourceSHA
+5fc2a05f88416d1b16eb9ce7080e02e59e4a584ed372914e108c9d00cd4efadd,
+evidence history/requested-duration2; verified snapshotSHA
+fe98a80ede53b756b04f38dbdd24eb3ba1dfacde3dd29693aafe1ad689f64ed4.
+All media/runtime/frozen source/reports/traces/exact spec/snapshot preserved and
+owned stack stopped. Length-review screenshot inspected. The first55.4s failed
+acknowledgment repro remains separately in history/requested-duration1.
+Original synthetic footage/offline speech actual; provider/cloud simulated;
+externalspend0. These6s/81s fixtures do not prove excellent3min/8min narratives.
+Wider semantic/caption/editorial/media/provider/operational work remains.
+Next shared-TTS-cache changes are separate and not included in this full32 source.
+No archive/auth/paid/public/account/push/deploy action.

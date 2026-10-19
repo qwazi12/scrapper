@@ -28,6 +28,7 @@ def source(s,eid):
         'captured_at':utc(row.created_at).isoformat(),'source_created_at':row.manifest.get('project_created_at'),
         'script':inputs.get('script'),'facts':inputs.get('facts'),'approval':snapshot.get('approval'),
         'format':inputs.get('fmt') if isinstance(inputs.get('fmt'),str) else None,
+        'requested_duration':inputs.get('duration_intent'),
         'assets':[{key:asset.get(key) for key in ('role','sha256','bytes','available')} for asset in row.manifest.get('assets',[])]}
 
 

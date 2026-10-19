@@ -40,7 +40,12 @@ def data(project,prior=False):
     render=copy.deepcopy(value('render') or {})
     render.pop('drive',None)  # Transfer progress does not create content versions.
     review=value('review') or {}
-    return {'render':render,'inputs':{k:copy.deepcopy(value(k)) for k in FIELDS if hasattr(project,k)},
+    from types import SimpleNamespace
+    from .studio.duration_intent import requested
+    inputs={k:copy.deepcopy(value(k)) for k in FIELDS if hasattr(project,k)}
+    intent=requested(SimpleNamespace(**inputs,review=review))
+    if intent is not None:inputs['duration_intent']=intent
+    return {'render':render,'inputs':inputs,
             'approval':copy.deepcopy(review.get('export_approval'))}
 
 
@@ -167,7 +172,7 @@ def retain_changed_exports(s,context,instances):
         source_changed=source_changed or any(a.get('sha256') and b.get('sha256') and a['sha256']!=b['sha256']
                                               for a,b in zip(old_sources,new_sources))
         changed=(source_changed or spoken(old.get('script'))!=spoken(new.get('script')) or any(
-            old.get(k)!=new.get(k) for k in ('plan','ranking','segment_ids','target_minutes','fmt')))
+            old.get(k)!=new.get(k) for k in ('plan','ranking','segment_ids','target_minutes','fmt','duration_intent')))
         if isinstance(project,StudioProject) and source_changed:
             from .studio.research_gate import invalidate
             if old.get('script')==new.get('script'):

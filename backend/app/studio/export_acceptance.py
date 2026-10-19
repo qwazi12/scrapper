@@ -27,6 +27,14 @@ class AcceptanceIn(BaseModel):
 def findings(project):
     quality=(project.render or {}).get('quality') or {}
     result=[{'kind':'measurement_warning','message':message} for message in quality.get('warnings',[])]
+    from .duration_intent import comparison
+    requested=comparison(project)
+    if requested is not None:
+        target,actual=requested.get('target_seconds'),requested.get('actual_seconds')
+        if not target or not actual:
+            result.append({'kind':'requested_duration','message':'Requested or delivered length is unconfirmed; inspect and record the intended duration before accepting.'})
+        elif not .75*target<=actual<=1.25*target:
+            result.append({'kind':'requested_duration','message':f'Delivered {actual:.1f}s compared with requested approximately {target:g}s ({requested["basis"]}). This exceeds the 25% review band; explain the intentional length or revise. Do not pad or rewrite automatically.'})
     from .stage_plan import plan_issues
     plan=getattr(project,'plan',None) or []
     groups={shot['id']:shot.get('look') or shot['id'] for shot in (getattr(project,'shots',None) or []) if isinstance(shot,dict) and 'id' in shot}
@@ -43,8 +51,10 @@ def findings(project):
 
 
 def view(project,root):
+    from .duration_intent import comparison
     return {'fingerprint':export_fingerprint(project,root),'checks':CHECKS,'findings':findings(project),
         'requested_format':getattr(project,'fmt',None),
+        'requested_duration':comparison(project),
         'measurements':(project.render or {}).get('quality'),
         'rights_status':'owner_attestation_required; automated measurements do not prove permission',
         'source':getattr(project,'trailer',None)}
@@ -66,6 +76,7 @@ def accept_view(current,request:AcceptanceIn,at):
         raise RuntimeError('Each finding needs a substantive decision of 20–4000 characters')
     if len(request.rights_rationale.strip())<20:raise RuntimeError('Describe the reviewed rights and intended use')
     return {'schema':2,'fingerprint':current['fingerprint'],'approved_at':at.isoformat(),
+        'requested_duration':current.get('requested_duration'),
         'checks':request.checks,'warning_decisions':request.warning_decisions,'rights_rationale':request.rights_rationale.strip(),
         'rights_basis':'owner_attested','rights_verified_by_app':False}
 

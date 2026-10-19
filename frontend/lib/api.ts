@@ -197,6 +197,7 @@ export type QueueItem = {
 
 export type QueuedSourceSnapshot = {
   format?: string | null;
+  requested_duration?: RequestedDurationIntent | null;
   id: string; kind: "studio" | "countdown"; title: string; project_id: number;
   current_project_matches: boolean; captured_at: string; source_created_at: string;
   script: unknown; facts: unknown; approval: unknown;
@@ -967,7 +968,10 @@ export type QueueThumbOptions = {
   options: { id: string; label: string; desc: string; file: string }[];
 };
 
+export type RequestedDurationIntent = { schema: number; kind: string; target_seconds: number | null;
+  segment_count?: number | null; segment_seconds?: number | null; basis: string };
 export type ExportAcceptanceView = { fingerprint: string; checks: Record<string, string>; requested_format?: string | null;
+  requested_duration?: (RequestedDurationIntent & { actual_seconds: number | null; review_tolerance_percent: number; scope: string }) | null;
   findings: { id: string; kind: string; message: string }[]; source: unknown; rights_status: string };
 export type ExportAcceptanceRequest = { expected_fingerprint: string; checks: string[];
   warning_decisions: Record<string, string>; rights_rationale: string; reviewed: true };

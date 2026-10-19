@@ -55,6 +55,8 @@ def retained(s,eid,*,approve):
     snapshot=row.manifest.get('snapshot') or {}
     if digest([row.kind,row.project_identity,snapshot])!=row.id:fail('retained input identity failed verification')
     inputs=deepcopy(snapshot.get('inputs') or {});render=deepcopy(snapshot.get('render') or {})
+    from .studio.duration_intent import valid
+    if not valid(inputs.get('duration_intent'),row.kind):fail('retained requested length is unconfirmed; review and resend from its studio')
     if not row.manifest.get('project_created_at'):fail('legacy source identity is unconfirmed')
     try:
         source_stamp=datetime.fromisoformat(row.manifest['project_created_at'])

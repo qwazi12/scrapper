@@ -47,7 +47,27 @@ async function acceptExactExport(page: any, screenshot?: string) {
   const save = form.getByRole("button", { name: "Record exact export acceptance", exact: true });
   await expect(save).toBeDisabled();
   await ack.check();
+  const lengthDecision = form.locator("label").filter({ hasText: "compared with requested approximately" }).getByRole("textbox");
+  if (await lengthDecision.count()) {
+    const recorded = await lengthDecision.inputValue();
+    await lengthDecision.fill("");
+    await expect(ack).not.toBeChecked();
+    await expect(ack).toBeDisabled();
+    await expect(save).toBeDisabled();
+    await lengthDecision.fill(recorded);
+    await expect(ack).not.toBeChecked();
+    await ack.check();
+  }
   await form.getByLabel("Rights and intended-use review").fill("Original synthetic test footage, generated tones, and offline fixture speech; no borrowed source assets.");
+  await expect(ack).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await form.getByLabel("Rights and intended-use review").fill("All media in this isolated scenario is original synthetic test footage and offline speech.");
+  await expect(ack).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await form.getByLabel("Rights and intended-use review").fill("Original synthetic test footage, generated tones, and offline fixture speech; no borrowed source assets.");
+  await ack.check();
+  await checks.nth(0).uncheck();
+  await checks.nth(0).check();
   await expect(ack).not.toBeChecked();
   await expect(save).toBeDisabled();
   await ack.check();
@@ -107,7 +127,8 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   writeFileSync(path.join(evidence, "longform-quality.json"), JSON.stringify(project.render.quality, null, 2));
   await page.screenshot({ path: path.join(evidence, "longform-render-review.png"), fullPage: true });
   await page.getByRole("button", { name: "Approve inspected export", exact: true }).click();
-  await acceptExactExport(page);
+  await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText(`Requested length: approximately ${project.target_minutes.toFixed(1)} minutes`);
+  await acceptExactExport(page, "longform-requested-length-acceptance.png");
   await expect(page.getByRole("button", { name: "Send to Posting Queue", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Send to Posting Queue", exact: true }).click();
   await expect(page.getByText(/Ready to Post in SocialPilot/)).toBeVisible();
@@ -122,6 +143,7 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   await expect(sourceDialog.getByTestId("queued-source-context")).toContainText("Binding revision 1");
   const retainedSource = await (await request.get(`${stack.api}/api/queue/${queued.queue_item_id}/source-context`, { headers })).json();
   expect(retainedSource.source.script).toEqual(project.script);
+  expect(retainedSource.source.requested_duration.target_seconds).toBe(project.target_minutes * 60);
   expect(retainedSource.source.assets.find((a: any) => a.role === "video").sha256).toBe(createHash("sha256").update(readFileSync(actual)).digest("hex"));
   expect((await request.patch(`${stack.api}/api/queue/${queued.queue_item_id}`, { headers, data: { title: "Unreviewed copy cannot replace source" } })).status()).toBe(409);
   await sourceDialog.screenshot({ path: path.join(evidence, "queued-source-evidence.png") });
@@ -257,6 +279,7 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   await page.screenshot({ path: path.join(evidence, "countdown-review.png"), fullPage: true });
   await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
   await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText("Requested Countdown format: Top 5");
+  await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText("Requested length: approximately 8.0 minutes");
   await acceptExactExport(page, "countdown-format-acceptance.png");
   await page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
@@ -266,6 +289,8 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   expect(countdownSource.state).toBe("checks_passed");
   expect(countdownSource.binding.kind).toBe("countdown");
   expect(countdownSource.source.format).toBe("top5");
+  expect(countdownSource.source.requested_duration.target_seconds).toBe(480);
+  expect(countdownSource.segments.every((segment: any) => segment.requested_duration.target_seconds === 96)).toBe(true);
   expect(countdownSource.segments).toHaveLength(5);
   expect(countdownSource.source.script).toEqual(queuedExport.script);
   const queuedThumbnail = readFileSync(queuedExport.render.thumbnail);

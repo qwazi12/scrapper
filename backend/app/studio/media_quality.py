@@ -104,6 +104,9 @@ def export_fingerprint(project, root: Path) -> str:
     inputs = {"quality":qa,"project_created_at":str(getattr(project,"created_at",None)),"trailer":getattr(project,"trailer",None),"video": digest, "thumbnail": thumbnail, "script": project.script, "plan": getattr(project, "plan", None),
               "facts": getattr(project, "facts", None), "research": getattr(project, "research", None),
               "shots": getattr(project, "shots", None)}
+    from .duration_intent import requested
+    intent=requested(project)
+    if intent is not None:inputs['requested_duration']=intent
     if hasattr(project, "ranking"):
         inputs.update(ranking=project.ranking, segment_ids=project.segment_ids,
                       segment_fingerprints=render.get("segment_fingerprints"))

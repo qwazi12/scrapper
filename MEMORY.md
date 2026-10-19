@@ -1872,3 +1872,50 @@ Specialized categories/semantic/editorial quality and the wider roadmap remain.
 No archive/auth/paid/public/account/push/deploy action.
 
 Requested-duration independent current prototype: broad843passed/1skip83.86s,realPG365passed41.65s/native restore1.328s219218bytes/source unchanged/SHA6c43c8f2e7ddacd4ea7cf2a557ef87094c00f2268628b8045783f84c77f65117. Review caught3additional failures: normal Top15 subminute Studio child's intent rejected by standalone-form min; explicit invalid0/False historical segmentlength fell back todefault. Fixed guard to permit positive subminute childintent, preserve invalidexplicit asunknown. Focused16passed1.87s. This latest tiny source needs final broad/PG/UI/build; do not assign earlier843/365 source results to it. Category commit uses existing index plusdocs/MEMORY ONLY; duration source/frontend/PGwrapper/tests remain unstaged.
+
+## Requested duration final backend + real acceptance acknowledgment defect
+
+HEADad49c9b category slice saved; requested-duration files remain uncommitted. Final Python source broad846passed/1skip82.87s, actualPG368passed39.55s/native restore1.163s219072bytes/source unchanged/SHAa45b7ef4e6ad9a88d509d4133448ad39b2c693d785676dea361be9f5c7d4ec05. Focused16passed1.87s includes normal subminute Top15 child, invalid explicit0/False no guessed default. Build1/tsc1passed. Fresh actualLongForm browser1 reached requested180s vsactualshort file and requiredfinding, then reproduced real UXbug: clear+restore identical finding text silently restored prior checkedack because acknowledgment was only a JSONvalue comparison. Actual1failed55.4s; no approval/queue sideeffect. Preserved all currentmedia/source/failuretrace/runtime/verifiedsnapshot history/requested-duration1. Owned stack62717stopped. Fixed all checks/decision/rights onChange handlers to clear acknowledgment explicitly, even when restoring oldvalues. Backend unchanged since final846/368. Build2active; new final full32 will exercise actual length-display/decision-clear/immutable target source for LongForm+Top5, pluslegacy/native/source/recovery existing scenarios and corrected categorycase. No full UI result yet, no .next rebuild while new stackactive. Externalspend0; no archive/auth/account/public/push/deploy.
+
+Build2passed after permanent acknowledgment clearing. Full32 final requested-duration browser2 starting fresh frozen stack (next outputs), exact prelaunchspec requested-duration2-spec.ts. Tests now verify requested3min/actualshort LongForm and requested8min segmenttotal/actualshort Top5 display, explicitlengthdecision gates, acknowledgmentstayscleared after identical decision/rights/checklist reversion, retained source target and child96s intent. Final Python846/368/restore remains same5fcsource; no next unverified source mixed. No .next build until stackstopped; preserve complete runtimeextras/actualmedia/source/report/traces/WALsnapshot before next browser command.
+
+## Requested/delivered length and permanent acknowledgment verified
+
+Requested length is independent of the mux timeline. Studio final review shows
+its saved approximate export target; Countdown review retains the exact requested
+per-title/total segment length, excluding added bookends. Actual measured length
+outside a25% band requires an explicit editorial decision. This is a review
+heuristic, not a quality score or hard length requirement. No words are padded or
+rewritten. Exact fingerprints and immutable export inputs retain the target;
+custom Countdown length changes preserve old bytes/intent and revoke current
+render/acceptance. Normal36s Top15 children remain valid. Explicit invalid0/False
+historical settings remain unconfirmed rather than inheriting a default.
+Retained delivery refuses missing/malformed/future target proof; it never borrows
+a changed live draft's target. Owner source inspection displays retained intent.
+
+A real browser regression also reproduced acknowledgment returning silently when
+an edited decision was restored to identical text. Every checklist/decision/rights
+edit now clears acknowledgment permanently until the owner checks it again.
+Actual browser tests cover clearing and restoring each field, required deviation
+decisions, requested/delivered display, retained main/child targets and ordinary
+LongForm/Top5/legacy/native delivery boundaries.
+
+Initial duration corpus6failed/3passed; extra subminute/invalidsaved cases3failed,
+then focused16passed1.87s and compatibility74passed1.83s. Final backend
+846passed/1optional skip82.87s; actualPG368passed39.55s/native restore1.163s,
+219072bytes/source unchanged/SHA
+a45b7ef4e6ad9a88d509d4133448ad39b2c693d785676dea361be9f5c7d4ec05.
+Production build2/tsc2passed. Fresh full browser32passed6.6min, sourceSHA
+5fc2a05f88416d1b16eb9ce7080e02e59e4a584ed372914e108c9d00cd4efadd,
+evidence history/requested-duration2; verified snapshotSHA
+fe98a80ede53b756b04f38dbdd24eb3ba1dfacde3dd29693aafe1ad689f64ed4.
+All media/runtime/frozen source/reports/traces/exact spec/snapshot preserved and
+owned stack stopped. Length-review screenshot inspected. The first55.4s failed
+acknowledgment repro remains separately in history/requested-duration1.
+Original synthetic footage/offline speech actual; provider/cloud simulated;
+externalspend0. These6s/81s fixtures do not prove excellent3min/8min narratives.
+Wider semantic/caption/editorial/media/provider/operational work remains.
+Next shared-TTS-cache changes are separate and not included in this full32 source.
+No archive/auth/paid/public/account/push/deploy action.
+
+Next C04 TTS ownership independent repro: first4failed0.53s included a missing canonical-ID fixture; corrected validproject IDs and actual nested_ttscachepath produced4real failures0.40s: LRU deletes hit source during copy, deletes partial provider file beforepromotion, and two concurrent misses generate twice bothdirect andthrough actualStudio runner. Current newcache_use.writer uses bounded cancelable DB exclusiveper-key+unique-tempclaims, rechecks afterownership, protectscopy/publication, and doesnotrepeat body onFileBusy. Removed broad_ttscache parentreader inrunner/Countdown toavoidupgrade deadlock (motion/audio parentclaims remain). First focused1 hit test injectedcleanup in same invocation, which intentionally shares nestedownership; corrected toactual independent backgroundthread. Focused33passed1.99s across7newcache/lease/lifecycle tests includes boundedwait, no bodyrepeat, revokedgeneration preventspublication. Tests useactualoriginalMP3bytes andDBclaims, simulatedprovider notpaid/live. No broadPG/build/UI cacheproofyet. CurrentdurationINDEX is5fc verifiedsource; commit existingindex+docs/MEMORY ONLY, leaveTTS source/tests/PGwrapper unstaged. Furtheraudit foundsharedmotion deterministic_workdir collision andcachesource consumerpathneedsprotection; investigate separately afterTTS.
