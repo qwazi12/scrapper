@@ -521,7 +521,7 @@ class RemoteCopyEvidence(Base):
 
 
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
-# DDL is provided but has not been exercised in the local SQLite test lane.
+# Both dialects reject raw UPDATE/DELETE as an integrity violation.
 from sqlalchemy import DDL, event as _schema_event
 for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__):
     for _action in ("UPDATE", "DELETE"):
@@ -529,7 +529,7 @@ for _table in (PublicationEvent.__table__, PublicationDecision.__table__, Financ
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "
             "BEGIN SELECT RAISE(ABORT, 'Evidence journal is append-only'); END").execute_if(dialect="sqlite"))
     _schema_event.listen(_table,"after_create",DDL("""CREATE OR REPLACE FUNCTION scrapper_journal_immutable()
-        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Evidence journal is append-only'; END; $$""").execute_if(dialect="postgresql"))
+        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Evidence journal is append-only' USING ERRCODE = '23514'; END; $$""").execute_if(dialect="postgresql"))
     _schema_event.listen(_table,"after_create",DDL(
         f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE OR DELETE ON {_table.name} "
         "FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()").execute_if(dialect="postgresql"))

@@ -7,7 +7,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from sqlalchemy import event, update
+from sqlalchemy import event, update, select, func
 from sqlalchemy.orm import Session
 
 from . import control
@@ -35,10 +35,22 @@ def resource(kind, params):
     return kind + ':' + hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest()
 
 
+def clock(s):
+    """Use the shared database clock for distributed ownership, after lock waits."""
+    if s.get_bind().dialect.name == "postgresql":
+        return s.scalar(select(func.clock_timestamp()))
+    return dt.datetime.now(UTC)
+
+
+def instant(s):
+    # Evaluate predicates at execution time, including after row-lock waits.
+    return func.clock_timestamp() if s.get_bind().dialect.name == "postgresql" else clock(s)
+
+
 def acquire(s, key, owner, ttl=TTL):
     from .budget_reservations import lock
     lock(s)  # common short transaction ordering with budget dispatch/settlement
-    now = dt.datetime.now(UTC)
+    now = instant(s)
     dialect = s.get_bind().dialect.name
     if dialect == 'sqlite':
         from sqlalchemy.dialects.sqlite import insert
@@ -60,7 +72,7 @@ def guard(s=None, handle=None):
     if s is None:
         with SessionLocal() as own:
             guard(own, h); own.commit(); return
-    now = dt.datetime.now(UTC)
+    now = instant(s)
     # Conditional UPDATE holds the lease row until the content transaction commits.
     n = s.execute(update(WorkerLease).where(WorkerLease.resource == h.resource, WorkerLease.owner == h.owner,
         WorkerLease.generation == h.generation, WorkerLease.expires_at > now)
@@ -69,7 +81,7 @@ def guard(s=None, handle=None):
 
 
 def renew(s, h, ttl=TTL):
-    now=dt.datetime.now(UTC)
+    now=instant(s)
     return s.execute(update(WorkerLease).where(WorkerLease.resource == h.resource, WorkerLease.owner == h.owner,
         WorkerLease.generation == h.generation, WorkerLease.expires_at > now)
         .values(expires_at=now+dt.timedelta(seconds=ttl))).rowcount == 1
@@ -77,7 +89,7 @@ def renew(s, h, ttl=TTL):
 
 def release(s, h):
     s.execute(update(WorkerLease).where(WorkerLease.resource == h.resource, WorkerLease.owner == h.owner,
-        WorkerLease.generation == h.generation).values(owner=None, expires_at=dt.datetime.now(UTC)))
+        WorkerLease.generation == h.generation).values(owner=None, expires_at=instant(s)))
 
 
 @contextlib.contextmanager
@@ -103,7 +115,7 @@ def fence_content_writes(s, flush_context, instances):
 def revoke(s, key):
     """Owner stop fences every old process immediately, including its helpers."""
     s.execute(update(WorkerLease).where(WorkerLease.resource==key).values(
-        owner=None, generation=WorkerLease.generation+1, expires_at=dt.datetime.now(UTC)))
+        owner=None, generation=WorkerLease.generation+1, expires_at=instant(s)))
 
 
 @event.listens_for(Session, 'do_orm_execute')
@@ -154,4 +166,4 @@ def live(key):
         row=s.get(WorkerLease,key)
         if not row: return False
         expiry=row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=UTC)
-        return expiry>dt.datetime.now(UTC)
+        return expiry>clock(s)

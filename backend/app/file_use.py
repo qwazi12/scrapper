@@ -51,7 +51,7 @@ def pin(paths,*,exclusive=False,session=None):
     key='files:'+uuid4().hex
     with SessionLocal() as s:
         lock(s)
-        now=datetime.now(timezone.utc)
+        now=leases.clock(s)
         expired=[r.resource for r in s.query(FileUse).outerjoin(WorkerLease,WorkerLease.resource==FileUse.resource)
                  .filter((WorkerLease.expires_at<=now)|(WorkerLease.resource.is_(None)))]
         if expired:

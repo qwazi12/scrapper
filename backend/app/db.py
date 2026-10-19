@@ -73,7 +73,7 @@ def _migrate() -> None:
             elif engine.dialect.name == "postgresql":
                 conn.execute(text("CREATE OR REPLACE FUNCTION scrapper_journal_immutable() "
                     "RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION "
-                    "'Evidence journal is append-only'; END; $$"))
+                    "'Evidence journal is append-only' USING ERRCODE = '23514'; END; $$"))
                 exists = conn.execute(text("SELECT 1 FROM pg_trigger WHERE tgname=:name "
                     "AND tgrelid=to_regclass(:table)"),
                     {"name": f"{table}_immutable", "table": table}).first()

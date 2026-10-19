@@ -2,8 +2,7 @@
 
 Owner instruction on October 18, 2026: continue the entire remaining roadmap,
 use commits/checkpoints to save progress, and do not end work at a checkpoint.
-All changes stay local. No push, deployment, paid provider requests, account
-connection/settings changes or public actions. Root MEMORY.md and the detailed
+Latest owner update authorizes push, deployment and live tests after verified implementation completion. Until then changes stay local; no paid provider requests or public publishing is inferred. Root MEMORY.md and the detailed
 ledger record actual evidence. The original vision and acceptance criteria stay
 in SCRAPPER_CODEX_UNATTENDED_EXECUTION.md and the Phase 0 milestone plan.
 
@@ -33,3 +32,8 @@ analytics/comment authorization, provider billing/contracts, real delivery,
 production observations and deployment need their actual access/approval lanes.
 Keep those lanes disabled and continue all independent local work. Docker/Linux
 and PostgreSQL must have actual execution evidence before being marked passed.
+
+
+| A01 Full-channel archive | Full inventory/pagination, canonical channel/video ledger, quota/storage preflight, sequential validated media transfers, checksum receipts, resumability, channel manifests and owner UI | AUDITED; implementation pending; exact Tiny Friends TV/tenth channel, format and publication clarification requested |
+
+Archive access challenges/restricted items must be logged; do not evade DRM, authentication, CAPTCHA or platform controls. Existing posting ingestion is not proof of an archival workflow. Real Drive transfer and actual channel verification remain unexecuted.
