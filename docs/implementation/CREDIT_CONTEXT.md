@@ -74,3 +74,32 @@ metadata, with no immutable script/facts/export reference enforced by dispatch.
 New source bindings and fail-closed legacy review are required before calling
 current factual admission complete through publication. Unlisted writing credits
 also remain a confirmed separate C01 gap.
+
+## Retained dispatch and writing roles
+
+The detached queue gap described above is now covered by immutable original-Studio
+source bindings and current retained-facts admission. See QUEUED_STUDIO_SOURCES.md
+for exact source/media/copy semantics, legacy handling and rollout limits.
+
+Explicit screenplay/teleplay/script and film-writing clauses now require complete
+credited people, including every joined writer. Unknown writers, an additional
+uncredited joint writer and wrong explicit title/year/medium cannot inherit an
+approving model verdict. Initials, complete known names, supported joint writers
+and distinct original novel/story language are preserved. An explicit screenplay
+claim with absent writing metadata remains unsupported, rather than certified.
+The guard retains owner words and requires review; it does not automatically
+replace a name or establish the completeness/truth of provider credits. This
+is bounded typed grammar; further prose/languages, entity coverage, independent
+semantic evidence and material fact freshness remain C01 work.
+
+Initial synthetic corpus reproduced9failures/12baseline passes; expanded focused
+62passed0.59s includes saved owner PATCH/GET, model-ok preservation and blocked
+narration admission. Full backend760passed/1optional skip83.73s; actualPG284passed
+38.57s, native restore1.350s/source unchanged. Full actual UI29passed5.3min includes
+13 saved credit cases: known cast names/context, unlisted performer, unknown and
+joint writer, wrong writer title/year, original novelist and credited writer.
+Generated media/offline speech, local HTTP/workers/DB and always-approving fixture
+model are actual; external provider/Drive/public delivery are simulated. No real
+actor/writer fact or paid proof is inferred from synthetic identity agreement.
+Evidence: artifacts/e2e/history/queue-source-binding3, frozen backend/scripts
+ee302aca8fc87bf0221dc184b3c27fd1b8bb7c9401d1d4d7234ee6dc3fdc308f.

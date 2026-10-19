@@ -60,7 +60,9 @@ def title(n=1):
 
 def facts(kind, n, **kwargs):
     return {**title(n), "primary_date": "2026-10-18", "releases": [], "directors": [], "writers": [],
-            "writing_credits": [], "cast": ([{"actor":"Ada Example","character":"The Traveler / Narrator"},
+            "writing_credits": ([{"name":"Ada Example","job":"Screenplay"},
+                {"name":"Bea E. Fixture","job":"Writer"},{"name":"Dee Sample","job":"Novel"}] if int(n)==88 else []),
+            "cast": ([{"actor":"Ada Example","character":"The Traveler / Narrator"},
                 {"actor":"Bea Fixture","character":"The Man in the Wall"},
                 {"actor":"Dee E. Sample","character":"Dr. Original"}] if int(n) in (88,89) else []), "genres": ["Animation"], "videos": ([{"site":"YouTube","type":"Trailer","url":"https://youtube.com/watch?v=fixture40"}] if n==40 else []),
             "poster": os.getenv("SAFE_E2E_API_URL", "http://127.0.0.1:8802") + "/api/e2e/poster.jpg", "backdrops": [], "imdb_id": f"tt{int(n):07}",

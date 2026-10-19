@@ -83,6 +83,45 @@ def _forward_performer_conflicts(text, facts):
     return conflicts
 
 
+def _writing_value(raw, allowed, facts):
+    """Complete credited people, including every explicitly joined writer."""
+    value=_name(raw)
+    for person in sorted(allowed,key=len,reverse=True):
+        if value==person:return True
+        if not value.startswith(person+' ') and not value.startswith(person+','):continue
+        tail=value[len(person):].strip()
+        context=re.fullmatch(r'(?:in|for|of)\s+(.+)',tail)
+        if context and _credit_title(context[1],facts):return True
+        joined=re.match(r'^(?:,\s*(?:and\s+)?|and\s+|&\s+)(.+)$',tail)
+        if joined and _writing_value(joined[1],allowed,facts):return True
+        if re.match(r'^(?:while|who)\b',tail):return True
+    return False
+
+
+def _writing_conflicts(text, facts):
+    writers={_name(row.get('name') or '') for row in facts.get('writing_credits',[])
+        if row.get('job') in ('Screenplay','Writer','Teleplay')}-{''}
+    conflicts=[]
+    for claim in re.finditer(r'\b(screenplay|teleplay|script|movie|film)\s+(?:(?:was|is)\s+)?'
+            r'(?:(?:co-)?written\s+|penned\s+|scripted\s+)?by\s+([^;!?\n]+)',text,re.I):
+        if not _writing_value(claim[2],writers,facts):
+            conflicts.append('Claimed screenplay writer/title context is not supported by structured writing credits')
+    for claim in re.finditer(r'(?:^|[;!?])\s*([^;!?\n]+?)\s+(?:co-wrote|wrote|writes|penned|scripted)\s+'
+            r'(?:the\s+)?(?:screenplay|teleplay|script|movie|film)\b([^;!?\n]*)',text,re.I):
+        people=re.sub(r'^(?:(?:the|a|an)\s+)?(?:screenwriter|writer)\s+','',claim[1],flags=re.I)
+        prefix=re.match(r'^in\s+(.+?),\s*(.+)$',people,re.I)
+        prefix_valid=True
+        if prefix:
+            prefix_valid=_credit_title(_name(prefix[1]),facts);people=prefix[2]
+        context=_name(claim[2])
+        valid_context=not context or bool(re.match(r'^,?\s*(?:while|who)\b',context))
+        qualifier=re.fullmatch(r'(?:in|for|of)\s+(.+)',context)
+        if qualifier:valid_context=_credit_title(qualifier[1],facts)
+        if not prefix_valid or not _writing_value(people,writers,facts) or not valid_context:
+            conflicts.append('Claimed screenplay writer/title context is not supported by structured writing credits')
+    return conflicts
+
+
 def refs_for(board: dict) -> set[str]:
     return {f"{kind}{i + 1}" for kind in ("F", "R", "T", "C")
             for i in range(len(board.get(kind) or []))}
@@ -139,6 +178,7 @@ def structured_conflicts(sentences: list[dict], facts: dict) -> list[str]:
     for i, sentence in enumerate(sentences, 1):
         text = sentence.get("text", "")
         conflicts.extend(f'Sentence {i}: {reason}' for reason in _forward_performer_conflicts(text,facts))
+        conflicts.extend(f'Sentence {i}: {reason}' for reason in _writing_conflicts(text,facts))
         for cast in facts.get("cast", []):
             actor, character = cast.get("actor"), cast.get("character")
             if not actor or not character:
