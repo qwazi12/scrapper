@@ -22,3 +22,34 @@ def test_global_problems_still_block():
 def test_too_many_failures_still_stop_for_review():
     keep, dropped, issues = rg.drop_failing(_s(10, bad={1, 2, 3, 4, 5}), [])
     assert len(keep) == 10 and dropped == [] and "too many to drop" in issues[-1]
+
+
+FACTS = {"title": "Wicker", "media_type": "movie", "primary_date": "2026-10-21",
+         "cast": [{"actor": "Olivia Colman", "character": "Fisherwoman"},
+                  {"actor": "Robert Pattinson", "character": "Duke"}]}
+
+
+def test_described_role_is_the_credited_role():
+    ok = [{"text": "Olivia Colman stars as a lonely fisherwoman, and she co-produced it.", "check": "ok"}]
+    assert rg.structured_conflicts(ok, FACTS) == []
+
+
+def test_wrong_role_is_still_caught_even_when_described():
+    bad = [{"text": "Robert Pattinson plays a ruthless Feyd-Rautha.", "check": "ok"},
+           {"text": "Olivia Colman stars as a lonely lighthouse keeper.", "check": "ok"}]
+    assert len(rg.structured_conflicts(bad, FACTS)) == 2
+
+
+def test_unreviewed_web_findings_do_not_block():
+    script = {"sentences": [{"text": "It premiered at Sundance.", "check": "ok"}], "check_issues": [],
+              "storyboard": {"R": [{"text": "Premiered at Sundance", "sources": [{"url": "https://x"}]}]}}
+    assert rg.script_issues(script, FACTS) == []
+
+
+def test_reviewed_web_finding_that_no_longer_holds_still_blocks(monkeypatch):
+    from backend.app.studio import sources
+    monkeypatch.setattr(sources, "usable", lambda *a, **k: False)
+    script = {"sentences": [{"text": "It premiered at Sundance.", "check": "ok"}], "check_issues": [],
+              "storyboard": {"R": [{"text": "Premiered at Sundance", "sources": [{"url": "https://x"}],
+                                    "evidence": {"review_id": "r1"}}]}}
+    assert any("R1" in x for x in rg.script_issues(script, FACTS))

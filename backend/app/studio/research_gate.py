@@ -52,6 +52,13 @@ def _credit_value(raw, allowed, facts):
             if re.match(r'^(?:and|while|who)\b',tail):return True
         return False
     if matches(value):return True
+    # "stars as a lonely fisherwoman": an article plus up to three describing words before the
+    # credited role (owner, 2026-10-19). The role itself must still be the credited one.
+    described=re.match(r"^(?:a|an|the)\s+(.+)$",value)
+    if described:
+        words=described[1].split()
+        for k in range(min(3,len(words)-1)+1):
+            if matches(' '.join(words[k:])):return True
     alternatives=_roles(raw)
     return len(alternatives)>1 and all(matches(part) for part in alternatives)
 
@@ -223,6 +230,11 @@ def script_issues(script: dict | None, facts: dict | None) -> list[str]:
     if board.get("R"):
         from .sources import usable
         for i, finding in enumerate(board["R"], 1):
+            # Owner (2026-10-19): an unreviewed web finding doesn't stop the video; a finding the owner
+            # reviewed must still hold (stale or contradicted reviewed evidence still blocks).
+            evidence = finding.get("evidence")
+            if not (isinstance(evidence, dict) and evidence.get("review_id")):
+                continue
             refs = finding.get("sources") or []
             claim = {**finding, "sources": list(range(len(refs)))}
             if not usable(claim, refs, facts=board.get("identity") or {}, project_id=board.get("project_id")):
