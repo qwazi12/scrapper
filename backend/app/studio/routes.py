@@ -848,6 +848,8 @@ class SourceFetch(BaseModel):
 
 
 class ClaimReviewIn(BaseModel):
+    expected_version: str = Field(min_length=64,max_length=64)
+    expected_claim: str
     record_id: str
     excerpt: str
     context: dict
@@ -866,9 +868,9 @@ def _research_mutable(p):
 @router.get("/projects/{project_id}/source-records")
 def source_records(project_id: int, s: Session = Depends(get_session)):
     from ..models import ResearchSourceRecord, ResearchClaimReview
-    from .fact_verification import context, identity, claim_key
+    from .fact_verification import context, identity, claim_key, review_version
     p = _get(s, project_id)
-    return {"context": context(p.facts or {}),
+    return {"context": context(p.facts or {}),"review_version":review_version(s,p),
         "claim_keys": [claim_key(c.get("text", "")) for c in (p.research or {}).get("claims", [])],
         "records": [
         {"id": r.id, "url": r.url, "requested_url": r.requested_url, "text": r.text,
@@ -912,6 +914,8 @@ def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Sessi
         claims = research.get("claims", [])
         if not 0 <= claim_index < len(claims): raise HTTPException(404, "Claim not found")
         claim = claims[claim_index]
+        if req.expected_version!=fv.review_version(s,p) or req.expected_claim!=claim.get("text"):
+            raise HTTPException(409,"The claim, context or evidence changed; reload and review the current version before saving")
         record = s.get(ResearchSourceRecord, req.record_id)
         urls = [research["sources"][i].get("url") for i in claim.get("sources", [])
                 if type(i) is int and 0 <= i < len(research.get("sources", []))]
@@ -927,7 +931,7 @@ def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Sessi
             raise HTTPException(422, "Resolve or reject conflicting evidence before marking support")
         conflicts = fv.conflicting_reviews(s, p, claim["text"], p.facts or {})
         if req.verdict == "supported":
-            if not fv.fresh(record):
+            if not fv.fresh(record,s):
                 raise HTTPException(422, "Retrieve a current source before marking support")
             if set(req.resolved_review_ids) != {r.id for r in conflicts} or (conflicts and
                     len(req.resolution_rationale.strip()) < 20):
@@ -937,7 +941,7 @@ def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Sessi
         review = ResearchClaimReview(id=str(uuid.uuid4()), project_id=project_id, record_id=record.id,
             project_identity=fv.identity(p),
             claim=claim["text"], excerpt=req.excerpt, context=req.context, verdict=req.verdict,
-            rationale=req.rationale.strip(), conflicts=req.conflicts,
+            rationale=req.rationale.strip(), conflicts=req.conflicts,reviewed_at=fv.clock(s),
             resolved_review_ids=req.resolved_review_ids, resolution_rationale=req.resolution_rationale.strip())
         s.add(review)
         claim["evidence"] = {"review_id": review.id, "verdict": req.verdict, "excerpt": req.excerpt,

@@ -386,6 +386,10 @@ test("independent source review UI retains records and invalidates checked narra
   await page.getByLabel("Verdict", { exact: true }).selectOption("supported");
   await page.getByLabel("Why the source supports or contradicts this claim").fill("The offline synthetic record directly describes these original scenes; the title, medium, year and territory were checked.");
   await page.getByRole("checkbox", { name: /I checked the exact context/ }).check();
+  await page.getByLabel("Why the source supports or contradicts this claim").fill("The original synthetic record was read in exact title, release year, medium and territory context before this decision.");
+  await expect(page.getByRole("checkbox", { name: /I checked the exact context/ })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Save evidence review", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox", { name: /I checked the exact context/ }).check();
   await page.getByRole("button", { name: "Save evidence review", exact: true }).click();
   await expect(page.getByText(/Owner verdict: supported/)).toBeVisible();
   await expect(page.getByTestId("research-blocked")).toContainText("Source evidence changed");
@@ -414,6 +418,8 @@ test("independent source review UI retains records and invalidates checked narra
   await expect(page.getByRole("group", { name: "Earlier conflicting or unresolved reviews", exact: true })).toContainText("A synthetic correction disputes");
   await page.getByRole("checkbox", { name: /I reviewed this earlier decision/ }).check();
   await page.getByLabel("How the earlier evidence was resolved").fill("I compared the exact synthetic source context with the earlier decision; the original scene description remains accurate.");
+  await expect(page.getByRole("checkbox", { name: /I checked the exact context/ })).not.toBeChecked();
+  await page.getByRole("checkbox", { name: /I checked the exact context/ }).check();
   await page.getByRole("button", { name: "Save evidence review", exact: true }).click();
   await expect(page.getByText(/Owner verdict: supported/)).toBeVisible();
   await page.getByRole("button", { name: "Check saved script", exact: true }).click();

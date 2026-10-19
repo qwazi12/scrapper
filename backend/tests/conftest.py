@@ -62,7 +62,9 @@ def _finish_test_jobs(monkeypatch):
     import threading
     import time
     from backend.app.models import BudgetReservation, WorkerLease, CreditReservation
-    from backend.app import resume
+    from backend.app import resume,auth
+    # Each case has its own client request budget; rate-limit behavior is tested within a case.
+    with auth._rl_lock:auth._rate_limits.clear()
     resume._claims.clear()
     resume._active_rids.clear()
     with SessionLocal() as s:

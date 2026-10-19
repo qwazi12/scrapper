@@ -12,7 +12,7 @@ full-roadmap completion is inferred from the growing test count.
 
 | Task | Local closure target | Status |
 |---|---|---|
-| C01 Material evidence | Typed structured fact/credit provenance, independent retrieval, conflicts, freshness, exact entity/context, complete narration coverage and escalation | PARTIAL; typed credit/date contradictions, immutable entity-bound records and explicit contradiction resolution verified; broader factual coverage remains |
+| C01 Material evidence | Typed structured fact/credit provenance, independent retrieval, conflicts, freshness, exact entity/context, complete narration coverage and escalation | PARTIAL; typed credit/date contradictions, immutable entity-bound records and explicit contradiction resolution verified; exact-version claim/context/evidence CAS and input-bound owner acknowledgment verified; broader factual coverage remains |
 | C02 Countdown eligibility/narration | Genre/country/year/provider constraints, supported ranking rationale/trivia, checked intro/outro, no automatic unsupported fill | PARTIAL; recognized category/territory constraints, exact ranks/segment IDs, rationale edits, fresh provider copy and bound owner bookend review implemented; specialized eligibility and legacy upgrades remain |
 | C03 Retained versions | Original-studio immutable media/input history, dependency invalidation, identity-safe draft recovery, deletion protection | VERIFIED locally; immutable bytes/input history, identity-safe draft recovery and deletion survival passed in the full 11-scenario browser7 run |
 | C04 Storage ownership | Response-lifetime readers, remaining remote trash/transfer paths, sole-copy protection and safe cleanup/restore | PARTIAL; response streaming, immutable delivered-byte history and kept remote-version receipts verified; automatic remote media/backup deletion disabled; remaining local backup/temp ownership and managed remote reclamation remain |
@@ -34,6 +34,6 @@ Keep those lanes disabled and continue all independent local work. Docker/Linux
 and PostgreSQL must have actual execution evidence before being marked passed.
 
 
-| A01 Full-channel archive | Full inventory/pagination, canonical channel/video ledger, quota/storage preflight, sequential validated media transfers, checksum receipts, resumability, channel manifests and owner UI | PARTIAL; independent ledger/UI/Mac handoff and simulated-cloud media E2E verified;10 canonical identities and4004 public Shorts inventoried; actual upload blocked by current service-account quota0; Tiny Friends TV current Shorts unavailable. Owner confirmed Shorts-only/archive-only |
+| A01 Full-channel archive | Full inventory/pagination, canonical channel/video ledger, quota/storage preflight, sequential validated media transfers, checksum receipts, resumability, channel manifests and owner UI | DEFERRED by owner; local ledger/UI/Mac handoff and simulated-cloud E2E saved.10 identities/4004 public Shorts inventoried; no actual source downloads/Drive uploads. Do not resume archive/login without owner instruction |
 
 Archive access challenges/restricted items must be logged; do not evade DRM, authentication, CAPTCHA or platform controls. Existing posting ingestion is not proof of an archival workflow. Real Drive transfer and actual channel verification remain unexecuted.

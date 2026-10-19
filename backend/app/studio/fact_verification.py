@@ -114,10 +114,29 @@ def save_record(s, project_id: int, url: str) -> ResearchSourceRecord:
         raise ValueError("Research project no longer exists")
     project_identity = identity(project)
     data = fetch(url)
+    data["retrieved_at"]=clock(s)
     row = ResearchSourceRecord(id=str(uuid.uuid4()), project_id=project_id,
                                project_identity=project_identity, **data)
     s.add(row); s.flush()
     return row
+
+
+def clock(s):
+    if s.get_bind().dialect.name=='postgresql':
+        from ..worker_leases import clock as database_clock
+        return database_clock(s)
+    return datetime.now(timezone.utc)
+
+
+def review_version(s,project):
+    """Bind the exact research, context and append-only evidence generation."""
+    import json
+    who=identity(project)
+    records=s.query(ResearchSourceRecord).filter_by(project_id=project.id,project_identity=who).all()
+    reviews=s.query(ResearchClaimReview).filter_by(project_id=project.id,project_identity=who).all()
+    payload={'identity':who,'facts':project.facts,'research':project.research,
+        'records':sorted((r.id,r.sha256) for r in records),'reviews':sorted(r.id for r in reviews)}
+    return hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':'),default=str).encode()).hexdigest()
 
 
 def _aware(dt):
@@ -139,8 +158,9 @@ def conflicting_reviews(s, project, claim: str, facts: dict) -> list[ResearchCla
         and (r.verdict in ("unresolved", "contradicted") or r.conflicts)]
 
 
-def fresh(record) -> bool:
-    return 0 <= (datetime.now(timezone.utc) - _aware(record.retrieved_at)).total_seconds() <= MAX_AGE
+def fresh(record,s=None) -> bool:
+    now=clock(s) if s is not None else datetime.now(timezone.utc)
+    return 0 <= (now - _aware(record.retrieved_at)).total_seconds() <= MAX_AGE
 
 
 def supported(claim: dict, source_list: list, facts: dict, project_id: int | None) -> bool:
@@ -160,7 +180,7 @@ def supported(claim: dict, source_list: list, facts: dict, project_id: int | Non
                 or review.verdict != "supported" or review.conflicts
                 or review.context != context(facts) or not review.rationale.strip() or review.excerpt not in record.text
                 or record.sha256 != hashlib.sha256(record.text.encode()).hexdigest()
-                or not fresh(record)): return False
+                or not fresh(record,s)): return False
         conflicts = conflicting_reviews(s, project, review.claim, facts)
         if conflicts and (not {r.id for r in conflicts}.issubset(set(review.resolved_review_ids or []))
                 or len((review.resolution_rationale or "").strip()) < 20):

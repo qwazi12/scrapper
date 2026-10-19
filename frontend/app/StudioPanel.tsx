@@ -1325,7 +1325,7 @@ function SourceReview({ p, index, onChange }: { p: StudioProject; index: number;
   const [excerpt, setExcerpt] = useState("");
   const [rationale, setRationale] = useState("");
   const [verdict, setVerdict] = useState("unresolved");
-  const [confirmed, setConfirmed] = useState(false);
+  const [acknowledged, setAcknowledged] = useState<string | null>(null);
   const [resolved, setResolved] = useState<string[]>([]);
   const [resolution, setResolution] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1340,11 +1340,15 @@ function SourceReview({ p, index, onChange }: { p: StudioProject; index: number;
     Object.entries(data.context).every(([key, value]) => r.context[key] === value) &&
     (r.verdict !== "supported" || r.conflicts.length)) || [];
   const allResolved = previous.every(r => resolved.includes(r.id));
+  const acknowledgement = JSON.stringify({ project: p.id, claim, facts: p.facts, version: data?.review_version,
+    record, sha: data?.records.find(r => r.id === record)?.sha256, excerpt, verdict, rationale,
+    resolved: [...resolved].sort(), resolution });
+  const confirmed = acknowledged === acknowledgement;
   const cited = claim.sources.map(i => p.research?.sources[i]).filter(Boolean);
   return <details style={{ margin: "6px 0" }}><summary onClick={() => { if (!data) void act(async () => setData(await api.studioSources(p.id))); }}>Review independent evidence</summary>
     <p>Read the retrieved page in context. A matching phrase, quotation, rumor or denial does not establish support. Check contradictory sources and distinguish release territory, year and medium.</p>
     {cited.map((s, i) => s && <button key={i} disabled={busy} onClick={() => void act(async () => { const r = await api.studioFetchSource(p.id, s.url); setData(await api.studioSources(p.id)); setRecord(r.id); })}>Retrieve {s.title}</button>)}
-    <label>Retrieved record <select aria-label="Retrieved source record" style={{ maxWidth: "100%" }} value={record} onChange={e => { setRecord(e.target.value); setConfirmed(false); }}><option value="">Choose record</option>{data?.records.filter(r => cited.some(s => s?.url === r.requested_url)).map(r => <option key={r.id} value={r.id}>{r.url} · {r.retrieved_at}</option>)}</select></label>
+    <label>Retrieved record <select aria-label="Retrieved source record" style={{ maxWidth: "100%" }} value={record} onChange={e => { setRecord(e.target.value); setAcknowledged(null); }}><option value="">Choose record</option>{data?.records.filter(r => cited.some(s => s?.url === r.requested_url)).map(r => <option key={r.id} value={r.id}>{r.url} · {r.retrieved_at}</option>)}</select></label>
     {record && <pre style={{ maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap" }}>{data?.records.find(r => r.id === record)?.text}</pre>}
     <label>Exact supporting or conflicting excerpt<textarea value={excerpt} onChange={e => setExcerpt(e.target.value)} /></label>
     <label>Verdict<select aria-label="Verdict" value={verdict} onChange={e => setVerdict(e.target.value)}><option value="unresolved">Unresolved</option><option value="contradicted">Contradicted</option><option value="supported">Supported after review</option></select></label>
@@ -1358,14 +1362,14 @@ function SourceReview({ p, index, onChange }: { p: StudioProject; index: number;
       </article>)}
       {verdict === "supported" && <label>How the earlier evidence was resolved<textarea value={resolution} onChange={e => setResolution(e.target.value)} /></label>}
     </fieldset>}
-    <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I checked the exact context: {JSON.stringify(data?.context)} and found no unresolved conflicting evidence for a supported verdict.</label>
+    <label><input type="checkbox" checked={confirmed} onChange={e => setAcknowledged(e.target.checked ? acknowledgement : null)} />I checked the exact context: {JSON.stringify(data?.context)} and found no unresolved conflicting evidence for a supported verdict.</label>
     <button disabled={busy || !record || !confirmed || rationale.trim().length < 20 || !excerpt.trim() ||
       (verdict === "supported" && previous.length > 0 && (!allResolved || resolution.trim().length < 20))}
       onClick={() => void act(async () => {
-        onChange(await api.studioReviewClaim(p.id, index, { record_id: record, excerpt, context: data?.context,
+        onChange(await api.studioReviewClaim(p.id, index, { expected_version: data?.review_version, expected_claim: claim.text, record_id: record, excerpt, context: data?.context,
           verdict, rationale, conflicts: [], resolved_review_ids: verdict === "supported" ? resolved.filter(id => previous.some(r => r.id === id)) : [],
           resolution_rationale: verdict === "supported" ? resolution : "" }));
-        setData(await api.studioSources(p.id)); setResolved([]); setResolution(""); setConfirmed(false);
+        setData(await api.studioSources(p.id)); setResolved([]); setResolution(""); setAcknowledged(null);
       })}>Save evidence review</button>
     {error && <div role="alert" style={{ color: "var(--red)" }}>{error}</div>}
   </details>;

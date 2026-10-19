@@ -39,7 +39,7 @@ def test_owner_semantic_review_binds_record_claim_identity_freshness_and_project
     base=f'/api/studio/projects/{pid}'
     rid=c.post(base+'/source-records', json={'url':url}).json()['id']
     assert not sources.usable(claim,[{'url':url}],facts=facts,project_id=pid)  # denial contains phrase, still blocked
-    data=dict(record_id=rid,excerpt=text,context=fv.context(facts), verdict='supported', rationale='The cited text directly denies the proposition.', conflicts=['Denial'])
+    data=dict(expected_version=c.get(base+'/source-records').json()['review_version'],expected_claim=claim['text'],record_id=rid,excerpt=text,context=fv.context(facts), verdict='supported', rationale='The cited text directly denies the proposition.', conflicts=['Denial'])
     assert c.post(base+'/claims/0/review',json=data).status_code==422
     data.update(verdict='contradicted')
     r=c.post(base+'/claims/0/review',json=data); assert r.status_code==200, r.text
@@ -51,7 +51,7 @@ def test_owner_semantic_review_binds_record_claim_identity_freshness_and_project
         p=s.get(StudioProject,pid)
         p.research={**p.research, 'claims':[{**claim, 'text':'The article denies a June release.'}]}; s.commit()
     # Separate positive fixture: provenance is server-owned, semantic verdict is explicitly human-owned.
-    data.update(verdict='supported',conflicts=[],rationale='The source explicitly denies June; the revised claim accurately describes that denial.')
+    data.update(expected_version=c.get(base+'/source-records').json()['review_version'],expected_claim='The article denies a June release.',verdict='supported',conflicts=[],rationale='The source explicitly denies June; the revised claim accurately describes that denial.')
     r=c.post(base+'/claims/0/review',json=data); assert r.status_code==200
     reviewed=r.json()['research']['claims'][0]
     assert sources.usable(reviewed,[{'url':url}],facts=facts,project_id=pid)
@@ -63,6 +63,7 @@ def test_owner_semantic_review_binds_record_claim_identity_freshness_and_project
         def now(cls, tz=None):
             return datetime.now(tz) + timedelta(days=8)
     monkeypatch.setattr(fv, "datetime", Later)
+    monkeypatch.setattr(fv, "clock",lambda s:Later.now(timezone.utc))  # advance authoritative retrieval clock in either dialect
     assert not sources.usable(reviewed,[{'url':url}],facts=facts,project_id=pid)
     assert stage_script.storyboard(facts, r.json()['research'], [], pid)['R']==[]
 

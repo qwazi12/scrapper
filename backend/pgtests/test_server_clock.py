@@ -99,3 +99,20 @@ def test_future_host_cannot_reconcile_live_financial_owner_or_ignore_exclusive_f
     with SessionLocal() as s:
         br.lock(s)
         with pytest.raises(HTTPException,match='409'):delivery_archive._readable(s,[tmp_path/'original.mp4'])
+
+
+def test_retrieved_evidence_freshness_uses_database_time_not_skewed_host(monkeypatch):
+    import hashlib
+    from backend.app.models import StudioProject
+    from backend.app.studio import fact_verification as fv
+    class Future(datetime.datetime):
+        @classmethod
+        def now(cls,tz=None):return datetime.datetime.now(tz)+datetime.timedelta(days=3650)
+    monkeypatch.setattr(fv,'datetime',Future)
+    body='Original synthetic record with enough context for independent evidence.'
+    monkeypatch.setattr(fv,'fetch',lambda url:{'url':url,'requested_url':url,'text':body,'sha256':hashlib.sha256(body.encode()).hexdigest()})
+    with SessionLocal() as s:
+        p=StudioProject(tmdb_id=951,title='Shared evidence clock');s.add(p);s.commit()
+        record=fv.save_record(s,p.id,'https://apnews.com/article/synthetic-clock');s.commit()
+        assert abs((record.retrieved_at-leases.clock(s)).total_seconds())<2
+        assert fv.fresh(record,s)

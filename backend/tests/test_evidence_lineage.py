@@ -37,7 +37,9 @@ def evidence(monkeypatch):
 
 
 def review(base, args, **changes):
-    return client.post(base + "/claims/0/review", json={**args, **changes})
+    version=client.get(base+'/source-records').json()['review_version']
+    current=client.get(base).json()['research']['claims'][0]['text']
+    return client.post(base + "/claims/0/review", json={**args,'expected_version':version,'expected_claim':current, **changes})
 
 
 def claim(response):
@@ -124,6 +126,7 @@ def test_expired_retrieval_cannot_receive_a_new_supported_label(evidence, monkey
         def now(cls, tz=None):
             return datetime.now(tz) + timedelta(days=8)
     monkeypatch.setattr(fv, "datetime", Later)
+    monkeypatch.setattr(fv,"clock",lambda s:Later.now(timezone.utc))  # advance authoritative time, including PostgreSQL
     response = review(base, args)
     assert response.status_code == 422 and "current source" in response.json()["detail"]
     assert client.get(base + "/source-records").json()["reviews"] == []
@@ -156,3 +159,33 @@ def test_an_old_storyboard_context_cannot_override_the_current_project_context(e
         p = s.get(StudioProject, pid)
         p.facts = {**p.facts, "region": "GB"}; s.commit()
     assert not fv.supported(supported, [{"url": "https://apnews.com/article/lineage-fixture"}], facts, pid)
+
+
+@pytest.mark.parametrize('change',['claim','context','new_record','new_review'])
+def test_stale_semantic_decision_cannot_attach_to_changed_words_context_or_evidence(evidence,change):
+    pid,base,facts,args=evidence
+    before=client.get(base+'/source-records').json()
+    expected_claim=client.get(base).json()['research']['claims'][0]['text']
+    payload={**args,'expected_version':before['review_version'],'expected_claim':expected_claim}
+    if change=='claim':
+        with db.SessionLocal() as s:
+            p=s.get(StudioProject,pid);p.research={**p.research,'claims':[{'text':'A different proposition occupies this index','sources':[0]}]};s.commit()
+    elif change=='context':
+        with db.SessionLocal() as s:
+            p=s.get(StudioProject,pid);p.facts={**p.facts,'region':'GB'};s.commit()
+    elif change=='new_record':
+        assert client.post(base+'/source-records',json={'url':'https://apnews.com/article/lineage-fixture'}).status_code==200
+    else:
+        assert review(base,args,verdict='unresolved').status_code==200
+    stale=client.post(base+'/claims/0/review',json=payload)
+    assert stale.status_code==409 and 'changed' in stale.json()['detail']
+    current=client.get(base+'/source-records').json()
+    assert len(current['reviews'])==(1 if change=='new_review' else 0)
+
+
+def test_expected_exact_words_are_required_even_with_fresh_generation(evidence):
+    _,base,_,args=evidence
+    snapshot=client.get(base+'/source-records').json()
+    response=client.post(base+'/claims/0/review',json={**args,'expected_version':snapshot['review_version'],'expected_claim':'Other words'})
+    assert response.status_code==409
+    assert client.post(base+'/claims/0/review',json=args).status_code==422
