@@ -9,6 +9,10 @@ RUN cd frontend && npm ci --ignore-scripts --no-audit --no-fund && npx playwrigh
 COPY backend /app/backend
 COPY scripts/e2e /app/scripts/e2e
 COPY frontend /app/frontend
+# The frozen-source launcher uses the index as its file inventory. The build
+# context intentionally excludes host .git metadata and credentials; create a
+# fresh local index containing only the copied, disposable test sources.
+RUN git init --quiet && git add backend scripts
 RUN cd frontend && npm run build
 ENV SCRAPPER_E2E_CONTAINER_OFFLINE=1 PATH="/opt/e2e/bin:$PATH"
 CMD ["bash", "scripts/e2e/container-test.sh"]
