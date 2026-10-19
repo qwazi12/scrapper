@@ -683,7 +683,17 @@ export type CountdownSegment = {
   missing?: boolean;
 };
 
+export type CountdownEligibility = {
+  territory: string; medium: string | null; genres: string[]; genre_mode: string; excluded_genres: string[];
+  production_countries: string[]; original_languages: string[]; year_min: number | null; year_max: number | null;
+  date_from: string | null; date_to: string | null; providers: string[]; requires_independent_review: string[]; interpretation: string;
+};
 export type CountdownProject = {
+  ranking_version?: string;
+  eligibility_criteria?: CountdownEligibility;
+  bookend_version?: string;
+  bookend_reviewed?: boolean;
+  bookend_issue?: string;
   script_version?: string;
   id: number;
   topic: string;
@@ -718,7 +728,7 @@ export type CountdownProject = {
     drive?: { status?: string; error?: string | null; link?: string; saved_at?: string };
   } | null;
   // full view only
-  ranking?: { entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
+  ranking?: { contract_version?: number; eligibility?: { criteria: CountdownEligibility; checked_at: string; scope: string }; entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
               why_now?: string; honorable_mentions?: string[];
               market?: { keyword?: string; demand?: { monthly_searches: number; competition: number; growth_pct: number } | null;
                          related?: { keyword: string; monthly_searches: number }[]; questions?: { question: string; monthly_searches: number }[];
@@ -1424,8 +1434,10 @@ export const api = {
     req<CountdownProject>("/api/countdowns/from-breakdowns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   countdownResearch: (id: number) =>
     req<{ ok: boolean }>(`/api/countdowns/${id}/research`, { method: "POST", headers: headers(false) }),
-  countdownEntries: (id: number, entries: CountdownEntryRow[]) =>
-    req<CountdownProject>(`/api/countdowns/${id}/entries`, { method: "PUT", headers: headers(), body: JSON.stringify({ entries }) }),
+  countdownEntries: (id: number, entries: CountdownEntryRow[], expected_ranking_version?: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/entries`, { method: "PUT", headers: headers(), body: JSON.stringify({ entries, expected_ranking_version }) }),
+  countdownReviewBookends: (id: number, expected_version: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/review-bookends`, { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true, expected_version }) }),
   countdownConfirm: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/confirm`, { method: "POST", headers: headers(false) }),
   countdownMake: (id: number) =>

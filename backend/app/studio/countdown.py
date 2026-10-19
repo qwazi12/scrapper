@@ -25,7 +25,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from ..file_response import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictBool
 
 from ..publication_journal import digest
 from .. import control, costs, logbus
@@ -135,6 +135,18 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         d["queue_status"] = q.status if q else None
     if full:
         d.update(ranking=c.ranking, notes=c.notes, script=c.script, segments=segs)
+        from .countdown_eligibility import criteria
+        from ..config import settings
+        d["eligibility_criteria"] = criteria(c.topic, settings.studio_region)
+        d["ranking_version"] = digest(c.ranking)
+        d["bookend_version"] = bookend_version(s, c)
+        d["bookend_reviewed"] = (c.review or {}).get("bookend_review", {}).get("version") == d["bookend_version"]
+        if (c.ranking or {}).get("contract_version") == 1:
+            try:
+                require_bookends(s, c)
+            except HTTPException as exc:
+                d["bookend_reviewed"] = False
+                d["bookend_issue"] = exc.detail
     return d
 
 
@@ -246,11 +258,14 @@ def save_entries(c: CountdownProject, entries: list[dict[str, Any]]) -> None:
         e["rank"] = i + 1
         clean.append(e)
     r = dict(c.ranking or {})
-    old_ids = [(e.get("tmdb_id"), e.get("media_type")) for e in _ordered(entries_of(c))]
+    material = ("tmdb_id", "media_type", "title", "year", "why_it_ranks", "fun_fact", "key_stat", "where_to_watch")
+    old_inputs = [{k: e.get(k) for k in material} for e in _ordered(entries_of(c))]
     r["entries"] = clean
     c.ranking = r
-    new_ids = [(e.get("tmdb_id"), e.get("media_type")) for e in _ordered(clean)]
-    if c.segment_ids and old_ids != new_ids:
+    new_inputs = [{k: e.get(k) for k in material} for e in _ordered(clean)]
+    if old_inputs != new_inputs:
+        c.ranking = {k: v for k, v in c.ranking.items() if k != "eligibility"}
+    if c.segment_ids and old_inputs != new_inputs:
         c.segment_ids = None                   # titles changed: confirm them again
         c.render = None
         c.stage, c.stage_status = "research", "done"
@@ -259,7 +274,11 @@ def save_entries(c: CountdownProject, entries: list[dict[str, Any]]) -> None:
 
 def confirm_titles(s, c: CountdownProject) -> None:
     """Create or reuse one Studio segment per title (lowest rank first)."""
-    entries = entries_of(c)
+    import copy
+    # Segment creation flushes the session. Never mutate a nested JSON object
+    # already stored by an earlier flush; the final segment bindings must be a
+    # real new JSON value, including on repeated eligibility checks.
+    entries = copy.deepcopy(entries_of(c))
     if (c.ranking or {}).get("contract_version") == 1:
         expected = COUNTS.get(c.fmt)
         if expected and len(entries) != expected:
@@ -267,6 +286,10 @@ def confirm_titles(s, c: CountdownProject) -> None:
     identities = [(e.get("media_type") or "movie", e.get("tmdb_id")) for e in entries if e.get("tmdb_id")]
     if len(set(identities)) != len(identities):
         raise HTTPException(409, "Duplicate film/show identities in this ranking; replace duplicates before confirming")
+    if (c.ranking or {}).get("contract_version") == 1 and (
+            any(type(e.get("rank")) is not int for e in entries) or
+            sorted(e["rank"] for e in entries) != list(range(1, len(entries) + 1))):
+        raise HTTPException(409, "Each ranking position must appear exactly once from 1 through the entry count")
     bad = [f"#{e.get('rank')} {e.get('title')}" for e in entries if not e.get("tmdb_id")]
     if bad:
         raise HTTPException(400, "These aren't matched to a movie or show (no trailer to use): "
@@ -274,10 +297,13 @@ def confirm_titles(s, c: CountdownProject) -> None:
     if len(entries) < 2:
         raise HTTPException(400, "A countdown needs at least 2 titles")
     if (c.ranking or {}).get("contract_version") == 1:
-        from .compilations import engine
-        for e in entries:
-            if not e.get("year") or not engine._resolve_title(e):
-                raise HTTPException(409, f"Canonical title/year/medium could not be confirmed for #{e.get('rank')} {e.get('title')}. Repair the identity before making segments.")
+        from . import countdown_eligibility, tmdb
+        from ..config import settings
+        try:
+            eligibility = countdown_eligibility.verify(entries, c.topic, settings.studio_region)
+        except (ValueError, tmdb.TMDBError, OSError) as exc:
+            raise HTTPException(409, f"Countdown eligibility needs review: {exc}") from exc
+        c.ranking = {**c.ranking, "eligibility": eligibility}
     minutes = float((c.review or {}).get("segment_minutes") or SEGMENT_MINUTES.get(c.fmt, 1.0))
     total = len(entries)
     ids = []
@@ -510,8 +536,54 @@ def recover() -> None:
 def default_script(c: CountdownProject) -> dict[str, Any]:
     r = c.ranking or {}
     titles = r.get("title_options") or [c.topic]
-    return {"title": titles[0][:100], "title_options": titles, "intro": r.get("hook_script") or "",
-            "outro": r.get("closing_question") or "", "thumbnail_text": r.get("thumbnail_text") or ""}
+    return {"title": titles[0][:100], "title_options": titles,
+            "intro": r.get("hook_script") or f"Here are {len(entries_of(c))} picks in our editorial countdown. Which would you put first?",
+            "outro": r.get("closing_question") or "Which entry would you put first, and why?",
+            "thumbnail_text": r.get("thumbnail_text") or ""}
+
+
+def bookend_version(s, c) -> str:
+    from ..publication_journal import identity
+    inputs = []
+    for pid in c.segment_ids or []:
+        p = s.get(StudioProject, int(pid))
+        inputs.append([identity(p), p.facts, p.research, p.script] if p else [pid, "missing"])
+    sc = c.script or default_script(c)
+    return digest([identity(c), c.topic, c.ranking,
+                   {k: sc.get(k) for k in ("title", "intro", "outro")}, inputs])
+
+
+def require_bookends(s, c):
+    if (c.ranking or {}).get("contract_version") != 1:
+        return  # Existing saved-list compatibility; no new verification claim.
+    require_current_eligibility(s, c)
+    sc = c.script or default_script(c)
+    if not all(str(sc.get(k) or "").strip() for k in ("intro", "outro")):
+        raise HTTPException(409, "Save explicit intro and outro words before reviewing or voicing them")
+    if (c.review or {}).get("bookend_review", {}).get("version") != bookend_version(s, c):
+        raise HTTPException(409, "Review the exact saved intro/outro against current title eligibility and segment research before voicing")
+
+
+def require_current_eligibility(s, c):
+    from . import countdown_eligibility as eligibility
+    from ..config import settings
+    proof = (c.ranking or {}).get("eligibility") or {}
+    rule = eligibility.criteria(c.topic, settings.studio_region)
+    try:
+        checked = datetime.datetime.fromisoformat(proof.get("checked_at", ""))
+        age = (_now() - checked.astimezone(UTC)).total_seconds()
+    except (ValueError, TypeError):
+        age = -1
+    if proof.get("criteria") != rule or not 0 <= age <= (86400 if rule["providers"] else 7 * 86400):
+        raise HTTPException(409, "Recheck title eligibility: the category evidence is missing, expired or outside the current date window")
+    records = {(r.get("media_type"), r.get("tmdb_id")): r for r in proof.get("records", [])}
+    for entry in entries_of(c):
+        record = records.get((entry.get("media_type") or "movie", entry.get("tmdb_id")))
+        p = s.get(StudioProject, int(entry.get("segment_id") or 0))
+        issues = (["missing confirmed category record or segment"] if not record or not p else
+                  eligibility.evaluate(entry, p.facts or {}, rule, record.get("providers")))
+        if issues:
+            raise HTTPException(409, f"Recheck title eligibility and segment research for {entry.get('title')}: {'; '.join(issues)}")
 
 
 # --- 5. render ----------------------------------------------------------------------
@@ -558,7 +630,9 @@ def _render_job(cid: int) -> dict[str, Any]:
     _set(cid, stage="render", stage_status="running", stage_message="Stitching the countdown video…")
     try:
         with SessionLocal() as s:
-            fingerprints = segment_fingerprints(s, s.get(CountdownProject, cid))
+            current = s.get(CountdownProject, cid)
+            require_bookends(s, current)
+            fingerprints = segment_fingerprints(s, current)
         with costs.operation("countdown_render", ref=f"countdown:{cid}"):      # intro/outro voice-over
             res = stitch.stitch_countdown_compilation(project_ids=ids, title=sc.get("title") or "",
                                                       custom_intro=sc.get("intro") or "", custom_outro=sc.get("outro") or "",
@@ -634,6 +708,7 @@ def _require_thumbnail_editable(s, c):
 def require_release(s, c: CountdownProject, approved: bool = True) -> str:
     from .media_quality import export_fingerprint, require_export_approval
     try:
+        require_bookends(s, c)
         if segment_fingerprints(s, c) != (c.render or {}).get("segment_fingerprints"):
             raise RuntimeError("Segments changed since the final countdown render; render again")
         fingerprint = export_fingerprint(c, comp_dir(c))
@@ -1247,6 +1322,7 @@ class FromBreakdowns(BaseModel):
 
 class EntriesIn(BaseModel):
     entries: list[dict[str, Any]]   # #1 first
+    expected_ranking_version: str | None = None
 
 
 class ScriptIn(BaseModel):
@@ -1254,6 +1330,11 @@ class ScriptIn(BaseModel):
     title: str | None = None
     intro: str | None = None
     outro: str | None = None
+
+
+class BookendReviewIn(BaseModel):
+    expected_version: str = Field(min_length=64, max_length=64)
+    reviewed: StrictBool
 
 
 class FlagIn(BaseModel):
@@ -1676,7 +1757,11 @@ def rerun_research(cid: int) -> dict[str, Any]:
 def put_entries(cid: int, req: EntriesIn) -> dict[str, Any]:
     with media_use(cid, exclusive=True):
         with SessionLocal() as s:
+            from ..budget_reservations import lock
+            lock(s)
             c = _get(s, cid)
+            if req.expected_ranking_version and req.expected_ranking_version != digest(c.ranking):
+                raise HTTPException(409, "Ranking changed; reload and compare before saving this edit")
             if c.stage in ("segments", "render") and _running(c):
                 raise HTTPException(409, "Segments are being made — Stop first to change the titles")
             from .. import undo
@@ -1771,7 +1856,41 @@ def render(cid: int) -> dict[str, Any]:
             raise HTTPException(409, "This countdown is busy")
         if not out(s, c, full=False)["has"]["segments"]:
             raise HTTPException(400, "Every segment must be made first (step 3)")
+        require_bookends(s, c)
     return {"ok": True, "job_id": start_render(cid)}
+
+
+@router.post("/{cid}/review-bookends")
+def review_bookends(cid: int, req: BookendReviewIn) -> dict[str, Any]:
+    with media_use(cid, exclusive=True, segments=True):
+        with SessionLocal() as s:
+            from ..budget_reservations import lock
+            from .research_gate import require_checked
+            lock(s)
+            c = _get(s, cid)
+            if c.stage_status in ("running", "queued", "waiting"):
+                raise HTTPException(409, "Wait for the current Countdown work to finish before reviewing its words")
+            if not req.reviewed or req.expected_version != bookend_version(s, c):
+                raise HTTPException(409, "Countdown words or research changed; compare the current saved version")
+            sc = c.script or default_script(c)
+            if not all(str(sc.get(k) or "").strip() for k in ("intro", "outro")):
+                raise HTTPException(409, "Save explicit intro and outro words before reviewing them")
+            if not c.segment_ids:
+                raise HTTPException(409, "Confirm the title eligibility and check segment research first")
+            if (c.ranking or {}).get("contract_version") == 1:
+                require_current_eligibility(s, c)
+            try:
+                for pid in c.segment_ids:
+                    p = s.get(StudioProject, int(pid))
+                    if not p:
+                        raise RuntimeError("A segment is missing")
+                    require_checked(p.script)
+            except RuntimeError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            c.review = {**(c.review or {}), "bookend_review": {"version": req.expected_version,
+                "at": _now().isoformat(), "scope": "owner_reviewed_exact_words_and_current_research"}}
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/thumbnail")

@@ -129,9 +129,26 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   const researched = await getCountdown();
   expect(researched.entry_count).toBe(5);
   expect(new Set(researched.ranking.entries.map((e: any) => e.tmdb_id)).size).toBe(5);
+  await page.getByText("Edit editorial ranking rationale", { exact: true }).first().click();
+  await page.getByLabel("Ranking rationale for Synthetic Film 1", { exact: true }).fill("Our editorial preference favors the visual sequence in this original synthetic example.");
+  await page.getByRole("button", { name: "Save ranking rationale", exact: true }).click();
+  await expect.poll(async () => (await getCountdown()).ranking.entries[0].why_it_ranks).toContain("Our editorial preference");
   await page.getByRole("button", { name: "Confirm titles", exact: true }).click();
   await page.getByRole("button", { name: "▶ Make segments", exact: true }).click();
   await expect.poll(async () => (await getCountdown()).segments_made, { timeout: 180_000 }).toBe(5);
+  await expect(page.getByRole("button", { name: "Render video", exact: true })).toBeDisabled();
+  const beforeBookends = await request.post(`${stack.api}/api/countdowns/${cid}/render`, { headers });
+  expect(beforeBookends.status()).toBe(409);
+  const bookendCheck = page.getByRole("checkbox", { name: /I checked the saved intro and outro/ });
+  await bookendCheck.check();
+  const beforeMetadataChange = await getCountdown();
+  const metadataChange = await request.put(`${stack.api}/api/countdowns/${cid}/script`, { headers,
+    data: { title: `${beforeMetadataChange.script.title} — Editorial Picks`, expected_script_version: beforeMetadataChange.script_version } });
+  expect(metadataChange.ok()).toBe(true);
+  await expect(bookendCheck).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Mark intro/outro reviewed", exact: true })).toBeDisabled();
+  await bookendCheck.check();
+  await page.getByRole("button", { name: "Mark intro/outro reviewed", exact: true }).click();
   await expect(page.getByRole("button", { name: "Render video", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Render video", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
@@ -670,7 +687,9 @@ test("retained export UI recovers prior words and media after invalidation and p
   expect((await request.get(`${stack.api}/api/export-history/${original.id}/file/video`, { headers })).status()).toBe(200);
   await page.goto("/#settings");
   const archive = page.getByTestId("export-history");
-  await archive.getByText("Retained export history", { exact: true }).click();
+  await rateAware(`${stack.api}/api/export-history`, "GET",
+    () => archive.getByText("Retained export history", { exact: true }).click(),
+    () => archive.getByRole("button", { name: "Refresh history", exact: true }).click());
   await archive.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click();
   await expect(archive.getByTestId("retained-version-detail")).toContainText("Original colored shapes");
   await page.screenshot({ path: path.join(evidence, "deleted-project-export-history.png"), fullPage: true });

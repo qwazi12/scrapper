@@ -42,11 +42,14 @@ def test_owner_edited_countdown_identity_is_rechecked_at_confirmation(session, m
     entries = [{"rank": i, "title": f"Movie {i}", "year": 2026, "tmdb_id": i, "media_type": "movie"} for i in range(1, 6)]
     c = CountdownProject(topic="Synthetic", fmt="top5", ranking={"contract_version": 1, "entries": entries})
     session.add(c); session.commit()
+    from backend.app.studio import tmdb
     checked = []
-    def resolve(entry):
-        checked.append(entry["tmdb_id"])
-        return entry if entry["tmdb_id"] != 3 else None
-    monkeypatch.setattr(engine, "_resolve_title", resolve)
-    with pytest.raises(HTTPException, match="Canonical"):
+    def metadata(medium, ident, **kwargs):
+        checked.append(ident)
+        return {"tmdb_id": ident, "media_type": medium,
+            "title": "Different canonical identity" if ident == 3 else f"Movie {ident}",
+            "primary_date": "2026-01-01"}
+    monkeypatch.setattr(tmdb, "fact_sheet", metadata)
+    with pytest.raises(HTTPException, match="canonical"):
         countdown.confirm_titles(session, c)
-    assert checked == [1, 2, 3] and not c.segment_ids
+    assert checked == [1, 2, 3, 4, 5] and not c.segment_ids

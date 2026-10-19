@@ -522,15 +522,22 @@ def countdown_description(countdown: dict[str, Any], entries: list[dict[str, Any
     lines.append("🎬 RANKED ENTRIES & WHERE TO STREAM:")
     for e in entries:
         lines.append(f"• #{e['rank']} {e['title']} ({e.get('year', '')})")
-        scope = e.get("availability_scope") or {}
-        if (e.get("where_to_watch") and scope.get("status") == "available"
-                and scope.get("provider") == "TMDB/JustWatch" and scope.get("territory") == "US"):
-            try:
-                retrieved = datetime.datetime.fromisoformat(scope["retrieved_at"])
-                if datetime.timedelta(0) <= datetime.datetime.now(UTC) - retrieved < datetime.timedelta(days=1):
-                    lines.append(f"  Streaming (US, checked {retrieved.date()}): {e['where_to_watch']}")
-            except (KeyError, TypeError, ValueError):
-                pass
+        # Copy provider names from the server's bound category record. A draft
+        # where_to_watch string cannot inherit an older availability label.
+        proof = countdown.get("eligibility") or {}
+        record = next((r for r in proof.get("records", []) if
+            (r.get("media_type"), r.get("tmdb_id")) == (e.get("media_type") or "movie", e.get("tmdb_id"))), None)
+        try:
+            from ...publication_journal import digest
+            retrieved = datetime.datetime.fromisoformat(proof["checked_at"])
+            if (record and record.get("sha256") == digest([record.get("facts"), record.get("providers")])
+                    and datetime.timedelta(0) <= datetime.datetime.now(UTC) - retrieved < datetime.timedelta(days=1)):
+                providers = [p["provider_name"] for p in (record.get("providers") or {}).get("flatrate", []) if p.get("provider_name")]
+                territory = proof["criteria"]["territory"]
+                if providers:
+                    lines.append(f"  Subscription streaming ({territory}, checked {retrieved.date()}): {', '.join(providers)}")
+        except (KeyError, TypeError, ValueError):
+            pass
         # Free-form model statistics are draft suggestions, never source-backed copy.
     if countdown.get("closing_question"):
         lines.append(f"\n💬 DISCUSSION:\n{countdown['closing_question']}\n")
