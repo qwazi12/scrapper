@@ -51,13 +51,14 @@ contain the ignored media, database snapshots or traces.
 
 | Lane | Verified result | Exact evidence |
 |---|---|---|
-| Full backend after publication conflict cleanup | **677 passed /1 optional skip**,72.52s,1 reported TestClient/httpx deprecation | `publish-cas-backend1.txt`, `.xml` |
-| Actual PostgreSQL behavior | **201 passed**,32.30s,1 reported warning | `publish-cas-pg1/pytest.txt`, `.xml` |
-| Actual private PostgreSQL recovery | **Passed**,1.095s;184583bytes; SHA256`6ea71b0f56a704bdcc705ef26001ccde9cd408bf5755be79cbdd6813d06517cf`; source unchanged | `publish-cas-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
+| Full backend after still duplicate integrity | **683 passed /1 optional skip**,71.72s,1 reported TestClient/httpx deprecation | `still-integrity-backend1.txt`, `.xml` |
+| Actual PostgreSQL behavior | **207 passed**,32.74s,1 reported warning | `still-integrity-pg1/pytest.txt`, `.xml` |
+| Actual private PostgreSQL recovery | **Passed**,0.976s;183480bytes; SHA256`f16040e919f01269cee6aa1439305ddc0bf7f67364912361838bd64687730cd9`; source unchanged | `still-integrity-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
 | Selected clip contracts | **34 passed**,11.32s, actual hold/loop frame/audio checks, strict ranges/source claims | `native-clips-focused2.txt` |
 | Native acceptance focused | **22 passed**,2.24s, then all5 new contracts including actual generated-tone Reel render **passed**,2.63s | `native-acceptance-focused2.txt`, `native-acceptance-focused3.txt` |
 | Frontend production build | Passed after reviewed asset revisions; explicit tsc passed | `asset-annotations-build2.txt`, `asset-annotations-tsc1.txt` |
 | Frontend error contracts | **6 passed**,114.49ms; typeless Node module warning reported | `api-errors-unit3.txt` |
+| Current still/source review UI | **2 passed**,12.0s; current source includes publisher cleanup and still integrity; actual duplicate409, exact recovery and revised-native render/acceptance | `e2e/history/still-integrity1/` |
 | Reviewed asset decisions focused UI | **1 passed**,11.1s; real source/import, private draft recovery, stale competing decision, block/re-permit history and revised native source render/acceptance; fresh full24 regression also passed | `e2e/history/asset-annotations1/` |
 | Current full browser regression | **24 passed**,4.4min; includes reviewed metadata/use decisions and revised native sources plus all prior media/safety cases; frozen backend/scripts SHA`7f5a78fba426bc0731aa01156f6f6fb02f7958141c829d7edbf8f481ba57af24` | `e2e/history/asset-annotations2/` report/traces/screenshots/actual media/verified DB snapshot |
 | Earlier full browser before background-audio slice | **22 passed**,3.9min; frozen backend/scripts SHA`87cae4a6a3b3d498a4509c0c9b4deb79994e9e80ad459c1c99fe5bde39a47cc2`; complete media and recovery cases | `e2e/history/native-drafts3/` report/traces/screenshots/actual media/verified DB snapshot |

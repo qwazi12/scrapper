@@ -61,3 +61,12 @@ revised treatment. “Draft revised treatment” copies all saved copy, formats,
 references and clip/audio timing/gain/end behavior privately. It never edits an old
 campaign, renders, accepts or queues automatically. Replacing another unsaved draft
 requires an explicit in-app choice.
+
+Still imports now share the duplicate integrity contract: normal duplicate lookup
+and the real unique-insert race fallback verify the winner's image kind, catalog
+root and retained SHA under a source reader claim. Missing/corrupted media and an
+independent exclusive mutation return409, preserve the old catalog/provenance and
+never report reuse success. Tests cover verified/missing/corrupt concurrent winners.
+Actual UI shows the refusal and succeeds only after exact byte restoration. Current
+evidence: backend683passes/1skip,PG207passes/native restore; scoped browser2passes
+in history/still-integrity1. Full24 earlier browser evidence remains separate.

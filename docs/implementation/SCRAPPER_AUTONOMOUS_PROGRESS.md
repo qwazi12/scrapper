@@ -638,3 +638,17 @@ backend677passed/1optional skip72.52s; actualPG201passed32.30s plus native resto
 Evidence publish-cas-backend1.txt/xml and publish-cas-pg1/. UI unchanged; prior full24
 browser evidence retains its distinct frozen generation. No external/public/paid
 activity. Continue with remaining asset/storage/factual/editorial contracts.
+
+### Still duplicate success now requires verified retained media
+
+Three regressions reproduced normal importer200 for corrupt/missing/in-use stills.
+Both ordinary duplicate and unique-race recovery now check kind/root/SHA under a
+shared source claim; retained bytes/provenance stay unchanged. Real DB unique
+violations test verified/missing/corrupt winners. Focused27passed5.55s; full backend
+683passed/1skip71.72s; actualPG207passed32.74s/native restore0.976s/source unchanged,
+183480bytes,SHAf16040e919f01269cee6aa1439305ddc0bf7f67364912361838bd64687730cd9.
+Explicit tscpassed; application frontend unchanged. Actual scoped browser2passed12s
+(metadata/revised native source render+acceptance and visible corruption409/exact
+restoration/reuse), source1764093d2253b4c9849188cec1be7dbe9f52f0aeba679488a32c6ba35c05e8fa.
+Evidence history/still-integrity1; owned stack stopped after preservation. Original
+roadmap continues with bounded-picker/older selected-source recovery.

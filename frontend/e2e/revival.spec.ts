@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 const evidence = path.resolve(__dirname, "../../artifacts/e2e");
 const stack = JSON.parse(readFileSync(path.join(evidence, "stack.json"), "utf8"));
@@ -1675,5 +1676,34 @@ test("Reviewed asset decisions preserve provenance, recover stale words and requ
   await expect(revisedCard.getByTestId("native-export-short")).toBeVisible();
   await revisedCard.getByRole("button", { name: "Approve inspected short", exact: true }).click();
   await acceptExactExport(page, "asset-revised-native-acceptance.png");
+  expect(errors).toEqual([]);
+});
+
+
+test("Still duplicate UI refuses corrupted retained bytes and recovers only exact source media", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  const original = path.join(stack.root, "fixtures/still-integrity-original.png");
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x321d79:s=318x178", "-frames:v", "1", original]);
+  await page.goto("/#editorial"); await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByText("Import a cleared still", { exact: true }).click();
+  await page.getByLabel("Still image", { exact: true }).setInputFiles(original);
+  await page.getByLabel("Rights record", { exact: true }).fill("This original procedural color frame was created for the isolated local integrity test.");
+  await page.getByLabel("Scene tags", { exact: true }).fill("stillintegrity,original");
+  const index = page.getByRole("button", { name: "Index cleared still", exact: true });
+  const receipt = page.waitForResponse(r => r.url().endsWith("/api/editorial/assets") && r.request().method() === "POST");
+  await index.click(); const response = await receipt; expect(response.ok()).toBe(true); const aid = (await response.json()).id;
+  const source = (await (await request.get(`${stack.api}/api/editorial/assets`, { headers })).json()).find((a: any) => a.id === aid);
+  // Fault injection only touches the explicitly marked synthetic root and exact imported SHA.
+  expect(existsSync(path.join(stack.root, ".scrapper-e2e"))).toBe(true);
+  const directory = path.join(stack.root, "data/editorial/assets");
+  const retained = readdirSync(directory).map(file => path.join(directory, file)).find(file => file.endsWith(".png") && createHash("sha256").update(readFileSync(file)).digest("hex") === source.sha256)!;
+  expect(retained).toBeTruthy(); const bytes = readFileSync(retained); writeFileSync(retained, "synthetic corrupted retained still");
+  await index.click(); await expect(page.getByRole("status").filter({ hasText: "duplicate reuse refused" })).toBeVisible();
+  expect(readFileSync(retained, "utf8")).toBe("synthetic corrupted retained still");
+  await page.screenshot({ path: path.join(evidence, "still-duplicate-integrity-blocked.png"), fullPage: true });
+  writeFileSync(retained, bytes); const recovered = page.waitForResponse(r => r.url().endsWith("/api/editorial/assets") && r.request().method() === "POST");
+  await index.click(); const recoveredResponse = await recovered; expect(recoveredResponse.ok()).toBe(true);
+  expect(await recoveredResponse.json()).toEqual({ id: aid, duplicate: true });
+  expect(createHash("sha256").update(readFileSync(retained)).digest("hex")).toBe(source.sha256);
   expect(errors).toEqual([]);
 });

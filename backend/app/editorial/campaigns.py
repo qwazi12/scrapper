@@ -428,7 +428,9 @@ async def import_asset(file: UploadFile = File(...), license: Literal["owner_cre
             image.convert("RGB").save(target, "PNG")  # strip EXIF and external metadata
         sha = file_hash(target)
         existing = s.query(MediaAsset).filter(MediaAsset.sha256 == sha).first()
-        if existing: target.unlink(); return {"id": existing.id, "duplicate": True}
+        if existing:
+            target.unlink()
+            return verified_still_duplicate(s,existing)
         row = MediaAsset(sha256=sha, file_path=str(target), kind="image", tags=[x.strip()[:80] for x in tags.split(",") if x.strip()][:30],
                          provenance={"license": license, "attestation": attestation, "recorded_at": datetime.now(UTC).isoformat(),
                                      "scope": "owner attested; legal clearance not independently verified"})
@@ -436,10 +438,20 @@ async def import_asset(file: UploadFile = File(...), license: Literal["owner_cre
         try: s.commit()
         except IntegrityError:
             s.rollback(); target.unlink(missing_ok=True)
-            return {"id": s.query(MediaAsset).filter(MediaAsset.sha256 == sha).one().id, "duplicate": True}
+            return verified_still_duplicate(s,s.query(MediaAsset).filter(MediaAsset.sha256 == sha).one())
         return {"id": row.id, "duplicate": False}
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         target.unlink(missing_ok=True)
         raise HTTPException(400, "Upload a valid bounded image") from exc
     finally:
         source.unlink(missing_ok=True)
+
+
+def verified_still_duplicate(s,asset):
+    from .asset_catalog import verify_existing
+    from ..file_use import pin
+    with pin([asset.file_path],session=s):
+        s.refresh(asset)
+        if asset.kind!='image':raise HTTPException(409,'Duplicate media kind does not match the requested still')
+        verify_existing(asset)
+        return {'id':asset.id,'duplicate':True}
