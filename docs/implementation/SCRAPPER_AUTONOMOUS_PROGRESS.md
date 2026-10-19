@@ -622,3 +622,19 @@ stack stopped after archive. All capabilities remain local, owner attested rathe
 than semantic/license proof. Original roadmap continues. Next independent
 publication CAS-cleanup defect reproduced and focused repair30passed; its broad
 verification and separate commit follow this asset revision checkpoint.
+
+### Publication admission-rejection cleanup ownership
+
+Reproduced two NameError failures when an independent metadata edit makes the final
+artifact-bound SQL admission reject. Extracted transport helper referred to its
+caller's is_temp_download. Removed duplicate helper cleanup: the caller's finally
+owns the unique temporary copy, retained files survive and the intended409 returns
+before durable intent/provider calls. Real SQLite and actualPG regressions cover
+both file cases, preserved newer words/ready state, no events/receipts and released
+claims. Initial post-fix assertions incorrectly expected[] rather than baseline
+NULL for absent requests; corrected absence assertion. Focused30passed2.49s; full
+backend677passed/1optional skip72.52s; actualPG201passed32.30s plus native restore
+1.095s/source unchanged/archive184583bytes,SHA6ea71b0f56a704bdcc705ef26001ccde9cd408bf5755be79cbdd6813d06517cf.
+Evidence publish-cas-backend1.txt/xml and publish-cas-pg1/. UI unchanged; prior full24
+browser evidence retains its distinct frozen generation. No external/public/paid
+activity. Continue with remaining asset/storage/factual/editorial contracts.

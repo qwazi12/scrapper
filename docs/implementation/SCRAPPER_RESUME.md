@@ -52,8 +52,8 @@ passed the complete23-scenario regression. Reviewed immutable asset metadata/use
 permission decisions, stale/recovered review words and explicitly rebound revised
 native treatments passed focused actual UI and the complete24-browser regression.
 
-Latest completed broad evidence: **675 backend passes /1 optional skip**,
-**199 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+Latest completed broad evidence: **677 backend passes /1 optional skip**,
+**201 actual PostgreSQL passes** plus native restore, **6 frontend error unit
 passes**, production build/tsc passed, **24 actual browser scenarios passed**,
 including background audio and asset-import metadata/catalog read recovery.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not

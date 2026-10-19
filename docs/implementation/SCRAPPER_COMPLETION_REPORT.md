@@ -51,9 +51,9 @@ contain the ignored media, database snapshots or traces.
 
 | Lane | Verified result | Exact evidence |
 |---|---|---|
-| Full backend after reviewed asset revisions | **675 passed /1 optional skip**,83.13s,1 reported TestClient/httpx deprecation | `asset-annotations-backend2.txt`, `.xml` |
-| Actual PostgreSQL behavior | **199 passed**,34.26s,1 reported warning | `asset-annotations-pg1/pytest.txt`, `.xml` |
-| Actual private PostgreSQL recovery | **Passed**,1.088s;184063bytes; SHA256`23389f05d7992bb2007bc84810da85ff2e24c63db5be6706ab02d15006196b6d`; source unchanged | `asset-annotations-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
+| Full backend after publication conflict cleanup | **677 passed /1 optional skip**,72.52s,1 reported TestClient/httpx deprecation | `publish-cas-backend1.txt`, `.xml` |
+| Actual PostgreSQL behavior | **201 passed**,32.30s,1 reported warning | `publish-cas-pg1/pytest.txt`, `.xml` |
+| Actual private PostgreSQL recovery | **Passed**,1.095s;184583bytes; SHA256`6ea71b0f56a704bdcc705ef26001ccde9cd408bf5755be79cbdd6813d06517cf`; source unchanged | `publish-cas-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
 | Selected clip contracts | **34 passed**,11.32s, actual hold/loop frame/audio checks, strict ranges/source claims | `native-clips-focused2.txt` |
 | Native acceptance focused | **22 passed**,2.24s, then all5 new contracts including actual generated-tone Reel render **passed**,2.63s | `native-acceptance-focused2.txt`, `native-acceptance-focused3.txt` |
 | Frontend production build | Passed after reviewed asset revisions; explicit tsc passed | `asset-annotations-build2.txt`, `asset-annotations-tsc1.txt` |
@@ -70,7 +70,8 @@ contain the ignored media, database snapshots or traces.
 | Linux/container/CI | Prepared; **not executed** | `.github/workflows/quality.yml`, `scripts/e2e/Dockerfile` |
 | Real provider/staging/deployment | **Unverified; not executed** | No deployment/provider success receipt exists |
 
-The current full browser24 includes actual LongForm and five independent Countdown
+The current full browser24 precedes the later helper-only publication cleanup repair
+(covered by actual SQLite/PG conflict/ownership regression tests). It includes actual LongForm and five independent Countdown
 segment pipelines/stitch, native formats and private local downloads, independent
 source review, local worker handoff, simulated delivery/uncertainty/financial
 reconciliation, retained-media/history recovery, asset catalog, content lineage,

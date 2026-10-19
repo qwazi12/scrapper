@@ -950,8 +950,8 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     s.commit()
     s.refresh(item)
     if not claimed:
-        if is_temp_download and video_path:
-            video_path.unlink(missing_ok=True)
+        # The caller owns temporary-copy cleanup in its finally block. Retained
+        # media stays intact, and rejected admission must remain a controlled409.
         raise upload_post.UploadPostError("Already submitted or changed; reconcile or reload before another attempt", status_code=409)
     logbus.log("info", "queue_posting", f"Posting item #{item.id} ('{item.title[:40]}')")
     from .. import costs
