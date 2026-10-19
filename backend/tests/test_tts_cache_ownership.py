@@ -128,3 +128,28 @@ def test_lost_cache_generation_cannot_publish_provider_bytes(voice,tmp_path,monk
     output=tmp_path/'must-not-exist.mp3'
     with pytest.raises(LeaseLost):tts.synth('Original stale writer fixture.',output)
     assert not output.exists() and not list(cache.glob('*.mp3'))
+
+
+def test_stopped_consumer_leaves_cache_wait_before_generation(tmp_path,monkeypatch):
+    from backend.app import cache_use,control
+    busy=threading.Event();jobs=[];entered=[];original_pin=file_use.pin
+    @contextmanager
+    def observed(*args,**kwargs):
+        try:
+            with original_pin(*args,**kwargs) as handle:yield handle
+        except file_use.FileBusy:busy.set();raise
+    monkeypatch.setattr(file_use,'pin',observed)
+    target=tmp_path/'claimed.mp3'
+    def consume():
+        with pytest.raises(control.Cancelled):
+            with control.job('cache-test','Original cache wait','cache-test'):
+                jobs.append(control.current())
+                with cache_use.writer([target],wait_seconds=3):entered.append(True)
+    with file_use.pin([target],exclusive=True),ThreadPoolExecutor(max_workers=1) as pool:
+        future=pool.submit(consume)
+        try:
+            assert busy.wait(5);jobs[0].stop.set()
+        finally:
+            if jobs:jobs[0].stop.set()
+        future.result(timeout=5)
+    assert not entered

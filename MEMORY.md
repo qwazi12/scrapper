@@ -1962,3 +1962,36 @@ is separate pre-cache source5fc. The wider C01-C14 roadmap remains unfinished.
 No archive/auth/paid/public/account/push/deploy action.
 
 Save existing TTS index +docs/MEMORY. Next verify actual process-boundary cache contention and independent renderer motion-cache work ownership before broader C04/C11 closure. No automatic release or roadmap completion inferred.
+
+## C11 actual process-boundary cache/crash proof — tests only, active validation
+
+TTS scope saved558a68e. Verified archived TTS snapshotSHAec64e5b2383c276ee20869401be31c073aec1becc2f71ced9cc0630d013d47c6. Disk droppedto871MiB duringlocalwork; safely reclaimed8 exact known stoppedmarked E2E duplicate roots, verifyingeveryfile againstarchive/tar andpoststopWALsnapshot first. 5571files/302609829logicalbytes verified, eachpoststopDBhash exactlymatched original archivedsnapshot. Perarchive reclamationproofs retained; source/media/runtime solecopies retained. df about1.1GiB aftercleanup (OSfluctuates). No active/user/unrelatedroots removed.
+
+Addedactual2Pythonprocess same-key cachetest andactualkilled-writer recovery. Two distinctPIDs shareone completeofflinegeneration; partialfile fromconfirmeddeadprocess cannotbe promoted, injected DB-clockexpiry allowsnewgeneration, orphanpartial LRUreclaimedafterrecovery whilecompletebytesretained. Expiry isfaultinjectedafteractualdeath, not a claimofreal75sTTLwait oruncertaincloudbilling. AddedexplicitControlStop whilewaitingbeforebody. Initialfocused1:8passed/2testharnessfailures: /var vs /private pathalias query missednormalizedclaim; ControlJob correctlyreraisedcancelatcontext exit afterinnerexpectation. Fixedtestnormalization/outercancelexpectation; no productionpatch. Focused36passed3.44s acrosscache/process/file/leasecases. Existing33coveredgeneralowner-stop, explicitcachewait-cancel isnewcoveragehere.
+
+Newfullbackend1session(nextoutput) artifacts/tts-cache-process-backend1, actualPG1session(nextoutput) artifacts/tts-cache-process-pg1 active. No productioncode/UXchange from558a68e, previousscoped3UI remainsrelevantandseparatelyidentified. No newallgreen count inferred untilactualresults. No archive/auth/paid/public/account/push/deploy; widerC01-C14/motioncache stillopen. Continuewithindependentmotioncachecorpus; do noteditproductionPython whilebroadcurrentrunning.
+
+## Actual process-boundary cache recovery verified
+
+Two separate Python worker PIDs, sharing the actual database, now have direct
+regression coverage for one-key/one-generation cache reuse. A separate case
+terminates an owned provider worker after a partial response, confirms process
+death, injects expiry using database time, then starts a new worker. The partial
+is never a cache hit or promoted output; new complete bytes reach the consumer,
+and ordinary LRU removes only the abandoned partial afterward. A stopped waiter
+also exits before entering generation. Provider requests remain offline fixtures.
+Forced expiry after actual death is not a real75sTTL timing observation or proof
+of uncertain cloud billing/exactly-once provider requests.
+
+No production code changed from558a68e. Initial focused8passed/2test-harness
+failures exposed /var versus /private path normalization in the test query and
+the ControlJob context's expected cancellation rethrow; corrected focused36passed
+3.44s. Full backend856passed/1optional skip83.87s; actualPG378passed41.77s,
+native restore1.244s219626bytes/source unchanged/SHA
+2b642d6931856f3589b0e7ecf9b1f4ec5498e0a1bfc289db9f2b9e49ac27ae1e.
+Existing TTS scoped3 UI remains the separately identified integration proof for
+identical production code. Wider kill/restart, stop-all rollout/mixed versions,
+real provider invoices and operational recovery remain open. No new browser,
+production, billing or deployment claim follows from these process tests.
+
+Next motion corpus independently reproduced4failed0.48s: deterministic shared_work namespace causes simultaneous same-key builders (direct andactualrunner) todeleteoneanother'swork; no ownedmaterializedcopy API; revokedowner stillpromotescompletedCLIbytes. CLIboundary fixture usesactualoriginalproceduralMP4bytes butdoesnotrunHyperFrames. No motion productionfixyet. Leave backend/tests/test_motion_cache_ownership.py out ofC11tests-onlycommit. Plan: uniqueattemptwork +commonDBcachewriter, ownedpiececopiesbeforeclaimrelease, explicitassetreadpin, removebroadmotiondirreaderafterallmainconsumersmaterialize; preserve staticfallback/cancel semantics. Neednormalcompositor/fallbackregression plusactualtypedtests/PG beforeclaim. C01-C14 stillopen, no archive/auth/paid/public/account/push/deploy.
