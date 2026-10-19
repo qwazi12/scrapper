@@ -18,8 +18,11 @@ class ChannelDrive:
             return Reply(lambda: {'files': [{'id': 'channel', 'name': 'Fixture channel'}]})
         assert "'channel' in parents" in kwargs['q']
         if kwargs.get('pageToken') is None:
-            return Reply(lambda: {'files': [{'id': 'video-one', 'name': 'First #shorts [aaaaaaaaaaa].mp4',
-                                             'mimeType': 'video/mp4'}], 'nextPageToken': 'second'})
+            return Reply(lambda: {'files': [
+                {'id': 'video-one', 'name': 'First #shorts [aaaaaaaaaaa].mp4', 'mimeType': 'video/mp4'},
+                {'id': 'manifest', 'name': 'channel-manifest.json', 'mimeType': 'application/json'},
+                {'id': 'sidecar', 'name': 'First.mp4.info.json', 'mimeType': 'application/json'},
+            ], 'nextPageToken': 'second'})
         assert kwargs['pageToken'] == 'second'
         return Reply(lambda: {'files': [{'id': 'video-two', 'name': 'Second [bbbbbbbbbbb].mp4',
                                          'mimeType': 'video/mp4'}]})

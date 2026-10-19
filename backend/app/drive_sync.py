@@ -314,7 +314,14 @@ def sync_drive_to_queue(
                   supportsAllDrives=True,
                   includeItemsFromAllDrives=True,
               ).execute()
-              channel_videos.extend(resp.get("files", []))
+              # Check returned metadata too: sidecars/manifests must never become
+              # queue videos, even when the Drive search returns extra matches.
+              channel_videos.extend(
+                  f for f in resp.get("files", [])
+                  if (f.get("mimeType", "").lower().startswith("video/") or
+                      (f.get("mimeType", "").lower() in ("", "application/octet-stream") and
+                       Path(f.get("name", "")).suffix.lower() in (".mp4", ".mov", ".webm")))
+              )
               page_token = resp.get("nextPageToken")
               if not page_token:
                   break

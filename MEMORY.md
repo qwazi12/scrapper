@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## Live Drive sync correction — 2026-10-19 20:52 UTC (Codex)
+
+Logger fix 7d7004a is pushed to main and live in Railway deployment
+dfc5126b-3253-4289-98cf-6048780207a1. Actual sync then exposed a second issue:
+Drive search returned ten application/json manifests alongside 18 real videos.
+The sync imported all 28 as Review/Cinama:*; repeating it added zero duplicates.
+Removed only the ten exact manifest Review rows with the app’s undo-backed
+bulk delete; Drive manifests and all 18 real video rows were retained. Added
+a defensive returned-metadata filter and JSON/sidecar regression coverage.
+The archive worker was stopped safely before deployment, with 18 verified
+videos (71,024,790 bytes), its claim released and unfinished local bytes retained.
+Resume after deploying and proving the corrected filter; no publication occurred.
+
 ## Drive sync repair — 2026-10-19 (Codex, in progress)
 
 The first real POST /api/drive/sync reached its tracked job but failed before
