@@ -42,13 +42,18 @@ try:
         f"-h '' -k {root/'socket'} -c shared_buffers=16MB -c max_connections=30"],env=env,check=True)
     started = True
     subprocess.run([str(bin_path/'createdb'),'-h',str(root/'socket'),'-U','scrapper_fixture','scrapper_fixture'],env=env,check=True)
-    manifest={'root':str(root),'postgres_runtime':str(bin_path),'network':'private Unix socket; no TCP listener',
+    restore_out=out/('restore-'+root.name)
+    manifest={'restore_artifacts':str(restore_out),'root':str(root),'postgres_runtime':str(bin_path),'network':'private Unix socket; no TCP listener',
         'database':'new scrapper_fixture only','external_spend_usd':0}
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
     with (out/'pytest.txt').open('w') as file:
         result=subprocess.run([sys.executable,'-m','pytest','backend/pgtests','-q',
             '-W','error::pytest.PytestUnhandledThreadExceptionWarning',f'--junitxml={out/"pytest.xml"}',*args.pytest_args],
             cwd=repo,env=env,stdout=file,stderr=subprocess.STDOUT).returncode
+    if result == 0:
+        with (out/'restore-drill.txt').open('w') as file:
+            result=subprocess.run([sys.executable,'scripts/verify_postgres_restore.py','--bin',str(bin_path),
+                '--artifacts',str(restore_out)],cwd=repo,env=env,stdout=file,stderr=subprocess.STDOUT).returncode
     if result == 0:
         with (out/'schema.sql').open('w') as file:
             subprocess.run([str(bin_path/'pg_dump'),'-h',str(root/'socket'),'-U','scrapper_fixture',
