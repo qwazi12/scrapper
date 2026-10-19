@@ -287,3 +287,38 @@ externalspend0. These6s/81s fixtures do not prove excellent3min/8min narratives.
 Wider semantic/caption/editorial/media/provider/operational work remains.
 Next shared-TTS-cache changes are separate and not included in this full32 source.
 No archive/auth/paid/public/account/push/deploy action.
+
+## Narration cache ownership verified
+
+Each TTS cache key, unique provider temporary file and destination is protected
+by a bounded cancelable database writer claim. Concurrent misses recheck after
+ownership and share the completed generation; cache hits copy before releasing
+ownership. LRU cannot remove a live source/partial response. Generation loss
+blocks promotion. A busy error from the consumer body never repeats that work.
+The120s wait is bounded; an unusually long provider attempt can leave a later
+consumer with an explicit busy/retry error. No extra request is made by waiting.
+
+Broad TTS directory reader claims were removed from Studio/Countdown wrappers to
+avoid reader-to-writer deadlock between projects. Protection now lives in the
+common synthesizer, including native and compilation callers. Shared motion/audio
+directory readers remain for their separate lifecycle. These contracts do not
+prove real speech-provider billing, perfect audio or every process crash scenario.
+
+Four corrected independent failures reproduced cache-reader/temp-write eviction
+and duplicate generation both directly and through actual Studio runners.
+Focused33passed1.99s includes cancellation/boundedwait, one-body execution and
+revoked generation. Full backend853passed/1optional skip98.13s; realPG375passed
+40.16s/native restore1.572s219372bytes/source unchanged/SHA
+0fe85a4c7ca067f494dd6257dd86ea18084ad6077394db9a5303f9a3acbca39b.
+Production frontend unchanged from durationbuild2; explicit tsc1passed.
+Fresh scoped3 browser passed2.3min: actual LongForm,Top5 and nativeShort/carousel
+now exercise productiontts.synth/cache, replacing only the provider with installed
+offline speech. Five independent segments share one common-phrase generation;
+14completed offline provider receipts atTop5 review have exact matching cached
+bytes and zero cloud calls. Root fake-speech ledger labels its simulated boundary.
+This is actual common-cache integration, not cloud speech/billing proof.
+SourceSHAf7c58e31ebd365c3bb696d0601b30f6a199089af34d2568d667e100d3402f770,
+evidence history/tts-cache-ownership1; full reports/traces/media/source/runtime
+ledgers/fakeDrive/verified snapshot retained; owned stack stopped. Prior full32
+is separate pre-cache source5fc. The wider C01-C14 roadmap remains unfinished.
+No archive/auth/paid/public/account/push/deploy action.

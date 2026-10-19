@@ -100,3 +100,38 @@ Studio/Countdown exports retain independent content-addressed media and saved-in
 Settled queue-row reclamation first captures exact available local files, content, targets and delivery observations in DeliveryArchive, plus a publication-journal reference. A missing/legacy file remains explicitly unavailable. Shared readers may finish; an exclusive mutation or uncertain submission keeps the queue row. API history survives numeric-ID reuse, is owner-private, and verifies hashes before streaming. Unknown file types download as attachments with nosniff. The owner Settings history remains reachable when schedule reads fail.
 
 Drive creation IDs are retained even if checksum verification or content ownership later fails. Independently verified transfer receipts and kept current/superseded version records are append-only. Prior remote versions are retained rather than assuming the new render replaces their bytes. These are local mocked-provider contracts; no Drive account was contacted. Remote garbage collection is deliberately unavailable until managed-copy/reference proof exists.
+
+## Narration cache ownership verified
+
+Each TTS cache key, unique provider temporary file and destination is protected
+by a bounded cancelable database writer claim. Concurrent misses recheck after
+ownership and share the completed generation; cache hits copy before releasing
+ownership. LRU cannot remove a live source/partial response. Generation loss
+blocks promotion. A busy error from the consumer body never repeats that work.
+The120s wait is bounded; an unusually long provider attempt can leave a later
+consumer with an explicit busy/retry error. No extra request is made by waiting.
+
+Broad TTS directory reader claims were removed from Studio/Countdown wrappers to
+avoid reader-to-writer deadlock between projects. Protection now lives in the
+common synthesizer, including native and compilation callers. Shared motion/audio
+directory readers remain for their separate lifecycle. These contracts do not
+prove real speech-provider billing, perfect audio or every process crash scenario.
+
+Four corrected independent failures reproduced cache-reader/temp-write eviction
+and duplicate generation both directly and through actual Studio runners.
+Focused33passed1.99s includes cancellation/boundedwait, one-body execution and
+revoked generation. Full backend853passed/1optional skip98.13s; realPG375passed
+40.16s/native restore1.572s219372bytes/source unchanged/SHA
+0fe85a4c7ca067f494dd6257dd86ea18084ad6077394db9a5303f9a3acbca39b.
+Production frontend unchanged from durationbuild2; explicit tsc1passed.
+Fresh scoped3 browser passed2.3min: actual LongForm,Top5 and nativeShort/carousel
+now exercise productiontts.synth/cache, replacing only the provider with installed
+offline speech. Five independent segments share one common-phrase generation;
+14completed offline provider receipts atTop5 review have exact matching cached
+bytes and zero cloud calls. Root fake-speech ledger labels its simulated boundary.
+This is actual common-cache integration, not cloud speech/billing proof.
+SourceSHAf7c58e31ebd365c3bb696d0601b30f6a199089af34d2568d667e100d3402f770,
+evidence history/tts-cache-ownership1; full reports/traces/media/source/runtime
+ledgers/fakeDrive/verified snapshot retained; owned stack stopped. Prior full32
+is separate pre-cache source5fc. The wider C01-C14 roadmap remains unfinished.
+No archive/auth/paid/public/account/push/deploy action.

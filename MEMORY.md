@@ -1919,3 +1919,46 @@ Next shared-TTS-cache changes are separate and not included in this full32 sourc
 No archive/auth/paid/public/account/push/deploy action.
 
 Next C04 TTS ownership independent repro: first4failed0.53s included a missing canonical-ID fixture; corrected validproject IDs and actual nested_ttscachepath produced4real failures0.40s: LRU deletes hit source during copy, deletes partial provider file beforepromotion, and two concurrent misses generate twice bothdirect andthrough actualStudio runner. Current newcache_use.writer uses bounded cancelable DB exclusiveper-key+unique-tempclaims, rechecks afterownership, protectscopy/publication, and doesnotrepeat body onFileBusy. Removed broad_ttscache parentreader inrunner/Countdown toavoidupgrade deadlock (motion/audio parentclaims remain). First focused1 hit test injectedcleanup in same invocation, which intentionally shares nestedownership; corrected toactual independent backgroundthread. Focused33passed1.99s across7newcache/lease/lifecycle tests includes boundedwait, no bodyrepeat, revokedgeneration preventspublication. Tests useactualoriginalMP3bytes andDBclaims, simulatedprovider notpaid/live. No broadPG/build/UI cacheproofyet. CurrentdurationINDEX is5fc verifiedsource; commit existingindex+docs/MEMORY ONLY, leaveTTS source/tests/PGwrapper unstaged. Furtheraudit foundsharedmotion deterministic_workdir collision andcachesource consumerpathneedsprotection; investigate separately afterTTS.
+
+## Shared narration cache — current uncommitted C04 source
+
+Duration/acknowledgment source saved91f8b73 after full32. New TTS scope newcache_use.writer +tts.py +removal of broad_ttscache directoryreaders inStudio runner/Countdown, leavingmotion/audio parentclaims. Each same-key provider/temp/destination now has bounded cancelable DB exclusiveclaims; cache is rechecked afterownership, providerfile atomicallypromoted aftergeneration guard, copied before release. Independent cachecopy/tempwriter LRU and duplicateprovider races reproduced4failures in correctedrepro3. Firstrepro had invalidfixture tmdbID; focused1cleanupin same invocation was intentionally nested-owner semantics, corrected to independentcleanupthread. Focused33passed1.99s includes7cache contracts: realoriginalMP3bytes/DBclaims, two standalone andtwo actualrunner consumers reuseone simulatedgeneration, boundedwait, bodyFileBusynorepeat, revokedgeneration no publication. Provider/cloud spend0.
+
+Safe E2E now replaces only_chirp withinstalled offlinevoice, keeps productiontts.synth/cache/claims active. TemporaryAIFF/WAVfixture sidecars pinned; fake-speech-provider ledger explicitlyreal_cloud_tts=false, exactspokenkey/mediahashes recorded. Top5 UI will verify five independentsegments shareone common-phrasegeneration, cachedbytesmatchreceipts. Harness previouslyreplacedentiretts.synth; no earlier full32 claim for thispath. Current broadbackend1session1523/actualPG1session25382/tsc1session91308 active; Python stable afterlaunch. Productionfrontendunchangeddurationbuild2. Fresh scoped3 browseractive stack25929, exactsource/root in tts-cache-ownership1-stack.txt, prelaunchspec retained. CasesLongForm,Top5,nativeShort/carousel useactualvoicecache. Need exactresults/evidencearchive/stop beforecommit. Remainingmotion shared_workdir collision/returned cachepath andwiderC01-C14 stillopen. No archive/auth/paid/public/account/push/deploy.
+
+## Narration cache ownership verified
+
+Each TTS cache key, unique provider temporary file and destination is protected
+by a bounded cancelable database writer claim. Concurrent misses recheck after
+ownership and share the completed generation; cache hits copy before releasing
+ownership. LRU cannot remove a live source/partial response. Generation loss
+blocks promotion. A busy error from the consumer body never repeats that work.
+The120s wait is bounded; an unusually long provider attempt can leave a later
+consumer with an explicit busy/retry error. No extra request is made by waiting.
+
+Broad TTS directory reader claims were removed from Studio/Countdown wrappers to
+avoid reader-to-writer deadlock between projects. Protection now lives in the
+common synthesizer, including native and compilation callers. Shared motion/audio
+directory readers remain for their separate lifecycle. These contracts do not
+prove real speech-provider billing, perfect audio or every process crash scenario.
+
+Four corrected independent failures reproduced cache-reader/temp-write eviction
+and duplicate generation both directly and through actual Studio runners.
+Focused33passed1.99s includes cancellation/boundedwait, one-body execution and
+revoked generation. Full backend853passed/1optional skip98.13s; realPG375passed
+40.16s/native restore1.572s219372bytes/source unchanged/SHA
+0fe85a4c7ca067f494dd6257dd86ea18084ad6077394db9a5303f9a3acbca39b.
+Production frontend unchanged from durationbuild2; explicit tsc1passed.
+Fresh scoped3 browser passed2.3min: actual LongForm,Top5 and nativeShort/carousel
+now exercise productiontts.synth/cache, replacing only the provider with installed
+offline speech. Five independent segments share one common-phrase generation;
+14completed offline provider receipts atTop5 review have exact matching cached
+bytes and zero cloud calls. Root fake-speech ledger labels its simulated boundary.
+This is actual common-cache integration, not cloud speech/billing proof.
+SourceSHAf7c58e31ebd365c3bb696d0601b30f6a199089af34d2568d667e100d3402f770,
+evidence history/tts-cache-ownership1; full reports/traces/media/source/runtime
+ledgers/fakeDrive/verified snapshot retained; owned stack stopped. Prior full32
+is separate pre-cache source5fc. The wider C01-C14 roadmap remains unfinished.
+No archive/auth/paid/public/account/push/deploy action.
+
+Save existing TTS index +docs/MEMORY. Next verify actual process-boundary cache contention and independent renderer motion-cache work ownership before broader C04/C11 closure. No automatic release or roadmap completion inferred.

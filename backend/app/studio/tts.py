@@ -215,19 +215,23 @@ def synth(text: str, dest: pathlib.Path) -> pathlib.Path:
     control.check()  # Stop between sentences
     spoken = speakable(text)
     cached = cache_dir() / f"{_cache_key(spoken)}.mp3"
-    if not (cached.exists() and cached.stat().st_size > 0):
-        from .. import costs
+    from uuid import uuid4
+    from .. import cache_use,file_use
+    tmp = cached.with_suffix(f".{uuid4().hex}.tmp.mp3")
+    # Recheck after ownership: another process may have completed the same
+    # voice while we waited. The partial provider file is protected from LRU
+    # too; consumers receive an independent copy before the claim is released.
+    with cache_use.writer([cached,tmp,dest]):
         try:
-            costs.check_budget()
-        except costs.BudgetExceeded as exc:
-            raise TTSError(str(exc)) from exc
-        import uuid
-        tmp = cached.with_suffix(f".{uuid.uuid4().hex}.tmp.mp3")
-        try:
-            (_gemini if engine() == "gemini" else _chirp)(spoken, tmp)
-            control.check()
-            tmp.replace(cached)
+            if not (cached.exists() and cached.stat().st_size > 0):
+                from .. import costs
+                try:costs.check_budget()
+                except costs.BudgetExceeded as exc:raise TTSError(str(exc)) from exc
+                (_gemini if engine() == "gemini" else _chirp)(spoken, tmp)
+                control.check();file_use.assert_current()
+                tmp.replace(cached)
+            control.check();file_use.assert_current()
+            shutil.copyfile(cached, dest)
         finally:
             tmp.unlink(missing_ok=True)  # atomic: no half-written cache entries
-    shutil.copyfile(cached, dest)
     return dest

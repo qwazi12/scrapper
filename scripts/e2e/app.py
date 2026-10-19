@@ -103,19 +103,31 @@ def ask(prompt, images=None, **kwargs):
 
 def synth(text, dest):
     dest = Path(dest); dest.parent.mkdir(parents=True, exist_ok=True)
+    from backend.app.file_use import pin
     # Installed local voices only. No cloud TTS, credentials or downloadable voices.
     if shutil.which("say"):
         wav = dest.with_suffix(".aiff")
-        subprocess.run(["say", "-v", "Samantha", "-r", "190", "-o", str(wav), text], check=True, timeout=30)
-        media.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav), "-af", "loudnorm=I=-14:TP=-1:LRA=7", str(dest)])
-        wav.unlink()
+        with pin([wav],exclusive=True):
+            try:
+                subprocess.run(["say", "-v", "Samantha", "-r", "190", "-o", str(wav), text], check=True, timeout=30)
+                media.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav), "-af", "loudnorm=I=-14:TP=-1:LRA=7", str(dest)])
+            finally:wav.unlink(missing_ok=True)
     elif shutil.which("espeak"):
         wav = dest.with_suffix(".wav")
-        subprocess.run(["espeak", "-w", str(wav), text], check=True, timeout=30)
-        media.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav), str(dest)])
-        wav.unlink()
+        with pin([wav],exclusive=True):
+            try:
+                subprocess.run(["espeak", "-w", str(wav), text], check=True, timeout=30)
+                media.run(["ffmpeg", "-v", "error", "-y", "-i", str(wav), str(dest)])
+            finally:wav.unlink(missing_ok=True)
     else:
         raise RuntimeError("Offline speech voice unavailable: install espeak for local E2E")
+    import hashlib
+    from backend.app.studio.media_quality import file_hash
+    with (ROOT/'fake-speech-provider.jsonl').open('a') as ledger:
+        ledger.write(json.dumps({'boundary':'offline_installed_voice','real_cloud_tts':False,
+            'spoken_sha256':hashlib.sha256(text.encode()).hexdigest(),'cache_key':tts._cache_key(text),
+            'sha256':file_hash(dest),'bytes':dest.stat().st_size})+'\n')
+        ledger.flush();os.fsync(ledger.fileno())
     return dest
 
 
@@ -175,7 +187,8 @@ def fetch_source(url):
 fact_verification.fetch = fetch_source
 imdb.list_videos = lambda imdb_id: [] if imdb_id == "tt0000040" else [{"id": "synthetic-trailer", "name": "Original fixture", "type": "Trailer", "seconds": 12}]
 imdb.download = lambda video, dest: shutil.copy(TRAILER, dest)
-tts.synth = synth
+tts._chirp = synth
+tts.engine = lambda: 'chirp'
 tts.configured = lambda: True
 upload_post.list_accounts = list_accounts
 upload_post.list_profiles = list_profiles
@@ -237,6 +250,7 @@ def isolation():
     return {"safe_e2e_mode": settings.safe_e2e_mode, "data_dir": settings.data_dir,
             "worker_mode": settings.worker_mode, "real_publish_disabled": True,
             "provider_conditions": "offline fixtures + installed local speech", "external_spend_usd": 0,
+            "production_tts_cache": True,
             "blocked_network_attempts": e2e_safety.blocked_network_attempts,
             "scheduler_threads": [t.name for t in threading.enumerate() if t.name in ("posting_queue_scheduler", "scrapper-worker")],
             "fake_publish_receipts": len(ledger.read_text().splitlines()) if ledger.exists() else 0}

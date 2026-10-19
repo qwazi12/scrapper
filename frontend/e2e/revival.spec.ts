@@ -313,6 +313,17 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   expect(isolation.blocked_network_attempts).toBe(0);
   expect(isolation.scheduler_threads).toEqual([]);
   expect(isolation.fake_publish_receipts).toBe(startingReceipts);  // No automatic submission during the Countdown workflow.
+  expect(isolation.production_tts_cache).toBe(true);
+  const speechRows = readFileSync(path.join(stack.root, "fake-speech-provider.jsonl"), "utf8").trim().split("\n").map(row => JSON.parse(row));
+  const sharedWords = createHash("sha256").update("Original colored shapes change through six scenes.").digest("hex");
+  const commonCalls = speechRows.filter(row => row.spoken_sha256 === sharedWords);
+  expect(commonCalls).toHaveLength(1); // Five independent segments reuse the same checked phrase.
+  for (const receipt of speechRows) {
+    expect(receipt.real_cloud_tts).toBe(false);
+    const cached = path.join(stack.root, "data/studio/_ttscache", `${receipt.cache_key}.mp3`);
+    expect(createHash("sha256").update(readFileSync(cached)).digest("hex")).toBe(receipt.sha256);
+  }
+  writeFileSync(path.join(evidence, "tts-cache-evidence.json"), JSON.stringify({ scope: "Actual production cache/installed offline voice; no cloud TTS request or billing proof", common_phrase_generations: commonCalls.length, receipts: speechRows }, null, 2));
   // Reproduce the immediate post-start stale GET, independently of timing.
   let injectedCountdownDone = false;
   await page.route(new RegExp(`/api/countdowns/${cid}$`), async route => {
