@@ -113,3 +113,13 @@ rather than presenting zero as a healthy result. Request generations prevent old
 search responses from replacing a newer query's rows/counts/error state. Query
 inputs remain stable during import; the post-import read uses their current
 submitted context instead of silently resetting them.
+
+Asset metadata/use decision forms now preserve private words by API origin and
+stable catalog identity. A stale source revision cannot be overwritten: reload
+current metadata, compare original/history/current fields with retained words,
+explicitly rebase the private draft and acknowledge the exact decision again.
+Superseded exact receipt recovery never restores an old permission decision.
+Saved native campaigns can be copied into a revised private treatment; dirty draft
+replacement requires an explicit choice, and changed research/source versions must
+be reviewed before new creation. Timing/gain/copy is preserved; old manifests and
+content mappings stay historical evidence. See ASSET_CATALOG.md.

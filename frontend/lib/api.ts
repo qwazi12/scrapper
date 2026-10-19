@@ -37,7 +37,7 @@ export type ContentBinding = { id: string; revision: number; platform: string; a
   data: { decision: ContentMappingDecision; source_fingerprint: string; supersedes: string | null;
     cost_snapshot: { status: string; amount_usd: number | null; scope?: string; reason?: string; limitations?: string[]; by_basis?: Record<string, number> }; mapping_basis: string; public_bytes_verified: boolean } };
 export type AudienceAdapterStatus = { platform: string; status: string; reason: string; mode: string; real_account_verified: boolean; latency: string };
-export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null; clip_start?: number | null; clip_end?: number | null; clip_end_policy?: "hold" | "loop" | null;
+export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null; asset_metadata_version?: string | null; audio_metadata_version?: string | null; clip_start?: number | null; clip_end?: number | null; clip_end_policy?: "hold" | "loop" | null;
   background_audio_id?: number | null; audio_start?: number | null; audio_end?: number | null; audio_end_policy?: "silence" | "loop" | null; audio_gain_db?: number | null };
 export type NativeExport = { id: string; campaign_id: number; format: string; queue_item_id: number | null;
   approval: { fingerprint: string; approved_at?: string; schema?: number; at?: string } | null;
@@ -50,12 +50,18 @@ export type NativeExport = { id: string; campaign_id: number; format: string; qu
     manual_assets?: { file: string; sha256: string; content_type: string }[];
     limitations: string[]; timeline?: { start: number; end: number; text: string }[] } };
 export type NativeCampaign = { id: number; opportunity_id: number; stage_status: string; stage_message: string | null;
-  brief: { title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; reel_caption?: string; carousel_caption: string; community_question: string; image_text?: string; image_caption?: string; community_text?: string; poll_question?: string; poll_options?: string[] };
+  brief: { research_fingerprint?: string; title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; reel_caption?: string; carousel_caption: string; community_question: string; image_text?: string; image_caption?: string; community_text?: string; poll_question?: string; poll_options?: string[] };
   exports: NativeExport[] };
-export type IndexedAsset = { id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string; media?: { seconds: number } } };
+export type IndexedAsset = { asset_identity: string; metadata_version: string; use_status: "permitted" | "blocked"; id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string; description?: string; people?: string[]; media?: { seconds: number } } };
 export type CatalogAsset = IndexedAsset & { score: number; matching_spans: { start: number; end: number; text: string }[];
   provenance: IndexedAsset["provenance"] & { description?: string; people?: string[];
     media?: { seconds: number; bytes: number; caption_count: number; frames: { at: number; sha256: string }[] } } };
+export type AssetMetadata = { license: "owner_created" | "licensed"; attestation: string; description: string; tags: string[]; people: string[];
+  caption_cues: { start: number; end: number; text: string }[]; use_status: "permitted" | "blocked" };
+export type AssetMetadataReview = { asset_id: number; asset_identity: string; sha256: string; kind: string; version: string; identity_known: boolean;
+  metadata: AssetMetadata; seconds: number | null; original: { tags: string[]; provenance: Record<string, unknown> }; history_count: number;
+  history: { id: string; revision: number; created_at: string; data: Record<string, unknown> }[]; scope: string };
+export type AssetMetadataDecision = AssetMetadata & { expected_version: string; rationale: string; reviewed: true };
 export type CommentCursorView = { id: string; version: string; pages: number; pagination_exhausted: boolean; can_resume: boolean; status: string; last_error: string | null; seen_entries: number; new_versions: number; duplicates: number; scope: string };
 export type FeedbackCoverage = { reported_replies: number | null; retained_replies: number; pagination_exhausted: boolean; requires_decision: boolean; parent_evidence_id: string; scope: string };
 export type AudienceFeedback = { id: number; feedback_identity: string; text: string; category: string; classification: string;
@@ -1138,6 +1144,8 @@ export const api = {
   audienceStatus: () => req<AudienceAdapterStatus>("/api/editorial/audience/status", { headers: headers(false) }),
   audienceSync: (id: string) => req<{ status: string; reason?: string; through_day?: string; observed_at?: string; created: boolean }>(`/api/editorial/audience/${id}/sync`, { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true }) }),
   contentPreview: (source: ContentSource) => source.kind === "native_export" ? withToken(`${apiBase()}/api/editorial/exports/${source.id}/file/${encodeURIComponent(source.preview?.file?.split("/").pop() || "")}`) : source.kind === "export_version" ? withToken(`${apiBase()}/api/export-history/${source.id}/file/${source.preview?.role || "video"}`) : withToken(`${apiBase()}/api/delivery-history/${source.id}/file/${source.preview?.index || 0}`),
+  assetMetadataReview: (id: number) => req<AssetMetadataReview>(`/api/editorial/assets/${id}/metadata-review`, { headers: headers(false) }),
+  assetMetadataSave: (id: number, decision: AssetMetadataDecision) => req<{ id: string; created: boolean; is_current: boolean; view: AssetMetadataReview }>(`/api/editorial/assets/${id}/metadata-review`, { method: "POST", headers: headers(), body: JSON.stringify(decision) }),
   assetSearch: (q: string, kind: string) => req<{ assets: CatalogAsset[]; total: number; method: string }>(`/api/editorial/assets/search?${new URLSearchParams({ q, ...(kind ? { kind } : {}) })}`, { headers: headers(false) }),
   assetMedia: (id: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/media`),
   assetFrame: (id: number, index: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/frame/${index}`),

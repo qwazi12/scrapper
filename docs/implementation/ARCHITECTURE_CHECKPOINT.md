@@ -32,6 +32,10 @@ flowchart LR
   API --> BRIEF[Owner research / original angle / format choices]
   BRIEF --> CAM[Native campaigns / explicit selected assets]
   ASSETS[Authorized local still / video / audio catalog] --> SEARCH[Lexical tags / owner captions / provenance]
+  ASSETS --> ANNOTATION[Append-only owner metadata/use decisions / exact-source CAS]
+  ANNOTATION --> SEARCH
+  ANNOTATION --> GATE[Current permission / source-version gates]
+  GATE --> CAM
   SEARCH --> CAM
   CAM --> NATIVE[Immutable native exports / private manual packages]
   NATIVE --> QA
@@ -43,6 +47,13 @@ flowchart LR
   PROVIDER --> RECON[Read-only reconciliation / owner evidence]
   RECON --> HISTORY[Retained delivery evidence and exact bytes]
 ```
+
+Original catalog bytes/import provenance stay retained while append-only owner
+decisions can correct searchable labels/captions or block future controlled use.
+Native snapshots include stable catalog identity and effective provenance. Source
+claims fence decisions against render/review/queue/dispatch; old content lineage
+remains historical evidence. The owner can copy a saved campaign into a private
+revised treatment and explicitly review changed research/source versions.
 
 The catalog accepts authorized video/audio. Native Short/Reel-only campaigns
 can select explicit video intervals with silent retained excerpts and intentional

@@ -91,6 +91,8 @@ from .editorial import campaigns as campaign_routes
 app.include_router(campaign_routes.router)
 from .editorial import asset_catalog
 app.include_router(asset_catalog.router)
+from .editorial import asset_annotations
+app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes
 app.include_router(learning_routes.router)
 from .editorial import content_lineage,audience

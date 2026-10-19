@@ -22,6 +22,7 @@ from ..models import MediaAsset
 from ..studio import media
 from ..studio.media_quality import file_hash
 from ..worker_leases import clock,scope
+from . import asset_annotations as annotations
 
 router=APIRouter(prefix='/api/editorial/assets',dependencies=[Depends(require_token)])
 MAX_SOURCE=50*1024*1024
@@ -53,12 +54,17 @@ def cues(raw,seconds):
     return result
 
 
-def out(asset):
-    provenance={**asset.provenance}
+def out(asset,head=None):
+    tags,provenance=annotations.effective(asset,head)
     if 'media' in provenance:
         metadata={**provenance['media']};metadata['caption_count']=len(metadata.pop('caption_cues',[]));provenance['media']=metadata
-    return {'id':asset.id,'kind':asset.kind,'sha256':asset.sha256,'tags':asset.tags,'provenance':provenance,
+    return {'id':asset.id,'kind':asset.kind,'sha256':asset.sha256,'tags':tags,'provenance':provenance,
+        'asset_identity':annotations.identity(asset),'metadata_version':annotations.current_version(asset,head),
+        'use_status':provenance.get('use_status','permitted'),
         'caption_basis':'owner_supplied_unverified','identity_basis':'owner_labels_not_face_recognition'}
+
+
+def current_out(s,asset):return out(asset,annotations.latest_for(s,[asset]).get(annotations.identity(asset)))
 
 
 def verify_existing(asset):
@@ -107,7 +113,7 @@ async def import_media(file:UploadFile=File(...),kind:Literal['video','audio']=F
                 sha=file_hash(target);existing=s.query(MediaAsset).filter_by(sha256=sha).first()
                 if existing:
                     verify_existing(existing)
-                    return {**out(existing),'duplicate':True,'provenance_preserved':True}
+                    return {**current_out(s,existing),'duplicate':True,'provenance_preserved':True}
                 final=base/(sha+target.suffix);frames=[]
                 from ..studio.stage_plan import dhash
                 if kind=='video':
@@ -139,8 +145,8 @@ async def import_media(file:UploadFile=File(...),kind:Literal['video','audio']=F
                     except IntegrityError:
                         s.rollback();existing=s.query(MediaAsset).filter_by(sha256=sha).one()
                         verify_existing(existing)
-                        return {**out(existing),'duplicate':True,'provenance_preserved':True}
-                    return {**out(row),'duplicate':False,'provenance_preserved':True}
+                        return {**current_out(s,existing),'duplicate':True,'provenance_preserved':True}
+                    return {**current_out(s,row),'duplicate':False,'provenance_preserved':True}
         except HTTPException:raise
         except (ValueError,RuntimeError,OSError) as exc:
             s.rollback();raise HTTPException(400,str(exc)[:300]) from exc
@@ -153,17 +159,18 @@ def search(q:str=Query(default='',max_length=200),kind:Literal['image','video','
     terms=set(re.findall(r'\w+',q.casefold()));matches=[]
     query=s.query(MediaAsset)
     if kind:query=query.filter_by(kind=kind)
-    for asset in query.order_by(MediaAsset.id.desc()).yield_per(100):
-        if not asset.provenance.get('attestation'):continue
-        labels=' '.join([*asset.tags,*asset.provenance.get('people',[])])
-        description=asset.provenance.get('description','')
-        captions=asset.provenance.get('media',{}).get('caption_cues',[])
+    for asset,head in annotations.entries(s,query.order_by(MediaAsset.id.desc())):
+        tags,provenance=annotations.effective(asset,head)
+        if not provenance.get('attestation'):continue
+        labels=' '.join([*tags,*provenance.get('people',[])])
+        description=provenance.get('description','')
+        captions=provenance.get('media',{}).get('caption_cues',[])
         label_terms=set(re.findall(r'\w+',labels.casefold()));description_terms=set(re.findall(r'\w+',description.casefold()))
         spans=[cue for cue in captions if terms & set(re.findall(r'\w+',cue['text'].casefold()))]
         score=3*len(terms&label_terms)+2*len(terms&description_terms)+len(spans)
         if terms and not score:continue
         total+=1
-        matches.append({**out(asset),'score':score,'matching_spans':spans[:20]})
+        matches.append({**out(asset,head),'score':score,'matching_spans':spans[:20]})
         matches.sort(key=lambda row:(-row['score'],-row['id']))
         if len(matches)>limit:matches.pop()
     return {'method':'lexical_tags_description_owner_captions','semantic_model':'not_run','total':total,'assets':matches}
@@ -180,7 +187,9 @@ def asset_file(s,aid):
 @router.get('/{aid}')
 def details(aid:int,s:Session=Depends(get_session)):
     asset,_=asset_file(s,aid)
-    return {**out(asset),'caption_cues':asset.provenance.get('media',{}).get('caption_cues',[])}
+    head=annotations.latest_for(s,[asset]).get(annotations.identity(asset))
+    _,provenance=annotations.effective(asset,head)
+    return {**out(asset,head),'caption_cues':provenance.get('media',{}).get('caption_cues',[])}
 
 
 @router.get('/{aid}/media')

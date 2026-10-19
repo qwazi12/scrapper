@@ -41,6 +41,19 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   const incompatibleClips = beats.some(beat => assets.find(a => a.id === beat.asset_id)?.kind === "video") && selected.some(fmt => !["short", "reel"].includes(fmt));
   const incompatibleAudio = beats.some(beat => !!beat.background_audio_id) && selected.some(fmt => !["short", "reel"].includes(fmt));
   const missingAudio = beats.some(beat => !!beat.background_audio_id && !assets.some(asset => asset.id === beat.background_audio_id && asset.kind === "audio"));
+  const sourceChanged = beats.some(beat => [[beat.asset_id, beat.asset_metadata_version], [beat.background_audio_id, beat.audio_metadata_version]].some(([id, version]) => {
+    if (!id) return false;
+    const asset = assets.find(a => a.id === id);
+    return !asset || asset.use_status !== "permitted" || version !== asset.metadata_version;
+  }));
+  const [replacement, setReplacement] = useState<NativeCampaign | null>(null);
+  function revised(c: NativeCampaign) {
+    const b = c.brief;
+    draft.change({ oid: String(c.opportunity_id), researchFingerprint: b.research_fingerprint || "", title: b.title, beats: JSON.stringify(b.beats), selected: JSON.stringify(b.formats),
+      shortCaption: b.short_caption, carouselCaption: b.carousel_caption, question: b.community_question || "", reel_caption: b.reel_caption || "", image_text: b.image_text || "",
+      image_caption: b.image_caption || "", community_text: b.community_text || "", poll_question: b.poll_question || "", poll_options: (b.poll_options || []).join("\n") });
+    setReplacement(null); setMessage(`Campaign #${c.id} copied into a private revised treatment. Review current research and source metadata before creating its new version.`);
+  }
   const chosen = approved.find(o => String(o.id) === oid);
   const researchChanged = !!oid && (!chosen?.approval?.fingerprint || draft.value.researchFingerprint !== chosen.approval.fingerprint);
   async function load() {
@@ -64,7 +77,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   }
   async function create(e: FormEvent) {
     e.preventDefault();
-    if (draft.pending || draft.conflict || invalidDraft || researchChanged || !chosen) return;
+    if (draft.pending || draft.conflict || invalidDraft || researchChanged || sourceChanged || !chosen) return;
     act(async () => {
       await api.nativeCreate({ opportunity_id: Number(oid), expected_research_fingerprint: draft.value.researchFingerprint, title, formats: selected, beats,
         short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question, ...copy, poll_options: copy.poll_options.split("\n").filter(text => text.trim()) });
@@ -105,8 +118,18 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
         <label style={field}>Beat text {i + 1}<textarea aria-label={`Beat text ${i + 1}`} required minLength={12} maxLength={140} value={beat.text} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, text: e.target.value } : b))} /></label>
         <label style={field}>Research excerpt {i + 1}<select aria-label={`Research excerpt ${i + 1}`} value={beat.source_refs[0]} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, source_refs: [Number(e.target.value)] } : b))}>
           {(chosen?.evidence || []).map((e, n) => <option key={n} value={n + 1}>{n + 1}: {e.excerpt.slice(0, 80)}</option>)}</select></label>
-        <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null, clip_start: null, clip_end: null, clip_end_policy: null } : b))}>
+        <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null, asset_metadata_version: assets.find(a => String(a.id) === e.target.value)?.metadata_version || null, clip_start: null, clip_end: null, clip_end_policy: null } : b))}>
           <option value="">Original graphic</option>{assets.filter(a => ["image", "video"].includes(a.kind)).map(a => <option key={a.id} value={a.id}>#{a.id} · {a.kind}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
+        {(["visual", "audio"] as const).map(kind => {
+          const id = kind === "visual" ? beat.asset_id : beat.background_audio_id;
+          const version = kind === "visual" ? beat.asset_metadata_version : beat.audio_metadata_version;
+          const asset = assets.find(a => a.id === id);
+          return id ? <div key={kind}><p>Selected {kind} #{id} · use permission: {asset?.use_status || "unavailable"}</p>
+            {asset && <details><summary>{`Current ${kind} provenance for beat ${i + 1}`}</summary><p>{asset.provenance.description}</p><p>{asset.provenance.license} · {asset.provenance.attestation}</p><code style={{ overflowWrap: "anywhere" }}>{asset.sha256}</code></details>}
+            {(!asset || asset.use_status !== "permitted" || version !== asset.metadata_version) && <div role="alert"><p>This source is unavailable, blocked or has changed since selection. Retained words and timing remain private.</p>
+              {asset?.use_status === "permitted" && <button type="button" onClick={() => setBeats(beats.map((b, j) => j === i ? { ...b, [kind === "visual" ? "asset_metadata_version" : "audio_metadata_version"]: asset.metadata_version } : b))}>{`Use current ${kind} metadata for beat ${i + 1}`}</button>}</div>}
+          </div> : null;
+        })}
         {assets.find(a => a.id === beat.asset_id)?.kind === "video" && <div style={{ display: "grid", gap: 8 }}>
           <video controls preload="metadata" style={{ maxWidth: 360, width: "100%" }} src={api.assetMedia(beat.asset_id!)} />
           <p>Indexed duration: {assets.find(a => a.id === beat.asset_id)?.provenance.media?.seconds.toFixed(3)}s. Select 0.25–12 seconds. The complete frame appears in an inset; source audio is excluded. Review all narration, text and visuals after rendering.</p>
@@ -115,7 +138,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
             <option value="">Choose intentionally</option><option value="hold">Hold the last frame if narration continues</option><option value="loop">Loop this interval if narration continues</option>
           </select></label>
         </div>}
-        <label>Background audio for beat {i + 1}<select aria-label={`Background audio for beat ${i + 1}`} value={beat.background_audio_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, background_audio_id: e.target.value ? Number(e.target.value) : null, audio_start: null, audio_end: null, audio_end_policy: null, audio_gain_db: null } : b))}>
+        <label>Background audio for beat {i + 1}<select aria-label={`Background audio for beat ${i + 1}`} value={beat.background_audio_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, background_audio_id: e.target.value ? Number(e.target.value) : null, audio_metadata_version: assets.find(a => String(a.id) === e.target.value)?.metadata_version || null, audio_start: null, audio_end: null, audio_end_policy: null, audio_gain_db: null } : b))}>
           <option value="">No background audio</option>{assets.filter(asset => asset.kind === "audio").map(asset => <option key={asset.id} value={asset.id}>#{asset.id} · {asset.tags.join(", ") || asset.provenance.license}</option>)}</select></label>
         {beat.background_audio_id && assets.some(asset => asset.id === beat.background_audio_id && asset.kind === "audio") && <div style={{ display: "grid", gap: 8 }}>
           <audio controls preload="metadata" src={api.assetMedia(beat.background_audio_id)} />
@@ -145,13 +168,15 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       {missingAudio && <p role="alert">A selected background source is unavailable in the current audio library. Choose a current source or remove that selection.</p>}
       {invalidDraft && <div role="alert"><p>Recovered treatment data is malformed. It remains on this browser; recover the words below or discard the draft before creating a campaign.</p><details><summary>Retained treatment words</summary><pre style={{ whiteSpace: "pre-wrap" }}>{draft.value.beats.slice(0, 100000)}</pre></details></div>}
       <LocalDraftStatus draft={draft} noun="native treatment template" destination="private campaign draft" />
-      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || incompatibleAudio || missingAudio || invalidDraft || researchChanged || draft.conflict || !!draft.pending}>Create native campaign</button></div>
+      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || incompatibleAudio || missingAudio || invalidDraft || researchChanged || sourceChanged || draft.conflict || !!draft.pending}>Create native campaign</button></div>
       </fieldset>
     </form>
     {rows.map(c => <article key={c.id} style={box} data-testid={`campaign-${c.id}`}>
       <h3>{c.brief.title}</h3><p>Campaign #{c.id} · {c.stage_status} · {c.stage_message}</p>
       <p><strong>Short:</strong> {c.brief.short_caption}</p>{c.brief.reel_caption && <p><strong>Reel:</strong> {c.brief.reel_caption}</p>}<p><strong>Carousel:</strong> {c.brief.carousel_caption}</p>
       {c.brief.community_question && <p><strong>Private community draft:</strong> {c.brief.community_question}</p>}
+      <button disabled={busy} onClick={() => { if (draft.dirty || draft.pending || draft.conflict) setReplacement(c); else revised(c); }}>Draft revised treatment</button>
+      {replacement?.id === c.id && <div role="alert"><p>A different private treatment draft is present. Copying this campaign replaces those browser draft fields.</p><button type="button" onClick={() => revised(c)}>Replace private draft with this campaign</button><button type="button" onClick={() => setReplacement(null)}>Keep current private draft</button></div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{c.brief.formats.map(f => <button key={f} disabled={busy || c.stage_status === "running"}
         onClick={() => act(() => api.nativeRender(c.id, f), `${f} export rendered. Watch the whole video or inspect every slide before approving.`)}>Render {f}</button>)}</div>
       {c.exports.map(exported => <ExportReview key={exported.id} item={exported} accounts={accounts} busy={busy} act={act} />)}

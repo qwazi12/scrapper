@@ -379,6 +379,7 @@ def test_outstand_module_is_gone():
 
 def test_no_outstand_text_in_ui_or_backend():
     import pathlib
+    import re
     root = pathlib.Path(__file__).resolve().parents[2]
     hits = []
     for base, pats in ((root / "frontend" / "app", ("*.tsx",)), (root / "frontend" / "lib", ("*.ts",)),
@@ -387,7 +388,7 @@ def test_no_outstand_text_in_ui_or_backend():
             for f in base.rglob(pat):
                 text = f.read_text(encoding="utf-8")
                 for line in text.splitlines():
-                    if "outstand" in line.lower() and "outstand_post_id" not in line:
+                    if re.search(r"outstand(?!ing\b)", line, re.I) and "outstand_post_id" not in line:
                         hits.append(f"{f.name}: {line.strip()[:80]}")
     assert hits == []
 

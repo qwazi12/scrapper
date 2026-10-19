@@ -48,11 +48,13 @@ Explicit authorized background-audio selection/mixing/retention/acceptance also 
 verified scoped native/copy/import UI evidence. Inspect current Git history/state
 and the ledger before choosing the next slice. Asset import metadata/caption
 recovery, truthful receipt/duplicate states and stale-search protection have also
-passed the complete23-scenario regression.
+passed the complete23-scenario regression. Reviewed immutable asset metadata/use
+permission decisions, stale/recovered review words and explicitly rebound revised
+native treatments passed focused actual UI and the complete24-browser regression.
 
-Latest completed broad evidence: **671 backend passes /1 optional skip**,
-**195 actual PostgreSQL passes** plus native restore, **6 frontend error unit
-passes**, production build/tsc passed, **23 actual browser scenarios passed**,
+Latest completed broad evidence: **675 backend passes /1 optional skip**,
+**199 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+passes**, production build/tsc passed, **24 actual browser scenarios passed**,
 including background audio and asset-import metadata/catalog read recovery.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not
 silence it or mutate the shared environment. Exact evidence paths are indexed in

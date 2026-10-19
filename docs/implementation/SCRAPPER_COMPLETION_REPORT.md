@@ -27,7 +27,7 @@ local slice. This report does not reset or replace the original product vision.
 | LongForm / Countdowns | Staged attempts, campaign-owned segments, exact counts/unique IDs, bounded identity/category/bookend reviews, actual FFmpeg renders/stitch, retained original versions and unchecked draft recovery | Wider eligibility/legacy saved-list migration and long-form editorial corpus; robust creative quality across real material |
 | Media acceptance | Full decode/streams/duration/aspect/skew/loudness/true peak, timed black/silence spans, four explicit editorial checks, substantive per-finding decisions and rights attestation bound to exact inputs/bytes/inspection | Word alignment, final-frame caption/OCR/safe-area validation, semantic shot identity, actual pronunciation/story/rights review and excellent real-content examples |
 | Native formats | Original Short/Reel cards, explicit authorized video intervals and background audio, ordered carousel, exact single-image output, distinct format copy, community/poll private JSON/text packages, immutable versions, structured native acceptance and review-only queue gates | Distinct deeper Reel treatment, recuts, semantic music/beat retrieval and musical transitions and broader creative diversity |
-| Asset catalog | Bounded authorized still/video/audio import, normalized bytes and original/normalized SHA, decoded previews/difference hashes, owner provenance/tags/caption spans/people labels, deduplication and bounded lexical retrieval | Semantic retrieval/identity assistance, deeper audio matching/transitions and preservation masters; labels/captions currently owner-supplied |
+| Asset catalog | Bounded authorized still/video/audio import, normalized bytes and original/normalized SHA, decoded previews/difference hashes, owner provenance/tags/caption spans/people labels, immutable metadata/use-permission revisions, original-provenance retention, deduplication and bounded lexical retrieval | Semantic retrieval/identity assistance, deeper audio matching/transitions and preservation masters; labels/captions currently owner-supplied |
 | Posting / scheduling | Atomic queue links, exact media/copy gates, per-target durable intent and idempotency keys, strict receipts, unknown-outcome fences, owner evidence review and retained delivered bytes | Real provider contract/account proof, staging/rollout, full typed status/negative matrix; no public delivery proof from fixtures |
 | Budgets / workers | Atomic integer USD/vidIQ credit reservations, separate usage estimates/owner billing attestations, uncertain holds, DB-clock renewable generation leases, residential/legacy workers and explicit orphan resolution | Actual pricing/usage/invoice contracts, broader kill/restart/rolling-upgrade cases and operational limits |
 | Storage / recovery | Shared readers/exclusive file claims, response-lifetime integrity, reference-aware cleanup, verified remote-copy receipts, retained export/delivery evidence, WAL-aware atomic SQLite snapshots/offline restore/legacy identity CLI | Remaining local temp consumers, managed remote reclamation, real-volume/production recovery/retention/RTO; automatic remote trash stays disabled |
@@ -51,14 +51,15 @@ contain the ignored media, database snapshots or traces.
 
 | Lane | Verified result | Exact evidence |
 |---|---|---|
-| Full backend after background audio | **671 passed /1 optional skip**,70.99s,1 reported TestClient/httpx deprecation | `native-audio-backend1.txt`, `.xml` |
-| Actual PostgreSQL behavior | **195 passed**,30.58s,1 reported warning | `native-audio-pg1/pytest.txt`, `.xml` |
-| Actual private PostgreSQL recovery | **Passed**,0.836s;175838bytes; SHA256`bd8814ef0e669dc3f6859bb46ec1cd961553f44cfbf219ddc10b8189c6100ff9`; source unchanged | `native-audio-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
+| Full backend after reviewed asset revisions | **675 passed /1 optional skip**,83.13s,1 reported TestClient/httpx deprecation | `asset-annotations-backend2.txt`, `.xml` |
+| Actual PostgreSQL behavior | **199 passed**,34.26s,1 reported warning | `asset-annotations-pg1/pytest.txt`, `.xml` |
+| Actual private PostgreSQL recovery | **Passed**,1.088s;184063bytes; SHA256`23389f05d7992bb2007bc84810da85ff2e24c63db5be6706ab02d15006196b6d`; source unchanged | `asset-annotations-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
 | Selected clip contracts | **34 passed**,11.32s, actual hold/loop frame/audio checks, strict ranges/source claims | `native-clips-focused2.txt` |
 | Native acceptance focused | **22 passed**,2.24s, then all5 new contracts including actual generated-tone Reel render **passed**,2.63s | `native-acceptance-focused2.txt`, `native-acceptance-focused3.txt` |
-| Frontend production build | Passed after asset metadata/read recovery; explicit tsc passed | `asset-recovery-build1.txt`, `asset-recovery-tsc2.txt` |
+| Frontend production build | Passed after reviewed asset revisions; explicit tsc passed | `asset-annotations-build2.txt`, `asset-annotations-tsc1.txt` |
 | Frontend error contracts | **6 passed**,114.49ms; typeless Node module warning reported | `api-errors-unit3.txt` |
-| Current full browser regression | **23 passed**,4.1min; includes background audio, asset import/read recovery and all prior media/safety cases; frozen backend/scripts SHA`0d1bc77c485bb79d66222829505b1fc6d502566754d1d3928e751ab8c66a99c6` | `e2e/history/asset-recovery4/` report/traces/screenshots/actual media/verified DB snapshot |
+| Reviewed asset decisions focused UI | **1 passed**,11.1s; real source/import, private draft recovery, stale competing decision, block/re-permit history and revised native source render/acceptance; fresh full24 regression also passed | `e2e/history/asset-annotations1/` |
+| Current full browser regression | **24 passed**,4.4min; includes reviewed metadata/use decisions and revised native sources plus all prior media/safety cases; frozen backend/scripts SHA`7f5a78fba426bc0731aa01156f6f6fb02f7958141c829d7edbf8f481ba57af24` | `e2e/history/asset-annotations2/` report/traces/screenshots/actual media/verified DB snapshot |
 | Earlier full browser before background-audio slice | **22 passed**,3.9min; frozen backend/scripts SHA`87cae4a6a3b3d498a4509c0c9b4deb79994e9e80ad459c1c99fe5bde39a47cc2`; complete media and recovery cases | `e2e/history/native-drafts3/` report/traces/screenshots/actual media/verified DB snapshot |
 | Earlier full browser before native slice | **20 passed**,3.9min; frozen backend/scripts SHA`e6214eab0d40e4d396422f5af813f17962cb09a205467e514b2a8e9deef410e0` | `e2e/history/owner-recovery5/stack.json`, report, traces/screenshots and verified DB snapshot |
 | Browser after native acceptance | **4 passed**,2.2min; fresh image/manual visual capture **1 passed**,3.7s. Frozen backend/scripts SHA`d1e6c1a4eff1c46fb56594de496936f9ee7b437c8a7f546ba48be4f526105e25` | `e2e/history/native-acceptance1/` and `native-acceptance3/` reports/traces/screenshots/verified DB snapshots |
@@ -69,12 +70,12 @@ contain the ignored media, database snapshots or traces.
 | Linux/container/CI | Prepared; **not executed** | `.github/workflows/quality.yml`, `scripts/e2e/Dockerfile` |
 | Real provider/staging/deployment | **Unverified; not executed** | No deployment/provider success receipt exists |
 
-The current full browser23 includes actual LongForm and five independent Countdown
+The current full browser24 includes actual LongForm and five independent Countdown
 segment pipelines/stitch, native formats and private local downloads, independent
 source review, local worker handoff, simulated delivery/uncertainty/financial
 reconciliation, retained-media/history recovery, asset catalog, content lineage,
 comment/correction review, diagnostics→manual experiment, browser draft failures,
-API-origin credential recovery, real limiter recovery, explicit mixed video/audio playback/seek, native treatment recovery, asset metadata/caption recovery, duplicate-provenance receipts and stale search protection. Rate exhaustion is
+API-origin credential recovery, real limiter recovery, explicit mixed video/audio playback/seek, native treatment recovery, asset metadata/caption recovery, duplicate-provenance receipts, stale search protection, immutable metadata/use decisions, stale recovered review words and explicit revised-source native rendering/acceptance. Rate exhaustion is
 fixture-seeded; the test waits the actual60-second window. It is not a600-request
 load benchmark. Independent fixture request buckets are reset between cases;
 production authorization/limits remain unchanged. Earlier failed runs and their

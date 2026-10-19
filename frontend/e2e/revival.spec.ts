@@ -1595,3 +1595,85 @@ test("Asset import recovery retains private metadata, honest receipts and curren
   reads = "normal"; await search.getByRole("button", { name: "Refresh asset catalog", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Asset catalog unavailable" })).toHaveCount(0); expect(posts).toBe(5);
 });
+
+test("Reviewed asset decisions preserve provenance, recover stale words and require revised native sources", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  const source = path.join(stack.root, "fixtures/annotation-original.wav");
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=1471:d=3", source]);
+  // Setup is a real local import and research decision; edits/rendering below use the browser.
+  const imported = await request.post(`${stack.api}/api/editorial/assets/media`, { headers, multipart: {
+    kind: "audio", license: "owner_created", attestation: "Original procedural tone created for the isolated owner review fixture.",
+    description: "An original archival metadata tone for source permission tests.", tags: "annotationtone", people: "No real people",
+    caption_cues: "[]", file: { name: "original.wav", mimeType: "audio/wav", buffer: readFileSync(source) } } });
+  expect(imported.ok(), await imported.text()).toBe(true); const asset = await imported.json(), aid = asset.id;
+  const endpoint = `${stack.api}/api/editorial/assets/${aid}/metadata-review`;
+  const original = await (await request.get(endpoint, { headers })).json();
+  const research = await request.post(`${stack.api}/api/editorial/opportunities`, { headers, data: {
+    title: "Original annotation sound study", angle: "Study three original procedural shapes and their privately reviewed sound treatment.",
+    audience: "Viewers learning original motion design", formats: ["short"], evidence: [{ url: "https://example.org/annotation-original",
+      excerpt: "All procedural shapes and sound were originally generated for this isolated fixture.", entity: "Synthetic originals", retrieved_at: new Date().toISOString() }] } });
+  expect(research.ok(), await research.text()).toBe(true); const oid = (await research.json()).id;
+  expect((await request.post(`${stack.api}/api/editorial/opportunities/${oid}/approve`, { headers })).ok()).toBe(true);
+  const campaign = await request.post(`${stack.api}/api/editorial/campaigns`, { headers, data: {
+    opportunity_id: oid, title: "An original sound and shape study", formats: ["short"],
+    beats: ["hook", "body", "payoff"].map((role, i) => ({ role, text: ["Can an original shape change the way this story opens?", "A deliberate second frame changes the emphasis of our example.", "The final original shape completes this synthetic visual story."][i], source_refs: [1],
+      ...(i === 0 ? { background_audio_id: aid, audio_metadata_version: original.version, audio_start: .25, audio_end: 1.25, audio_gain_db: -24, audio_end_policy: "silence" } : {}) })),
+    short_caption: "Inspect the complete original shape and sound treatment.", carousel_caption: "", community_question: "" } });
+  expect(campaign.ok(), await campaign.text()).toBe(true); const cid = (await campaign.json()).id;
+  const retained = await request.post(`${stack.api}/api/editorial/campaigns/${cid}/render/short`, { headers });
+  expect(retained.ok(), await retained.text()).toBe(true); const old = await retained.json();
+  await page.goto("/#editorial"); await page.getByRole("button", { name: "Asset library", exact: true }).click();
+  const card = page.getByTestId(`indexed-asset-${aid}`);
+  await card.getByRole("button", { name: "Review metadata and use permission", exact: true }).click();
+  const form = card.getByRole("form", { name: `Asset ${aid} metadata decision`, exact: true });
+  const description = form.getByLabel("Reviewed description", { exact: true }), rationale = form.getByLabel("Reason for this exact decision", { exact: true });
+  const ack = form.getByRole("checkbox"), save = form.getByRole("button", { name: "Save reviewed asset decision", exact: true });
+  await description.fill("Private corrected violet sound labels survive navigation and stale reviews.");
+  await rationale.fill("Recheck the original generated source and correct its owner labels intentionally.");
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByRole("button", { name: "Asset library", exact: true }).click();
+  await card.getByRole("button", { name: "Review metadata and use permission", exact: true }).click();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(description).toHaveValue("Private corrected violet sound labels survive navigation and stale reviews.");
+  const competing = await request.post(endpoint, { headers, data: { ...original.metadata, expected_version: original.version,
+    description: "A concurrent owner decision changes the source metadata before this form saves.", rationale: "An independent current review must never be overwritten by a stale form.", reviewed: true } });
+  expect(competing.ok(), await competing.text()).toBe(true);
+  await ack.check(); await save.click();
+  await expect(form).toContainText("Asset metadata changed"); await expect(description).toHaveValue("Private corrected violet sound labels survive navigation and stale reviews.");
+  await expect(ack).not.toBeChecked(); await expect(save).toBeDisabled();
+  await form.getByRole("button", { name: "Use current source version with retained draft", exact: true }).click();
+  await form.getByLabel("Reviewed tags", { exact: true }).fill("annotationtone, violetlabels");
+  await form.getByRole("button", { name: "Add reviewed caption interval", exact: true }).click();
+  await form.getByLabel("Reviewed cue 1 text", { exact: true }).fill("A violet owner caption remains unverified.");
+  await ack.check(); await description.fill("Corrected violet source labels after reviewing the concurrent owner decision.");
+  await expect(ack).not.toBeChecked(); await expect(save).toBeDisabled(); await ack.check(); await save.click();
+  await expect(form).toContainText("Reviewed metadata saved as an immutable owner decision.");
+  let current = await (await request.get(endpoint, { headers })).json(); expect(current.history_count).toBe(2); expect(current.original).toEqual(original.original);
+  expect(current.metadata.caption_cues).toEqual([{ start: 0, end: 1, text: "A violet owner caption remains unverified." }]);
+  await form.getByLabel("Use permission", { exact: true }).selectOption("blocked");
+  await rationale.fill("Block further use pending a fresh review of the intended sound treatment."); await ack.check(); await save.click();
+  await expect(card.getByText("Use permission: blocked", { exact: true })).toBeVisible();
+  expect((await request.get(`${stack.api}/api/editorial/exports/${old.id}/export-review`, { headers })).status()).toBe(409);
+  expect((await request.post(`${stack.api}/api/editorial/campaigns/${cid}/render/short`, { headers })).status()).toBe(409);
+  await form.getByLabel("Use permission", { exact: true }).selectOption("permitted");
+  await rationale.fill("Permit this original source after rechecking the exact intended private treatment."); await ack.check(); await save.click();
+  await expect(card.getByText("Use permission: permitted", { exact: true })).toBeVisible();
+  await form.getByText("Immutable metadata/use history (latest 20)", { exact: true }).click();
+  await expect(form).toContainText("Revision 4"); await form.screenshot({ path: path.join(evidence, "asset-metadata-history.png") });
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByTestId(`campaign-${cid}`).getByRole("button", { name: "Draft revised treatment", exact: true }).click();
+  const draft = page.getByRole("form", { name: "Native campaign draft", exact: true });
+  await expect(draft.getByRole("button", { name: "Create native campaign", exact: true })).toBeDisabled();
+  await draft.getByText("Current audio provenance for beat 1", { exact: true }).click();
+  await expect(draft).toContainText("Corrected violet source labels after reviewing the concurrent owner decision.");
+  await draft.getByRole("button", { name: "Use current audio metadata for beat 1", exact: true }).click();
+  const createdResponse = page.waitForResponse(r => r.url().endsWith("/api/editorial/campaigns") && r.request().method() === "POST" && r.status() === 200);
+  await draft.getByRole("button", { name: "Create native campaign", exact: true }).click(); const revised = await (await createdResponse).json();
+  current = await (await request.get(endpoint, { headers })).json(); expect(revised.brief.beats[0].audio_metadata_version).toBe(current.version);
+  expect(revised.brief.beats[0]).toMatchObject({ audio_start: .25, audio_end: 1.25, audio_gain_db: -24, audio_end_policy: "silence" });
+  const revisedCard = page.getByTestId(`campaign-${revised.id}`); await revisedCard.getByRole("button", { name: "Render short", exact: true }).click();
+  await expect(revisedCard.getByTestId("native-export-short")).toBeVisible();
+  await revisedCard.getByRole("button", { name: "Approve inspected short", exact: true }).click();
+  await acceptExactExport(page, "asset-revised-native-acceptance.png");
+  expect(errors).toEqual([]);
+});

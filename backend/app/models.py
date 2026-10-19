@@ -228,6 +228,18 @@ class MediaAsset(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AssetAnnotation(Base):
+    """Owner metadata/use decisions; original catalog bytes/provenance are preserved."""
+    __tablename__ = "asset_annotations"
+    __table_args__ = (UniqueConstraint("asset_identity", "revision"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    asset_id: Mapped[int] = mapped_column(Integer, index=True)
+    asset_identity: Mapped[str] = mapped_column(String(64), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class CreativeExport(Base):
     __tablename__ = "creative_exports"
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -581,7 +593,7 @@ class ContentLineage(Base):
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # Both dialects reject raw UPDATE/DELETE as an integrity violation.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__, LearningDecision.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__, LearningDecision.__table__, AssetAnnotation.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

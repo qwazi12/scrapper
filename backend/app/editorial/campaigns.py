@@ -24,6 +24,7 @@ from ..social import enqueue
 from ..studio.media_quality import file_hash
 from ..studio.export_acceptance import AcceptanceIn,accept_view,require_view_acceptance,findings
 from .routes import Strict, digest, opportunity
+from . import asset_annotations as annotations
 
 router = APIRouter(prefix="/api/editorial", dependencies=[Depends(require_token)])
 UTC = timezone.utc
@@ -38,7 +39,9 @@ class Beat(Strict):
     clip_start: float | None = Field(default=None,ge=0,le=300,strict=True,allow_inf_nan=False)
     clip_end: float | None = Field(default=None,gt=0,le=300,strict=True,allow_inf_nan=False)
     clip_end_policy: Literal['hold','loop'] | None = None
+    asset_metadata_version: str | None = Field(default=None,min_length=64,max_length=64)
     background_audio_id: int | None = Field(default=None,gt=0,strict=True)
+    audio_metadata_version: str | None = Field(default=None,min_length=64,max_length=64)
     audio_start: float | None = Field(default=None,ge=0,le=300,strict=True,allow_inf_nan=False)
     audio_end: float | None = Field(default=None,gt=0,le=300,strict=True,allow_inf_nan=False)
     audio_end_policy: Literal['silence','loop'] | None = None
@@ -127,6 +130,12 @@ def inputs(s, campaign):
             path = Path(asset.file_path).resolve() if asset else None
             if not asset or not path.is_relative_to(settings.data_path.resolve() / "editorial" / "assets") or not path.is_file() or file_hash(path) != asset.sha256:
                 raise HTTPException(409, "A selected asset is missing or changed; reimport and inspect it")
+            if asset.created_at is None:raise HTTPException(409,'Selected legacy catalog identity is unknown; restore its original identity before use')
+            head=annotations.latest_for(s,[asset]).get(annotations.identity(asset))
+            _,provenance=annotations.effective(asset,head)
+            if provenance.get('use_status','permitted')!='permitted':raise HTTPException(409,'Owner use permission is blocked for a selected asset')
+            if beat.get('asset_metadata_version') is not None and beat['asset_metadata_version']!=annotations.current_version(asset,head):
+                raise HTTPException(409,'Selected asset metadata changed; review the current source and draft a revised treatment')
             if asset.kind=='video':
                 if not set(campaign.brief['formats']).issubset({'short','reel'}):
                     raise HTTPException(409,'Selected video clips currently require Short/Reel-only campaigns; choose a still for image/manual formats')
@@ -140,24 +149,30 @@ def inputs(s, campaign):
             elif asset.kind!='image':raise HTTPException(409,'Audio cannot be used as a visual; choose an indexed still or explicit video clip')
             elif any(beat.get(key) is not None for key in ('clip_start','clip_end','clip_end_policy')):
                 raise HTTPException(409,'Still images cannot carry video interval settings')
-            if not asset.provenance.get("attestation"): raise HTTPException(409, "Asset rights attestation missing")
-            assets[str(aid)] = {"sha256": asset.sha256, "provenance": asset.provenance}
+            if not provenance.get("attestation"): raise HTTPException(409, "Asset rights attestation missing")
+            assets[str(aid)] = {"sha256": asset.sha256, "provenance": provenance,'asset_identity':annotations.identity(asset)}
         audio_id=beat.get('background_audio_id')
         if audio_id:
             if not set(campaign.brief['formats']).issubset({'short','reel'}):
                 raise HTTPException(409,'Background audio currently requires Short/Reel-only campaigns')
             asset=s.get(MediaAsset,audio_id)
             if not asset or asset.kind!='audio':raise HTTPException(409,'Choose an indexed authorized audio asset for the background soundtrack')
+            if asset.created_at is None:raise HTTPException(409,'Selected legacy audio identity is unknown; restore its original identity before use')
             from .asset_catalog import verify_existing
             verify_existing(asset)
-            if not asset.provenance.get('attestation'):raise HTTPException(409,'Background audio rights attestation missing')
+            head=annotations.latest_for(s,[asset]).get(annotations.identity(asset))
+            _,provenance=annotations.effective(asset,head)
+            if provenance.get('use_status','permitted')!='permitted':raise HTTPException(409,'Owner use permission is blocked for selected background audio')
+            if beat.get('audio_metadata_version') is not None and beat['audio_metadata_version']!=annotations.current_version(asset,head):
+                raise HTTPException(409,'Selected background metadata changed; review the current source and draft a revised treatment')
+            if not provenance.get('attestation'):raise HTTPException(409,'Background audio rights attestation missing')
             start,end,policy,gain=(beat.get(key) for key in ('audio_start','audio_end','audio_end_policy','audio_gain_db'))
             seconds=asset.provenance.get('media',{}).get('seconds')
             if (type(start) not in (int,float) or type(end) not in (int,float) or policy not in ('silence','loop')
                 or type(gain) not in (int,float) or not -36<=gain<=-12 or type(seconds) not in (int,float)
                 or not 0<=start<end<=seconds or not .25<=end-start<=12):
                 raise HTTPException(409,'Choose an explicit bounded audio interval, relative level and silence/loop policy')
-            assets[str(audio_id)]={'sha256':asset.sha256,'provenance':asset.provenance}
+            assets[str(audio_id)]={'sha256':asset.sha256,'provenance':provenance,'asset_identity':annotations.identity(asset)}
     return {"brief": campaign.brief, "research_fingerprint": fingerprint, "assets": assets}
 
 
@@ -302,7 +317,18 @@ def export_use(eid,s,*,exclusive=False):
     row=s.get(CreativeExport,eid)
     if not row:raise HTTPException(404,"Export not found")
     root=settings.data_path/'editorial'/'campaigns'/str(row.campaign_id)/row.id
-    return pin([root],exclusive=exclusive,session=s)
+    return pin([root,*source_use_paths(s,row)],exclusive=exclusive,session=s)
+
+
+def source_use_paths(s,row):
+    paths=[];base=(settings.data_path/'editorial'/'assets').resolve()
+    for key in row.manifest.get('inputs',{}).get('assets',{}):
+        if not str(key).isdigit():continue
+        asset=s.get(MediaAsset,int(key))
+        if asset:
+            path=Path(asset.file_path).resolve()
+            if path.is_relative_to(base):paths.append(path)
+    return paths
 
 
 @router.get("/exports/{eid}/export-review")
@@ -378,7 +404,7 @@ def manual_export_file(eid:str,name:str,s:Session=Depends(get_session)):
 @router.get("/assets")
 def assets(s: Session = Depends(get_session)):
     from .asset_catalog import out
-    return [out(a) for a in s.query(MediaAsset).order_by(MediaAsset.id.desc()).limit(100)]
+    return [out(a,head) for a,head in annotations.entries(s,s.query(MediaAsset).order_by(MediaAsset.id.desc()).limit(100))]
 
 
 @router.post("/assets")

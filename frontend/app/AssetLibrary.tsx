@@ -7,6 +7,8 @@ import { useLocalDraft } from "../lib/localDraft";
 import { LocalDraftStatus } from "./LocalDraftStatus";
 import { assetCueDraft, AssetCueDraft, emptyAssetForm } from "../lib/assetDraft";
 
+import { AssetMetadataReview } from "./AssetMetadataReview";
+
 const field = { display: "grid", gap: 5 };
 
 export function AssetLibrary() {
@@ -106,16 +108,17 @@ export function AssetLibrary() {
     {readError && <p role="alert">Asset catalog unavailable. {hasLoaded ? "Showing the last loaded results; this list may be out of date." : "Catalog contents are unconfirmed."} {readError}</p>}
     {readBusy && <p role="status">Reading asset catalog…</p>}
     {hasLoaded && <p>{total} matching assets; showing the top {rows.length}. Last loaded search: {loadedQuery.query || "all context"} · {loadedQuery.kind || "all kinds"}. Keyword ranking is a retrieval aid, not proof of relevance or identity.</p>}
-    {rows.map(row => <AssetCard key={row.id} row={row} />)}
+    {rows.map(row => <AssetCard key={row.id} row={row} onChanged={() => void search(query, filter)} />)}
   </section>;
 }
 
-function AssetCard({ row }: { row: CatalogAsset }) {
+function AssetCard({ row, onChanged }: { row: CatalogAsset; onChanged: () => void }) {
+  const [reviewing, setReviewing] = useState(false);
   const player = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const metadata = row.provenance.media;
   const [failed, setFailed] = useState(false);
   return <article data-testid={`indexed-asset-${row.id}`} style={{ padding: 14, border: "1px solid var(--border)", borderRadius: 10 }}>
-    <h3>Asset #{row.id} · {row.kind}</h3><p>{row.provenance.description || row.tags.join(", ")}</p>
+    <h3>Asset #{row.id} · {row.kind}</h3><p>Use permission: {row.use_status}</p><p>{row.provenance.description || row.tags.join(", ")}</p>
     <p>{row.tags.join(", ")} · {row.provenance.license} · {metadata ? `${metadata.seconds.toFixed(2)}s · ${metadata.bytes} bytes` : "indexed still"}</p>
     {row.kind === "image" ? <img onError={() => setFailed(true)} src={api.assetMedia(row.id)} alt={row.tags.join(", ") || "Owner indexed still"} style={{ maxWidth: 320, width: "100%" }} /> : row.kind === "video" ?
       <video ref={player} onError={() => setFailed(true)} controls preload="metadata" src={api.assetMedia(row.id)} style={{ maxWidth: 400, width: "100%" }} /> :
@@ -125,6 +128,8 @@ function AssetCard({ row }: { row: CatalogAsset }) {
     </figure>)}</div>}
     {failed && <p role="alert">Media or preview could not be verified or loaded. Refresh the owner session, then recover the exact retained asset if integrity failed.</p>}
     {row.matching_spans.map((cue, index) => <p key={index}><button onClick={() => { if (player.current) { player.current.currentTime = cue.start; void player.current.play().catch(() => {}); } }}>Preview {cue.start.toFixed(2)}–{cue.end.toFixed(2)}s</button> {cue.text} (owner-supplied timing)</p>)}
+    <button type="button" onClick={() => setReviewing(!reviewing)}>{reviewing ? "Close metadata review" : "Review metadata and use permission"}</button>
+    {reviewing && <AssetMetadataReview id={row.id} onChanged={onChanged} />}
     <details><summary>Rights and index provenance</summary><p>{row.provenance.attestation}</p><p>People/entities: {row.provenance.people?.join(", ") || "Not supplied"}. Owner labels and captions are unverified.</p><code style={{ overflowWrap: "anywhere" }}>{row.sha256}</code></details>
   </article>;
 }

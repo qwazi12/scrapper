@@ -897,6 +897,8 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         from ..models import CreativeExport
         native=s.get(CreativeExport,native_id)
         paths.append(settings.data_path/'editorial'/'campaigns'/str(native.campaign_id)/native.id)
+        from ..editorial.campaigns import source_use_paths
+        paths.extend(source_use_paths(s,native))
     try:
         with pin(paths,session=s):
             return await _submit_owned_media(item,s,video_path,images,regular)

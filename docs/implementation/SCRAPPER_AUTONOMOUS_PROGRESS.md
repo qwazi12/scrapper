@@ -586,3 +586,39 @@ ACTIVE NOW: fresh full23 browser4, owned stack session3121, browser session38289
 - Production build1 and explicit tsc2 passed. Backend unchanged from **671 passes/1 optional skip** and **195 actualPG passes** plus native restore; no redundant backend rerun. Focused1:2 baseline native/catalog cases passed,1 delayed-multipart replay fixture failure; direct browser uploads had already passed. Delayed portion now creates the same marked fixture through explicit local API bytes/metadata and holds its real receipt, correctly labeled synthetic transport control. Fresh focused2: **1 passed,4.2s**, complete reload/reselection,422/network, confirmed import/read failure, duplicate metadata, delayed receipt, storage Cancel, malformed cache and stale search checks. An erroneously interrupted fresh full3 remains2pass/1interrupted/20not-run, not a suite result; accurate note/artifacts retained.
 - Final fresh full browser4: **23 passed,4.1min**, all prior LongForm/Top5/native/media/worker/evidence/publication/budget/history/audience/comments/learning/draft/auth/rate-recovery cases plus actual mixed video/audio and new asset import/search recovery. Frozen backend/scripts0d1bc77c485bb79d66222829505b1fc6d502566754d1d3928e751ab8c66a99c6; owned root scrapper-e2e-u17act91 stopped. Full reports/traces/screenshots/actual original exports/selected visual/audio excerpts/quality/probes/manifests/verified DB snapshot saved under artifacts/e2e/history/asset-recovery4. Recovery screenshot visually inspected; retained private caption data and disabled import state are clear. Earlier focused/failure/interruption evidence remains separately retained.
 - C13/C14 and original roadmap remain partial. No paid call, actual source-channel/Drive transfer, public upload/reply, live account/settings change, GitHub push or deployment. Archive/login remains deferred. Continue locally with reviewed asset metadata/use-permission revisions that preserve original source provenance and downstream admission/history boundaries; do not end at this checkpoint.
+
+### Asset annotation/use-permission revision slice (verification active)
+
+Implemented immutable owner decision revisions without replacing original catalog
+bytes/provenance; exact original/head versions, deterministic retry receipts,
+batched current search/caption metadata, identity-safe history, and raw SQLite/PG
+immutability. Native source snapshots now retain catalog identities and effective
+provenance; controlled rendering/approval/enqueue/dispatch are fenced against
+blocked/stale sources under source file claims. Historical manifests/content
+lineage remain unchanged. Owner UI preserves drafts, detects/rebases stale source
+reviews with renewed exact-field acknowledgment, shows original/history evidence,
+and copies existing campaigns into private revised treatments with preserved copy
+and interval/gain choices plus explicit source/research review.
+
+Actual PG199passed34.26s and native transactional restore passed1.088s/source
+unchanged; archive184063bytes,SHA23389f05d7992bb2007bc84810da85ff2e24c63db5be6706ab02d15006196b6d.
+Production build2passed after correcting inferred enum cache-field typing. First
+full backend674pass/1skip/1 falsepositive retired-provider scanner (ordinary word
+“outstanding”); corrected scanner preserves provider matches and focused check
+passes. Full backend2 running. Initial new focused test used impossible NULL
+created_at in current NOT NULL schema; setup fixed, focused4pass. Actual focused
+browser1passed11.1s; history/asset-annotations1 retains real source, mixed final
+media, exact acceptance, screenshots/trace/report and verified DB snapshot. Full24
+browser2 is running on fresh scrapper-e2e-xryttda5, source7f5a78fba426bc0731aa01156f6f6fb02f7958141c829d7edbf8f481ba57af24.
+No external calls, posting, paid use, account change, push/deploy or archive work.
+Original roadmap remains partial and work continues after evidence/commit.
+
+Asset revision final result: backend675passed/1skip83.13s; PG199passed34.26s/native
+restore1.088s; build2/tsc1passed; fresh full browser2 **24passed4.4min**. Complete
+report/traces/screenshots/original fixtures/full generated media/quality/probes and
+verified WAL-aware snapshot retained artifacts/e2e/history/asset-annotations2,
+source7f5a78fba426bc0731aa01156f6f6fb02f7958141c829d7edbf8f481ba57af24. Owned
+stack stopped after archive. All capabilities remain local, owner attested rather
+than semantic/license proof. Original roadmap continues. Next independent
+publication CAS-cleanup defect reproduced and focused repair30passed; its broad
+verification and separate commit follow this asset revision checkpoint.
