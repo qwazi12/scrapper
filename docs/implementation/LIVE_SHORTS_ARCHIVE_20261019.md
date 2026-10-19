@@ -2,7 +2,13 @@
 
 Owner resumed the ten-channel archive and explicitly chose the working LongForm Shared Drive connection. The archive resumed at 20:45 UTC after a successful playback and real Scrapper download check; it is not yet complete.
 
-Latest update: Scrapper downloaded the 51-second Short `-6cksKssD9Y` (4,609,147 bytes), and the real production worker verified its uploaded Drive copy. At least three actual source Shorts now have verified Drive receipts. The worker is processing sequentially; the zero-video totals below describe the earlier blocked checkpoint. Brave still shows a Sign in link, so this is evidence of restored public download access, not proof of authenticated browser state. No cookies or bypasses were used.
+Latest verified checkpoint, 21:00 UTC: **18 actual Shorts**, **71,024,790 video bytes**, stored and checksum-verified in Drive; **18 SocialPilot Review rows** assigned to `Cinama:*`, with no schedule. The live sync import/filter fixes are deployed at `148f8a9` (Railway `24232195-cf56-4310-853e-70846a849d88`). Two real repeat syncs each scanned 18 videos, skipped 18 and added zero duplicates. The ten JSON manifests are excluded; the ten temporary erroneous manifest Review rows were removed through the undo-backed app action without changing Drive files. All 109 focused isolated tests pass.
+
+The detached Mac archive continuation started at 20:59:53 UTC, with sleep prevention. It processes the existing ledger sequentially and runs the requested Review-only Drive sync after each channel. It stops on renewed access challenges, quota/storage blockers or revoked ownership. Keep the Mac powered and online. This is a running operation, not completion of all ten channels. Local process and final-outcome evidence are in `continuation-state.json` / `continuation-log.txt` under the ignored operation artifacts folder.
+
+Ledger at restart: discovered **4,007**, downloaded **18**, uploaded **18**, skipped **1**, failed **0**, remaining **3,988**. A direct normal-browser check also confirmed Tiny Friends TV currently has only Home/Videos tabs and 17 regular uploads; no available Shorts tab. It remains incomplete, and regular videos are not substituted.
+
+The earlier blocked checkpoint and initial storage setup follow. Their zero-video figures are historical.
 
 Destination: [Movie Clips](https://drive.google.com/drive/folders/1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY) inside the existing LongForm Shared Drive. Ten source-channel folders and ten checksum-verified channel manifests are present.
 
@@ -21,7 +27,7 @@ A real original 6,150-byte synthetic MP4 passed remote size/MD5 verification in 
 | @DoctorWhoShorts | 1,023 | Complete |
 | @ArliStoryTime | 16 | Complete |
 
-Current live video ledger: discovered **4,007**, downloaded **0**, uploaded **0**, skipped **1**, failed **0**, remaining **4,006**.
+Earlier blocked video ledger: discovered **4,007**, downloaded **0**, uploaded **0**, skipped **1**, failed **0**, remaining **4,006**.
 
 The failed count does not count sign-in challenges as failed video transfers: those items stay awaiting a usable worker, with their explicit errors on stopped channels. Seven channels were stopped during the batch; two were not attempted after the global challenge halt. Tiny Friends TV stays incomplete. No original video bytes reached the archive or SocialPilot.
 

@@ -1,5 +1,42 @@
 # Scrapper Memory
 
+## Verified live archive continuation — 2026-10-19 21:00 UTC (Codex)
+
+Both necessary Drive sync fixes are on GitHub main (7d7004a and 148f8a9) and
+live in successful Railway deployment 24232195-cf56-4310-853e-70846a849d88.
+109 focused isolated tests pass. Two real post-deployment Drive sync jobs
+(3d875fc98e92 and 6abcd993adcf) each scanned exactly 18 actual videos, skipped
+all 18 existing rows, and added zero duplicates. Independently checked all 18
+rows: Review, Cinama:*, scheduled_at=null; no manifest rows remain. The app's
+undo-backed action removed only the ten erroneous manifest queue rows; their
+Drive files were never removed. Updated the Charan manifest under a database
+lease and verified its Drive size/MD5: 168842 bytes / cc33ab3a91075e610e3b500a221fedd3.
+
+The first 18 actual Shorts occupy 71,024,790 bytes in Drive. Ledger at restart:
+4,007 discovered, 18 downloaded/uploaded, 1 restricted/skipped, 0 failed,
+3,988 remaining. This is not a completed archive. A direct browser check of
+Tiny Friends TV confirmed the exact handle, 17 current uploads and only Home /
+Videos tabs; its Shorts inventory correctly stays incomplete. Regular uploads
+must not be substituted for the requested Shorts.
+
+Started one detached local continuation at 20:59:53 UTC using caffeinate (wrapper
+PID 13768; actual Python PID is recorded in continuation-state.json). It reuses
+scripts.archive_worker.drain and the existing canonical ledger, processes one
+video/channel at a time, skips incomplete inventories and performs the explicitly
+requested Review-only Drive sync after each channel. It stops on a renewed access
+challenge, quota/storage blocker, or lease revocation; it never approves, schedules
+or publishes. Existing unrelated worker 4089 and posting preferences are unchanged.
+The local Mac must remain powered and online. No cookie export or bot evasion.
+
+Ignored operational state/evidence: artifacts/shorts-archive-20261019/
+continuation-launch.json, continuation-state.json, continuation-log.txt,
+continuation-live-progress.json, filtered-drive-sync-live-verification.json,
+filtered-queue-live-verification.json, resumed-manifest-checksum-verification.json,
+and tiny-friends-browser-verification.json. Current counts always come from the
+live ledger; the detached process records final outcomes, not a fabricated success.
+Latest operational notes are pushed on codex/shorts-archive-20261019 to avoid
+triggering another main-service deployment while the batch is transferring.
+
 ## Live Drive sync correction — 2026-10-19 20:52 UTC (Codex)
 
 Logger fix 7d7004a is pushed to main and live in Railway deployment
