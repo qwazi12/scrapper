@@ -1,6 +1,8 @@
 # Live Shorts archive — 2026-10-19
 
-Owner resumed the ten-channel archive and explicitly chose the working LongForm Shared Drive connection. Actual video extraction is currently blocked by YouTube sign-in/verification; this is not a completed archive.
+Owner resumed the ten-channel archive and explicitly chose the working LongForm Shared Drive connection. The archive resumed at 20:45 UTC after a successful playback and real Scrapper download check; it is not yet complete.
+
+Latest update: Scrapper downloaded the 51-second Short `-6cksKssD9Y` (4,609,147 bytes), and the real production worker verified its uploaded Drive copy. At least three actual source Shorts now have verified Drive receipts. The worker is processing sequentially; the zero-video totals below describe the earlier blocked checkpoint. Brave still shows a Sign in link, so this is evidence of restored public download access, not proof of authenticated browser state. No cookies or bypasses were used.
 
 Destination: [Movie Clips](https://drive.google.com/drive/folders/1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY) inside the existing LongForm Shared Drive. Ten source-channel folders and ten checksum-verified channel manifests are present.
 

@@ -1,5 +1,21 @@
 # Scrapper Memory
 
+## Shorts archive resumed — 2026-10-19 20:45 UTC (Codex)
+
+Owner reported sign-in was done. Rechecked Brave Personal: normal playback now
+works, although the page still shows Sign in. Crucially, Scrapper’s unchanged
+public-only Mac adapter successfully downloaded -6cksKssD9Y (51s, 4,609,147 bytes),
+without exporting cookies or using a challenge workaround. Restarted the real
+sequential worker against the existing ledger and new Shared Drive destination.
+The first production Drive receipt verifies SHA-256
+344e5fd8e51664e2125b6fd7074b8813c5d649ad9c98d788c5e29c54e9d4cfd5
+and Drive file 1mhxZ-ZbEqo0gpIY0hYPsN9FzHTeVUwUt. At least three actual Shorts
+are now verified in Drive; the archive is running, not complete. The prior
+zero-video/sign-in-pending checkpoint below is historical. Stop the owned batch
+on another access challenge, preserve verified entries, and do not publish.
+Evidence: post-signin-download-check.json, resumed-archive-log.txt and
+resumed-charan-manifest.json in the ignored operation artifacts folder.
+
 ## Current Shorts archive operation — 2026-10-19 (Codex)
 
 Owner resumed all ten channel archives and requested a later SocialPilot Drive
