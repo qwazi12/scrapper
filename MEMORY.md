@@ -99,6 +99,20 @@ python3 scrape.py https://x.com/user/status/123...
 
 ## Architecture Update — 2026-09-30
 
+### Log — 2026-10-19 — Review of MEMORY.md + live check (no code changed)
+- VERIFIED: caption fix works — #749 posted to YouTube, Facebook, Instagram on 2026-10-18 00:53 UTC
+  (YT 0Qt3LA2SstA, FB reel 1634180588080144, IG DencSofFP0V).
+- FOUND: 2026-10-19 01:07 UTC "Delete on 640 videos" (queue_bulk_deleted) right after two Mix & Shuffles of 640.
+  Queue now 4 ready + 17 archived. Undo entry #329 is top of the queue undo stack (restorable). Owner to confirm
+  whether intended — NOT undone.
+- BUG FOUND (not fixed yet): re-posting a posted row (#749 re-sent to Facebook 2026-10-19 00:23 UTC) races the
+  result checker — reconcile_posting saw status "posting" with the OLD completed publish_requests, archived it,
+  and the new Facebook request (4b2eccf6…) is never checked; published_at null. Possible duplicate FB post.
+  Fix proposed: clear publish_requests when a new post starts.
+- MEMORY.md structure has drifted from the P1 format: no "Current State"; the live "Pending / Next" sits inside a
+  2026-10-03 log (line ~514); recent logs were inserted under "Architecture Update — 2026-09-30"; old pending
+  items (Outstand era, VERCEL secrets, 7 retry rows) never closed. Restructure proposed, not done.
+
 ### Log — 2026-10-17 — Per-platform caption limits (a3fce00)
 - #749 (horror countdown) failed at its 12:00 slot: Instagram refused the 3,723-char description (max 2,200),
   which failed YouTube + Facebook too (one request per profile). upload_post.upload_video now fits per platform:
