@@ -16,6 +16,19 @@ countdown end to end in production: render, approve, post. Turn posting back on.
 Declined: bulk-downloading the 10 third-party channels' Shorts to repost (no permission from those creators).
 See docs/implementation/CLAUDE_REVIEW_20261019.md for the full review.
 
+### Progress 2026-10-19 (Claude)
+- Merged (12cc28f, b00d432), pushed 23da0f0 → prod backend+frontend on merged main; split ended. 868 tests.
+- Problem 1 9fd2456, problem 3 35347e2, problem 4 60c1f2d + 4357c12 (described roles; unreviewed web findings
+  don't block). 887 tests pass.
+- Found while proving in prod: (a) every paid call with grounding/images/TTS needs costs.request_bounds — none were
+  set, so gather/shots/TTS were blocked since the release. Set via PUT /api/costs/settings: gemini:gemini-3.8-flash
+  $0.10, gemini-tts:gemini-3.8-flash-tts $0.02, gemini:gemini-3.8-flash-tts $0.02 (per-call holds; $6/day cap unchanged).
+  (b) Codex storyboard only feeds owner-reviewed web findings into new scripts (quality drop) — owner decision pending.
+  (c) Pre-release countdowns need "upgrade saved contract", which drops their old entries → remade (#9 reviewed and
+  upgraded; 300 year fixed 2006→2007; #9 and #7 entries queued). #8 has 7/10 real titles → owner review.
+  (d) Countdowns #7/#8/#10 had failed research on 10-17 (p.has bug, fixed by Codex); #7/#8 re-researched.
+- LongForm proof: #141 Wicker rendering (blocked first by a false role conflict — fixed in 4357c12).
+
 ## Current handoff — release and stop (2026-10-19)
 
 The owner's latest instruction supersedes continuous local implementation:
