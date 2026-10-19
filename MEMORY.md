@@ -1,5 +1,49 @@
 # Scrapper Memory
 
+## Current handoff — release and stop (2026-10-19)
+
+The owner's latest instruction supersedes continuous local implementation:
+map the remaining plan here, save the current work to GitHub, deploy it live,
+verify it, then stop. This releases the tested checkpoint; it does **not** mark
+the full Screen Central OS roadmap complete. Shorts archival/Drive login remains
+deferred. No public media posts, comment replies or paid test generations are
+part of this release. Historical entries below describe earlier authorization
+and evidence at their dates; this section controls the current handoff.
+
+Implementation checkpoint: `98a6eb9` (motion cache ownership). Existing evidence:
+868 backend passes/1 optional skip, 390 actual PostgreSQL passes with native
+restore, 32 browser passes, production frontend build and TypeScript pass.
+The browser uses original synthetic media/offline speech and simulated cloud
+boundaries; motion CLI/real providers/editorial quality are not certified.
+Detailed results and source/snapshot hashes are retained in the progress ledger.
+
+Remaining implementation plan (pending future owner instruction after release):
+
+| Order | Roadmap | Work to implement | Required tests and acceptance |
+|---|---|---|---|
+| 1 | C05 speech and captions | Record requested prepared speech, voice/configuration and input-audio hash; show word substitutions against approved script/captions; preserve source words and distinguish request records from transcripts. Extend Studio, native video and Countdown consistently. | Missing/legacy/future metadata stays unconfirmed; lexical changes require an explicit exact-export review; punctuation-only changes do not invent a mismatch. Persisted versions/fingerprints and real UI acknowledgment invalidation must pass. Actual voice/caption alignment needs approved rendered-media review. |
+| 2 | C01–C02 factual and category evidence | Broader material claims/unseen entities; independent specialized awards, box-office, anime, true-event, rating and exclusivity evidence; wider ambiguous-language handling. | Contradiction, stale source, wrong entity/year/territory, missing evidence and ambiguous category corpus must refuse before paid generation/delivery. No automatic fill, list shrink or unsupported truth claims. |
+| 3 | C04, C06 asset lifecycle and relevance | Remaining temporary-file consumers; ownership-proven remote reclamation; semantic beat/scene/music matching and musical transitions. | Concurrent reader/cleanup, interrupted copies, lost leases, provenance/dedup and source-change tests; no sole-copy deletion. Real rendered samples must match the intended scenes/music. Remote automatic deletion stays disabled until proven. |
+| 4 | C07 creative formats | Source-aware recuts, deeper Reel treatments and posted-source resend workflow. | Original-source/version-bound recuts and format-specific metadata/acceptance; actual Short/Reel playback and private manual-export UI. Preserve original narration/history. |
+| 5 | C08–C09 audience and comments | Real authorized metrics/IG-FB adapters, legacy attribution, refresh/deletion/privacy lifecycle and deeper private reply assistance. | Scope/account separation, missing/late/revised data, pagination/dedup, deletion and stale-draft tests; distinguish actual provider reads from fixtures. Replies stay private unless separately authorized. |
+| 6 | C10 learning and autonomy | Controlled experiments, real performance/cost reconciliation and bounded execution authority. | Comparable-age/format cohorts, negative/conflicting outcomes, rejection/stale-plan gates and real billing evidence. No causal/growth claim from descriptive fixtures; execution remains disabled until explicitly approved and verified. |
+| 7 | C11–C12 operations | Wider worker/process crash and stop-all upgrade recovery; official provider contracts/invoices; Linux/container/CI and production restore/media-volume coverage. | Real kill/restart/expiry and unknown-outcome tests, stop-old/start-new rollout, baseline upgrade/rollback, isolated Linux browser suite, restore checksum/schema/sequence/media checks. Never auto-retry uncertain external publishing. |
+| 8 | C13 owner experience | Remaining form persistence, typed per-platform statuses, accessibility and negative/outage coverage. | Draft recovery, late-response/identity mismatch/cancellation, error/retry and keyboard/accessibility tests through actual UI. No misleading empty or success states. |
+| 9 | C14 final editorial/release package | Consolidate historical documentation; repeat complete scenarios; inspect actual long narration, caption timing, scene relevance, transitions and sound. | Evidence manifest binds exact source/build/media; human editorial acceptance plus passing backend, PostgreSQL, production build/TypeScript and browser suites. Real HyperFrames/Chrome and provider lanes must run before marked verified. |
+| Retain | C03 | Keep immutable export/input history, identity-safe recovery and deletion protection working. | Existing retained-version, queued-source and deletion-survival regression tests remain required for every affected slice. |
+| Deferred | A01 | Full authorized channel Shorts archive into Movie Clips Drive. | No login, downloads or Drive uploads until resumed by owner; real owner-authenticated Drive upload/storage remains unresolved. |
+
+Current release procedure and exact outcome:
+[RELEASE_20261019.md](docs/implementation/RELEASE_20261019.md).
+Full capability/status detail:
+[REMAINING_ROADMAP.md](docs/implementation/REMAINING_ROADMAP.md).
+Save source, tests, docs and reproducible evidence summaries to the existing
+feature branch; keep credentials, private databases, videos and raw test artifacts
+out of GitHub. Deploy that exact commit to existing Railway/Vercel production
+projects without merging unrelated changes. Verify migration backup, health,
+authentication boundaries and frontend/API access. Record actual outcomes here,
+then stop even though the remaining roadmap is intentionally unfinished.
+
 Persistent log of everything this scraper has downloaded. Appended
 automatically on every run of `scrape.py`, committed to git so history
 survives across machines.

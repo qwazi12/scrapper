@@ -1,3 +1,9 @@
+> **Current owner instruction, 2026-10-19:** save the remaining implementation
+> plan in root MEMORY.md, push the tested checkpoint to GitHub, deploy it live,
+> verify the release and stop. This supersedes earlier continuous/local-only
+> instructions below. The whole roadmap remains partial; Shorts archive deferred.
+> See [RELEASE_20261019.md](RELEASE_20261019.md) for the actual release outcome.
+
 # Continuous local completion queue
 
 Owner instruction on October 18, 2026: continue the entire remaining roadmap,
