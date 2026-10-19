@@ -71,7 +71,7 @@ def _out(p: StudioProject, full: bool = True) -> dict[str, Any]:
     d["archive"] = p.archive
     d["review"] = p.review
     from .research_gate import script_issues
-    d["research_issues"] = script_issues(p.script)
+    d["research_issues"] = script_issues(p.script,p.facts)
     d["script_ready"] = not d["research_issues"]
     return d
 
@@ -584,7 +584,7 @@ def approve_export(project_id: int, req:AcceptanceIn, s: Session = Depends(get_s
         if p.stage_status in ("running", "queued"):
             raise HTTPException(409, "Wait for the running stage before approving")
         try:
-            require_checked(p.script)
+            require_checked(p.script,p.facts)
             approval = accept(p,runner.project_dir(project_id),req,clock(s))
         except RuntimeError as exc:
             raise HTTPException(409, str(exc))
@@ -608,7 +608,7 @@ def publish(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any
             raise HTTPException(400, "Render the video first")
         from .research_gate import script_issues
         from .media_quality import require_export_approval
-        issues = script_issues(p.script)
+        issues = script_issues(p.script,p.facts)
         if issues:
             raise HTTPException(409, "Research blocked: " + "; ".join(issues[:5]))
         try:

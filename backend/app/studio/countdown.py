@@ -596,7 +596,7 @@ def segment_fingerprints(s, c) -> dict:
         p = s.get(StudioProject, pid)
         if p is None:
             raise RuntimeError(f"Missing countdown segment {pid}")
-        require_checked(p.script)
+        require_checked(p.script,p.facts)
         fingerprints[str(pid)] = export_fingerprint(p, project_dir(pid))
     if not fingerprints:
         raise RuntimeError("No checked segments")
@@ -1913,7 +1913,7 @@ def review_bookends(cid: int, req: BookendReviewIn) -> dict[str, Any]:
                     p = s.get(StudioProject, int(pid))
                     if not p:
                         raise RuntimeError("A segment is missing")
-                    require_checked(p.script)
+                    require_checked(p.script,p.facts)
             except RuntimeError as exc:
                 raise HTTPException(409, str(exc)) from exc
             c.review = {**(c.review or {}), "bookend_review": {"version": req.expected_version,

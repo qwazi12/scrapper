@@ -62,7 +62,7 @@ def facts(kind, n, **kwargs):
     return {**title(n), "primary_date": "2026-10-18", "releases": [], "directors": [], "writers": [],
             "writing_credits": [], "cast": ([{"actor":"Ada Example","character":"The Traveler / Narrator"},
                 {"actor":"Bea Fixture","character":"The Man in the Wall"},
-                {"actor":"Dee E. Sample","character":"Dr. Original"}] if int(n)==88 else []), "genres": ["Animation"], "videos": ([{"site":"YouTube","type":"Trailer","url":"https://youtube.com/watch?v=fixture40"}] if n==40 else []),
+                {"actor":"Dee E. Sample","character":"Dr. Original"}] if int(n) in (88,89) else []), "genres": ["Animation"], "videos": ([{"site":"YouTube","type":"Trailer","url":"https://youtube.com/watch?v=fixture40"}] if n==40 else []),
             "poster": os.getenv("SAFE_E2E_API_URL", "http://127.0.0.1:8802") + "/api/e2e/poster.jpg", "backdrops": [], "imdb_id": f"tt{int(n):07}",
             "source": f"https://www.themoviedb.org/movie/{n}", "attribution": tmdb.ATTRIBUTION}
 
@@ -470,3 +470,19 @@ def queue_recovery_row():
             source='Original locally generated fixture; never approved or scheduled')
         s.add(row);s.commit();s.refresh(row)
         return {'id':row.id,'title':row.title,'status':row.status,'fixture_only':True,'publication':'none'}
+
+
+@app.post('/api/e2e/legacy-checked-script/{pid}')
+def legacy_checked_script(pid:int):
+    """Upgrade fixture only: retain a historical checker green, never a real grant."""
+    from fastapi import HTTPException
+    from backend.app.models import StudioProject
+    with SessionLocal() as s:
+        row=s.get(StudioProject,pid)
+        if not row or row.tmdb_id!=89 or row.stage_status in ('running','queued'):
+            raise HTTPException(409,'Choose the completed synthetic legacy-checked fixture89 only')
+        words='Invented Performer plays The Traveler in Synthetic Film 89.'
+        row.script={**row.script,'sentences':[{'text':words,'paragraph':1,'refs':['F2'],'check':'ok'}],
+            'check_issues':[],'check_scope':'storyboard_only'}
+        row.plan=None;row.render=None;s.commit()
+        return {'id':row.id,'stored_check':'ok','words':words,'fixture_only':True,'publication':'none'}

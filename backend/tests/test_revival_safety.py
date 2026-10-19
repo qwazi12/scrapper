@@ -169,7 +169,7 @@ def test_upstream_stage_failure_keeps_owner_words_but_invalidates_old_approval(m
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         assert p.script["sentences"][0]["text"] == "Owner's original words."
-        assert research_gate.script_issues(p.script) and p.plan is None and p.render is None
+        assert research_gate.script_issues(p.script,p.facts) and p.plan is None and p.render is None
 
 
 def test_new_countdowns_reject_partial_and_duplicate_lists():

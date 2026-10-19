@@ -1809,3 +1809,32 @@ test("Credit context UI preserves exact canonical names and blocks wrong title o
   await page.screenshot({ path: path.join(evidence, "credit-context-preserved-names.png"), fullPage: true });
   expect(errors).toEqual([]);
 });
+
+test("Cached historical script green is rechecked on read and narration admission before any new model check", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  await page.goto("/#longform"); await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 89");
+  await page.getByRole("button", { name: "Search", exact: true }).click(); await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await expect(page.getByTestId("script-editor")).toBeVisible(); const pid = Number(new URL(page.url()).hash.split("/")[1]);
+  const current = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
+  // An explicitly synthetic old DB state; the production owner PATCH cannot forge checks.
+  const fixture = await request.post(`${stack.api}/api/e2e/legacy-checked-script/${pid}`, { headers }); expect(fixture.ok()).toBe(true);
+  const old = await fixture.json(); const saved = await current();
+  expect(saved.script.sentences[0].check).toBe("ok"); expect(saved.script.check_issues).toEqual([]); expect(saved.script_ready).toBe(false);
+  await page.reload(); await expect(page.getByTestId("script-editor")).toHaveValue(old.words);
+  await expect(page.getByTestId("research-blocked")).toContainText("structured cast relationship");
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
+  const forced = await request.post(`${stack.api}/api/studio/projects/${pid}/run`, { headers, data: { stage: "plan", auto: false, until: "plan" } });
+  expect(forced.ok(), await forced.text()).toBe(true);
+  await expect.poll(async () => (await current()).stage_status).toBe("error");
+  const stopped = await current(); expect(stopped.stage_message).toContain("structured cast relationship");
+  expect(stopped.script.sentences[0].text).toBe(old.words); expect(stopped.has.plan).toBe(false);
+  await page.reload(); await expect(page.getByTestId("script-editor")).toHaveValue(old.words);
+  await expect(page.getByTestId("research-blocked")).toContainText("structured cast relationship");
+  await page.screenshot({ path: path.join(evidence, "cached-green-current-research-blocked.png"), fullPage: true });
+  await page.getByTestId("script-editor").fill("Ada Example plays The Traveler in Synthetic Film 89.");
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  const verification = page.waitForResponse(r => r.url().endsWith(`/api/studio/projects/${pid}/run`) && r.request().method() === "POST");
+  await page.getByRole("button", { name: "Check saved script", exact: true }).click(); expect((await verification).ok()).toBe(true);
+  await expect.poll(async () => (await current()).script_ready).toBe(true);
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled(); expect(errors).toEqual([]);
+});

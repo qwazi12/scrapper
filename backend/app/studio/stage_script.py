@@ -300,5 +300,5 @@ def verify_saved(project_id: int) -> str:
         p = s.get(StudioProject, project_id)
         p.script, p.plan, p.render = sc, None, None
         s.commit()
-    research_gate.require_checked(sc)
+    research_gate.require_checked(sc,facts)
     return "Saved script checked against storyboard; independent source verification still required"

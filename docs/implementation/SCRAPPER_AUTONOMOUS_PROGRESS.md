@@ -698,3 +698,20 @@ f2ef27617e48ab75c609e4113e7fd80d4d3780ac2fa79ddc51f493dfde23ff29; evidence
 history/unlisted-performer1; owned stack stopped after archive. Next confirmed
 C01issue: unlisted screenplay writer escapes the known-credit loop. Continue
 locally; no paid/public/account/archival/push/deploy action.
+
+### Re-evaluate current typed facts at every original Studio admission
+
+Five cached-green regressions reproduced. Required current-facts arguments now
+flow to readiness, saved verify, narration plan, render, owner export approval,
+Studio enqueue and Countdown segment/bookend checks. Read-only re-evaluation keeps
+old words/check provenance/history while blocking new work under current rules.
+Focused68passed1.20s; full backend714passed/1skip73.34s; actualPG238passed32.15s,
+native restore1.306s/source unchanged/185951bytes/SHA
+5c3fad737bd57080a93a88f6f60a7fb985e7c5c217a7d2542605cd46b34bc8ea.
+Explicit tsc2passed. Actual scoped browser3passed1.1min; fresh capture refinement
+1passed9s after detecting a pre-load screenshot (no application failure).
+Evidence history/live-research-admission1/2, source
+62791e5349e0b1dbf7b3c244cf088037ee86d319eba0e43064a32bc4eb6442b9; owned stacks stopped.
+Next critical task is immutable source/fact binding through original Studio queue
+dispatch, whose existing summary metadata cannot provide retained research proof.
+No paid/public/account/archive/push/deploy activity; work continues.

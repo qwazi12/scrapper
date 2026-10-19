@@ -220,7 +220,7 @@ def render(project_id: int) -> str:
         raise RuntimeError("This breakdown is archived (footage deleted to save space; the video is in Drive). "
                            "Press Restore footage first, then render.")
     from .research_gate import require_checked
-    require_checked(script)
+    require_checked(script,facts)
     if not script.get("timeline"):
         raise RuntimeError("Narration timeline missing — run Voice + shots before rendering")
     from .archive import ensure_footage

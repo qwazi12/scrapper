@@ -172,10 +172,10 @@ def structured_conflicts(sentences: list[dict], facts: dict) -> list[str]:
     return list(dict.fromkeys(conflicts))
 
 
-def script_issues(script: dict | None) -> list[str]:
+def script_issues(script: dict | None, facts: dict | None) -> list[str]:
     if not script or not script.get("sentences"):
         return ["Write and check the script first"]
-    issues = list(script.get("check_issues") or [])
+    issues = [*(script.get("check_issues") or []), *structured_conflicts(script["sentences"],facts or {})]
     for i, sentence in enumerate(script["sentences"], 1):
         if sentence.get("check") != "ok":
             issues.append(f"Sentence {i} needs a storyboard check")
@@ -190,8 +190,8 @@ def script_issues(script: dict | None) -> list[str]:
     return list(dict.fromkeys(issues))
 
 
-def require_checked(script: dict | None) -> None:
-    issues = script_issues(script)
+def require_checked(script: dict | None, facts: dict | None) -> None:
+    issues = script_issues(script,facts)
     if issues:
         raise RuntimeError("Research blocked: " + "; ".join(issues[:5]) + ". Review sources and run Check saved script.")
 

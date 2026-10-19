@@ -47,3 +47,30 @@ Full backend709passed/1skip79.93s; actualPG233passed34.44s/native restore0.990s.
 Actual current browser2passed1.0min, full LongForm media plus seven saved credit
 states including unknown forward subject/repaired readiness. Evidence
 artifacts/e2e/history/unlisted-performer1; no real-world cast or paid proof.
+
+## Current-facts admission, including cached legacy checks
+
+`script_issues` and `require_checked` now require the caller's current facts and
+re-run deterministic conflicts in addition to the retained storyboard/source
+checks. All production readiness, narration plan, render, saved verification,
+owner export approval, Studio enqueue and Countdown segment/bookend validation
+call sites pass the actual project facts. A historical cached model `ok` with no
+recorded issues cannot bypass a newer deterministic rule. Readiness calculation
+is read-only: old checks/words/history remain retained, while new media/release
+admission blocks until the owner repairs/rechecks. This does not independently
+verify every provider fact or solve detached older queue provenance.
+
+Five regressions reproduced false readiness or the wrong later failure for a
+synthetic historical green. Focused68passed1.20s; full backend714passed/1skip73.34s;
+actualPG238passed32.15s plus native restore1.306s/source unchanged. Actual UI3passed
+1.1min (LongForm media, credit variants, cached green read/forced plan/refusal and
+word-preserving repair). Fresh screenshot refinement1passed9s waits for the loaded
+exact words/block after reload; the prior pre-load capture is retained separately.
+Evidence history/live-research-admission1/2, source
+62791e5349e0b1dbf7b3c244cf088037ee86d319eba0e43064a32bc4eb6442b9.
+
+Next critical source boundary: existing original Studio queue rows contain summary
+metadata, with no immutable script/facts/export reference enforced by dispatch.
+New source bindings and fail-closed legacy review are required before calling
+current factual admission complete through publication. Unlisted writing credits
+also remain a confirmed separate C01 gap.

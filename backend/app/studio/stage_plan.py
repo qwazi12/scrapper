@@ -227,7 +227,7 @@ def plan(project_id: int) -> str:
     if not script or not script.get("sentences"):
         raise RuntimeError("Run 'script' first")
     from .research_gate import require_checked
-    require_checked(script)
+    require_checked(script,facts)
     if not shots:
         raise RuntimeError("Run 'shots' first")
     catalog = [sh for sh in shots if sh.get("usable")]
