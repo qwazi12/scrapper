@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+os.environ['YOUTUBE_ANALYTICS_AUTHORIZED_USER_JSON']=''
+
 import pytest
 
 root = Path(os.environ.get('SCRAPPER_PG_TEST_ROOT', '/nonexistent')).resolve()

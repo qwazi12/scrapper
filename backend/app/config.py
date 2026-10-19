@@ -138,6 +138,8 @@ class Settings(BaseSettings):
     # YouTube Data API v3 key: trailer view/like counts for ranking breakdown
     # candidates (read-only stats; downloads never go through it). Optional.
     youtube_api_key: str = ""
+    # Existing read-only Analytics OAuth grant only; no OAuth flow or scope expansion.
+    youtube_analytics_authorized_user_json: str = ""
     tmdb_read_token: str = Field(
         default="",
         validation_alias=AliasChoices("API_READ_ACCESS_TOKEN", "TMDB_READ_ACCESS_TOKEN", "TMDB_API_READ_ACCESS_TOKEN"),

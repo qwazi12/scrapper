@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import enum
 
-from sqlalchemy import BigInteger, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import UniqueConstraint, BigInteger, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -522,10 +522,24 @@ class RemoteCopyEvidence(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class ContentLineage(Base):
+    """Versioned owner mappings from public content to exact retained local inputs."""
+    __tablename__='content_lineages'
+    __table_args__=(UniqueConstraint('binding_key','revision',name='ux_content_lineage_revision'),)
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    binding_key: Mapped[str]=mapped_column(String(64),index=True)
+    revision: Mapped[int]=mapped_column(Integer)
+    platform: Mapped[str]=mapped_column(String(24),index=True)
+    account_id: Mapped[str]=mapped_column(String(128))
+    content_id: Mapped[str]=mapped_column(String(255),index=True)
+    data: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # Both dialects reject raw UPDATE/DELETE as an integrity violation.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

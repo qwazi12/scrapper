@@ -865,3 +865,54 @@ test("Asset library UI indexes original media, finds owner captions and reuses d
   expect(after.assets.filter((row: any) => row.id === result.assets[0].id)).toHaveLength(1);
   await page.screenshot({ path: path.join(evidence, "authorized-asset-library.png"), fullPage: true });
 });
+
+test("Audience lineage UI maps exact native bytes, syncs processed-day fixtures and retains corrections", async ({ page, request }) => {
+  const opportunity = await request.post(`${stack.api}/api/editorial/opportunities`, { headers, data: {
+    title: "Original audience lineage fixture", angle: "Discuss original shape composition through an independently retained local image.",
+    audience: "Viewers comparing original generated shapes", formats: ["image"], evidence: [{ url: "https://example.invalid/lineage-fixture",
+      excerpt: "Original procedural shapes and text were created for this local test and contain no borrowed material.", entity: "Original shapes", retrieved_at: new Date().toISOString() }],
+  } });
+  expect(opportunity.ok()).toBe(true); const oid = (await opportunity.json()).id;
+  expect((await request.post(`${stack.api}/api/editorial/opportunities/${oid}/approve`, { headers })).ok()).toBe(true);
+  const created = await request.post(`${stack.api}/api/editorial/campaigns`, { headers, data: {
+    opportunity_id: oid, title: "Original audience lineage fixture", formats: ["image"],
+    beats: [{ role: "hook", text: "Can one original shape shift your attention?", source_refs: [1] },
+      { role: "body", text: "The original composition moves attention toward a quiet corner.", source_refs: [1] },
+      { role: "payoff", text: "Choose the shape composition with the clearest message.", source_refs: [1] }],
+    image_text: "One original shape changes the frame.", image_caption: "Which original composition makes the clearest choice?",
+  } });
+  expect(created.ok()).toBe(true); const cid = (await created.json()).id;
+  const rendered = await request.post(`${stack.api}/api/editorial/campaigns/${cid}/render/image`, { headers });
+  expect(rendered.ok()).toBe(true); const eid = (await rendered.json()).id;
+  await request.post(`${stack.api}/api/e2e/enable-audience-fixture`);
+  await page.goto("/#editorial"); await page.getByRole("button", { name: "Performance evidence", exact: true }).click();
+  await expect(page.getByText(/YouTube adapter: fixture_only/)).toBeVisible();
+  const form = page.getByRole("form", { name: "Content mapping", exact: true });
+  await form.getByLabel("Account/channel ID", { exact: true }).fill("UC" + "f".repeat(22));
+  await form.getByLabel("Published content ID", { exact: true }).fill("fixture0001");
+  await form.getByLabel("Mapped format", { exact: true }).selectOption("image");
+  await form.getByLabel("Mapped publication time", { exact: true }).fill(new Date(Date.now() - 4 * 86400000).toISOString().slice(0, 16));
+  await form.getByLabel("Exact retained source", { exact: true }).selectOption(`native_export:${eid}`);
+  await form.getByLabel("Mapping evidence and correction rationale", { exact: true }).fill("Owner compared this original synthetic image and its exact local source against the fixture public identifier.");
+  const ack = form.getByRole("checkbox", { name: "I reviewed this exact public identifier, publication time and retained source.", exact: true });
+  const save = form.getByRole("button", { name: "Record exact content mapping", exact: true });
+  await ack.check();
+  await form.getByLabel("Mapping evidence and correction rationale", { exact: true }).fill("Owner reviewed the exact generated image, its metadata and the synthetic public identifier before mapping.");
+  await expect(ack).not.toBeChecked(); await expect(save).toBeDisabled(); await ack.check(); await save.click();
+  await expect(page.getByRole("status").filter({ hasText: "Exact content mapping recorded" })).toBeVisible();
+  const mappings = async () => (await request.get(`${stack.api}/api/editorial/content-lineage`, { headers })).json();
+  const first = (await mappings()).bindings.find((row: any) => row.content_id === "fixture0001");
+  const card = page.getByTestId(`content-mapping-${first.id}`);
+  await card.getByRole("button", { name: "Sync read-only YouTube metrics for fixture0001", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Read-only observation recorded through" })).toBeVisible();
+  const queries = await (await request.get(`${stack.api}/api/e2e/audience-queries`)).json();
+  expect(queries.real_account_access).toBe(false); expect(queries.queries).toHaveLength(2);
+  expect(queries.queries[0].dimensions).toBe("day"); expect(queries.queries[1].dimensions).toBeUndefined();
+  await card.getByRole("button", { name: "Correct mapping for fixture0001", exact: true }).click();
+  await form.getByLabel("Mapped format", { exact: true }).selectOption("community");
+  await form.getByLabel("Mapping evidence and correction rationale", { exact: true }).fill("Owner corrected the format after reviewing the original local image used for this synthetic community treatment.");
+  await ack.check(); await save.click();
+  await expect.poll(async () => (await mappings()).bindings.find((row: any) => row.content_id === "fixture0001").revision).toBe(2);
+  expect((await mappings()).versions.filter((row: any) => row.content_id === "fixture0001")).toHaveLength(2);
+  await page.screenshot({ path: path.join(evidence, "audience-content-lineage.png"), fullPage: true });
+});

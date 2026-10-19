@@ -344,3 +344,40 @@ def archive_local_run():
         count=archive_worker.drain(os.environ['SAFE_E2E_API_URL'],settings.access_token,ARCHIVE_CHANNEL,ROOT/'mac-archive')
         return {'verified':count,'simulated_drive':True,'actual_drive_uploads':0}
     finally:archive_worker.download=previous_download;archive_worker.multipart_video=previous_upload
+
+# Explicit fixture switch: normal unavailable-adapter UI remains testable until enabled.
+from backend.app.editorial import audience as audience_adapter
+_audience_fixture_enabled=False
+_audience_queries=[]
+_audience_original_status=audience_adapter.status
+
+
+def _audience_status():
+    if not _audience_fixture_enabled:return _audience_original_status()
+    return {'platform':'youtube','status':'fixture_only','reason':'Synthetic local report boundary; no real account was accessed',
+        'live_metrics':None,'mode':'fixture','real_account_verified':False,'latency':'Synthetic processed Pacific days'}
+
+
+def _audience_query(params):
+    if not _audience_fixture_enabled:raise IsolationError('Analytics fixture must be explicitly enabled')
+    from datetime import datetime,timedelta
+    day=(datetime.now(audience_adapter.PACIFIC).date()-timedelta(days=2)).isoformat()
+    _audience_queries.append(dict(params))
+    names=[*(['day'] if params.get('dimensions') else []),*audience_adapter.NAMES]
+    values=[*([day] if params.get('dimensions') else []),125,90,4,2,15.2,127.5]
+    return {'columnHeaders':[{'name':name} for name in names],'rows':[values]}
+
+
+audience_adapter.status=_audience_status
+audience_adapter._query=_audience_query
+
+
+@app.post('/api/e2e/enable-audience-fixture')
+def enable_audience_fixture():
+    global _audience_fixture_enabled
+    _audience_fixture_enabled=True
+    return {'mode':'fixture_only','real_account_access':False}
+
+
+@app.get('/api/e2e/audience-queries')
+def audience_queries():return {'queries':_audience_queries,'real_account_access':False}

@@ -97,6 +97,7 @@ class ExperimentIn(Strict):
     age_hours: Literal[24, 72, 168, 720]
     minimum_per_group: int = Field(default=5, ge=3, le=100)
     controls: str = Field(min_length=10, max_length=2000)
+    account_id: str | None = Field(default=None,min_length=3,max_length=128)
 
     @model_validator(mode="after")
     def distinct(self):
@@ -118,6 +119,7 @@ def experiment_result(data, observations):
     target = data["age_hours"]
     for row in observations:
         age = (_utc(row.observed_at) - _utc(row.published_at)).total_seconds() / 3600
+        if row.provenance.get("account_id") != data.get("account_id"):continue
         if row.platform != data["platform"] or row.format != data["format"] or abs(age - target) > target * .1: continue
         if row.metrics.get(data["metric"]) is None: continue
         previous = selected.get(row.content_id)
@@ -144,7 +146,8 @@ def experiment_result(data, observations):
 @router.get("/learning")
 def learning(s: Session = Depends(get_session)):
     feedback = s.query(EditorialRecord).filter(EditorialRecord.kind == "feedback").order_by(EditorialRecord.id.desc()).limit(500).all()
-    observations = s.query(PerformanceObservation).all()
+    from .content_lineage import effective_observations
+    observations = effective_observations(s)
     experiments = s.query(EditorialRecord).filter(EditorialRecord.kind == "experiment").order_by(EditorialRecord.id.desc()).all()
     questions = [r for r in feedback if r.data["category"] in ("question", "correction")]
     # Conservative recurring-question buckets. These are token groups for manual

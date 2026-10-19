@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, EditorialInsights, EditorialOpportunity } from "@/lib/api";
+import { api, ContentBinding, EditorialInsights, EditorialOpportunity } from "@/lib/api";
 import { askConfirm } from "@/lib/dialogs";
+import { ContentLineage } from "./ContentLineage";
 import { AssetLibrary } from "./AssetLibrary";
 import { NativeCampaigns } from "./NativeCampaigns";
 import { AudienceLearning } from "./AudienceLearning";
@@ -104,13 +105,14 @@ export function EditorialWorkspace() {
       {!rows.length && <p>No opportunities yet. Add research and an original angle above.</p>}
     </>}
     {tab === "performance" && insights && <>
+      <ContentLineage onChanged={() => void load().catch(e => setMessage(e.message))} />
       {insights.adapters.map(a => <div style={panel} key={a.platform}><strong>{a.platform}: {a.status}</strong><p>{a.reason}</p>
         <p>{a.imported_observations} imported observations · Live metrics: unavailable</p></div>)}
       <ObservationForm busy={busy} onSave={data => action(() => api.editorialObservation(data), "Observation imported. Comparisons keep format and publication age separate.")} />
       <div style={{ ...panel, overflowX: "auto" }}><h2>Publication-age cohorts</h2><p>One observation per content item near 24h, 72h, 7d or 30d. Missing measures stay unavailable.</p>
         <table><thead><tr>{["Platform / format", "Age", "Items", "Median views", "Engaged views", "Confidence"].map(h => <th key={h}>{h}</th>)}</tr></thead>
-          <tbody>{insights.cohorts.map(c => <tr key={`${c.platform}/${c.format}/${c.age_hours}`}>
-            <td>{c.platform} / {c.format}</td><td>{c.age_hours}h</td><td>{c.n}</td><td>{c.medians.views ?? "Unavailable"}</td>
+          <tbody>{insights.cohorts.map(c => <tr key={`${c.platform}/${c.account_id}/${c.format}/${c.age_hours}`}>
+            <td>{c.platform} / {c.format}<div style={{ fontSize: 11 }}>{c.account_id === "unspecified_owner_import" ? "Owner import (account unspecified)" : c.account_id}</div></td><td>{c.age_hours}h</td><td>{c.n}</td><td>{c.medians.views ?? "Unavailable"}</td>
             <td>{c.medians.engaged_views ?? "Unavailable"}</td><td>{c.confidence.replaceAll("_", " ")}</td>
           </tr>)}</tbody></table>
         {!insights.cohorts.length && <p>No comparable observation windows yet.</p>}<p>These are observational comparisons. They do not establish causation or predict growth.</p>
@@ -120,17 +122,25 @@ export function EditorialWorkspace() {
 }
 
 function ObservationForm({ busy, onSave }: { busy: boolean; onSave: (data: unknown) => void }) {
+  const [bindings, setBindings] = useState<ContentBinding[]>([]);
+  const [mapping, setMapping] = useState("");
+  useEffect(() => { api.contentLineages().then(view => setBindings(view.bindings)).catch(() => {}); }, []);
   const [form, setForm] = useState({ platform: "youtube", format: "short", content_id: "", published: "", observed: "", views: "", engaged: "", source: "" });
   return <form style={{ ...panel, display: "grid", gap: 10 }} onSubmit={e => {
     e.preventDefault(); onSave({ platform: form.platform, format: form.format, content_id: form.content_id,
-      published_at: new Date(form.published).toISOString(), observed_at: new Date(form.observed).toISOString(),
-      metrics: { views: form.views === "" ? null : Number(form.views), engaged_views: form.engaged === "" ? null : Number(form.engaged) }, source: form.source });
+      published_at: bindings.find(row => row.id === mapping)?.data.decision.published_at || new Date(form.published).toISOString(), observed_at: new Date(form.observed).toISOString(),
+      metrics: { views: form.views === "" ? null : Number(form.views), engaged_views: form.engaged === "" ? null : Number(form.engaged) }, source: form.source, lineage_id: mapping || null });
   }}><h2>Import an authorized observation</h2>
     <p>Enter a cumulative measurement from an export you are permitted to use. Importing does not connect an account.</p>
-    <label style={field}>Platform<select value={form.platform} onChange={e => setForm({ ...form, platform: e.target.value })}>{["youtube", "instagram", "facebook"].map(p => <option key={p}>{p}</option>)}</select></label>
-    <label style={field}>Content format<select value={form.format} onChange={e => setForm({ ...form, format: e.target.value })}>{formats.map(f => <option key={f}>{f}</option>)}</select></label>
-    <label style={field}>Content ID<input required value={form.content_id} onChange={e => setForm({ ...form, content_id: e.target.value })} /></label>
-    <label style={field}>Published at<input required type="datetime-local" value={form.published} onChange={e => setForm({ ...form, published: e.target.value })} /></label>
+    <label style={field}>Observation content mapping<select aria-label="Observation content mapping" value={mapping} onFocus={() => api.contentLineages().then(view => setBindings(view.bindings)).catch(() => {})} onChange={e => {
+      setMapping(e.target.value); const row = bindings.find(value => value.id === e.target.value);
+      if (row) { const stamp = new Date(row.data.decision.published_at); setForm({ ...form, platform: row.platform, content_id: row.content_id,
+        format: row.data.decision.format, published: new Date(stamp.getTime() - stamp.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }); }
+    }}><option value="">Unlinked authorized owner export</option>{bindings.map(row => <option key={row.id} value={row.id}>{row.account_id} · {row.content_id} · revision {row.revision}</option>)}</select></label>
+    <label style={field}>Platform<select disabled={!!mapping} value={form.platform} onChange={e => setForm({ ...form, platform: e.target.value })}>{["youtube", "instagram", "facebook"].map(p => <option key={p}>{p}</option>)}</select></label>
+    <label style={field}>Content format<select disabled={!!mapping} value={form.format} onChange={e => setForm({ ...form, format: e.target.value })}>{formats.map(f => <option key={f}>{f}</option>)}</select></label>
+    <label style={field}>Content ID<input disabled={!!mapping} required value={form.content_id} onChange={e => setForm({ ...form, content_id: e.target.value })} /></label>
+    <label style={field}>Published at<input disabled={!!mapping} required type="datetime-local" value={form.published} onChange={e => setForm({ ...form, published: e.target.value })} /></label>
     <label style={field}>Measured at<input required type="datetime-local" value={form.observed} onChange={e => setForm({ ...form, observed: e.target.value })} /></label>
     <label style={field}>Views (leave missing measures blank)<input type="number" min={0} value={form.views} onChange={e => setForm({ ...form, views: e.target.value })} /></label>
     <label style={field}>Engaged views<input type="number" min={0} value={form.engaged} onChange={e => setForm({ ...form, engaged: e.target.value })} /></label>

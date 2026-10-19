@@ -12,10 +12,18 @@ export type EditorialOpportunity = {
 export type EditorialInsights = {
   adapters: { platform: string; status: string; reason: string; live_metrics: null; imported_observations: number }[];
   observation_count: number;
-  cohorts: { platform: string; format: string; age_hours: number; n: number; confidence: string;
+  cohorts: { platform: string; account_id?: string; format: string; age_hours: number; n: number; confidence: string;
     medians: Record<string, number | null>; metric_samples: Record<string, number>; limitations: string }[];
   next_actions: string[]; claim: string;
 };
+export type ContentSource = { kind: "export_version" | "native_export" | "delivery_archive"; id: string; title: string; fingerprint: string; created_at: string;
+  preview: { kind: "video" | "image"; file?: string; role?: string; index?: number } | null };
+export type ContentMappingDecision = { platform: string; account_id: string; content_id: string; format: string; published_at: string;
+  source_kind: ContentSource["kind"]; source_id: string; expected_source_fingerprint: string; mapping_evidence: string; reviewed: true };
+export type ContentBinding = { id: string; revision: number; platform: string; account_id: string; content_id: string; created_at: string;
+  data: { decision: ContentMappingDecision; source_fingerprint: string; supersedes: string | null;
+    cost_snapshot: { status: string; amount_usd: number | null; scope?: string; reason?: string; limitations?: string[]; by_basis?: Record<string, number> }; mapping_basis: string; public_bytes_verified: boolean } };
+export type AudienceAdapterStatus = { platform: string; status: string; reason: string; mode: string; real_account_verified: boolean; latency: string };
 export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null };
 export type NativeExport = { id: string; campaign_id: number; format: string; queue_item_id: number | null;
   approval: { fingerprint: string; at: string } | null;
@@ -1096,6 +1104,12 @@ export const api = {
     if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Manual export download failed"); }
     return response.blob();
   },
+  contentSources: () => req<{ sources: ContentSource[] }>("/api/editorial/content-sources", { headers: headers(false) }),
+  contentLineages: () => req<{ bindings: ContentBinding[]; versions: ContentBinding[]; total: number }>("/api/editorial/content-lineage", { headers: headers(false) }),
+  bindContent: (data: ContentMappingDecision & { expected_current_id: string | null }) => req<ContentBinding>("/api/editorial/content-lineage", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  audienceStatus: () => req<AudienceAdapterStatus>("/api/editorial/audience/status", { headers: headers(false) }),
+  audienceSync: (id: string) => req<{ status: string; reason?: string; through_day?: string; observed_at?: string; created: boolean }>(`/api/editorial/audience/${id}/sync`, { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true }) }),
+  contentPreview: (source: ContentSource) => source.kind === "native_export" ? withToken(`${apiBase()}/api/editorial/exports/${source.id}/file/${encodeURIComponent(source.preview?.file?.split("/").pop() || "")}`) : source.kind === "export_version" ? withToken(`${apiBase()}/api/export-history/${source.id}/file/${source.preview?.role || "video"}`) : withToken(`${apiBase()}/api/delivery-history/${source.id}/file/${source.preview?.index || 0}`),
   assetSearch: (q: string, kind: string) => req<{ assets: CatalogAsset[]; total: number; method: string }>(`/api/editorial/assets/search?${new URLSearchParams({ q, ...(kind ? { kind } : {}) })}`, { headers: headers(false) }),
   assetMedia: (id: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/media`),
   assetFrame: (id: number, index: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/frame/${index}`),

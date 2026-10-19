@@ -27,6 +27,8 @@ os.environ["MAX_DISK_USAGE_PERCENT"] = "101"
 os.environ["WARN_DISK_USAGE_PERCENT"] = "100"
 os.environ["DISK_FREE_AT_PERCENT"] = "101"      # the disk guard reads the real disk too; tests switch it on themselves
 
+os.environ['YOUTUBE_ANALYTICS_AUTHORIZED_USER_JSON']=''
+
 import pytest  # noqa: E402
 from backend.app.e2e_safety import install_network_guard  # noqa: E402
 install_network_guard()  # no unmocked provider calls, even with inherited credentials

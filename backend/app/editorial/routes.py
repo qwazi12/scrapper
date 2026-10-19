@@ -139,6 +139,7 @@ class Metrics(Strict):
     likes: int | None = Field(default=None, ge=0, strict=True)
     comments: int | None = Field(default=None, ge=0, strict=True)
     average_view_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    average_view_percent: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     retention_percent: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
 
 
@@ -153,6 +154,7 @@ class ObservationIn(Strict):
     metrics: Metrics
     source: str = Field(min_length=5, max_length=1000)
     latency_note: str = Field(default="Provider reporting may be delayed", max_length=1000)
+    lineage_id: str | None = Field(default=None,min_length=64,max_length=64)
 
     @model_validator(mode="after")
     def times(self):
@@ -166,16 +168,29 @@ class ObservationIn(Strict):
 
 @router.post("/observations")
 def import_observation(req: ObservationIn, s: Session = Depends(get_session)):
+    from ..budget_reservations import lock
+    lock(s)
     data = req.model_dump(mode="json")
-    key = digest([req.platform, req.content_id, req.observed_at.astimezone(UTC).isoformat()])
+    lineage=None
+    if req.lineage_id:
+        from .content_lineage import latest
+        from ..models import ContentLineage
+        lineage=s.get(ContentLineage,req.lineage_id)
+        if not lineage or latest(s).get(lineage.binding_key).id!=lineage.id:raise HTTPException(409,'Choose the current content mapping')
+        decision=lineage.data['decision']
+        if (lineage.platform!=req.platform or lineage.content_id!=req.content_id or decision['format']!=req.format
+                or datetime.fromisoformat(decision['published_at']).astimezone(UTC)!=req.published_at.astimezone(UTC)):
+            raise HTTPException(409,'Observation identity, format or publication time differs from the selected mapping')
+    key = digest([req.platform, req.content_id, req.observed_at.astimezone(UTC).isoformat(),*([lineage.id] if lineage else [])])
     existing = s.get(PerformanceObservation, key)
     if existing:
-        if existing.metrics != data["metrics"]: raise HTTPException(409, "Observation already exists with different measurements; retain the original evidence")
+        if existing.metrics != data["metrics"] or existing.format!=req.format or _utc(existing.published_at)!=req.published_at.astimezone(UTC): raise HTTPException(409, "Observation already exists with different measurements or context; retain the original evidence")
         return {"key": key, "created": False}
     row = PerformanceObservation(key=key, platform=req.platform, content_id=req.content_id, format=req.format,
         published_at=req.published_at, observed_at=req.observed_at, metrics=data["metrics"],
         provenance={"source": req.source, "topic": req.topic, "angle": req.angle, "latency_note": req.latency_note,
-                    "mode": "owner_import", "private_account_access": "not_verified"})
+                    "mode": "owner_import", "private_account_access": "not_verified",
+                    "lineage_id":lineage.id if lineage else None,"account_id":lineage.account_id if lineage else None})
     s.add(row)
     try: s.commit()
     except IntegrityError:
@@ -196,18 +211,18 @@ def cohorts(rows):
         age = (_utc(row.observed_at) - _utc(row.published_at)).total_seconds() / 3600
         window = next((n for n in (24, 72, 168, 720) if abs(age - n) <= n * .1), None)
         if window is None: continue
-        key = (row.platform, row.format, window)
+        key = (row.platform, row.provenance.get("account_id") or "unspecified_owner_import", row.format, window)
         items = groups.setdefault(key, {})
         old = items.get(row.content_id)
         if old is None or abs(age - window) < abs(old[1] - window): items[row.content_id] = (row, age)
     result = []
-    for (platform, fmt, window), items in sorted(groups.items()):
+    for (platform, account, fmt, window), items in sorted(groups.items()):
         medians, samples = {}, {}
         for metric in Metrics.model_fields:
             values = [row.metrics.get(metric) for row, age in items.values() if row.metrics.get(metric) is not None]
             medians[metric] = median(values) if values else None
             samples[metric] = len(values)
-        result.append({"platform": platform, "format": fmt, "age_hours": window, "n": len(items),
+        result.append({"platform": platform, "account_id":account,"format": fmt, "age_hours": window, "n": len(items),
             "confidence": "small_sample" if len(items) < 5 else "descriptive_only", "medians": medians,
             "metric_samples": samples, "content_ids": sorted(items),
             "limitations": "Cumulative snapshots within ±10% of age; observational comparison, not causal evidence"})
@@ -216,10 +231,12 @@ def cohorts(rows):
 
 @router.get("/insights")
 def insights(s: Session = Depends(get_session)):
-    rows = s.query(PerformanceObservation).all()
-    return {"adapters": [{"platform": p, "status": "unavailable", "reason": "Private analytics adapter not connected; import an authorized export",
-                         "live_metrics": None, "imported_observations": sum(r.platform == p for r in rows)}
-                        for p in ("youtube", "instagram", "facebook")],
+    from .content_lineage import effective_observations
+    from .audience import status
+    rows = effective_observations(s)
+    adapters=[{**status(),"imported_observations":sum(r.platform=='youtube' for r in rows)}]
+    adapters.extend({"platform":p,"status":"unavailable","reason":"Private analytics adapter not connected; import an authorized export","live_metrics":None,"imported_observations":sum(r.platform==p for r in rows)} for p in ('instagram','facebook'))
+    return {"adapters":adapters,
             "cohorts": cohorts(rows), "observation_count": len(rows),
             "next_actions": ["Import age-matched observations before comparing formats"] if not rows else
                             ["Review small samples and provider latency before choosing an experiment"],

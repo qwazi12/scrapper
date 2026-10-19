@@ -83,6 +83,9 @@ from .editorial import asset_catalog
 app.include_router(asset_catalog.router)
 from .editorial import learning as learning_routes
 app.include_router(learning_routes.router)
+from .editorial import content_lineage,audience
+app.include_router(content_lineage.router)
+app.include_router(audience.router)
 
 
 @app.middleware("http")

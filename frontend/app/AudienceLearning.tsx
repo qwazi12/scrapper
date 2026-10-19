@@ -14,7 +14,7 @@ export function AudienceLearning({ onFollowup }: { onFollowup: (question: Audien
   const [content, setContent] = useState("");
   const [platform, setPlatform] = useState("youtube");
   const [source, setSource] = useState("");
-  const [experiment, setExperiment] = useState({ name: "", hypothesis: "", platform: "youtube", format: "short", control: "", variant: "", metric: "engaged_views", age: "24", controls: "" });
+  const [experiment, setExperiment] = useState({ name: "", hypothesis: "", platform: "youtube", format: "short", control: "", variant: "", metric: "engaged_views", age: "24", controls: "", account: "" });
   const load = useCallback(async () => setReport(await api.editorialLearning()), []);
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]);
   async function act(fn: () => Promise<unknown>, success: string) {
@@ -42,12 +42,13 @@ export function AudienceLearning({ onFollowup }: { onFollowup: (question: Audien
       e.preventDefault(); act(() => api.editorialExperiment({ name: experiment.name, hypothesis: experiment.hypothesis, platform: experiment.platform,
         format: experiment.format, control_ids: experiment.control.split(",").map(s => s.trim()).filter(Boolean),
         variant_ids: experiment.variant.split(",").map(s => s.trim()).filter(Boolean), metric: experiment.metric,
-        age_hours: Number(experiment.age), minimum_per_group: 5, controls: experiment.controls }), "Experiment registered. At least five comparable observations per group are needed for a descriptive comparison.");
+        age_hours: Number(experiment.age), minimum_per_group: 5, controls: experiment.controls, account_id: experiment.account || null }), "Experiment registered. At least five comparable observations per group are needed for a descriptive comparison.");
     }}><h3>Register a creative experiment</h3>
       <label style={field}>Experiment name<input required minLength={5} value={experiment.name} onChange={e => setExperiment({ ...experiment, name: e.target.value })} /></label>
       <label style={field}>Hypothesis<textarea required minLength={15} value={experiment.hypothesis} onChange={e => setExperiment({ ...experiment, hypothesis: e.target.value })} /></label>
       <label style={field}>Experiment platform<select value={experiment.platform} onChange={e => setExperiment({ ...experiment, platform: e.target.value })}>{["youtube", "instagram", "facebook"].map(p => <option key={p}>{p}</option>)}</select></label>
-      <label style={field}>Experiment format<select value={experiment.format} onChange={e => setExperiment({ ...experiment, format: e.target.value })}>{["short", "reel", "longform", "carousel", "image", "community"].map(p => <option key={p}>{p}</option>)}</select></label>
+      <label style={field}>Experiment account/channel (blank for unlinked owner imports)<input maxLength={128} value={experiment.account} onChange={e => setExperiment({ ...experiment, account: e.target.value })} /></label>
+      <label style={field}>Experiment format<select value={experiment.format} onChange={e => setExperiment({ ...experiment, format: e.target.value })}>{["short", "reel", "longform", "carousel", "image", "community", "poll"].map(p => <option key={p}>{p}</option>)}</select></label>
       <label style={field}>Control content IDs (comma separated)<input required value={experiment.control} onChange={e => setExperiment({ ...experiment, control: e.target.value })} /></label>
       <label style={field}>Variant content IDs (comma separated)<input required value={experiment.variant} onChange={e => setExperiment({ ...experiment, variant: e.target.value })} /></label>
       <label style={field}>Success measure<select value={experiment.metric} onChange={e => setExperiment({ ...experiment, metric: e.target.value })}>{["engaged_views", "views", "retention_percent", "average_view_seconds"].map(p => <option key={p}>{p}</option>)}</select></label>
