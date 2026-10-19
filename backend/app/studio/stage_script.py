@@ -49,8 +49,8 @@ def storyboard(facts: dict, research: dict | None, shots: list | None, project_i
     if f.get("runtime"):
         F.append(f"Runtime: {f['runtime']} minutes")
 
-    # Only findings backed by an official/trusted outlet become facts; anything
-    # supported only by forums, fan sites or unknown blogs is left out.
+    # Only retained source records with fresh exact-context owner review enter R.
+    # A source-domain label or the generating model's verdict is not evidence.
     R: list[dict] = []
     srcs = (research or {}).get("sources", [])
     skipped = 0

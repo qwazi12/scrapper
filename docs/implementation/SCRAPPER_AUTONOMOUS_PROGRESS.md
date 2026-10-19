@@ -667,3 +667,18 @@ source1764093d2253b4c9849188cec1be7dbe9f52f0aeba679488a32c6ba35c05e8fa; owned st
 stopped after preserving all media/trace/verified snapshot. No paid/public/account
 activity. Next C01 credit-context grammar correction is a distinct working-copy
 slice and not represented by this full26 source generation.
+
+### Canonical cast names and explicit title/year context
+
+Fixed9 reproduced synthetic parsing/coverage defects (2baseline cases already
+passed): exact qualified credits/compound names/initials preserved; wrong named
+film/year/medium or added slash role rejected. Current source/persisted words never
+rewritten. Focused67passed1.11s; full backend699passed/1skip78.22s; actualPG223passed
+34.43s/native restore1.323s/source unchanged/archive185649bytes,SHA4d4e5288eaa706af2761050d8324ab3e7f9b2a9b984d65126cbd52c7c7a44534.
+Explicit tscpassed; application frontend unchanged. Browser1twoexisting research
+flows passed/new case synchronization failure retained; corrected fresh case waits
+for accepted HTTP run then worker completion:1passed27.2s, six saved-word states,
+blocked/repaired readiness. Source6164fd9c9fcd266a40b5ac9720379f94a3211dae74f0ef663a48b28299d2cce4;
+evidence history/material-credit-context1/2; owned stacks stopped. CREDIT_CONTEXT.md
+records exact grammar limits and broader unlisted-entity/prose work. Original
+roadmap continues, no paid/public/account/archival activity.

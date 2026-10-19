@@ -19,6 +19,43 @@ def _roles(value):
             for v in re.split(r'\s*/\s*|\s+aka\s+',value,flags=re.I) if v.strip()}
 
 
+def _credit_title(value, facts):
+    """Only an explicit canonical title/year can qualify a known credit name."""
+    titles={_name(facts.get(key) or '') for key in ('title','original_title')}-{''}
+    if value in titles:return True
+    dated=re.fullmatch(r'(.+?)\s+\((\d{4})\)',value)
+    if dated:
+        if str(facts.get('primary_date') or '')[:4]!=dated[2]:return False
+        value=dated[1]
+    if value in titles:return True
+    prefix=re.match(r'^(?:the\s+)?(film|movie|tv series|series|show)\s+(.+)$',value)
+    if not prefix:return False
+    medium='movie' if prefix[1] in ('film','movie') else 'tv'
+    if facts.get('media_type') in ('movie','tv') and facts['media_type']!=medium:return False
+    return prefix[2] in titles
+
+
+def _credit_value(raw, allowed, facts):
+    # Try complete known names first: "The Man in the Wall" and "Dr. Original"
+    # must not be truncated by a generic prose/period splitter. This is bounded
+    # credit grammar, not semantic verification of the rest of the sentence.
+    value=_name(re.sub(r'\s*\((?:voice|uncredited|archive footage)\)\s*','',raw,flags=re.I))
+    def matches(candidate):
+        for name in allowed:
+            if candidate==name:return True
+            if not candidate.startswith(name+' '):continue
+            tail=candidate[len(name):].strip()
+            context=re.fullmatch(r'(?:in|from)\s+(.+)',tail)
+            if context and _credit_title(context[1],facts):return True
+            # Preserve the existing handling of following narrative clauses;
+            # their factual coverage remains the separate storyboard gate.
+            if re.match(r'^(?:and|while|who)\b',tail):return True
+        return False
+    if matches(value):return True
+    alternatives=_roles(raw)
+    return len(alternatives)>1 and all(matches(part) for part in alternatives)
+
+
 def refs_for(board: dict) -> set[str]:
     return {f"{kind}{i + 1}" for kind in ("F", "R", "T", "C")
             for i in range(len(board.get(kind) or []))}
@@ -78,18 +115,16 @@ def structured_conflicts(sentences: list[dict], facts: dict) -> list[str]:
             actor, character = cast.get("actor"), cast.get("character")
             if not actor or not character:
                 continue
-            match = re.search(re.escape(actor) + r"\s+(?:plays|portrays|stars as|as)\s+([^.,;!?]+)", text, re.I)
-            role = re.split(r'\s+(?:and|while|who|in the)\b',match[1],flags=re.I)[0] if match else ''
-            if match and not (_roles(role)&_roles(character)):
-                conflicts.append(f"Sentence {i}: {actor} role conflicts with structured credit ({character})")
+            match = re.search(re.escape(actor) + r"\s+(?:plays|portrays|stars as|as)\s+([^,;!?]+)", text, re.I)
+            if match and not _credit_value(match[1],_roles(character),facts):
+                conflicts.append(f"Sentence {i}: {actor} role/title context conflicts with structured credit ({character})")
             # Reversing the grammar must not bypass the same binding.
             for known in _roles(character):
-                reverse=re.search(re.escape(known)+r'\s+(?:is\s+)?(?:played|portrayed|voiced)\s+by\s+([^.,;!?]+)',text,re.I)
+                reverse=re.search(re.escape(known)+r'\s+(?:is\s+)?(?:played|portrayed|voiced)\s+by\s+([^,;!?]+)',text,re.I)
                 if reverse:
-                    named=re.split(r'\s+(?:and|while|who|in the)\b',reverse[1],flags=re.I)[0]
                     allowed={_name(c.get('actor')) for c in facts.get('cast',[]) if known in _roles(c.get('character') or '')}
-                    if _name(named) not in allowed:
-                        conflicts.append(f'Sentence {i}: {character} performer conflicts with structured cast credit')
+                    if not _credit_value(reverse[1],allowed,facts):
+                        conflicts.append(f'Sentence {i}: {character} performer/title context conflicts with structured cast credit')
         for credit in facts.get('writing_credits',[]):
             person=credit.get('name') or ''
             if not person or _name(person) in writers:continue

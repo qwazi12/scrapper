@@ -1771,3 +1771,40 @@ test("Older selected assets recover beyond the real 100-row picker with explicit
   await expect(page.getByRole("alert").filter({ hasText: `Asset #${aid} context is unconfirmed` })).toHaveCount(0);
   expect(reads).toBeGreaterThanOrEqual(3); expect(errors).toEqual([]);
 });
+
+test("Credit context UI preserves exact canonical names and blocks wrong title or year despite model approval", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  await page.goto("/#longform");
+  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 88");
+  await page.getByRole("button", { name: "Search", exact: true }).click(); await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  const editor = page.getByTestId("script-editor"); await expect(editor).toBeVisible();
+  const pid = Number(new URL(page.url()).hash.split("/")[1]);
+  const current = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
+  const cases: [string, boolean][] = [
+    ["Ada Example plays The Traveler in Synthetic Film 88.", true],
+    ["Ada Example plays The Traveler in the film Other Story.", false],
+    ["The Traveler is portrayed by Ada Example in Synthetic Film 88 (2027).", false],
+    ["Ada Example plays The Traveler / Invented Character.", false],
+    ["Bea Fixture plays The Man in the Wall in Synthetic Film 88.", true],
+    ["Dr. Original is played by Dee E. Sample in Synthetic Film 88.", true],
+  ];
+  for (const [words, valid] of cases) {
+    await editor.fill(words); await page.getByRole("button", { name: "Save script", exact: true }).click();
+    await expect.poll(async () => (await current()).script.sentences[0].text).toBe(words);
+    const verifying = page.waitForResponse(r => r.url().endsWith(`/api/studio/projects/${pid}/run`) && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Check saved script", exact: true }).click();
+    const accepted = await verifying; expect(accepted.ok(), await accepted.text()).toBe(true);
+    await expect.poll(async () => (await current()).stage_status).toBe(valid ? "done" : "error");
+    const saved = await current(); expect(saved.script.sentences).toHaveLength(1); expect(saved.script.sentences[0].text).toBe(words);
+    expect(saved.script.sentences[0].check).toBe("ok"); // Fixture model always approves; deterministic guard decides readiness.
+    expect(saved.script_ready).toBe(valid);
+    if (valid) await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
+    else {
+      await expect(page.getByTestId("research-blocked")).toContainText("context conflicts");
+      await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
+      if (words.includes("Other Story")) await page.screenshot({ path: path.join(evidence, "credit-context-blocked.png"), fullPage: true });
+    }
+  }
+  await page.screenshot({ path: path.join(evidence, "credit-context-preserved-names.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
