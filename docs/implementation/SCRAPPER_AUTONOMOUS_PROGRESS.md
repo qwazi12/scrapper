@@ -744,3 +744,20 @@ separate lanes and still require current startup/UI inspection. The database
 marker does not stop arbitrary old code without a DB write or recall in-flight
 provider requests; old publishers must stop for rollout/rollback. No production
 compatibility, paid/public/account/archive/push/deploy claim. Continue C01–C14.
+
+## Runtime publisher-write compatibility verified locally
+
+Version-named DB trigger plus per-engine connection marker rejects unmarked
+posting-status writes. Exact pinned baseline function is stopped before fake
+provider call. Current receipt recovery, reads/notes and full source admission
+remain verified. Focused53passed4.19s; full backend766passed/1skip79.92s; actual
+PostgreSQL290passed39.25s/native restore1.547s207354bytes/source unchanged.
+Scoped actual browser5passed49.2s, frozen source
+2ec8ff3c2ac712bc688f0e6dcee34d69b97e37d7e876c87d6bdb638e261d03db;
+evidence history/publisher-compatibility1, verified snapshotSHA
+c00bb47415a0d69111d9d2676066404c9ae64c94b1d91b0155112037726fae83.
+Owned stack stopped. No full29 claim for this later source. This marker is not
+a security credential and cannot stop requests that never write the DB/already
+in flight. Stop-all/reconciliation and real operational rollout remain required;
+see DATABASE_RECOVERY.md. No public/paid/account/archive/push/deploy action.
+Continue C02 legacy eligibility/upgrade and other roadmap contracts.

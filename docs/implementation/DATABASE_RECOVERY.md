@@ -43,3 +43,39 @@ python scripts/upgrade_sqlite_identity.py --database /absolute/scrapper.db
 ```
 
 Then apply with `--confirm --offline-confirmed`. The CLI requires an exclusive maintenance lock, creates a verified emergency snapshot, transactionally rebuilds the two known integer-primary-key tables with AUTOINCREMENT, copies all columns, restores indexes/triggers, checks foreign keys/integrity and rolls both changes back if either schema is unexpected. Existing local numeric Studio directories raise the sequence floor. A repeat is a no-op. No live installation was migrated. This prevents future reuse after migration; it cannot reconstruct every ID historically deleted before a ledger existed. Creation-time identities still fence old evidence/history. Inspect the actual database location and media root when a custom DATABASE_URL stores the SQLite file outside DATA_DIR; the default orphan-directory scan assumes `studio/` beside the database.
+
+## Publisher runtime protocol v1
+
+Current engines mark each SQLite/PostgreSQL connection as implementing the
+original-Studio source protocol. A version-named database trigger rejects writes
+to queue posting status from unmarked connections, including an idempotent raw
+posting-status UPDATE. SQLite uses an engine-registered function (old writers
+receive a missing-function error); PostgreSQL checks a session setting and raises
+a constraint error. Current owner receipt adoption/reconciliation remains
+available. Plain queue reads and private-note writes from an unmarked connection
+are covered; other old mutations are not a supported rollback workflow.
+
+This marker is a compatibility signal, not an authorization secret or independent
+source proof. Keep the actual retained-source and lease checks. Future protocols
+add new fences/markers rather than dropping older ones. Startup installs v1 only
+after its pre-migration backup and additive schema migration; failure stops
+startup. Native PostgreSQL restore fingerprints include the function/trigger.
+
+Stop **all** old web/scheduler/Mac publisher processes before upgrade or rollback
+and reconcile outstanding provider submissions. The database cannot recall an
+in-flight request or stop arbitrary old code that submits without writing it
+(for example, already holding a posting row). Never treat a trigger pass as proof
+that mixed-version publishing is safe. Rollback remains read-only for publication
+until a compatible worker and exact-source admission are verified. No production
+rollout or account-credential change has been executed by these local tests.
+
+Evidence: three independent unmarked SQL paths reproduced failures before repair;
+focused53passed4.19s includes the exact pinned baseline publish_queue_item function
+against an old-style session, zero fake provider calls and preserved ready state.
+Full backend766passed/1skip79.92s; actualPG290passed39.25s. Restore1.547s,207354bytes,
+SHA26f046eed885af108f70ea842c98c182e008e869a296da46186fa98c46284b2b,
+source unchanged. Scoped actual UI5passed49.2s covers current startup/LongForm and
+Native delivery, residential work, receipt adoption and financial recovery;
+source2ec8ff3c2ac712bc688f0e6dcee34d69b97e37d7e876c87d6bdb638e261d03db,
+evidence artifacts/e2e/history/publisher-compatibility1. External delivery is
+simulated. The preceding full29 browser generation is separate.

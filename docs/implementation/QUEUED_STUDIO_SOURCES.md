@@ -54,7 +54,9 @@ not retained-source proof. Real UI scenarios cover generated media, acceptance,
 send, source inspection and simulated delivery separately.
 
 Older worker binaries ignore this new binding table. Passing new-worker CAS
-tests does not establish downgrade or mixed-version publication safety. Before
-deployment, establish a publication fence for incompatible workers and a tested
-rollback procedure; do not roll back to a worker that can submit bound or legacy
-Studio rows without these checks. No production rollout proof is claimed here.
+tests does not establish downgrade or mixed-version publication safety. A later
+version-named database write fence now rejects unmarked posting-status writes;
+see DATABASE_RECOVERY.md for its exact verified scope and limits. It cannot recall
+in-flight requests or stop arbitrary old code that submits without a DB write.
+Stop all old publishers and reconcile receipts before any upgrade/rollback.
+Mixed-version publishing and production rollout remain unverified.

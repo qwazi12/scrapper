@@ -26,6 +26,8 @@ if _url.startswith("sqlite"):
     engine = create_engine(_url, connect_args={"check_same_thread": False, "timeout": 30}, poolclass=NullPool)
 else:
     engine = create_engine(_url, pool_pre_ping=True, pool_size=10, max_overflow=20, pool_timeout=15)
+from .publisher_compatibility import mark_connections
+mark_connections(engine)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 _runtime_locks = {}
 
@@ -45,6 +47,8 @@ def init_db() -> None:
     backup.create_pre_migration_backup()
     Base.metadata.create_all(engine)
     _migrate()
+    from .publisher_compatibility import install_fence
+    install_fence(engine)
 
 
 def _migrate() -> None:
