@@ -64,3 +64,8 @@ def test_stale_fingerprint_is_refused(session, fake):
         ea.quick_accept(session, _project(), None,
                         ea.QuickIn(expected_fingerprint="0" * 64, rights_rationale="Commentary on official trailers and posters."),
                         datetime.now(timezone.utc))
+
+
+def test_silent_end_card_at_the_very_end_is_not_serious():
+    assert ea.severe(_project(seconds=206.8, silence_spans=[{"start": 198.2, "end": 206.792}])) == []
+    assert ea.severe(_project(seconds=206.8, silence_spans=[{"start": 100, "end": 110}])) == ["silence for 10.0s at 100s"]

@@ -111,7 +111,10 @@ def severe(project) -> list[str]:
     for span in quality.get('black_spans', []):
         if span['end'] - span['start'] > 3:
             out.append(f"black screen for {span['end'] - span['start']:.1f}s at {span['start']:.0f}s")
+    total = quality.get('seconds') or 0
     for span in quality.get('silence_spans', []):
+        if total and span['end'] >= total - 0.5 and span['end'] - span['start'] <= 20:
+            continue                     # the silent subscribe end card closing every breakdown
         if span['end'] - span['start'] > 8:
             out.append(f"silence for {span['end'] - span['start']:.1f}s at {span['start']:.0f}s")
     from .duration_intent import comparison
