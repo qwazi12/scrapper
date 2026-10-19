@@ -226,7 +226,7 @@ class ChannelIngestRequest(BaseModel):
     parent_folder_id: str = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo"  # Movie Clips
     parent_folder_name: str = "Movie Clips"
     channel_name: str | None = None
-    max_videos: int = 25
+    max_videos: int = Field(default=0, ge=0)  # deprecated: full archive has no video-count cap
     auto_approve: bool = False
     upload_to_drive: bool = True
 

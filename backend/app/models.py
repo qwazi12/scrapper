@@ -533,3 +533,44 @@ for _table in (PublicationEvent.__table__, PublicationDecision.__table__, Financ
     _schema_event.listen(_table,"after_create",DDL(
         f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE OR DELETE ON {_table.name} "
         "FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()").execute_if(dialect="postgresql"))
+
+
+class ArchiveChannel(Base):
+    """An archive is independent from publication queues and their lifecycle."""
+    __tablename__ = 'archive_channels'
+    channel_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_url: Mapped[str] = mapped_column(String(1024))
+    title: Mapped[str] = mapped_column(Text)
+    handle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_folder_id: Mapped[str] = mapped_column(String(128))
+    drive_folder_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    formats: Mapped[list] = mapped_column(JSON, default=lambda: ['shorts'])
+    status: Mapped[str] = mapped_column(String(32), default='inventoried')
+    inventory: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manifest_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ArchiveVideo(Base):
+    __tablename__ = 'archive_videos'
+    channel_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    video_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    original_url: Mapped[str] = mapped_column(String(1024))
+    title: Mapped[str] = mapped_column(Text)
+    media_kind: Mapped[str] = mapped_column(String(16))
+    upload_date: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default='discovered', index=True)
+    local_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    file_format: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    drive_file_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    verified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    seen_inventory: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

@@ -1,0 +1,133 @@
+{
+  "owner_scope": "All available authorized Shorts to Movie Clips; wait for next instruction after archive; no publishing",
+  "channels": [
+    {
+      "handle": "@CharanEbenez",
+      "url": "https://www.youtube.com/@CharanEbenez",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCeXBEiflofPEDIHghvR1ugA",
+      "channel": "Charan Ebenez",
+      "uploader_id": "@CharanEbenez",
+      "channel_url": "https://www.youtube.com/channel/UCeXBEiflofPEDIHghvR1ugA"
+    },
+    {
+      "handle": "@AfridiAE",
+      "url": "https://www.youtube.com/@AfridiAE",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCKdzRZbkyT--dJcVvOhIK_w",
+      "channel": "AfridiAE",
+      "uploader_id": "@AfridiAE",
+      "channel_url": "https://www.youtube.com/channel/UCKdzRZbkyT--dJcVvOhIK_w"
+    },
+    {
+      "handle": "@RockMovie777",
+      "url": "https://www.youtube.com/@RockMovie777",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCrKyDViaxVNmVjtTHAbrUvg",
+      "channel": "Rock Movie",
+      "uploader_id": "@RockMovie777",
+      "channel_url": "https://www.youtube.com/channel/UCrKyDViaxVNmVjtTHAbrUvg"
+    },
+    {
+      "handle": "@Agi3D3",
+      "url": "https://www.youtube.com/@Agi3D3",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCt14iIpZ17j0I1ORfitpfig",
+      "channel": "AgiRecap",
+      "uploader_id": "@Agi3D3",
+      "channel_url": "https://www.youtube.com/channel/UCt14iIpZ17j0I1ORfitpfig"
+    },
+    {
+      "handle": "@sir7076",
+      "url": "https://www.youtube.com/@sir7076",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCEYPth-uCtCs7uGqVKUk7aw",
+      "channel": "酱sir电影局",
+      "uploader_id": "@sir7076",
+      "channel_url": "https://www.youtube.com/channel/UCEYPth-uCtCs7uGqVKUk7aw"
+    },
+    {
+      "handle": "@FLICKSFYP",
+      "url": "https://www.youtube.com/@FLICKSFYP",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UC-t9JzBmFv_P5D9bIKZI-IQ",
+      "channel": "FLICKSFYP",
+      "uploader_id": "@FLICKSFYP",
+      "channel_url": "https://www.youtube.com/channel/UC-t9JzBmFv_P5D9bIKZI-IQ"
+    },
+    {
+      "handle": "@theaiplot",
+      "url": "https://www.youtube.com/@theaiplot",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCEh4n8OFGogkF9Giv-jUdOg",
+      "channel": "Ai Plot",
+      "uploader_id": "@theaiplot",
+      "channel_url": "https://www.youtube.com/channel/UCEh4n8OFGogkF9Giv-jUdOg"
+    },
+    {
+      "handle": "@nfiqjfoiqhfqnfi131",
+      "url": "https://www.youtube.com/@nfiqjfoiqhfqnfi131",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified; Shorts tab unavailable to extractor",
+      "channel_id": "UCpc3WsozCCi1Cd1tf_Ne1RQ",
+      "title": "Tiny Friends TV"
+    },
+    {
+      "handle": "@DoctorWhoShorts",
+      "url": "https://www.youtube.com/@DoctorWhoShorts",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCJ7rzUjITOhlRylVvcMQ9Fw",
+      "channel": "Doctor Who Shorts",
+      "uploader_id": "@DoctorWhoShorts",
+      "channel_url": "https://www.youtube.com/channel/UCJ7rzUjITOhlRylVvcMQ9Fw"
+    },
+    {
+      "handle": "@ArliStoryTime",
+      "url": "https://www.youtube.com/@ArliStoryTime",
+      "formats": [
+        "shorts"
+      ],
+      "publishing": "archive_only",
+      "verification": "canonical_identity_verified",
+      "channel_id": "UCOtbkS56jbV39IZ7osaSDBA",
+      "channel": "ArliStoryTime",
+      "uploader_id": "@ArliStoryTime",
+      "channel_url": "https://www.youtube.com/channel/UCOtbkS56jbV39IZ7osaSDBA"
+    }
+  ]
+}

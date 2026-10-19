@@ -283,3 +283,42 @@ def financial_holds_fixture():
         s.get(WorkerLease,'budget:'+usd).expires_at=datetime.datetime.now(datetime.timezone.utc)-timedelta(seconds=1)
         s.add(CreditReservation(id=credit,tool='synthetic-credit-tool',credits=5,state='unknown'));s.commit()
     return {'usd':usd,'credit':credit}
+
+
+# Full archive flow: actual generated video bytes and ffprobe/FFmpeg; fake cloud.
+from backend.app import channel_archive, channel_sources, drive_sync
+from scripts.e2e.fake_archive_drive import Drive as ArchiveDrive
+ARCHIVE_CHANNEL='UC'+'x'*22
+archive_drive=ArchiveDrive()
+archive_downloads=[]
+
+def archive_inventory(url,kinds):
+    if url!='https://www.youtube.com/@archive-fixture':raise ValueError('Use the original archive fixture in isolated E2E')
+    return {'channel_id':ARCHIVE_CHANNEL,'title':'Original Archive Fixture','handle':'@archive-fixture',
+        'source_url':url,'complete':True,'videos':[{'video_id':str(n).zfill(11),'title':f'Original shapes {n}',
+            'media_kind':'shorts','original_url':f'https://www.youtube.com/watch?v={n:011}',
+            'estimated_bytes':TRAILER.stat().st_size} for n in range(63)]}
+
+def archive_download(cid,vid,destination,bound):
+    if cid!=ARCHIVE_CHANNEL:raise ValueError('Unknown archive fixture')
+    archive_downloads.append(vid);destination.mkdir(parents=True,exist_ok=True)
+    path=destination/(vid+'.mp4');shutil.copyfile(TRAILER,path)
+    return path,{'id':vid,'channel_id':cid,'duration':12,'upload_date':'20261018'}
+
+channel_sources.inventory=archive_inventory
+channel_sources.download=archive_download
+drive_sync.get_drive_service=lambda:archive_drive
+
+@app.post('/api/e2e/archive-interrupt')
+def archive_interrupt_fixture():
+    archive_drive.fail_transfer=True
+    return {'simulated_transfer_response_loss':True}
+
+@app.get('/api/e2e/archive-evidence')
+def archive_evidence():
+    from backend.app.models import QueueItem
+    with SessionLocal() as s:queued=s.query(QueueItem).count()
+    return {'simulated_drive':True,'actual_drive_uploads':0,'download_calls':len(archive_downloads),
+        'cloud_media_files':sum(bool(x.get('appProperties')) for x in archive_drive.items.values()),
+        'checksummed_media_bytes':sum(len(x.get('bytes',b'')) for x in archive_drive.items.values() if x.get('appProperties')),
+        'queue_rows':queued,'external_spend_usd':0}

@@ -1562,6 +1562,12 @@ export const api = {
   setAutopost: (paused: boolean) =>
     req<{ paused: boolean }>("/api/autopost", { method: "PUT", headers: headers(), body: JSON.stringify({ paused }) }),
 
+  archiveChannels: () => req<{ channels: ChannelArchive[] }>("/api/channel-archives", { headers: headers(false) }),
+  inventoryArchive: (data: { url: string; parent_folder_id: string; formats: string[] }) => req<{ job_id: string }>("/api/channel-archives/inventory", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  runArchive: (id: string, retry_failures = false) => req<{ job_id: string }>(`/api/channel-archives/${encodeURIComponent(id)}/run`, { method: "POST", headers: headers(), body: JSON.stringify({ retry_failures }) }),
+  stopArchive: (id: string) => req<{ stopped: boolean }>(`/api/channel-archives/${encodeURIComponent(id)}/stop`, { method: "POST", headers: headers() }),
+  archiveCapacity: (id: string) => req<ArchiveCapacity>(`/api/channel-archives/${encodeURIComponent(id)}/capacity`, { headers: headers(false) }),
+  archiveManifest: (id: string) => req<ChannelArchive>(`/api/channel-archives/${encodeURIComponent(id)}/manifest`, { headers: headers(false) }),
   ingestChannel: (data: {
     url: string;
     parent_folder_id?: string;
@@ -1645,4 +1651,19 @@ export function fmtDuration(s: number | null): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+
+export interface ChannelArchive {
+  channel_id: string; title: string; handle: string | null; source_url: string;
+  formats: string[]; status: string; error: string | null; drive_folder_id: string | null; manifest_id: string | null;
+  inventory: { complete: boolean; revision: string; discovered: number; estimated_bytes: number; unknown_size_count: number; completed_at: string };
+  counts: { discovered: number; downloaded: number; uploaded: number; skipped: number; failed: number; remaining: number; missing_from_latest_inventory: number };
+  active_job: { id: string; status: string; message: string } | null; active_lease: boolean;
+  uploaded_bytes: number; items: { video_id: string; title: string; status: string; error: string | null; drive_file_id: string | null; sha256: string | null }[];
+}
+export interface ArchiveCapacity {
+  local_free_bytes: number; local_reserve_bytes: number; drive_limit_bytes: number | null;
+  drive_usage_bytes: number; drive_available_bytes: number | null; shared_drive_id: string | null;
+  estimate_known_bytes: number; estimate_unknown_count: number; quota_note: string | null;
 }

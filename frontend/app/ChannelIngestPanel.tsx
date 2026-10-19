@@ -1,327 +1,104 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
-import { api } from "../lib/api";
-import { notify } from "../lib/dialogs";
+import { api, type ChannelArchive, type ArchiveCapacity } from "../lib/api";
 
-const PRESET_PARENT_FOLDERS = [
-  { name: "Movie Clips", id: "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo" },
-  { name: "Flamingo", id: "1Mmrem-JzM1tBArIJ-GrcaDX7qKRhTC5F" },
-  { name: "Second Track Clips", id: "1_HWppeJLcrGAo--UFc3u-eUTpvE0T0S6" },
-  { name: "TikTok Retry", id: "1rqUIlbpy_MR7Cm0FYCA5TmhECWIgWlIN" },
-];
+const MOVIE_CLIPS = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo";
+const bytes = (n: number | null) => n === null ? "unavailable" : `${(n / 1024 ** 3).toFixed(2)} GiB`;
 
 export function ChannelIngestPanel({ onIngested }: { onIngested: () => void }) {
   const [url, setUrl] = useState("");
-  const [parentFolder, setParentFolder] = useState(PRESET_PARENT_FOLDERS[0].id);
-  const [channelName, setChannelName] = useState("");
-  const [maxVideos, setMaxVideos] = useState(25);
-  const [autoApprove, setAutoApprove] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [parent, setParent] = useState(MOVIE_CLIPS);
+  const [formats, setFormats] = useState(["shorts"]);
+  const [channels, setChannels] = useState<ChannelArchive[]>([]);
+  const [capacity, setCapacity] = useState<Record<string, ArchiveCapacity>>({});
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [result, setResult] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const alive = useRef(true);
 
-  const selectedFolderName =
-    PRESET_PARENT_FOLDERS.find((f) => f.id === parentFolder)?.name || "Movie Clips";
-
-  async function handleIngest() {
-    if (!url.trim()) {
-      notify("Please enter a YouTube channel, shorts, or video URL.");
-      return;
-    }
-    setLoading(true);
-    setStatus("🚀 Starting channel scrape with yt-dlp & connecting to Google Drive...");
-    setResult(null);
-
+  async function refresh() {
+    const result = await api.archiveChannels();
+    if (alive.current) setChannels(result.channels);
+  }
+  useEffect(() => {
+    alive.current = true;
     try {
-      const started = await api.ingestChannel({
-        url: url.trim(),
-        parent_folder_id: parentFolder,
-        parent_folder_name: selectedFolderName,
-        channel_name: channelName.trim() || undefined,
-        max_videos: Number(maxVideos) || 25,
-        auto_approve: autoApprove,
-      });
-      setJobId(started.job_id);
-      // Runs on the server as a stoppable job; show its progress until it ends.
-      const res = await api.waitJob(started.job_id, (j) => j.message && setStatus(`⏳ ${j.message}`));
+      const saved = JSON.parse(localStorage.getItem("archive_draft") || "null");
+      if (saved) { setUrl(saved.url || ""); setParent(saved.parent || MOVIE_CLIPS); }
+    } catch { /* malformed local draft cannot hide durable archives */ }
+    setRestored(true);
+    refresh().catch(e => setError(e.message));
+    return () => { alive.current = false; };
+  }, []);
+  useEffect(() => {
+    if (restored) localStorage.setItem("archive_draft", JSON.stringify({ url, parent }));
+  }, [url, parent, restored]);
+  useEffect(() => {
+    if (!busy && !channels.some(c => c.active_lease)) return;
+    const timer = setInterval(() => refresh().catch(() => {}), 3000);
+    return () => clearInterval(timer);
+  }, [busy, channels]);
 
-      setStatus(`✓ ${res.message}`);
-      setResult(res);
-      setUrl("");
-      onIngested();
-    } catch (err: any) {
-      setStatus(err.message === "Stopped"
-        ? "■ Stopped. Videos already uploaded stay in Drive and the queue (↶ Undo in the queue removes them)."
-        : `❌ Ingestion failed: ${err.message}`);
-      onIngested();
+  async function job(start: () => Promise<{ job_id: string }>) {
+    setBusy(true); setError(""); setStatus("Starting…");
+    try {
+      const started = await start();
+      if (alive.current) setJobId(started.job_id);
+      await api.waitJob(started.job_id, j => { if (alive.current && j.message) setStatus(j.message); });
+      if (alive.current) { setStatus("Operation completed. Review the durable counts and any errors below."); await refresh(); onIngested(); }
+    } catch (e: unknown) {
+      if (alive.current) { setError(e instanceof Error ? e.message : String(e)); await refresh().catch(() => {}); }
     } finally {
-      setLoading(false);
-      setJobId(null);
+      if (alive.current) { setBusy(false); setJobId(null); }
     }
   }
+  async function preflight(cid: string) {
+    setError("");
+    try { const result = await api.archiveCapacity(cid); if (alive.current) setCapacity(old => ({ ...old, [cid]: result })); }
+    catch (e: unknown) { if (alive.current) setError(e instanceof Error ? e.message : String(e)); }
+  }
+  async function downloadManifest(cid: string) {
+    try {
+      const data = await api.archiveManifest(cid);
+      const href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a"); link.href = href; link.download = `${cid}-manifest.json`; link.click();
+      setTimeout(() => URL.revokeObjectURL(href), 1000);
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)); }
+  }
 
-  return (
-    <div
-      style={{
-        background: "var(--panel)",
-        border: "1px solid var(--border)",
-        borderRadius: 10,
-        padding: 24,
-        display: "flex",
-        flexDirection: "column",
-        gap: 20,
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h2 style={{ margin: "0 0 6px", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
-            <span>📥</span> Bulk Channel Scraper & Auto-Drive Ingestion
-          </h2>
-          <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-            Scrape a creator or channel&apos;s shorts, automatically organize into Google Drive subfolders, and queue into SocialPilot AI with zero persistent disk usage.
-          </p>
-        </div>
-        <span
-          style={{
-            fontSize: 11,
-            background: "#064e3b",
-            color: "#34d399",
-            border: "1px solid #059669",
-            padding: "4px 10px",
-            borderRadius: 6,
-            fontWeight: 600,
-          }}
-        >
-          ✓ Auto Drive Upload & Local Cleanup
-        </span>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
-        {/* Left: Ingest Controls */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>
-              Channel Shorts or Video URL
-            </label>
-            <input
-              type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://www.youtube.com/@ChannelName/shorts"
-              style={{ fontSize: 13 }}
-            />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>
-                Target Parent Drive Folder
-              </label>
-              <select
-                value={parentFolder}
-                onChange={(e) => setParentFolder(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 13,
-                }}
-              >
-                {PRESET_PARENT_FOLDERS.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    📁 {f.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>
-                Custom Channel Handle (Optional)
-              </label>
-              <input
-                type="text"
-                value={channelName}
-                onChange={(e) => setChannelName(e.target.value)}
-                placeholder="e.g. @MyChannel"
-                style={{ fontSize: 13 }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>
-                Max Videos to Scrape
-              </label>
-              <select
-                value={maxVideos}
-                onChange={(e) => setMaxVideos(Number(e.target.value))}
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 13,
-                }}
-              >
-                <option value={10}>10 videos</option>
-                <option value={25}>25 videos (Standard Batch)</option>
-                <option value={50}>50 videos</option>
-                <option value={100}>100 videos</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>
-                Initial Queue Status
-              </label>
-              <select
-                value={autoApprove ? "ready" : "review"}
-                onChange={(e) => setAutoApprove(e.target.value === "ready")}
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 13,
-                }}
-              >
-                <option value="review">👁 Needs Review</option>
-                <option value="ready">● Ready to Post</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            className="primary"
-            onClick={handleIngest}
-            disabled={loading}
-            style={{
-              padding: "10px 18px",
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
-            {loading ? "⏳ Scraping Channel & Uploading to Drive…" : "🚀 Scrape & File Directly to Google Drive"}
-          </button>
-          {loading && jobId && (
-            <StopButton what="Videos already uploaded are kept" onStop={() => api.stopJob(jobId)} />
-          )}
-
-          {status && (
-            <div
-              style={{
-                padding: "10px 14px",
-                borderRadius: 6,
-                background: status.startsWith("✓") ? "#064e3b" : "#451a03",
-                color: status.startsWith("✓") ? "#34d399" : "#fbbf24",
-                border: `1px solid ${status.startsWith("✓") ? "#059669" : "#78350f"}`,
-                fontSize: 12,
-                lineHeight: 1.4,
-              }}
-            >
-              {status}
-            </div>
-          )}
-
-          {result && result.items && result.items.length > 0 && (
-            <div
-              style={{
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: 12,
-                maxHeight: 180,
-                overflowY: "auto",
-                fontSize: 11,
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: 8, color: "var(--accent)" }}>
-                Ingested {result.items.length} videos into &apos;{result.parent_folder} / {result.channel}&apos;:
-              </div>
-              {result.items.map((it: any, idx: number) => (
-                <div
-                  key={idx}
-                  style={{
-                    padding: "4px 0",
-                    borderBottom: "1px solid var(--border)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>
-                    {it.title}
-                  </span>
-                  <a
-                    href={it.drive_link}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ color: "#38bdf8", textDecoration: "none", fontSize: 10 }}
-                  >
-                    View in Drive ↗
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Explanatory / OmniStream workflow */}
-        <div
-          style={{
-            background: "var(--panel2)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            fontSize: 12,
-          }}
-        >
-          <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-            <span>⚙️</span> OmniStream Ingestion Architecture
-          </div>
-          <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-            This follows the exact OmniStream &amp; SocialPilot automated workflow:
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ background: "var(--bg)", padding: 8, borderRadius: 6, border: "1px solid var(--border)" }}>
-              <div style={{ fontWeight: 600, color: "#38bdf8" }}>1. Smart Subfolder Resolution</div>
-              <div style={{ color: "var(--muted)", fontSize: 11 }}>
-                Detects the channel handle (e.g. <code className="mono">@PixelDrift-f3c</code>) and finds or creates its folder under <code className="mono">Movie Clips</code> in Google Drive.
-              </div>
-            </div>
-            <div style={{ background: "var(--bg)", padding: 8, borderRadius: 6, border: "1px solid var(--border)" }}>
-              <div style={{ fontWeight: 600, color: "#34d399" }}>2. Optimal 1080p Download &amp; Direct Upload</div>
-              <div style={{ color: "var(--muted)", fontSize: 11 }}>
-                Downloads merged 1080p MP4s to a temporary directory, uploads to Google Drive with Editor permissions, and immediately purges local temp files.
-              </div>
-            </div>
-            <div style={{ background: "var(--bg)", padding: 8, borderRadius: 6, border: "1px solid var(--border)" }}>
-              <div style={{ fontWeight: 600, color: "#fbbf24" }}>3. Instant Queue Integration</div>
-              <div style={{ color: "var(--muted)", fontSize: 11 }}>
-                Adds the item to SocialPilot AI with clickable Drive link, clean title, extracted hashtags, and exempts it from retention sweeps.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return <section aria-label="Channel archives" style={{ padding: 20, display: "grid", gap: 16 }}>
+    <h2>Channel archive to Google Drive</h2>
+    <p>Inventory the entire available library first, then archive authorized video files by source channel. No video-count cap. Archives stay separate from the publishing queue.</p>
+    <label>Channel URL<input aria-label="Archive channel URL" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://www.youtube.com/@ChannelName" /></label>
+    <label>Drive parent folder ID<input aria-label="Archive Drive parent folder" value={parent} onChange={e => setParent(e.target.value)} /></label>
+    <fieldset disabled={busy}><legend>Library formats</legend>
+      {[["shorts", "Shorts"], ["videos", "Regular uploads"], ["streams", "Public archived livestreams"]].map(([key, label]) =>
+        <label key={key} style={{ marginRight: 16 }}><input type="checkbox" checked={formats.includes(key)} onChange={e => setFormats(old => e.target.checked ? [...old, key] : old.filter(x => x !== key))} /> {label}</label>)}
+    </fieldset>
+    <button className="primary" disabled={busy || !url.trim() || !formats.length} onClick={() => job(() => api.inventoryArchive({ url: url.trim(), parent_folder_id: parent.trim(), formats }))}>Inventory complete channel</button>
+    <p role="status" aria-live="polite">{status}</p>
+    {error && <p role="alert" style={{ color: "var(--danger, #ef4444)" }}>{error}</p>}
+    {jobId && <StopButton what="Verified Drive copies and resumable local files are retained" onStop={() => api.stopJob(jobId)} />}
+    <button disabled={busy} onClick={() => refresh().catch(e => setError(e.message))}>Refresh archive progress</button>
+    {channels.map(channel => <article key={channel.channel_id} aria-label={`Archive ${channel.title}`} style={{ border: "1px solid var(--border)", padding: 16 }}>
+      <h3>{channel.title} {channel.handle}</h3>
+      <p>{channel.channel_id} · {channel.formats.join(", ")} · {channel.status}</p>
+      {channel.active_job && <p role="status">{channel.active_job.message}</p>}
+      {channel.active_lease && <StopButton what="Verified copies and interrupted local files are retained" onStop={async () => { await api.stopArchive(channel.channel_id); await refresh(); }} />}
+      <p data-testid="archive-counts">Discovered {channel.counts.discovered} · Downloaded {channel.counts.downloaded} · Uploaded {channel.counts.uploaded} · Skipped/restricted {channel.counts.skipped} · Failed {channel.counts.failed} · Remaining {channel.counts.remaining}</p>
+      <p>Uploaded storage: {bytes(channel.uploaded_bytes)}. Inventory estimate: {bytes(channel.inventory.estimated_bytes)} known; {channel.inventory.unknown_size_count} sizes unavailable.</p>
+      {channel.counts.missing_from_latest_inventory > 0 && <p>{channel.counts.missing_from_latest_inventory} retained records are missing from the latest inventory. They are preserved.</p>}
+      {channel.error && <p role="alert">{channel.error}</p>}
+      {channel.drive_folder_id && <p><a href={`https://drive.google.com/drive/folders/${encodeURIComponent(channel.drive_folder_id)}`} target="_blank" rel="noreferrer">Open channel Drive folder</a></p>}
+      <button disabled={busy} onClick={() => preflight(channel.channel_id)}>Check storage capacity</button>{" "}
+      <button disabled={busy || !channel.inventory.complete} onClick={() => job(() => api.runArchive(channel.channel_id))}>Archive missing files</button>{" "}
+      <button disabled={busy || !channel.inventory.complete} onClick={() => job(() => api.runArchive(channel.channel_id, true))}>Retry failures / resume</button>{" "}
+      <button onClick={() => downloadManifest(channel.channel_id)}>Download channel manifest</button>
+      {capacity[channel.channel_id] && <p role="status">Local free: {bytes(capacity[channel.channel_id].local_free_bytes)}; Drive used: {bytes(capacity[channel.channel_id].drive_usage_bytes)}; Drive available: {bytes(capacity[channel.channel_id].drive_available_bytes)}. {capacity[channel.channel_id].quota_note}</p>}
+    </article>)}
+  </section>;
 }

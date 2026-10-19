@@ -31,6 +31,7 @@ class Handle:
 
 
 def resource(kind, params):
+    if kind == "channel_archive": return "archive:" + params["channel_id"]
     if kind in ("studio","drive_save","studio_restore"): return f"{kind}:{params['project_id']}"
     return kind + ':' + hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest()
 

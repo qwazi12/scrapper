@@ -271,6 +271,8 @@ from .financial_reconciliation import router as financial_reconciliation_router
 app.include_router(financial_reconciliation_router)
 from .export_history import router as export_history_router
 app.include_router(export_history_router)
+from .archive_routes import router as archive_router
+app.include_router(archive_router)
 
 
 # --- hybrid local worker (Reliability Layer 5) -------------------------------
@@ -1750,18 +1752,13 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
 
 @app.post("/api/social/ingest-channel", dependencies=_AUTH)
 def ingest_channel(req: ChannelIngestRequest, s: Session = Depends(get_session)):
-    """
-    Bulk scrape videos from a YouTube channel/playlist or single video,
-    automatically label them, upload directly to the channel subfolder in Google Drive,
-    and add them to the SocialPilot posting queue. Zero local storage footprint.
-    """
-    try:
-        cleanup.check_disk_space()
-    except cleanup.DiskFullError as exc:
-        raise HTTPException(507, str(exc))
-
-    job_id = _start_channel_ingest(req.model_dump())
-    return {"job_id": job_id, "status": "running"}
+    """Compatibility endpoint: enumerate the complete Shorts library first."""
+    from .archive_routes import inventory_job
+    if req.auto_approve: raise HTTPException(422,"Archive files cannot automatically enter the publishing queue")
+    from .channel_sources import canonical_input
+    try: url=canonical_input(req.url)
+    except ValueError as exc:raise HTTPException(422,str(exc))
+    return {"job_id":inventory_job({"url":url,"parent_folder_id":req.parent_folder_id,"formats":["shorts"]}),"status":"running"}
 
 
 def _start_channel_ingest(p: dict, rid: int | None = None) -> str:
@@ -1776,7 +1773,7 @@ def _start_channel_ingest(p: dict, rid: int | None = None) -> str:
                 return ingest_channel_to_drive(
                     url=p["url"], parent_folder_id=p.get("parent_folder_id"),
                     parent_folder_name=p.get("parent_folder_name"), channel_name=p.get("channel_name"),
-                    max_videos=p.get("max_videos", 25), auto_approve=p.get("auto_approve", False), db_session=js,
+                    max_videos=p.get("max_videos", 0), auto_approve=p.get("auto_approve", False), db_session=js,
                 )
             except control.Cancelled:
                 logbus.log("warning", "channel_ingest_stopped", f"Channel ingest stopped by user: {p['url']}")
