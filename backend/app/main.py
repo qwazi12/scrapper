@@ -7,6 +7,7 @@ Sections:  ingest (paste links) · clips (storyboard table) · compile (Extract)
 from __future__ import annotations
 
 import datetime
+from contextlib import asynccontextmanager
 import json
 import pathlib
 import queue
@@ -51,7 +52,16 @@ from .schemas import (
 )
 from .social import ai_bulk, metadata as social_metadata, queue_manager, tts, upload_post
 
-app = FastAPI(title="Scrapper API", version="1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _startup()  # Failed pre-migration backup/init must prevent request serving.
+    try:
+        yield
+    finally:
+        _mark_jobs_cut_by_shutdown()
+
+
+app = FastAPI(title="Scrapper API", version="1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -104,7 +114,6 @@ async def _wake_poster_on_queue_change(request, call_next):
     return response
 
 
-@app.on_event("shutdown")
 def _mark_jobs_cut_by_shutdown() -> None:
     """Deploy/restart: running jobs resume on the next server without using up a retry."""
     from . import resume
@@ -116,7 +125,6 @@ def _mark_jobs_cut_by_shutdown() -> None:
         logbus.log("error", "jobs_flag_failed", f"Could not flag running jobs at shutdown: {exc}")
 
 
-@app.on_event("startup")
 def _startup() -> None:
     init_db()
     if settings.safe_e2e_mode:

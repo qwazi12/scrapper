@@ -55,7 +55,7 @@ def dhash(path) -> int | None:
     try:
         with Image.open(path) as im:
             g = im.convert("L").resize((9, 8))
-            px = list(g.getdata())
+            px = list(g.get_flattened_data())
     except Exception:  # noqa: BLE001 — a missing/broken still just gets no fingerprint
         return None
     bits = 0

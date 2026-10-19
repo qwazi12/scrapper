@@ -6,7 +6,7 @@ import datetime
 
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 
 def _as_utc(v: datetime.datetime | None) -> datetime.datetime | None:
@@ -51,8 +51,7 @@ class ClipOut(BaseModel):
     has_thumb: bool
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompilationOut(BaseModel):
@@ -67,8 +66,7 @@ class CompilationOut(BaseModel):
     created_at: UTCDateTime
     finished_at: UTCDateTime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LogOut(BaseModel):
@@ -79,8 +77,7 @@ class LogOut(BaseModel):
     context: dict | None
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MetadataGenerateRequest(BaseModel):
@@ -114,8 +111,7 @@ class SocialPostOut(BaseModel):
     error: str | None
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueItemCreate(BaseModel):
@@ -176,8 +172,7 @@ class QueueItemOut(BaseModel):
     media_url: str | None = None
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueBulkAction(BaseModel):
