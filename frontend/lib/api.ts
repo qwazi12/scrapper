@@ -152,7 +152,7 @@ export type MetadataResult = {
 export type SocialPost = {
   id: number;
   compilation_id: number | null;
-  publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
+  publish_requests: { profile: string; request_id?: string; error?: string; state?: string; platforms?: string[] }[] | null;
   accounts: string[];
   content: string;
   scheduled_at: string | null;
@@ -189,7 +189,7 @@ export type QueueItem = {
   scheduled_at: string | null;
   pinned_at?: string | null;          // owner-pinned post time (never re-planned)
   published_at: string | null;
-  publish_requests: { profile: string; request_id?: string; error?: string }[] | null;
+  publish_requests: { profile: string; request_id?: string; error?: string; state?: string; platforms?: string[] }[] | null;
   media_url?: string | null;
   momentum?: ReleaseMomentum | null;
   created_at: string;
@@ -582,6 +582,7 @@ export type StudioProject = {
   script?: {
     sentences: StudioSentence[];
     changes?: { original: string; fix: string; reason: string }[];
+    dropped?: { text: string; reason: string }[];
     word_count?: number;
     est_seconds?: number;
     youtube_title?: string;
@@ -972,7 +973,8 @@ export type RequestedDurationIntent = { schema: number; kind: string; target_sec
   segment_count?: number | null; segment_seconds?: number | null; basis: string };
 export type ExportAcceptanceView = { fingerprint: string; checks: Record<string, string>; requested_format?: string | null;
   requested_duration?: (RequestedDurationIntent & { actual_seconds: number | null; review_tolerance_percent: number; scope: string }) | null;
-  findings: { id: string; kind: string; message: string }[]; source: unknown; rights_status: string };
+  findings: { id: string; kind: string; message: string }[]; source: unknown; rights_status: string;
+  quick?: { severe: string[]; saved_rights: string } };
 export type ExportAcceptanceRequest = { expected_fingerprint: string; checks: string[];
   warning_decisions: Record<string, string>; rights_rationale: string; reviewed: true };
 
@@ -1360,6 +1362,7 @@ export const api = {
   queueSourceContext: (id: number, createdAt: string, signal?: AbortSignal) => req<QueuedSourceView>(`/api/queue/${id}/source-context?expected_created_at=${encodeURIComponent(createdAt)}`, { headers: headers(false), signal }),
   publicationDecision: (id: number, data: PublicationDecisionInput) => req<{ saved: number; duplicate: boolean }>(`/api/queue/${id}/publication-decisions`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   publicationLedger: () => req<PublicationEvidenceView["events"]>("/api/queue/publication-ledger/export?limit=2000", { headers: headers(false) }),
+  queueNotPosted: (id: number) => req<{ status: string; accounts: string[] }>(`/api/queue/${id}/not-posted`, { method: "POST", headers: headers(false) }),
   reconcileQueue: () => req<{ settled: number }>("/api/queue/reconcile", { method: "POST", headers: headers() }),
   publishQueueItem: (id: number) =>
     req<QueueItem>(`/api/queue/${id}/publish`, {
@@ -1488,6 +1491,8 @@ export const api = {
       method: "POST", headers: headers() }),
   exportAcceptanceView: (kind: "studio" | "countdown" | "native", id: number | string) => req<ExportAcceptanceView>(`${kind === "native" ? "/api/editorial/exports" : kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/export-review`, { headers: headers(false) }),
   approveReviewedExport: (kind: "studio" | "countdown" | "native", id: number | string, data: ExportAcceptanceRequest) => req<StudioProject | CountdownProject | NativeExport>(`${kind === "native" ? "/api/editorial/exports" : kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/${kind === "native" ? "approve" : "approve-export"}`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  quickApproveExport: (kind: "studio" | "countdown", id: number, data: { expected_fingerprint: string; rights_rationale?: string }) =>
+    req<StudioProject | CountdownProject>(`${kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/quick-approve`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),

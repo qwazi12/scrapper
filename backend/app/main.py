@@ -932,6 +932,40 @@ async def publish_queue_item_now(item_id: int, s: Session = Depends(get_session)
         raise HTTPException(502, f"Publishing failed: {exc}")
 
 
+@app.post("/api/queue/{item_id}/not-posted", dependencies=_AUTH)
+def queue_not_posted(item_id: int, s: Session = Depends(get_session)) -> dict:
+    """Owner checked the platforms: an uncertain submission didn't post. Those platforms go back to
+    Retry in one tap (owner, 2026-10-19 — the evidence form stays available for disputed cases)."""
+    from . import publication_journal as journal, worker_leases as leases
+    item = s.get(QueueItem, item_id)
+    if not item:
+        raise HTTPException(404, "queue item not found")
+    if leases.live(f"publication:{item_id}"):
+        raise HTTPException(409, "It's still being submitted — wait a minute and try again")
+    unsure = [e for e in item.publish_requests or [] if e.get("profile") and e.get("state") in ("intent", "unknown")]
+    if item.status != "posting" or not unsure:
+        raise HTTPException(409, "Nothing uncertain on this video — its results are still being checked")
+    undo.record(s, "queue", f"Didn't post: #{item.id}", rows=[item])
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ids = {e.get("client_request_id") for e in unsure}
+    entries = [({**e, "state": "confirmed_not_accepted", "error": "Owner checked: not on the platform", "resolved_at": now}
+                if e.get("client_request_id") in ids else e)
+               for e in item.publish_requests or [] if e.get("profile")]
+    targets = [f"{e['profile']}:{n}" for e in entries if e.get("state") == "confirmed_not_accepted" for n in e.get("platforms", [])]
+    for e in entries:
+        if e.get("client_request_id") in ids:
+            journal.append(s, item.id, e["client_request_id"], "owner_not_posted", {"account": f"{e['profile']}:{e['platforms'][0]}", "at": now})
+    item.publish_requests = entries
+    if any(e.get("state") == "accepted" for e in entries):
+        item.notes = f"Marked not posted: {', '.join(targets)}. The other platforms are still being checked."
+    else:
+        item.status, item.accounts, item.scheduled_at = "retry", targets, None
+        item.notes = f"Didn't post (checked by you): {', '.join(targets)}. Retry sends it to these again."
+    s.commit()
+    logbus.log("info", "queue_not_posted", f"Item #{item.id}: owner marked not posted on {', '.join(targets)}")
+    return {"status": item.status, "accounts": item.accounts}
+
+
 @app.post("/api/queue/reconcile", dependencies=_AUTH)
 def reconcile_queue_now(s: Session = Depends(get_session)) -> dict:
     """Explicit owner-triggered status reconciliation, never a new submission."""

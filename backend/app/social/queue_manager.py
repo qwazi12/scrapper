@@ -611,6 +611,19 @@ def _hashtags(tags: str | None) -> list[str]:
     return [t.lstrip("#") for t in (tags or "").split() if t.lstrip("#")]
 
 
+def definitely_rejected(exc: BaseException) -> bool:
+    """Upload-Post answered and refused (4xx), or nothing was sent. 408 (timeout) and
+    409 (conflict / possible duplicate) stay uncertain."""
+    code = getattr(exc, "status_code", None)
+    return isinstance(exc, upload_post.UploadPostError) and isinstance(code, int) \
+        and 400 <= code < 500 and code not in (408, 409)
+
+
+def _in_flight(entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Per-platform attempts that may have reached a platform (not the batch claim)."""
+    return [e for e in entries or [] if e.get("profile") and e.get("state") in ("intent", "unknown", "accepted")]
+
+
 async def submit_upload(
     video_path: pathlib.Path,
     accounts: list[str],
@@ -666,9 +679,11 @@ async def submit_upload(
                 )
             result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
-            # Even a lost response can mean accepted. Never turn uncertainty
-            # into a retry without provider reconciliation or owner resolution.
-            result = {**intent, "state": "unknown", "error": str(exc)[:300]}
+            # A definite refusal (e.g. "Instagram description too long", HTTP 400) was not
+            # accepted: record it as rejected so the video goes to Retry (owner, 2026-10-19).
+            # A lost or timed-out response can still mean accepted — that stays "unknown".
+            state = "rejected" if definitely_rejected(exc) else "unknown"
+            result = {**intent, "state": state, "error": str(exc)[:300]}
         entries.append(result)
         if on_result:
             on_result(result)
@@ -1050,8 +1065,21 @@ async def _submit_owned_media(item,s,video_path,images,regular):
 
     except Exception as exc:
         logger.exception("Failed to post queue item #%s: %s", item.id, exc)
-        item.status = "posting"
-        item.notes = f"Submission outcome unknown — do not retry. Reconcile with provider before resolving: {str(exc)[:250]}"
+        try:
+            s.refresh(item)
+        except Exception:  # noqa: BLE001 — keep the conservative path below
+            pass
+        if _in_flight(item.publish_requests):
+            # Something may have reached a platform: never resubmit blindly.
+            item.status = "posting"
+            item.notes = ("Submission outcome unknown — check the platform. If it didn't post, use "
+                          f"↻ Didn't post — retry. {str(exc)[:220]}")
+        else:
+            # Nothing was sent, or every platform refused it: back to Retry (owner, 2026-10-19).
+            item.status = "retry"
+            item.publish_requests = [e for e in item.publish_requests or [] if e.get("profile")]
+            item.notes = f"Not posted: {str(exc)[:300]}"
+            journal.append(s, item.id, batch_key, "not_posted", {"error": str(exc)[:300]})
         s.commit()
         logbus.log("error", "queue_post_error", f"Item #{item.id} failed: {exc}")
         raise

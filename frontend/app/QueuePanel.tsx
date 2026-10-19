@@ -1062,6 +1062,15 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handlePostNext(item)}
                               title="Put this video first in line — it takes the queue's next post time">⏫ Post next</button>
                     )}
+                    {item.status === "posting" && (item.publish_requests || []).some((e) => e.profile && (e.state === "unknown" || e.state === "intent")) && (
+                      <button style={{ fontSize: 12, padding: "6px 10px" }}
+                              title="You checked YouTube/Facebook/Instagram and it isn't there — send it back to Retry for those platforms"
+                              onClick={async () => {
+                                if (!(await askConfirm("Did you check the platforms and it isn't posted there? It goes back to Retry for those platforms only."))) return;
+                                try { await api.queueNotPosted(item.id); notify("↻ Back to Retry for the platforms it didn't post to."); void loadQueue(); onChange(); }
+                                catch (e: any) { notify(e?.message || String(e)); }
+                              }}>↻ Didn't post — retry</button>
+                    )}
                     <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handlePublishNow(item)}>🚀 Post now</button>
                     <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => handleGenerateAi(item.id)}>✨ AI</button>
                     <button style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => setEditItem(item)}>✎ Edit</button>
