@@ -953,9 +953,9 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
         <dl>
           <dt>Territory and medium</dt><dd>{c.eligibility_criteria.territory} · {c.eligibility_criteria.medium || "movie or TV"}</dd>
           <dt>Genres</dt><dd>{c.eligibility_criteria.genres.join(c.eligibility_criteria.genre_mode === "any" ? " or " : " and ") || "No genre constraint"}</dd>
-          <dt>Production country / original language</dt><dd>{c.eligibility_criteria.production_countries.join(", ") || "Any country"} / {c.eligibility_criteria.original_languages.join(", ") || "Any language"}</dd>
+          <dt>Production country / original language</dt><dd>{c.eligibility_criteria.production_countries.join(c.eligibility_criteria.country_mode === "any" ? " or " : " and ") || "Any country"} / {c.eligibility_criteria.original_languages.join(" or ") || "Any language"}</dd>
           <dt>Release years / territory date window</dt><dd>{c.eligibility_criteria.year_min || "Any"}–{c.eligibility_criteria.year_max || "Any"} / {c.eligibility_criteria.date_from || "Any"}–{c.eligibility_criteria.date_to || "Any"}</dd>
-          <dt>Subscription provider</dt><dd>{c.eligibility_criteria.providers.join(", ") || "Any provider"}</dd>
+          <dt>Subscription provider</dt><dd>{c.eligibility_criteria.providers.join(c.eligibility_criteria.provider_mode === "any" ? " or " : " and ") || "Any provider"}</dd>
         </dl>
         {c.eligibility_criteria.requires_independent_review.length > 0 && <p role="alert">Independent review is required for: {c.eligibility_criteria.requires_independent_review.join("; ")}. These qualifications cannot pass on TMDB identity alone.</p>}
         {c.ranking?.eligibility && <p>Last checked {new Date(parseApiDate(c.ranking.eligibility.checked_at)).toLocaleString()}. {c.ranking.eligibility.scope}</p>}

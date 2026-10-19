@@ -400,6 +400,44 @@ test("Unsupported saved Countdown format stays readable without conversion or pa
   await page.screenshot({ path: path.join(evidence, "unsupported-countdown-format-retained.png"), fullPage: true });
 });
 
+test("Countdown category UI keeps local filter alternatives and blocks ambiguous lists", async ({ page, request }) => {
+  await page.goto("/#countdowns");
+  await page.getByPlaceholder("Type a topic, e.g. Top 10 horror movies on Netflix right now").fill("Top 5 Synthetic Animated and Comedy Films on Netflix or Hulu");
+  await page.getByRole("button", { name: "Top 5", exact: true }).click();
+  await page.getByRole("button", { name: "Research & rank", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Confirm titles", exact: true })).toBeEnabled();
+  const firstId = Number(new URL(page.url()).hash.split("/")[1]);
+  const first = await (await request.get(`${stack.api}/api/countdowns/${firstId}`, { headers })).json();
+  expect(first.eligibility_criteria.genre_mode).toBe("all");
+  expect(first.eligibility_criteria.provider_mode).toBe("any");
+  await page.getByText("Eligibility checked before segments", { exact: true }).click();
+  const details = page.getByText("Eligibility checked before segments", { exact: true }).locator("..");
+  await expect(details).toContainText("Animation and Comedy");
+  await expect(details).toContainText("hulu or netflix");
+  await page.screenshot({ path: path.join(evidence, "countdown-local-filter-meaning.png"), fullPage: true });
+
+  await page.goto("/#countdowns");
+  await page.getByPlaceholder("Type a topic, e.g. Top 10 horror movies on Netflix right now").fill("Top 5 Synthetic Animation or Comedy and Thriller Films");
+  await page.getByRole("button", { name: "Top 5", exact: true }).click();
+  await page.getByRole("button", { name: "Research & rank", exact: true }).click();
+  const confirm = page.getByRole("button", { name: "Confirm titles", exact: true });
+  await expect(confirm).toBeEnabled();
+  const cid = Number(new URL(page.url()).hash.split("/")[1]);
+  const get = async () => (await request.get(`${stack.api}/api/countdowns/${cid}`, { headers })).json();
+  const before = await get();
+  const rejected = page.waitForResponse(response => response.url().endsWith(`/api/countdowns/${cid}/confirm`) && response.request().method() === "POST");
+  await confirm.click();
+  expect((await rejected).status()).toBe(409);
+  await expect(page.getByText("Countdown eligibility needs review: independent evidence required for mixed and/or genre conditions; rephrase one unambiguous list", { exact: true })).toBeVisible();
+  const after = await get();
+  expect(after.ranking.entries).toEqual(before.ranking.entries);
+  expect(after.segment_ids || []).toEqual([]);
+  expect(after.has.titles).toBe(false);
+  await page.getByText("Eligibility checked before segments", { exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "mixed and/or genre conditions" })).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "countdown-ambiguous-category-blocked.png"), fullPage: true });
+});
+
 test("Editorial UI: reviewed research, cleared still, native Short and carousel, simulated delivery", async ({ page, request }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];

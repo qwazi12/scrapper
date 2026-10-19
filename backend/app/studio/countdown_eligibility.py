@@ -38,36 +38,93 @@ def contains(text, phrase):
     return bool(re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", text))
 
 
+def category_terms(text):
+    """Longest aliases first; each recognized word belongs to one filter axis."""
+    terms=[]
+    groups=[('language',{word+'-language':code for word,code in LANGUAGES.items()}),
+        ('country',COUNTRIES),('genre',GENRES),('provider',PROVIDERS),
+        ('medium',{'movie':'movie','movies':'movie','film':'movie','films':'movie',
+                   'tv':'tv','show':'tv','shows':'tv','series':'tv'})]
+    candidates=[]
+    for axis,aliases in groups:
+        for word,value in aliases.items():
+            for match in re.finditer(r'(?<!\w)'+re.escape(word)+r'(?!\w)',text):
+                candidates.append((match.start(),match.end(),axis,value))
+    for term in sorted(candidates,key=lambda t:(t[0],-(t[1]-t[0]))):
+        if not any(term[0]<other[1] and term[1]>other[0] for other in terms):terms.append(term)
+    return sorted(terms)
+
+
+def filter_modes(text,terms,unsupported):
+    """Only local, unambiguous lists; no inferred Boolean precedence."""
+    operators={axis:set() for axis in ('genre','country','provider','language','medium')}
+    for alternative in re.finditer(r'\bor\b',text):
+        left=[term for term in terms if term[1]<=alternative.start()]
+        right=[term for term in terms if term[0]>=alternative.end()]
+        if not left or not right or left[-1][2]!=right[0][2]:
+            unsupported.append('cross-filter or unrecognized alternatives; rephrase one category per list')
+    for left,right in zip(terms,terms[1:]):
+        gap=text[left[1]:right[0]]
+        ops=set(re.findall(r'\b(and|or)\b',gap))
+        if left[2]==right[2]:operators[left[2]].update(ops)
+    for axis,ops in operators.items():
+        if len(ops)>1:unsupported.append(f'mixed and/or {axis} conditions; rephrase one unambiguous list')
+    return {axis:'any' if ops=={'or'} else 'all' for axis,ops in operators.items()}
+
+
 def criteria(topic: str, territory: str, today: dt.date | None = None) -> dict[str, Any]:
     today = today or dt.datetime.now(dt.timezone.utc).date()
     text = topic.casefold().replace("–", "-").replace("—", "-")
+    unsupported=[];terms=category_terms(text);modes=filter_modes(text,terms,unsupported)
     required, excluded = set(), set()
-    for word, genre in GENRES.items():
-        if not contains(text, word):
-            continue
-        if re.search(r"\b(?:not|no|without|excluding)\s+" + re.escape(word) + r"\b", text):
-            excluded.add(genre)
-        else:
-            required.add(genre)
+    supported_negations=set()
+    for start,end,axis,value in terms:
+        negation=re.search(r'\b(?:not|no|without|excluding)\s+$',text[:start])
+        if axis=='genre':
+            (excluded if negation else required).add(value)
+            if negation:supported_negations.add(negation.start())
+    for negation in re.finditer(r'\b(?:not|no|without|excluding|except)\b',text):
+        following=[term for term in terms if term[0]>=negation.end()]
+        if negation.start() not in supported_negations or (len(following)>1 and following[0][2]==following[1][2]
+                and re.search(r'\b(?:and|or)\b|,',text[following[0][1]:following[1][0]])):
+            unsupported.append('compound or unsupported exclusion; rephrase an explicit single genre exclusion')
     movie = bool(re.search(r"\b(?:movies?|films?)\b", text))
     tv = bool(re.search(r"\b(?:tv|shows?|series)\b", text))
     medium = "movie" if movie and not tv else "tv" if tv and not movie else None
-    languages = sorted({code for word, code in LANGUAGES.items() if contains(text, word + "-language")})
-    countries = sorted({code for word, code in COUNTRIES.items()
-        if contains(text, word) and not contains(text, word + "-language")})
+    languages = sorted({value for _,_,axis,value in terms if axis=='language'})
+    countries = sorted({value for _,_,axis,value in terms if axis=='country'})
+    if len(languages)>1 and modes['language']=='all':unsupported.append('multiple required original languages; use an explicit alternative')
+    if movie and tv and modes['medium']!='any':unsupported.append('movie/TV conjunction; choose one medium or an explicit alternative')
     years = [int(y) for y in re.findall(r"\b((?:18|19|20|21)\d{2})\b", text)]
     decade = re.search(r"\b((?:18|19|20|21)\d0)s\b", text)
     lo = hi = None
+    decades=re.findall(r'\b(?:18|19|20|21)\d0s\b',text)
+    if len(decades)>1 or (decade and years):
+        unsupported.append('compound release decades/years; use one explicit inclusive range')
     if decade:
         lo, hi = int(decade[1]), int(decade[1]) + 9
     elif years:
-        lo, hi = min(years), max(years)
+        lo, hi = years[0], years[-1]
+        if len(years)>1:
+            matches=list(re.finditer(r'\b(?:18|19|20|21)\d{2}\b',text))
+            gap=text[matches[0].end():matches[-1].start()].strip()
+            inclusive=(len(years)==2 and (gap in ('-','to','through') or
+                (gap=='and' and re.search(r'\bbetween\s*$',text[:matches[0].start()]))))
+            if not inclusive or lo>hi or re.search(r'\b(?:before|after)\b',text):
+                unsupported.append('compound release-year conditions; use one explicit inclusive range')
         if len(years) == 1 and re.search(r"\bafter\s+" + str(lo), text):
             lo, hi = lo + 1, None
         elif len(years) == 1 and re.search(r"\bbefore\s+" + str(hi), text):
             lo, hi = None, hi - 1
+        elif len(years)==1 and re.search(r'\bsince\s+'+str(lo),text):hi=None
+        elif len(years)==1 and re.search(r'\buntil\s+'+str(hi),text):lo=None
+        elif len(years)==1 and re.search(r'\b(?:before|after|since|until|earlier|later|older|newer)\b',text):
+            unsupported.append('unrecognized release-year bound; use before/after/since/until followed by one year')
     if "this year" in text:
+        if years or decade:unsupported.append('absolute and relative year conditions; use one explicit window')
         lo = hi = today.year
+    if sum(phrase in text for phrase in ('this year','this month','this week'))>1:
+        unsupported.append('multiple relative date windows; choose one explicit window')
     date_from = date_to = None
     if "this month" in text:
         date_from = today.replace(day=1)
@@ -77,23 +134,24 @@ def criteria(topic: str, territory: str, today: dt.date | None = None) -> dict[s
         date_to = date_from + dt.timedelta(days=6)
     if "upcoming" in text:
         date_from = max(date_from or today, today)
-    unsupported = [label for pattern, label in [
+    unsupported.extend(label for pattern, label in [
         (r"\b(?:highest.grossing|box.office|adjusted for inflation)\b", "box-office ranking"),
         (r"\b(?:oscar|academy award|award.winning|award winners?)\b", "award eligibility"),
         (r"\b(?:rotten tomatoes|imdb.rating|100%)", "rating threshold"),
         (r"\b(?:exclusive|originals)\b", "provider exclusivity/original production"),
         (r"\b(?:anime|psychological|mind.bending|based on true|true.story)\b", "specialized category or real-event claim"),
-    ] if re.search(pattern, text)]
+    ] if re.search(pattern, text))
     if re.search(r"\b(?:new|latest|recent)\b", text) and not (years or date_from or date_to):
         unsupported.append("an explicit date window for new/recent releases")
-    return {"version": 1, "territory": territory, "medium": medium,
-        "genres": sorted(required), "genre_mode": "any" if re.search(r"\bor\b", text) else "all",
+    return {"version": 2, "territory": territory, "medium": medium,
+        "genres": sorted(required), "genre_mode": modes['genre'],
         "excluded_genres": sorted(excluded), "production_countries": countries, "original_languages": languages,
+        "country_mode":modes['country'],"provider_mode":modes['provider'],
         "year_min": lo, "year_max": hi, "date_from": date_from.isoformat() if date_from else None,
         "date_to": date_to.isoformat() if date_to else None,
         "providers": sorted({provider for word, provider in PROVIDERS.items() if contains(text, word)}),
-        "requires_independent_review": unsupported,
-        "interpretation": "Country words refer to production country; -language refers to original language. Ranking order is editorial unless independently evidenced."}
+        "requires_independent_review": sorted(set(unsupported)),
+        "interpretation": "Country words refer to production country; -language refers to original language. Each filter uses its own explicit and/or list; mixed or cross-filter alternatives require rephrasing. Year ranges are inclusive. Ranking order is editorial unless independently evidenced."}
 
 
 def provider_key(name: str) -> str:
@@ -116,7 +174,8 @@ def evaluate(entry: dict, facts: dict, rule: dict, providers: dict | None = None
         errors.append("required genre is not supported by canonical metadata")
     if genres.intersection(rule["excluded_genres"]):
         errors.append("an excluded genre is present")
-    if rule["production_countries"] and not set(rule["production_countries"]).intersection(facts.get("production_countries") or []):
+    expected_countries=set(rule['production_countries']);actual_countries=set(facts.get('production_countries') or [])
+    if expected_countries and (not expected_countries.intersection(actual_countries) if rule.get('country_mode')=='any' else not expected_countries.issubset(actual_countries)):
         errors.append("production country is missing or does not match")
     if rule["original_languages"] and facts.get("original_language") not in rule["original_languages"]:
         errors.append("original language is missing or does not match")
@@ -140,7 +199,7 @@ def evaluate(entry: dict, facts: dict, rule: dict, providers: dict | None = None
             errors.append("a release in the requested territory/date window is unconfirmed")
     if rule["providers"]:
         available = {provider_key(p.get("provider_name", "")) for p in (providers or {}).get("flatrate", [])}
-        if not set(rule["providers"]).issubset(available):
+        if (not set(rule['providers']).intersection(available) if rule.get('provider_mode')=='any' else not set(rule['providers']).issubset(available)):
             errors.append("current subscription availability in the selected territory is unconfirmed; rental does not qualify")
     errors.extend("independent evidence required for " + label for label in rule["requires_independent_review"])
     if len(str(entry.get("why_it_ranks") or "").strip()) < 20:
@@ -153,6 +212,8 @@ def verify(entries: list[dict], topic: str, territory: str, *, checked_at: dt.da
     if checked_at.tzinfo is None:raise ValueError('Category retrieval time needs an explicit timezone')
     checked_at=checked_at.astimezone(dt.timezone.utc)
     rule = criteria(topic, territory, today=checked_at.date())
+    if rule['requires_independent_review']:
+        raise ValueError('; '.join('independent evidence required for '+label for label in rule['requires_independent_review']))
     checked, errors = [], []
     for e in entries:
         facts = tmdb.fact_sheet(e.get("media_type") or "movie", int(e["tmdb_id"]), region=territory)

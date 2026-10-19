@@ -742,6 +742,7 @@ export type CountdownSegment = {
 
 export type CountdownEligibility = {
   territory: string; medium: string | null; genres: string[]; genre_mode: string; excluded_genres: string[];
+  country_mode: string; provider_mode: string;
   production_countries: string[]; original_languages: string[]; year_min: number | null; year_max: number | null;
   date_from: string | null; date_to: string | null; providers: string[]; requires_independent_review: string[]; interpretation: string;
 };

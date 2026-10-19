@@ -215,3 +215,36 @@ are actual; provider/cloud services simulated; external spend$0. Owned stack
 stopped after preserving media/source/runtime ledgers/reports/traces/snapshot.
 These results do not close specialized category/editorial/semantic or C01–C14.
 No archive/auth/paid/public/account/push/deploy action.
+
+## Local category Boolean meaning verified
+
+Category criteria version2 keeps genre, production-country and provider and/or
+lists independent. An unrelated provider alternative cannot relax required
+genres; an explicit country conjunction needs both production countries.
+Recognized longest aliases and explicit inclusive year ranges/single
+before/after/since/until bounds are supported. Mixed or cross-filter alternatives,
+compound/disjoint temporal conditions and unsupported exclusions require
+rephrasing/independent proof before retrieval or child creation. This is a bounded
+parser, not general language or complete category truth. Saved v1 proofs cannot
+borrow v2 meaning at parent, direct-child or retained delivery admission; original
+words/media/history are preserved and current confirmation is required.
+
+Initial independent corpus14failed/8passed; expanded focused67passed1.16s.
+Full backend830passed/1optional skip91.75s; actualPG352passed38.52s/native restore
+1.188s214730bytes/source unchanged/SHA
+42670c658f79f99220e649368d6f345bf5f0e27a8be991c8047efd4a5a17b034.
+Production build1/tsc1passed. Full32 browser run:31existing flows passed7.3min,
+new category case failed an incorrect dialog expectation after actual expected409
+and inline message. The corrected category case then passed5.3s (run6.2s) on an
+identical indexed backend source, with actual local-filter display and unchanged
+ranking/no segments after refusal. These are separate runs, not an all-green
+single full32 execution. Initial nested-details locator failure is also retained.
+Evidence history/countdown-category-logic1/2/3; sourceSHA
+a03e7d93ac2614ed58a7230a6789d361d4d0c0ef4708a816958bd49c54aa2253;
+latest verified snapshotSHA5d97b8d3f938033c78f1ddd7fc7bf0856afa7922e30b45e539a31b2a481834bf.
+Reports/traces/exact executed specs/original generated media/frozen source/runtime
+ledgers/fakeDrive/snapshots retained; owned stacks stopped. Blocked-category
+screenshot inspected. Providers/cloud simulated, externalspend0. Subsequent
+requested-duration work is a separate unstaged source; no proof inferred for it.
+Specialized categories/semantic/editorial quality and the wider roadmap remain.
+No archive/auth/paid/public/account/push/deploy action.

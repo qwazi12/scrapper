@@ -1825,3 +1825,50 @@ These results do not close specialized category/editorial/semantic or C01–C14.
 No archive/auth/paid/public/account/push/deploy action.
 
 Save supported-format slice now. Next independent category-boolean corpus will be separate; no broader completion inferred.
+
+## C02 local filter Boolean meaning — current uncommitted slice
+
+Saved supported format/count/acceptance6d4022c. Independent category corpus reproduced14failed/8passed0.24s: unrelated provider OR changes genres; explicit country conjunction treated as alternatives; compound years/decades flattened into false ranges; unsupported exclusions/cross-axis/mixed conditions admitted; old policy cannot be assumed current. Current criteria version2 scopes genre/country/provider alternatives independently, requires all explicit country conjunctions, supports explicit inclusive ranges/single before/after/since/until bounds, uses longest recognized aliases, and refuses mixed/cross-filter/unrecognized alternatives/compound time/exclusions before retrieval or child creation. Recognized single genre exclusions preserved. Unsupported cases require rephrasing/independent proof; no general NLP or complete category truth claim.
+
+Old criteria records fail current parent/child/retained checks; saved words/media/history unchanged, no silent evidence migration. Unit corpus includes actual persisted parent/direct child zero next-stage calls and retained pre-media criteria refusal. UI displays local country/provider and/or meaning. Focused67passed1.16s across category/clock/format/currentlist. ActualPGwrapper added. Broadbackend1session7269/PG1session75480 active (no production Python edits since launch), build1passed and tsc1active. Fresh scoped UI normalTop5 + new local-filter/ambiguous-list case launching stack(next outputs); no inferred result yet. First browser patch anchor failed without edits; corrected actual test name. No archive/auth/paid/public/account/push/deploy; original roadmap unfinished.
+
+Category broad backend830passed/1skip91.75s,actualPG352passed38.52s/native restore1.188s214730bytes/source unchanged/SHA42670c658f79f99220e649368d6f345bf5f0e27a8be991c8047efd4a5a17b034. Build1/tsc1passed. Scoped browser1 normalTop5 passed; new category case failed only ambiguous nested-details locator matching2elements. Exact failure report/trace/current media/frozen source/runtime/verified snapshot archived history/countdown-category-logic1, snapshotSHAfb8cfbfb0558dee808f109c5795342f6074521ba0a3cefebb2466d82c7399434. Owned stack62570stopped. Narrowed locator to immediate summary parent, no app code change. Fresh full32 browser2 active on stack86251, sourcehash in countdown-category-logic2-stack.txt. Do not rebuild.next while active. Category source/tests/UI staged now, pending final browser evidence/docs/commit; any next duration work remains UNSTAGED and separate.
+
+Requested-duration next independent corpus reproduced6failed/3passed1.56s: actual1s inspected export for requested180s had no length decision; identical bytes retained same acceptance after targetchange; custom Countdown duration missing from immutable input; segmentsetting did not invalidate parent export; pure short/long comparison absent. Current unstaged helper stores exact requested length, final fingerprint binds it, review compares actual qualityseconds using explicit25% heuristic and requires substantive owner decision outsideband; no automatic padding/rewrite or quality claim. Countdown custom per-title intent persists in immutable versions; setting changes retain oldbytes/intent and clear current render/acceptance. Retained missing/malformed/future/bool-schema intent refuses newdelivery, never infers current/live/defaulttarget. Source evidence/UI show retained target. Focused60passed6.66s; compatibility74passed1.83s. First focused command named nonexistent test_export_versions.py and ran0tests; corrected to actual corpus/export_history.py. One multi-file frontend patch anchor failed atomically, corrected strong-tag anchor. No production frontend build while category stackactive.
+
+Full category browser2 new case reached real409 and retained original list/no paidwork, but failed second test assumption: Countdown action errors are inline, not a dialog. Errortrace/actualscreen confirms expected mixedgenre rejection. Corrected assertion to exact inline message; pre-fix executed spec copied countdown-category-logic2-spec.ts before edit for faithful archive. Full32continues other cases, no allgreen claim. Category stagedtests nowinclude correcteddialogassumption; currentapp/frozenbackendunchanged. Duration files remain unstaged and separate.
+
+## Local category Boolean meaning verified
+
+Category criteria version2 keeps genre, production-country and provider and/or
+lists independent. An unrelated provider alternative cannot relax required
+genres; an explicit country conjunction needs both production countries.
+Recognized longest aliases and explicit inclusive year ranges/single
+before/after/since/until bounds are supported. Mixed or cross-filter alternatives,
+compound/disjoint temporal conditions and unsupported exclusions require
+rephrasing/independent proof before retrieval or child creation. This is a bounded
+parser, not general language or complete category truth. Saved v1 proofs cannot
+borrow v2 meaning at parent, direct-child or retained delivery admission; original
+words/media/history are preserved and current confirmation is required.
+
+Initial independent corpus14failed/8passed; expanded focused67passed1.16s.
+Full backend830passed/1optional skip91.75s; actualPG352passed38.52s/native restore
+1.188s214730bytes/source unchanged/SHA
+42670c658f79f99220e649368d6f345bf5f0e27a8be991c8047efd4a5a17b034.
+Production build1/tsc1passed. Full32 browser run:31existing flows passed7.3min,
+new category case failed an incorrect dialog expectation after actual expected409
+and inline message. The corrected category case then passed5.3s (run6.2s) on an
+identical indexed backend source, with actual local-filter display and unchanged
+ranking/no segments after refusal. These are separate runs, not an all-green
+single full32 execution. Initial nested-details locator failure is also retained.
+Evidence history/countdown-category-logic1/2/3; sourceSHA
+a03e7d93ac2614ed58a7230a6789d361d4d0c0ef4708a816958bd49c54aa2253;
+latest verified snapshotSHA5d97b8d3f938033c78f1ddd7fc7bf0856afa7922e30b45e539a31b2a481834bf.
+Reports/traces/exact executed specs/original generated media/frozen source/runtime
+ledgers/fakeDrive/snapshots retained; owned stacks stopped. Blocked-category
+screenshot inspected. Providers/cloud simulated, externalspend0. Subsequent
+requested-duration work is a separate unstaged source; no proof inferred for it.
+Specialized categories/semantic/editorial quality and the wider roadmap remain.
+No archive/auth/paid/public/account/push/deploy action.
+
+Requested-duration independent current prototype: broad843passed/1skip83.86s,realPG365passed41.65s/native restore1.328s219218bytes/source unchanged/SHA6c43c8f2e7ddacd4ea7cf2a557ef87094c00f2268628b8045783f84c77f65117. Review caught3additional failures: normal Top15 subminute Studio child's intent rejected by standalone-form min; explicit invalid0/False historical segmentlength fell back todefault. Fixed guard to permit positive subminute childintent, preserve invalidexplicit asunknown. Focused16passed1.87s. This latest tiny source needs final broad/PG/UI/build; do not assign earlier843/365 source results to it. Category commit uses existing index plusdocs/MEMORY ONLY; duration source/frontend/PGwrapper/tests remain unstaged.
