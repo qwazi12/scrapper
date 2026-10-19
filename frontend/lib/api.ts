@@ -907,6 +907,11 @@ export type QueueThumbOptions = {
   options: { id: string; label: string; desc: string; file: string }[];
 };
 
+export type ExportAcceptanceView = { fingerprint: string; checks: Record<string, string>;
+  findings: { id: string; kind: string; message: string }[]; source: unknown; rights_status: string };
+export type ExportAcceptanceRequest = { expected_fingerprint: string; checks: string[];
+  warning_decisions: Record<string, string>; rights_rationale: string; reviewed: true };
+
 export type FinancialHold = { id: string; kind: "usd" | "credit"; service: string; state: string; ref: string | null;
   reserved: number; actual: number | null; amount_basis: string; usage_estimate: number | null; provider_invoice_verified: boolean; version: string; worker_live: boolean; orphan: boolean; can_resolve: boolean; created_at: string };
 export type FinancialHoldView = { holds: FinancialHold[]; history: { id: string; kind: string; reservation_id: string; amount: number; receipt: string; rationale: string; at: string }[] };
@@ -1388,7 +1393,8 @@ export const api = {
   studioGenerateThumbnails: (id: number) =>
     req<StudioProject>(`/api/studio/projects/${id}/thumbnail/generate`, {
       method: "POST", headers: headers() }),
-  studioApproveExport: (id: number) => req<StudioProject>(`/api/studio/projects/${id}/approve-export`, { method: "POST", headers: headers() }),
+  exportAcceptanceView: (kind: "studio" | "countdown", id: number) => req<ExportAcceptanceView>(`${kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/export-review`, { headers: headers(false) }),
+  approveReviewedExport: (kind: "studio" | "countdown", id: number, data: ExportAcceptanceRequest) => req<StudioProject | CountdownProject>(`${kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/approve-export`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),
@@ -1468,7 +1474,6 @@ export const api = {
     req<{ ok: boolean; job_id: string }>(`/api/countdowns/${id}/render`, { method: "POST", headers: headers(false) }),
   countdownThumbnail: (id: number, option: string) =>
     req<CountdownProject>(`/api/countdowns/${id}/thumbnail`, { method: "POST", headers: headers(), body: JSON.stringify({ option }) }),
-  countdownApproveExport: (id: number) => req<CountdownProject>(`/api/countdowns/${id}/approve-export`, { method: "POST", headers: headers() }),
   countdownPublish: (id: number) =>
     req<{ queue_item_id: number; status: string }>(`/api/countdowns/${id}/publish`, { method: "POST", headers: headers(false) }),
   countdownReview: (id: number, on: boolean) =>

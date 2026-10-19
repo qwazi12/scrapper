@@ -54,6 +54,14 @@ def inspect_export(path: Path, expected_seconds: float | None = None, aspect: fl
     lufs = float(loud[-1]) if loud else None
     peaks = re.findall(r"Peak:\s*(-?[\d.]+) dBFS", signals)
     peak = float(peaks[-1]) if peaks else None
+    black_spans=[{'start':float(a),'end':float(b)} for a,b in re.findall(r'black_start:([\d.]+) black_end:([\d.]+)',signals)]
+    silence_spans=[]
+    silence_start=None
+    for kind,value in re.findall(r'silence_(start|end):\s*([\d.]+)',signals):
+        if kind=='start':silence_start=float(value)
+        elif silence_start is not None:
+            silence_spans.append({'start':silence_start,'end':float(value)});silence_start=None
+    if silence_start is not None:silence_spans.append({'start':silence_start,'end':seconds})
     silence = [float(v) for v in re.findall(r"silence_duration:\s*([\d.]+)", signals)]
     black = [float(v) for v in re.findall(r"black_duration:([\d.]+)", signals)]
     if lufs is None or not -18 <= lufs <= -11:
@@ -73,7 +81,8 @@ def inspect_export(path: Path, expected_seconds: float | None = None, aspect: fl
             "audio_codec": audio.get("codec_name") if audio else None, "lufs": lufs,
             "true_peak_dbfs": peak,
             "unverified_checks": ["caption accuracy", "visual relevance", "rights clearance", "narrative quality"],
-            "silence_seconds": silence, "black_seconds": black, "errors": errors, "warnings": warnings,
+            "silence_seconds": silence, "black_seconds": black,
+            "silence_spans":silence_spans,"black_spans":black_spans, "errors": errors, "warnings": warnings,
             "status": "blocked" if errors else "needs_owner_review", "decode": "passed"}
 
 
@@ -92,16 +101,15 @@ def export_fingerprint(project, root: Path) -> str:
     if digest != qa.get("sha256"):
         raise RuntimeError("Export changed since quality inspection; inspect again")
     thumbnail = file_hash(local_file(render["thumbnail"])) if render.get("thumbnail") else None
-    inputs = {"video": digest, "thumbnail": thumbnail, "script": project.script, "plan": getattr(project, "plan", None),
+    inputs = {"quality":qa,"project_created_at":str(getattr(project,"created_at",None)),"trailer":getattr(project,"trailer",None),"video": digest, "thumbnail": thumbnail, "script": project.script, "plan": getattr(project, "plan", None),
               "facts": getattr(project, "facts", None), "research": getattr(project, "research", None),
               "shots": getattr(project, "shots", None)}
     if hasattr(project, "ranking"):
         inputs.update(ranking=project.ranking, segment_ids=project.segment_ids,
                       segment_fingerprints=render.get("segment_fingerprints"))
-    return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False,default=str).encode()).hexdigest()
 
 
 def require_export_approval(project, root: Path) -> None:
-    actual = export_fingerprint(project, root)
-    if (project.review or {}).get("export_approval", {}).get("fingerprint") != actual:
-        raise RuntimeError("Review and approve this exact export first; edits invalidate approval")
+    from .export_acceptance import require_acceptance
+    require_acceptance(project,root)

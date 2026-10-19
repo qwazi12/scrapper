@@ -2,6 +2,7 @@
 
 import { useLocalDraft } from "../lib/localDraft";
 import { LocalDraftStatus } from "./LocalDraftStatus";
+import { ExportAcceptance } from "./ExportAcceptance";
 import { ExportHistory } from "./ExportHistory";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -872,11 +873,8 @@ function VideoPart({ c, onChange, reload }: { c: CountdownProject; onChange: (c:
         Final export: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}.
         Review every segment, intro/outro, source claims and rights before approval.
         {r.quality?.warnings.map(w => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
-        <button disabled={busy || !r.quality || !!r.quality.errors.length} onClick={async () => {
-          setBusy(true);
-          try { onChange(await api.countdownApproveExport(c.id)); }
-          catch (e: any) { notify(errText(e)); } finally { setBusy(false); }
-        }}>Approve inspected countdown</button>
+        <ExportAcceptance kind="countdown" id={c.id} label="Approve inspected countdown"
+          disabled={busy || !r.quality || !!r.quality.errors.length} onApproved={reload} />
       </div>
       {r.archived_at ? (
         <div style={muted}>📦 Archived {new Date(r.archived_at).toLocaleDateString()} — the video is in Drive{drive.link ? <>: <a href={drive.link} target="_blank" rel="noreferrer">open ↗</a></> : ""}.</div>

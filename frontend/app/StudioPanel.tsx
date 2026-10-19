@@ -2,6 +2,7 @@
 
 import { useLocalDraft } from "../lib/localDraft";
 import { LocalDraftStatus } from "./LocalDraftStatus";
+import { ExportAcceptance } from "./ExportAcceptance";
 import { ExportHistory } from "./ExportHistory";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
@@ -1155,10 +1156,8 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
         <b>Final export inspection: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}</b>
         <div>Review facts, narration, captions, footage rights and title/thumbnail honesty before approval.</div>
         {r.quality?.warnings?.map((w) => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
-        <button disabled={!p.script_ready || !r.quality || !!r.quality.errors.length} onClick={async () => {
-          try { await api.studioApproveExport(p.id); setMsg("✓ Approval recorded for this exact video, script, plan and thumbnail."); onChange(); }
-          catch (e: any) { setMsg(`✕ ${e.message}`); }
-        }}>Approve inspected export</button>
+        <ExportAcceptance kind="studio" id={p.id} label="Approve inspected export"
+          disabled={!p.script_ready || !r.quality || !!r.quality.errors.length} onApproved={onChange} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
         <div>

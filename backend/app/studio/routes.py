@@ -19,6 +19,7 @@ from ..db import get_session
 from ..models import StudioProject
 from .. import control, costs, undo
 from . import momentum, runner, tmdb, tts
+from .export_acceptance import AcceptanceIn
 
 # What a Studio undo restores (text/plan level; footage and shots are files).
 UNDO_FIELDS = ["script", "plan", "render", "target_minutes"]
@@ -562,23 +563,32 @@ def set_shot_usable(project_id: int, shot_id: str, req: ShotUse, s: Session = De
 LONGFORM_DESTINATION = ["default:*"]   # Upload-Post profile "default" — all channels (Screen Central)
 
 
+@router.get('/projects/{project_id}/export-review')
+def export_review(project_id:int,s:Session=Depends(get_session)):
+    from ..file_use import pin
+    from .export_acceptance import view
+    with pin([runner.project_dir(project_id)],session=s):
+        try:return view(_get(s,project_id),runner.project_dir(project_id))
+        except RuntimeError as exc:raise HTTPException(409,str(exc))
+
+
 @router.post("/projects/{project_id}/approve-export")
-def approve_export(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+def approve_export(project_id: int, req:AcceptanceIn, s: Session = Depends(get_session)) -> dict[str, Any]:
     from ..file_use import pin
     with pin([runner.project_dir(project_id)], exclusive=True, session=s):
         from datetime import datetime, timezone
         from .research_gate import require_checked
-        from .media_quality import export_fingerprint
+        from .export_acceptance import accept
+        from ..worker_leases import clock
         p = _get(s, project_id)
         if p.stage_status in ("running", "queued"):
             raise HTTPException(409, "Wait for the running stage before approving")
         try:
             require_checked(p.script)
-            fingerprint = export_fingerprint(p, runner.project_dir(project_id))
+            approval = accept(p,runner.project_dir(project_id),req,clock(s))
         except RuntimeError as exc:
             raise HTTPException(409, str(exc))
-        p.review = {**(p.review or {}), "export_approval": {"fingerprint": fingerprint,
-                     "approved_at": datetime.now(timezone.utc).isoformat()}}
+        p.review = {**(p.review or {}), "export_approval": approval}
         s.commit()
         return _out(p)
 

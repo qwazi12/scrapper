@@ -719,15 +719,32 @@ def require_release(s, c: CountdownProject, approved: bool = True) -> str:
         raise HTTPException(409, str(exc))
 
 
+from .export_acceptance import AcceptanceIn
+
+
+@router.get('/{cid}/export-review')
+def countdown_export_review(cid:int):
+    from .export_acceptance import view
+    with media_use(cid,segments=True):
+        with SessionLocal() as s:
+            c=_get(s,cid)
+            require_release(s,c,approved=False)
+            return view(c,comp_dir(c))
+
+
 @router.post("/{cid}/approve-export")
-def approve_countdown_export(cid: int) -> dict[str, Any]:
+def approve_countdown_export(cid: int,req:AcceptanceIn) -> dict[str, Any]:
     with media_use(cid, segments=True):
         with SessionLocal() as s:
             c = _get(s, cid)
             if c.stage_status in ("running", "waiting", "queued"):
                 raise HTTPException(409, "Wait for the countdown to finish before approval")
             fingerprint = require_release(s, c, approved=False)
-            c.review = {**(c.review or {}), "export_approval": {"fingerprint": fingerprint, "approved_at": _now().isoformat()}}
+            from .export_acceptance import accept
+            from ..worker_leases import clock
+            try:approval=accept(c,comp_dir(c),req,clock(s))
+            except RuntimeError as exc:raise HTTPException(409,str(exc))
+            c.review = {**(c.review or {}), "export_approval": approval}
             s.commit()
             return out(s, c)
 

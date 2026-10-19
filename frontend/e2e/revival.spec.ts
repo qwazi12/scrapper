@@ -24,6 +24,26 @@ test.beforeEach(async ({ page, context, request }) => {
   }, { api: stack.api, token: stack.token });
 });
 
+async function acceptExactExport(page: any) {
+  const form = page.getByRole("form", { name: "Exact export acceptance" });
+  await expect(form).toBeVisible();
+  const checks = form.getByRole("checkbox");
+  for (let i = 0; i < 4; i++) await checks.nth(i).check();
+  const decisions = form.getByRole("textbox", { name: /^Editorial decision / });
+  for (let i = 0; i < await decisions.count(); i++) await decisions.nth(i).fill("Synthetic fixture intentionally uses this signal; inspected the generated original media.");
+  await form.getByLabel("Rights and intended-use review").fill("All media in this isolated scenario is original synthetic test footage and offline speech.");
+  const ack = form.getByRole("checkbox", { name: "I accept these exact files, checks and editorial decisions.", exact: true });
+  const save = form.getByRole("button", { name: "Record exact export acceptance", exact: true });
+  await expect(save).toBeDisabled();
+  await ack.check();
+  await form.getByLabel("Rights and intended-use review").fill("Original synthetic test footage, generated tones, and offline fixture speech; no borrowed source assets.");
+  await expect(ack).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await ack.check();
+  await save.click();
+  await expect(form).toHaveCount(0);
+}
+
 test("LongForm real UI: research, rejected edit, repair, speech, export approval and simulated delivery", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
@@ -75,6 +95,7 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   writeFileSync(path.join(evidence, "longform-quality.json"), JSON.stringify(project.render.quality, null, 2));
   await page.screenshot({ path: path.join(evidence, "longform-render-review.png"), fullPage: true });
   await page.getByRole("button", { name: "Approve inspected export", exact: true }).click();
+  await acceptExactExport(page);
   await expect(page.getByRole("button", { name: "Send to Posting Queue", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Send to Posting Queue", exact: true }).click();
   await expect(page.getByText(/Ready to Post in SocialPilot/)).toBeVisible();
@@ -169,6 +190,7 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   await expect.poll(async () => (await getCountdown()).render.thumb_round).toBe(1);
   await page.screenshot({ path: path.join(evidence, "countdown-review.png"), fullPage: true });
   await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
+  await acceptExactExport(page);
   await page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await expect.poll(async () => !!(await getCountdown()).queue_item_id).toBe(true);
