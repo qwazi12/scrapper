@@ -1,26 +1,68 @@
-> **2026-10-18 continued checkpoint:** independent retrieval + owner review,
-> atomic USD/credit reservations and scoped worker leases are implemented locally.
-> The current contracts and limitations are in [LOCAL_CONTRACTS_20261018.md](LOCAL_CONTRACTS_20261018.md).
-> Latest owner instruction: stay local; do not push, deploy or publish. Record every checkpoint in root MEMORY.md and the progress ledger.
+# Resume the original Scrapper roadmap
 
-Continue the owner-authorized isolated Scrapper revival implementation on the
-existing codex/scrapper-revival-full-stack-20261018 branch. Read completely:
-SCRAPPER_CODEX_UNATTENDED_EXECUTION.md, docs/implementation/SCRAPPER_AUTONOMOUS_PROGRESS.md,
-docs/implementation/SCRAPPER_COMPLETION_REPORT.md, docs/implementation/SCRAPPER_EXECUTION_PLAN.md
-and docs/implementation/SAFE_LOCAL_TESTING.md. Inspect Git state and preserve owner
-changes; do not recreate or overwrite the worktree. The roadmap is incomplete.
+Continue autonomously in `/Users/kwasiyeboah/dev/scrapper-worktrees/revival-20261018`
+on `codex/scrapper-revival-full-stack-20261018`. Inspect Git status first and
+preserve owner changes. Do not recreate/reset this worktree or mutate the primary
+checkout `/Users/kwasiyeboah/dev/scrapper`. Main baseline is
+`95b6bd45c23644cff2ec4549db4312c2f7d1281e`; Git history identifies the latest commit.
 
-Latest draft checkpoint: 3e6f446. Continued Countdown lifecycle checkpoint:
-466 backend tests passed /1 optional skip, production frontend build passed,
-10 browser scenarios passed. Exact evidence and limits follow in the progress ledger. Worker integrations, publication uncertainty history and financial
-recovery are implemented locally; do not restart these from the older plan.
+The original Screen Central OS roadmap is incomplete. The owner's latest request
+sets aside the entire YouTube Shorts archive and Drive login and resumes this
+roadmap. Do not open browser authentication, transfer channel media or restart
+archive workers. Continue local independent work, MEMORY.md and local commits;
+do not stop at milestones to request routine implementation approval.
 
-Start with the remaining M1/M2 safety gaps and acceptance tests in the completion report,
-then continue M3–M5 as dependencies permit. Reuse the offline test harness, improve
-negative-path UI coverage, and keep evidence labels honest. Keep external test
-spend at $0 unless an enforceable isolated metered lane is actually established
-within the original $5 ceiling. Do not deploy, merge, touch main, change production
-data/settings, connect accounts, post/reply publicly or use unbounded paid services.
-Do not ask for routine local implementation permission. Maintain the ledger,
-focused commits, exact test evidence and a resumable return package. Never infer
-production readiness from the current synthetic fixture passes.
+The owner earlier authorized GitHub push, deployment and live testing **when
+implementation is finished**. That condition has not been met. No main merge,
+public posting/replying, live account/settings changes or paid API calls are
+implied. Local external API spend remains $0. No checkpoint completion, percentage
+or deployment success may be inferred from test counts. External proof stays
+explicitly unverified until actually executed in its authorized lane.
+
+Read the master audit and execution handoffs completely if their contents are not
+already in the active context. Then read these current records:
+
+- `docs/implementation/REMAINING_ROADMAP.md`: C01–C14 and deferred A01.
+- `docs/implementation/SCRAPPER_AUTONOMOUS_PROGRESS.md` and root `MEMORY.md`:
+  append-only decisions, commits, failures, exact test runs and outstanding work.
+- `docs/implementation/SCRAPPER_COMPLETION_REPORT.md`: current evidence and limits.
+- `docs/implementation/ARCHITECTURE_CHECKPOINT.md`: implemented whole-system flows.
+- `docs/implementation/SAFE_LOCAL_TESTING.md` and the relevant contract documents
+  linked from the architecture map before changing those paths.
+
+Already implemented locally: independent source retrieval/owner semantic review;
+atomic integer budgets/credit holds and DB-clock worker leases; residential and
+legacy worker integration; durable per-target publication uncertainty/history;
+owner financial resolution; response-lifetime file claims and retained export/
+delivery history; structured Studio/Countdown acceptance; authorized media catalog;
+native image/manual formats; immutable content/cost lineage; read-only YouTube
+analytics/comment adapters; context-bound private comment/correction workflow;
+descriptive diagnostics and reviewed manual experiments; WAL-aware SQLite recovery
+and actual private PostgreSQL logical recovery; browser draft and queue recovery;
+supported lifespan/schema/image interfaces; structured native exact acceptance and
+format-correct image/Reel dispatch. Do not restart these from older plans.
+Latest completed feature commit304b5ae contains native acceptance; inspect Git
+history/state for later saved work before choosing the next slice.
+
+Latest completed broad evidence: **661 backend passes /1 optional skip**,
+**185 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+passes**, production build passed, **20 actual browser scenarios passed** before
+the native slice and **4 full media workflows passed** afterward plus1 fresh
+manual-format visual-capture pass.
+Each Python lane has one reported TestClient/httpx deprecation warning; do not
+silence it or mutate the shared environment. Exact evidence paths are indexed in
+the report. More recent verified runs in the ledger supersede these counts.
+
+Use the shared installed backend Python without changing it. Tests use fresh
+synthetic data and block unmocked external sockets. PostgreSQL uses only its marked
+private `/tmp/scpg-*` cluster/socket/database and stops it afterward. Safe E2E freezes
+backend/scripts source, uses marked synthetic roots, offline speech/original assets,
+blocked provider network and no schedulers. Never rebuild `.next` while an owned
+E2E frontend is running. Preserve traces, quality/probes, exact source manifest,
+original media and a WAL-aware verified DB snapshot before cleanup. Stop only owned
+processes. Docker remains off; starting it previously resumed unrelated workloads.
+
+Continue the dependency-ordered remaining contracts and negative-path tests in
+C01–C14. Keep current docs honest, run checks appropriate to each change, commit
+verified slices locally, and continue. Do not call the complete objective achieved
+while required independent work or external proof remains.

@@ -1,141 +1,140 @@
-> **2026-10-18 continued checkpoint:** independent retrieval + owner review,
-> atomic USD/credit reservations and scoped worker leases are implemented locally.
-> The current contracts and limitations are in [LOCAL_CONTRACTS_20261018.md](LOCAL_CONTRACTS_20261018.md).
-> Latest owner instruction: stay local; do not push, deploy or publish. Record every checkpoint in root MEMORY.md and the progress ledger.
+# Current local revival architecture — October 19, 2026
 
-# Local revival architecture checkpoint
+This describes the implemented local branch, not a deployed Screen Central OS
+release. C01–C14 remain tracked in [REMAINING_ROADMAP.md](REMAINING_ROADMAP.md).
+Continue local implementation, MEMORY.md and local commits without checkpoint
+approval. The owner authorized GitHub push, deployment and live testing **when
+implementation is finished**. No main merge, public media publication, account
+change or paid call follows from that instruction. The later request defers the
+entire Shorts archive and Drive login; those paths must stay idle.
 
-Original system-wide maps and 24 root-cause findings remain in the Phase 0
-audit package. This diagram adds the implemented safety and editorial paths.
-Solid arrows describe code paths. External boxes are fixture replacements in E2E;
-their presence does not mean a live provider was tested.
+Solid arrows are code paths. External adapters are replaced at the provider
+boundary in local E2E. Actual databases, HTTP, UI, FFmpeg, original generated
+assets and installed offline speech run locally; fixture success does not prove
+provider compatibility, factual accuracy, permissions or creative quality.
 
 ```mermaid
 flowchart LR
-  UI[Next owner interface] --> AUTH[Owner header / scoped media pass]
-  AUTH --> API[FastAPI]
-  API --> LF[Studio stage runner]
-  LF --> FACTS[TMDB facts + typed credits]
-  LF --> WEB[Grounded research drafts]
-  WEB --> GATE[Claim references + evidence admission]
-  FACTS --> GATE
-  GATE --> SCRIPT[Saved script checks / repair recheck]
-  SCRIPT --> PLAN[Narration + shot plan]
-  PLAN --> VIDEO[FFmpeg final mux]
-  API --> CD[Countdown identity + owned segments]
+  UI[Next owner interface] --> AUTH[Owner header / scoped binary media pass]
+  AUTH --> API[FastAPI lifespan / fail-closed initialization]
+  API --> LF[Studio staged attempts]
+  LF --> FACT[Typed metadata / claim references]
+  FACT --> FETCH[Immutable independently retrieved source records]
+  FETCH --> REVIEW[Owner semantic verdict / freshness / conflicts]
+  REVIEW --> SCRIPT[Saved narration gate / recheck after edits]
+  SCRIPT --> PLAN[Shots / plan / narration]
+  PLAN --> RENDER[FFmpeg export]
+  API --> CD[Countdown identity / eligibility / owned segments]
   CD --> LF
-  CD --> STITCH[Final countdown stitch]
-  STITCH --> QA[Decode / duration / streams / audio / black QA]
-  VIDEO --> QA
-  QA --> APPROVAL[Exact file + inputs owner approval]
-  API --> ED[Opportunities / evidence / calendar]
-  ED --> BRIEF[Owner-reviewed research fingerprint]
-  BRIEF --> CAM[Selected native campaign treatments]
-  ASSET[Hash-indexed cleared stills + provenance] --> CAM
-  CAM --> EXPORT[Immutable native versions / captions / cards]
-  EXPORT --> QA
-  APPROVAL --> Q[Atomic queue link / review]
-  Q --> CLAIM[Atomic submit claim + durable intent]
-  CLAIM --> PROVIDER[One profile/platform request / client request ID]
-  PROVIDER --> RECEIPT[Accepted receipt or unknown outcome]
-  RECEIPT --> RECON[Read-only reconciliation]
-  RECON --> ARCHIVE[Confirmed outcomes / archive]
-  API --> OBS[Authorized imported metric observations]
-  OBS --> COHORT[Format + platform + publication-age cohorts]
-  API --> COMMENTS[Deidentified imported comment text]
-  COMMENTS --> DRAFT[Private reply drafts / manual review]
-  COMMENTS --> ED
-  COHORT --> EXP[Recorded hypotheses + controls / descriptive results]
+  CD --> STITCH[Exact segment release / final stitch]
+  STITCH --> QA[Decode / streams / duration / loudness / timed spans]
+  RENDER --> QA
+  API --> BRIEF[Owner research / original angle / format choices]
+  BRIEF --> CAM[Native campaigns / explicit selected assets]
+  ASSETS[Authorized local still / video / audio catalog] --> SEARCH[Lexical tags / owner captions / provenance]
+  SEARCH --> CAM
+  CAM --> NATIVE[Immutable native exports / private manual packages]
+  NATIVE --> QA
+  QA --> ACCEPT[Exact-file editorial checks / finding decisions / rights attestation]
+  ACCEPT --> Q[Atomic review queue link]
+  ACCEPT --> MANUAL[Owner-header private package download]
+  Q --> JOURNAL[Generation lease / durable per-target intent]
+  JOURNAL --> PROVIDER[Transport / known receipt or uncertainty]
+  PROVIDER --> RECON[Read-only reconciliation / owner evidence]
+  RECON --> HISTORY[Retained delivery evidence and exact bytes]
 ```
+
+The catalog accepts authorized video/audio, but native card treatments currently
+select stills only; unsupported media are rejected explicitly. Short/Reel visual
+treatments are still related beat cards. Image, carousel, community and poll have
+format-specific copy; community/poll delivery is private/manual only. Native
+approval now uses the same structured acceptance mechanism as the two studios,
+with format-appropriate wording and full-manifest/inspection binding. Native review and format-specific transport checks passed full backend/PostgreSQL
+lanes and four actual media browser workflows; exact evidence is indexed below.
+
+```mermaid
+flowchart LR
+  RETAINED[Retained exact content / input fingerprint] --> MAP[Append-only owner-attested public-content mapping]
+  MAP --> YT[Existing declared read-only YouTube grant]
+  YT --> OBS[Processed-day aggregates / revision history / missing values]
+  IMPORT[Authorized owner observations] --> OBS
+  OBS --> PEERS[Same account / platform / format / comparable age]
+  PEERS --> DIAG[Leave-one-out descriptive diagnostics / cost limitations]
+  DIAG --> DECISION[Append-only exact-context private owner decision]
+  DECISION --> EXP[Linked manually completed experiment / no automatic winner]
+  MAP --> COMMENTS[Explicit bounded GET pages / separate reply cursors]
+  COMMENTS --> EVIDENCE[Immutable redacted comment evidence]
+  EVIDENCE --> DRAFT[Private words / exact context / explicit review]
+  DRAFT --> CORRECTION[Exact-source unverified correction proposal]
+  CORRECTION --> BRIEF[Private research follow-up]
+```
+
+YouTube analytics and comment adapters are implemented and tested against mocked
+HTTP boundaries; real private authorization/report compatibility is unverified.
+They never acquire scopes or post replies. Changed mappings fence old workers.
+Missing observations stay missing; tiny/undersampled cohorts do not become
+causal winners. Recorded variable-cost estimates and owner invoice attestations
+remain distinct from verified provider invoices. Learning decisions grant no
+spending, scheduling, publication or automation authority.
+
+```mermaid
+flowchart LR
+  JOB[Resumable / legacy / residential worker] --> LEASE[DB-clock renewable generation lease]
+  LEASE --> FENCE[DB / subprocess / paid-dispatch fencing]
+  FENCE --> HOLD[Atomic integer USD / credit reservations]
+  HOLD --> USAGE[Receipt / usage estimate / retained uncertain hold]
+  USAGE --> FINANCE[Versioned owner reconciliation / append-only evidence]
+  FENCE --> FILE[Shared media readers / exclusive file mutations]
+  FILE --> COPY[Verified local hash / remote checksum receipt]
+  COPY --> CLEANUP[Reference-aware local cleanup]
+  FILE --> VERSION[Retained Studio / Countdown / delivery versions]
+  DB[Application database] --> SNAP[SQLite WAL-aware online snapshot]
+  SNAP --> RESTORE[Offline lock / integrity / verified restore]
+  PG[Disposable private PostgreSQL cluster] --> DUMP[Native custom archive / SHA]
+  DUMP --> PGRESTORE[Least-privilege transactional restore / exact fingerprints]
+  UI[Owner forms] --> DRAFT[Browser recovery / identity / stale-save guards]
+  UI --> READ[Typed errors / retained queue snapshot / explicit read retry]
+```
+
+SQLite startup backup precedes migrations and fails closed. Restore and legacy
+identity upgrade require exclusive offline maintenance locks. PostgreSQL has an
+actual native logical backup/restore drill on a disposable local cluster,
+including failed-restore rollback, append-only guards, sequence state, content
+mutation detection and unchanged source fingerprints. Automatic app backups are
+still SQLite-only. Production roles/ACLs, real volume recovery, scale/RTO,
+retention, mixed-version rollout and Linux/container/CI execution remain open.
+Automatic remote media/backup trash remains disabled. Docker remains off because
+starting it resumed unrelated local workloads during an earlier check.
 
 ```mermaid
 erDiagram
-  EditorialRecord ||--o{ CreativeCampaign : reviewed_opportunity
-  EditorialRecord ||--o{ EditorialRecord : feedback_reference
+  EditorialRecord ||--o{ CreativeCampaign : reviewed_brief
   CreativeCampaign ||--o{ CreativeExport : immutable_versions
-  MediaAsset }o--o{ CreativeCampaign : explicit_beat_selection
-  CreativeExport ||--o| QueueItem : atomic_queue_link
-  StudioProject ||--o| QueueItem : atomic_queue_link
-  CountdownProject ||--o| QueueItem : atomic_queue_link
-  CountdownProject ||--o{ StudioProject : campaign_owned_segments
-  PerformanceObservation }o--o{ EditorialRecord : experiment_content_ids
+  MediaAsset }o--o{ CreativeCampaign : explicit_selection
+  CreativeExport ||--o| QueueItem : atomic_link
+  StudioProject ||--o| QueueItem : atomic_link
+  CountdownProject ||--o{ StudioProject : owned_segments
+  StudioProject ||--o{ ExportVersion : retained_versions
+  QueueItem ||--o{ PublicationEvent : durable_evidence
+  QueueItem ||--o{ DeliveryArchive : retained_delivery
+  ContentLineage ||--o{ PerformanceObservation : mapped_snapshot
+  ContentLineage ||--o{ CommentCursor : page_progress
+  ContentLineage ||--o{ CommentEvidence : redacted_source
+  CommentEvidence ||--o{ FeedbackDecision : exact_context
+  PerformanceObservation }o--o{ LearningDecision : context_snapshot
 ```
 
-New tables: editorial_records, performance_observations, creative_campaigns,
-creative_exports, media_assets. Additive existing-table columns: queue_items
-media_kind/media_files, compilations queue_item_id. Disposable SQLite creation
-and existing-table migration paths are locally exercised. PostgreSQL upgrade,
-backup/restore, mixed-version deploys and rollback are not verified.
+Relationships above describe logical evidence references; not all are foreign
+keys, and append-only histories deliberately survive mutable queue/project
+lifetimes. Database models also include leases, reservations, receipts, file
+claims, source reviews, financial/publication decisions and remote-copy evidence.
+Deferred archive models remain present without authorizing archive execution.
 
-Studio stages use generation-specific attempt folders; native campaigns retain
-immutable export versions. Legacy ingest/compile and residential handoff v2 now
-have local ownership/receipt tests. Publication events and owner decisions have
-append-only history independent of queue-row lifetime. Unknown submissions
-require explicit evidence review; late receipts cannot trigger duplicate posting.
-Financial holds have their own renewable request leases and owner reconciliation.
-File claims cover cooperating render/transfer/mutation/cleanup processes; deletion
-requires references and verified copies to agree. Countdown output directories
-are unique per attempt. Original-studio export history, response-lifetime file claims and retained delivery
-history are now implemented locally. Automated remote media/backup deletion is
-disabled; managed remote reclamation, remaining local backup/temp paths, PostgreSQL
-and real-provider behavior still need their acceptance lanes.
-
-```mermaid
-flowchart LR
-  JOB[Resumable / legacy / residential job] --> LEASE[Renewable generation lease]
-  LEASE --> FENCE[DB / subprocess / paid-dispatch fencing]
-  FENCE --> FILES[Shared media readers / exclusive mutations]
-  FILES --> COPY[Remote checksum + local hash receipt]
-  COPY --> DELETE[Reference-checked local reclamation]
-  FENCE --> HOLD[Atomic USD / credit reservation]
-  HOLD --> USAGE[Provider receipt or retained uncertainty]
-  USAGE --> OWNER[Explicit versioned owner reconciliation]
-  OWNER --> LEDGER[Append-only financial evidence]
-  CLAIM[Publication lease + exact media intent] --> TRANSPORT[Provider transport]
-  TRANSPORT --> JOURNAL[Append-only publication events / late receipts]
-  JOURNAL --> REVIEW[Owner adoption / absence evidence]
-  REVIEW --> RECON[Strict per-target reconciliation]
-  UI[Owner script editor] --> DRAFT[Browser draft / explicit conflict review]
-  DRAFT --> VERSION[Backend stale-save check]
-```
-
-See LOCAL_CONTRACTS_20261018.md and MEDIA_LIFECYCLE_20261018.md for contracts and
-limitations. Browser script drafts are scoped to backend/project identity;
-failed local storage activates navigation/unload protection. Draft recovery does
-not imply every form has offline persistence.
-
-Research admission requires independently retrieved records plus explicit owner
-semantic review with context, freshness and conflict checks. This does not turn
-the storyboard model into a truth verifier or verify every structured TMDB claim.
-Editorial opportunity excerpts remain owner-supplied; their approval has a
-separate, clearly labeled scope.
-
-Native creative treatment currently provides original beat cards and manually
-selected stills. It does not implement semantic footage search, automatic legal
-clearance, word alignment, complete campaign repurposing or creative excellence.
-Private analytics and live comment adapters are unavailable; authorized imports
-are honest local evidence, not a claimed connected-account capability.
-
-Safe E2E uses a fresh marked temporary root, synthetic token/database/assets,
-installed local speech, fake provider receipts, blocked external sockets and an
-OS sandbox (macOS) or externally isolated container (Linux). Web-only mode and
-safe-mode startup suppress schedulers, production recovery and maintenance.
-
-
-```mermaid
-flowchart LR
-  SOURCES[Immutable fetched records / original project identity] --> CONFLICTS[Explicit contradiction resolution / current context]
-  CONFLICTS --> NARRATION[Saved narration evidence gate]
-  CATEGORY[Canonical category / territory / freshness] --> COUNTDOWN[Campaign-owned ranked segments]
-  COUNTDOWN --> WORDS[Exact saved intro/outro + current research owner review]
-  WORDS --> STITCH[Final Countdown render]
-  STITCH --> VERSION[Append-only original export + content-addressed blobs]
-  NARRATION --> VERSION
-  VERSION --> RECOVER[Identity/version comparison / unchecked draft restore]
-  DELIVERED[Settled queue content + recorded receipts] --> HISTORY[Append-only delivery archive / retained media]
-  HISTORY --> PRIVATE[Owner history / hash-checked scoped file download]
-  TRANSFER[Remote creation / verified transfer receipt] --> REMOTE[Kept current and superseded copies]
-  RESPONSE[Media response] --> READ[Shared claim until final byte]
-```
-
-The last local verification is 542 backend tests/1 optional skip and 12 passing browser scenarios. A frozen backend/scripts source generation and its hash are recorded per new E2E run, preventing lazy imports from mixing code generations while development continues. Batch status keeps polling until the durable completion checkpoint is saved.
+The current evidence index is in [SCRAPPER_COMPLETION_REPORT.md](SCRAPPER_COMPLETION_REPORT.md).
+Detailed contracts: [local safety](LOCAL_CONTRACTS_20261018.md),
+[media lifecycle](MEDIA_LIFECYCLE_20261018.md), [export acceptance](EXPORT_ACCEPTANCE.md),
+[assets](ASSET_CATALOG.md), [native formats](NATIVE_FORMATS.md),
+[audience lineage](AUDIENCE_LINEAGE.md), [comments](COMMENT_WORKFLOW.md),
+[learning](LEARNING_DIAGNOSTICS.md), [database recovery](DATABASE_RECOVERY.md),
+and [owner recovery](OWNER_RECOVERY.md). The progress ledger retains earlier
+failures, corrective runs and historical counts; older counts are not current.
