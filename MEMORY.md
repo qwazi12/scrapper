@@ -1,5 +1,62 @@
 # Scrapper Memory
 
+## Current Shorts archive operation — 2026-10-19 (Codex)
+
+Owner resumed all ten channel archives and requested a later SocialPilot Drive
+sync. Owner then explicitly redirected storage: use the working LongForm Drive
+connection and create a Movie Clips folder there. This supersedes the previous
+archive deferral for this operation; the separate C01–C14 engineering roadmap is
+not resumed. Review queue import is authorized; no new Ready/schedule/publication
+instruction is inferred. Existing posting for other queues was already enabled
+by the subsequent owner-approved Claude session and has been left unchanged.
+
+Actual live checks:
+- Old personal Movie Clips 1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo is empty. Its real
+  synthetic upload returned 403 storageQuotaExceeded for the service account.
+- LongForm's configured destination 0AJrfdFAM4T9iUk9PVA is a writable Shared Drive
+  root. Created Movie Clips 1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY there. An original
+  6,150-byte video uploaded and passed remote MD5/size verification. Only that
+  disposable validation fixture was moved to recoverable Trash afterward;
+  its original remains local, and it cannot enter the Shorts queue.
+- Ten canonical sources were freshly inventoried on the Mac and registered in
+  the live archive ledger. Nine complete Shorts inventories total 4,007 videos:
+  Charan 299, Afridi 208, Rock Movie 130, AgiRecap 277, sir7076/酱sir电影局 259,
+  FLICKSFYP 1121, Ai Plot 674, Doctor Who Shorts 1023, ArliStoryTime 16.
+  Tiny Friends TV UCpc3WsozCCi1Cd1tf_Ne1RQ has no available Shorts tab and remains
+  explicitly incomplete, not a completed empty archive. Byte estimates unknown.
+- The ten newly registered, still-empty archive records were moved to the new
+  parent under per-channel database leases, checking absence of remote IDs,
+  downloaded hashes/local files and manifests first. Words/video IDs preserved.
+- Mac had about 5.1 GiB temporary space; sequential bounded transfers retain files
+  until actual ffprobe/Drive checksum verification. Shared Drive pooled capacity
+  is not reported by the service account's user storageQuota.
+- Actual channel downloads were attempted with existing public-only Mac worker.
+  YouTube returned “Sign in to confirm you’re not a bot.” The whole owned batch
+  was stopped, its child process killed and claim released; no bypass, cookie
+  extraction, proxy rotation or repeated challenge loop. No channel video has
+  downloaded/uploaded. A normal Brave Personal watch page displays the same
+  challenge, confirming it is not just the downloader. Opened normal Google
+  sign-in for YouTube and handed it to the owner; sign-in/verification is pending.
+- All ten channel folders and truthful zero-upload manifests have been created
+  in the Shared Drive destination. Seven channels stopped during the batch; one
+  Ai Plot item was marked restricted/unavailable, leaving 4,006 remaining. Two
+  complete channels were not attempted after the global challenge halt. No live
+  archive leases remain. The connected nonblocked profile is Cinama, matching
+  the requested review-queue destination. Do not report metadata/manifest files as video uploads.
+  Do not Sync Drive into fake queue rows while zero real Shorts exist. Once
+  verified files are available, use explicit new Movie Clips folder ID and
+  auto_approve=false, then verify deduplication/counts and intended destinations.
+
+Evidence: ignored artifacts/shorts-archive-20261019/ in this worktree, including
+actual inventory JSON, old-folder failure, new Shared Drive verified upload,
+empty-ledger parent reconciliation, worker logs and live counts. No credentials
+are printed or committed. Continue useful independent setup while awaiting the
+owner's YouTube sign-in; do not claim this archive is complete.
+
+Operation summary and exact resume request: [LIVE_SHORTS_ARCHIVE_20261019.md](docs/implementation/LIVE_SHORTS_ARCHIVE_20261019.md).
+Manifest bytes: 2,230,576; actual archived-video bytes: 0.
+
+
 ## Current plan — 2026-10-19 (owner-approved, Claude) — supersedes the handoff below
 Owner: "Merge the branch into main, fix problems 1, 3 and 4, with tests. Prove one real LongForm and one real
 countdown end to end in production: render, approve, post. Turn posting back on."
