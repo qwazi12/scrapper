@@ -56,6 +56,33 @@ def _credit_value(raw, allowed, facts):
     return len(alternatives)>1 and all(matches(part) for part in alternatives)
 
 
+def _forward_performer_conflicts(text, facts):
+    """A known role also constrains the subject of a forward credit claim."""
+    roles={}
+    for credit in facts.get('cast',[]):
+        if not credit.get('actor') or not credit.get('character'):continue
+        for role in _roles(credit['character']):roles.setdefault(role,set()).add(_name(credit['actor']))
+    conflicts=[]
+    for claim in re.finditer(r'(?:^|[,;!?])\s*([^,;!?\n]+?)\s+(?:plays|portrays|stars as)\s+([^,;!?\n]+)',text,re.I):
+        offered=_name(claim[2])
+        # Prefer the complete longer credit (e.g. "The Traveler Junior") before
+        # treating a suffix as prose qualifying the shorter role.
+        role=next((name for name in sorted(roles,key=len,reverse=True)
+            if offered==name or offered.startswith(name+' ') or offered.startswith(name+'/')),None)
+        if role is None:continue
+        subject=_name(claim[1])
+        subject=re.sub(r'^(?:(?:the|an|a)\s+)?(?:actor|actress|performer)\s+','',subject)
+        allowed=roles[role]
+        valid=subject in allowed
+        if not valid:
+            for actor in allowed:
+                if subject.endswith(' '+actor):
+                    prefix=subject[:-len(actor)].strip()
+                    if prefix.startswith('in ') and _credit_title(prefix[3:],facts):valid=True;break
+        if not valid:conflicts.append(f'Claimed performer for {role} is not supported by the structured cast relationship')
+    return conflicts
+
+
 def refs_for(board: dict) -> set[str]:
     return {f"{kind}{i + 1}" for kind in ("F", "R", "T", "C")
             for i in range(len(board.get(kind) or []))}
@@ -111,6 +138,7 @@ def structured_conflicts(sentences: list[dict], facts: dict) -> list[str]:
     credited={_name(c.get('name')):c.get('job') for c in facts.get('writing_credits',[])}
     for i, sentence in enumerate(sentences, 1):
         text = sentence.get("text", "")
+        conflicts.extend(f'Sentence {i}: {reason}' for reason in _forward_performer_conflicts(text,facts))
         for cast in facts.get("cast", []):
             actor, character = cast.get("actor"), cast.get("character")
             if not actor or not character:

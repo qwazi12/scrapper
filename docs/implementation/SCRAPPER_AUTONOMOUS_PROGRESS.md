@@ -682,3 +682,19 @@ blocked/repaired readiness. Source6164fd9c9fcd266a40b5ac9720379f94a3211dae74f0ef
 evidence history/material-credit-context1/2; owned stacks stopped. CREDIT_CONTEXT.md
 records exact grammar limits and broader unlisted-entity/prose work. Original
 roadmap continues, no paid/public/account/archival activity.
+
+### Unlisted forward performer cannot inherit a canonical role
+
+New4failures/4baseline passes reproduced the known-performer-only loop gap. Added
+known-role→performer subject binding, longest full role preference, bounded common
+performer wrappers/canonical title prefixes; preserved previous role/title checks.
+Expanded focused77passed1.05s; full backend709passed/1skip79.93s; actualPG233passed
+34.44s plus native restore0.990s/source unchanged/185548bytes,SHA
+bc838e42d209b6136b35792f34c3dce6d4156775218055e13ce793503e9a68fa.
+Explicit tscpassed; application frontend unchanged. Actual browser2passed1min,
+LongForm media/delivery fixture plus seven saved credit states including unlisted
+subject, words preserved/blocked/repaired readiness. Source
+f2ef27617e48ab75c609e4113e7fd80d4d3780ac2fa79ddc51f493dfde23ff29; evidence
+history/unlisted-performer1; owned stack stopped after archive. Next confirmed
+C01issue: unlisted screenplay writer escapes the known-credit loop. Continue
+locally; no paid/public/account/archival/push/deploy action.

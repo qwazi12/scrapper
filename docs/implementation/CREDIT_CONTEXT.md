@@ -18,7 +18,7 @@ returned `ok`. It does not rewrite the sentence automatically.
 
 This is a bounded typed-credit guard, not a complete natural-language fact engine.
 Existing following-clause treatment remains; comprehensive claim coverage,
-unlisted-entity forward expressions, more prose/alias/language forms and external
+fully unseen-entity expressions, unlisted writing credits, more prose/alias/language forms and external
 source truth/freshness remain C01 work. TMDB fixture agreement is not independent
 real-world verification. Web findings still require retained, fresh exact-context
 owner-reviewed source records; domain labels/model votes alone do not authorize R.
@@ -35,3 +35,15 @@ visible blocked voice/render gates and repaired readiness. Actual UI/HTTP/worker
 DB run with synthetic canonical credits and an always-approving fixture checker.
 No real actor fact, provider or paid-network proof is claimed. Evidence is under
 artifacts/e2e/history/material-credit-context1 and material-credit-context2.
+
+Known-role forward subjects now also bind the canonical performer set. An unlisted
+performer, even with the right role words or a different named film, cannot inherit
+that role through a model-approved statement. Longest complete role names win
+before suffix interpretation. Bounded actor/actress/performer wrappers and an
+explicit canonical locative prefix preserve known names. This is not a general
+entity recognizer: unseen roles/prose and unlisted screenplay writers remain work.
+New corpus reproduced4failures/4baseline passes, expanded focused77passed1.05s.
+Full backend709passed/1skip79.93s; actualPG233passed34.44s/native restore0.990s.
+Actual current browser2passed1.0min, full LongForm media plus seven saved credit
+states including unknown forward subject/repaired readiness. Evidence
+artifacts/e2e/history/unlisted-performer1; no real-world cast or paid proof.

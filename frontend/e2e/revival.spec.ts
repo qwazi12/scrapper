@@ -1780,15 +1780,16 @@ test("Credit context UI preserves exact canonical names and blocks wrong title o
   const editor = page.getByTestId("script-editor"); await expect(editor).toBeVisible();
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
   const current = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
-  const cases: [string, boolean][] = [
+  const cases: [string, boolean, string?][] = [
     ["Ada Example plays The Traveler in Synthetic Film 88.", true],
     ["Ada Example plays The Traveler in the film Other Story.", false],
+    ["Invented Performer plays The Traveler in Synthetic Film 88.", false, "structured cast relationship"],
     ["The Traveler is portrayed by Ada Example in Synthetic Film 88 (2027).", false],
     ["Ada Example plays The Traveler / Invented Character.", false],
     ["Bea Fixture plays The Man in the Wall in Synthetic Film 88.", true],
     ["Dr. Original is played by Dee E. Sample in Synthetic Film 88.", true],
   ];
-  for (const [words, valid] of cases) {
+  for (const [words, valid, reason] of cases) {
     await editor.fill(words); await page.getByRole("button", { name: "Save script", exact: true }).click();
     await expect.poll(async () => (await current()).script.sentences[0].text).toBe(words);
     const verifying = page.waitForResponse(r => r.url().endsWith(`/api/studio/projects/${pid}/run`) && r.request().method() === "POST");
@@ -1800,7 +1801,7 @@ test("Credit context UI preserves exact canonical names and blocks wrong title o
     expect(saved.script_ready).toBe(valid);
     if (valid) await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
     else {
-      await expect(page.getByTestId("research-blocked")).toContainText("context conflicts");
+      await expect(page.getByTestId("research-blocked")).toContainText(reason || "context conflicts");
       await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
       if (words.includes("Other Story")) await page.screenshot({ path: path.join(evidence, "credit-context-blocked.png"), fullPage: true });
     }

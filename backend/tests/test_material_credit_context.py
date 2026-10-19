@@ -57,6 +57,7 @@ def test_saved_words_and_readiness_round_trip_through_current_credit_gate(monkey
     client=TestClient(app,headers={'x-access-token':'test-token'})
     for text,valid in [('Ada Example plays The Traveler in Synthetic Horizon.',True),
         ('Ada Example plays The Traveler in the film Other Story.',False),
+        ('Invented Performer plays The Traveler in Synthetic Horizon.',False),
         ('The Traveler is portrayed by Ada Example in Synthetic Horizon (2027).',False),
         ('Dr. Original is played by Dee E. Sample in Synthetic Horizon.',True)]:
         saved=client.patch(f'/api/studio/projects/{pid}',json={'script':{'sentences':[{'text':text,'paragraph':1}]}})
