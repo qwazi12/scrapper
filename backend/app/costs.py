@@ -295,7 +295,8 @@ def record_gemini_tts(model: str, usage: dict, seconds: float, chars: int) -> fl
     out = int(usage.get("output_tokens") or usage.get("candidatesTokenCount") or 0) or int(seconds * 25)
     cost = inp / 1e6 * p["in"] + out / 1e6 * p["out"]
     _record("gemini-tts", cost, model=model, input_tokens=inp, output_tokens=out, chars=chars, requests=1,
-            receipt_complete=("input_tokens" in usage and "output_tokens" in usage) or ("promptTokenCount" in usage and "candidatesTokenCount" in usage))
+            receipt_complete=("input_tokens" in usage and "output_tokens" in usage) or ("promptTokenCount" in usage and "candidatesTokenCount" in usage)
+            or (seconds > 0 and chars > 0))     # measured audio length is a usable estimate (2026-10-19)
     return cost
 
 

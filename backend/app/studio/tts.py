@@ -135,6 +135,19 @@ def _to_mp3(audio: bytes, dest: pathlib.Path) -> float:
     return float(out or 0)
 
 
+def tts_usage(data: dict) -> dict:
+    u = data.get("usageMetadata") or data.get("usage") or {}
+    inp = u.get("promptTokenCount") or u.get("input_tokens") or u.get("total_input_tokens")
+    out = u.get("candidatesTokenCount") or u.get("output_tokens") or u.get("total_output_tokens")
+    return {"input_tokens": int(inp), "output_tokens": int(out)} if inp and out else {}
+
+
+def _spoken_text(payload: dict) -> str:
+    parts = [c.get("text", "") for i in payload.get("input") or [] for c in i.get("content") or []]
+    parts += [p.get("text", "") for c in payload.get("contents") or [] for p in c.get("parts") or []]
+    return " ".join(x for x in parts if x)
+
+
 def _post(url: str, payload: dict) -> httpx.Response | None:
     """POST with bounded retries + jitter on rate limits / server errors."""
     res = None
@@ -147,7 +160,11 @@ def _post(url: str, payload: dict) -> httpx.Response | None:
                                  headers={"x-goog-api-key": settings.gemini_api_key, "content-type": "application/json"})
                 if res.is_success:
                     data = res.json()
-                    costs.record_gemini_tts(model, data.get("usageMetadata") or data.get("usage") or {}, 0, 0)
+                    # Token counts under either API's names; otherwise the measured audio length
+                    # (24 kHz 16-bit mono) — so the cost is real and the budget hold settles (2026-10-19:
+                    # every voice line left a $0.02 hold stuck and was recorded at ~$0).
+                    b64 = _audio_from(data) or ""
+                    costs.record_gemini_tts(model, tts_usage(data), len(b64) * 3 / 4 / 48000, len(_spoken_text(payload)))
 
         except httpx.HTTPError as exc:
             if attempt == 3:
