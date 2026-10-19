@@ -5,6 +5,7 @@ import { api, apiBase, BackupStatus, DiskSystemStatus, downloadBackup, mediaUrl,
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 import { PacingThrottle } from "./PacingThrottle";
+import { ExportHistory } from "./ExportHistory";
 import { askConfirm, notify } from "../lib/dialogs";
 
 function fmtHour(h: number): string {
@@ -585,6 +586,7 @@ export function SettingsOverview() {
       <SpendingCard card={card} h2={h2} />
       <BackupCard card={card} h2={h2} />
       <DiskCard card={card} h2={h2} />
+      <ExportHistory />
 
       {/* Posting schedule */}
       <div style={card}>

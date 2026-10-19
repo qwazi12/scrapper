@@ -105,7 +105,8 @@ import re as _re
 MEDIA_PASS_TTL = 12 * 3600
 MEDIA_ROUTES = _re.compile(
     r"^/api/(clips/\d+/(thumb|download)|queue/\d+/thumb|compilations/\d+/download|events|"
-    r"studio/projects/\d+/file|countdowns/\d+/file|tts/audio/[^/]+|editorial/exports/[a-f0-9]{32}/file/[a-z0-9.-]+)$")
+    r"studio/projects/\d+/file|countdowns/\d+/file|tts/audio/[^/]+|editorial/exports/[a-f0-9]{32}/file/[a-z0-9.-]+|"
+    r"export-history/[a-f0-9]{64}/file/(video|thumbnail|motion))$")
 
 
 def media_pass(ttl: int = MEDIA_PASS_TTL) -> dict[str, Any]:

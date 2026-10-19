@@ -8,7 +8,7 @@ from typing import Literal
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from ..file_response import FileResponse
 from PIL import Image, UnidentifiedImageError
 from pydantic import Field, model_validator
 from sqlalchemy import update

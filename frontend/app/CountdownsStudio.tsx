@@ -2,6 +2,7 @@
 
 import { useLocalDraft } from "../lib/localDraft";
 import { LocalDraftStatus } from "./LocalDraftStatus";
+import { ExportHistory } from "./ExportHistory";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   api, apiBase,
@@ -432,7 +433,7 @@ function CountdownsList({ list, onOpen, onReload }: { list: CountdownProject[]; 
 
 async function deleteCountdown(c: CountdownProject): Promise<boolean> {
   if (!(await askConfirm(`Delete "${c.title}" now?\n\nRemoves the countdown, its video, and the segments made only for it. ` +
-    `Breakdowns from LongForm Studio that it reused are kept. If it's waiting to post, it leaves the queue too. Can't be undone — 🗄 Archive gives 5 days.`))) return false;
+    `Retained export history and reused LongForm breakdowns stay. If it's waiting to post, it leaves the queue too. Project deletion can't be undone — 🗄 Archive gives 5 days.`))) return false;
   try { await api.countdownDelete(c.id); return true; } catch (e: any) { notify(`Could not delete: ${errText(e)}`); return false; }
 }
 
@@ -843,6 +844,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
       </div>
 
       {c.has.render && <VideoPart c={c} onChange={setC} reload={load} />}
+      <ExportHistory key={`countdown-history-${c.id}`} kind="countdown" projectId={c.id} revision={c.updated_at} currentScript={c.script} onRestored={load} />
       <TitlesPart c={c} onChange={setC} locked={confirmed} />
       {confirmed && <SegmentsPart c={c} onOpen={setSegment} />}
       {confirmed && <ScriptPart c={c} onChange={setC} />}

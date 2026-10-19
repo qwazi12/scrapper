@@ -27,3 +27,8 @@ No milestone is complete until all of its acceptance criteria have evidence.
 Resume from SCRAPPER_AUTONOMOUS_PROGRESS.md; preserve owner edits and inspect
 git status before every continuation. Legacy scrape.py no longer auto-commits or
 pushes on this branch; its live scraping workflows still require isolation.
+
+The owner has reiterated continuous execution through the remaining roadmap.
+Use REMAINING_ROADMAP.md as the ordered closure queue. Commits and evidence
+checkpoints save progress without ending the work. Earlier implementation-only
+approval questions are superseded for authorized local work.

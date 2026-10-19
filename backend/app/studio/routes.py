@@ -6,7 +6,7 @@ import pathlib
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from ..file_response import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -277,16 +277,20 @@ def delete_project_now(s: Session, p: StudioProject, reason: str) -> None:
     The Drive copy stays in Drive. The title stays in the never-repeat ledger."""
     from ..file_use import pin
     with pin([runner.project_dir(p.id)], exclusive=True, session=s):
+        from ..export_versions import retain
+        retain(s,p);s.commit()
+        if p.stage_status == 'queued':
+            runner.stop(p.id)
+            s.refresh(p)
+        from ..export_versions import prepare_studio_deletion
+        owned_queue=prepare_studio_deletion(s,p)
         import shutil
         from ..models import QueueItem
         from . import candidates
         pid = p.id
         candidates.remember_made(s, p.media_type, p.tmdb_id)   # deleted ≠ eligible again
-        if p.stage_status == "queued":
-            runner.stop(pid)                       # take it out of the waiting line
-        item = s.get(QueueItem, p.queue_item_id) if p.queue_item_id else None
-        if item and item.status in ACTIVE_QUEUE:
-            s.delete(item)
+        if owned_queue is not None:
+            s.delete(owned_queue)
         shutil.rmtree(runner.project_dir(pid), ignore_errors=True)
         s.delete(p)
         s.commit()

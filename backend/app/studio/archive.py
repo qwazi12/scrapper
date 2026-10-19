@@ -155,6 +155,8 @@ def archive_project(project_id: int, now: datetime.datetime | None = None) -> di
             ok, why = check(s, p, now, int(settings_dict(s)["days"]))
             if not ok:
                 return {"id": project_id, "archived": False, "reason": why}
+            from ..export_versions import retain
+            retain(s,p);s.commit()
             root = project_dir(p.id)
             thumb = root / (p.render or {}).get("thumbnail", "render/thumbnail.jpg")
             if thumb.exists():                                   # keep the thumbnail outside render/

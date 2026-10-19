@@ -1025,7 +1025,20 @@ export async function downloadBackup(path: string, filename: string): Promise<vo
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export type RetainedVersion = { id: string; kind: "studio" | "countdown"; project_id: number; title: string;
+  created_at: string; project_created_at: string; approval_recorded: boolean;
+  assets: { role: string; available: boolean; sha256?: string; bytes?: number; reason?: string }[] };
+export type RetainedDetail = { id: string; kind: "studio" | "countdown"; project_id: number;
+  manifest: { title: string; snapshot: { inputs: { script?: any }; render: any; approval: any } } };
+
 export const api = {
+  retainedVersions: (kind?: string, projectId?: number) => req<{ project_version: string | null; versions: RetainedVersion[] }>(
+    `/api/export-history${kind && projectId ? `?kind=${kind}&project_id=${projectId}` : ""}`, { headers: headers(false) }),
+  retainedDetail: (id: string) => req<RetainedDetail>(`/api/export-history/${id}`, { headers: headers(false) }),
+  retainedCapture: (kind: string, id: number) => req<{ id: string | null }>(`/api/export-history/${kind}/${id}/capture`, { method: "POST", headers: headers() }),
+  retainedRestore: (id: string, expected: string) => req<{ restored: string }>(`/api/export-history/${id}/restore-draft`,
+    { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true, expected_project_version: expected }) }),
+  retainedFile: (id: string, role: string) => mediaUrl(`/api/export-history/${id}/file/${role}`),
   editorialLearning: () => req<LearningReport>("/api/editorial/learning", { headers: headers(false) }),
   editorialFeedback: (data: unknown) => req<{ created: number[] }>("/api/editorial/feedback/import", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   editorialReply: (id: number, text: string, approved: boolean) => req<AudienceFeedback>(`/api/editorial/feedback/${id}/draft`,

@@ -14,7 +14,8 @@ import time
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
+from .file_response import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
@@ -266,6 +267,8 @@ from .publication_journal import router as publication_journal_router
 app.include_router(publication_journal_router)
 from .financial_reconciliation import router as financial_reconciliation_router
 app.include_router(financial_reconciliation_router)
+from .export_history import router as export_history_router
+app.include_router(export_history_router)
 
 
 # --- hybrid local worker (Reliability Layer 5) -------------------------------

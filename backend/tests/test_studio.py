@@ -756,12 +756,15 @@ def test_select_and_generate_three_thumbnails(session, tmp_path, monkeypatch):
     # Select poster
     res = stage_render.select_project_thumbnail(p.id, "poster")
     assert res["selected_thumbnail"] == "poster"
-    assert (rdir / "thumbnail.jpg").read_bytes() == b"poster_data"
+    assert (tmp_path / res['thumbnail']).read_bytes() == b"poster_data"
 
     # Select shot2
     res2 = stage_render.select_project_thumbnail(p.id, "shot2")
     assert res2["selected_thumbnail"] == "shot2"
-    assert (rdir / "thumbnail.jpg").read_bytes() == b"shot2_data"
+    assert (tmp_path / res2['thumbnail']).read_bytes() == b"shot2_data"
+    # Choosing another option changes the pointer, preserving the prior option
+    # for queued/export-history readers instead of overwriting thumbnail.jpg.
+    assert (tmp_path / res['thumbnail']).read_bytes() == b"poster_data"
 
 
 def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_video):

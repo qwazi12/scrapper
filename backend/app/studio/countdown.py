@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from ..file_response import FileResponse
 from pydantic import BaseModel
 
 from ..publication_journal import digest
@@ -835,6 +835,8 @@ def delete_now(s, c: CountdownProject, reason: str) -> None:
     from .routes import delete_project_now
     cid = c.id
     with media_use(cid, exclusive=True, session=s):
+        from ..export_versions import retain
+        retain(s,c);s.commit()
         lock(s); s.refresh(c)
         from ..file_use import assert_current
         assert_current(s)
@@ -1503,6 +1505,8 @@ def refresh_thumbnails(cid: int) -> dict[str, Any]:
             _require_thumbnail_editable(s, c)
             if not c.render:
                 raise HTTPException(400, "Render the video first")
+            from ..export_versions import retain
+            retain(s,c);s.commit()
             projects = [p for p in (s.get(StudioProject, int(x)) for x in c.segment_ids or []) if p is not None]
             rnd = int(c.render.get("thumb_round") or 0) + 1
             k = rnd % max(len(projects), 1)
@@ -1779,6 +1783,8 @@ def pick_thumbnail(cid: int, req: ThumbIn) -> dict[str, Any]:
             files = (c.render or {}).get("thumbnails") or {}
             if req.option not in files:
                 raise HTTPException(400, "Unknown thumbnail option")
+            from ..export_versions import retain
+            retain(s,c);s.commit()
             d = comp_dir(c) / "thumbnails"
             from ..budget_reservations import lock
             from ..file_use import assert_current

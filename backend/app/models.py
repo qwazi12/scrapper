@@ -483,10 +483,21 @@ class FileUse(Base):
     exclusive: Mapped[bool] = mapped_column(default=False)
 
 
+class ExportVersion(Base):
+    """Retained export evidence survives edits, project deletion and ID reuse."""
+    __tablename__ = 'export_versions'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    project_id: Mapped[int] = mapped_column(Integer, index=True)
+    project_identity: Mapped[str] = mapped_column(String(64), index=True)
+    manifest: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # DDL is provided but has not been exercised in the local SQLite test lane.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

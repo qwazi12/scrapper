@@ -585,3 +585,67 @@ test("unsaved Studio and Countdown scripts survive polling, navigation, reload a
   await expect(page).toHaveURL(/#settings$/);
   await page.evaluate(() => { (window as any).restoreDraftStorage(); });
 });
+
+test("retained export UI recovers prior words and media after invalidation and project deletion", async ({ page, request }) => {
+  const project = await (await request.get(`${stack.api}/api/studio/projects/1`, { headers })).json();
+  expect(project.script.sentences.length).toBeGreaterThan(0);
+  const versions = await (await request.get(`${stack.api}/api/export-history?kind=studio&project_id=1`, { headers })).json();
+  const original = versions.versions.find((v: any) => v.assets.some((a: any) => a.role === "video" && a.available));
+  expect(original).toBeTruthy();
+  const detail = await (await request.get(`${stack.api}/api/export-history/${original.id}`, { headers })).json();
+  const savedSentences = detail.manifest.snapshot.inputs.script.sentences;
+  const originalWords = savedSentences.map((s: any, i: number) =>
+    `${i && savedSentences[i - 1].paragraph !== s.paragraph ? "\n" : ""}${s.text}\n`).join("").trim();
+  const blob = detail.manifest.assets.find((a: any) => a.role === "video");
+  const originalBytes = readFileSync(blob.blob);
+  await page.goto("/#longform/1");
+  await page.getByTestId("script-editor").fill(`A newer owner draft preserved before the explicit recovery, revision ${Date.now()}.`);
+  await page.getByRole("button", { name: "Save script", exact: true }).click();
+  await expect(page.getByTestId("research-blocked")).toBeVisible();
+  const history = page.getByTestId("export-history");
+  // This corpus compresses many owner sessions into minutes. Keep the real
+  // server limit and exercise its explicit retry UI if the shared IP is busy.
+  const rateAware = async (url: string, method: string, action: () => Promise<void>, retry: () => Promise<void> = action) => {
+    const attempt = async (run: () => Promise<void>) => {
+      const [response] = await Promise.all([page.waitForResponse(r => r.url() === url && r.request().method() === method), run()]);
+      return response;
+    };
+    let response = await attempt(action);
+    if (response.status() === 429) {
+      await expect(history.getByRole("alert")).toContainText("Rate limit exceeded");
+      const seconds = Number(response.headers()["retry-after"]);
+      expect(seconds).toBeGreaterThan(0); expect(seconds).toBeLessThanOrEqual(60);
+      await page.waitForTimeout(seconds * 1000 + 100);
+      response = await attempt(retry);
+    }
+    expect(response.ok()).toBe(true);
+  };
+  await rateAware(`${stack.api}/api/export-history?kind=studio&project_id=1`, "GET",
+    () => history.getByText("Retained export history", { exact: true }).click(),
+    () => history.getByRole("button", { name: "Refresh history", exact: true }).click());
+  await history.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click();
+  await expect(history.getByTestId("retained-version-detail")).toContainText("Original colored shapes");
+  await rateAware(`${stack.api}/api/export-history/${original.id}/restore-draft`, "POST", async () => {
+    await history.getByRole("button", { name: "Restore saved script as draft", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  });
+  await expect(page.getByTestId("script-editor")).toHaveValue(originalWords);
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
+  await page.screenshot({ path: path.join(evidence, "retained-script-recovery.png"), fullPage: true });
+  const downloaded = await request.get(`${stack.api}/api/export-history/${original.id}/file/video`, { headers });
+  expect(downloaded.status()).toBe(200);
+  expect((await downloaded.body()).equals(originalBytes)).toBe(true);
+  const partial = await request.get(`${stack.api}/api/export-history/${original.id}/file/video`, { headers: { ...headers, Range: "bytes=0-31" } });
+  expect(partial.status()).toBe(206);
+  expect((await partial.body()).equals(originalBytes.subarray(0, 32))).toBe(true);
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  await expect.poll(async () => (await request.get(`${stack.api}/api/studio/projects/1`, { headers })).status()).toBe(404);
+  expect((await request.get(`${stack.api}/api/export-history/${original.id}/file/video`, { headers })).status()).toBe(200);
+  await page.goto("/#settings");
+  const archive = page.getByTestId("export-history");
+  await archive.getByText("Retained export history", { exact: true }).click();
+  await archive.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click();
+  await expect(archive.getByTestId("retained-version-detail")).toContainText("Original colored shapes");
+  await page.screenshot({ path: path.join(evidence, "deleted-project-export-history.png"), fullPage: true });
+});

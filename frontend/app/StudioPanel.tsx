@@ -2,6 +2,7 @@
 
 import { useLocalDraft } from "../lib/localDraft";
 import { LocalDraftStatus } from "./LocalDraftStatus";
+import { ExportHistory } from "./ExportHistory";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
 import {
@@ -501,6 +502,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
 
       {/* Owner (2026-10-05): the finished video first, above Research. */}
       <VideoSection p={p} onChange={load} />
+      <ExportHistory key={`studio-history-${p.id}`} kind="studio" projectId={p.id} revision={p.updated_at} currentScript={p.script} onRestored={load} />
       <FactsSection p={p} onChange={setP} />
       <FootageSection p={p} onChange={setP} running={running} />
       <ScriptSection p={p} onChange={setP} running={running} />
@@ -1210,7 +1212,13 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
                 return (
                   <div
                     key={t.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Use ${t.label} thumbnail`}
+                    aria-disabled={thumbBusy}
+                    onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !thumbBusy) { e.preventDefault(); e.currentTarget.click(); } }}
                     onClick={async () => {
+                      if (thumbBusy) return;
                       setMsg("");
                       try {
                         await api.studioSelectThumbnail(p.id, t.id);

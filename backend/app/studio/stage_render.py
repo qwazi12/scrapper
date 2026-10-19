@@ -685,11 +685,14 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
             raise RuntimeError("Project not found")
         if p.stage_status == "running":
             raise RuntimeError("A step is running on this project; wait for it to finish")
+        from ..export_versions import retain
+        retain(s,p);s.commit()
         facts, shots, render_info = p.facts or {}, p.shots or [], dict(p.render or {})
 
     root = project_dir(project_id)
-    render_dir = (root / render_info["file"]).parent
-    render_dir.mkdir(exist_ok=True)
+    import uuid
+    render_dir = (root / render_info["file"]).parent / ('thumbs-'+uuid.uuid4().hex)
+    render_dir.mkdir(parents=True,exist_ok=False)
 
     title = facts.get("title", "") or p.title or "Trailer Breakdown"
     local = facts.get("local") or {}
@@ -718,12 +721,12 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
         shutil.copy(active_src, render_dir / "thumbnail.jpg")
 
     thumb_fields = {
-        "thumbnail": "render/thumbnail.jpg",
+        "thumbnail": str((render_dir / "thumbnail.jpg").relative_to(root)),
         "selected_thumbnail": selected,
         "thumbnails": [
-            {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": "render/thumbnail_poster.jpg"},
-            {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": "render/thumbnail_shot1.jpg"},
-            {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": "render/thumbnail_shot2.jpg"},
+            {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": str((render_dir / "thumbnail_poster.jpg").relative_to(root))},
+            {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": str((render_dir / "thumbnail_shot1.jpg").relative_to(root))},
+            {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": str((render_dir / "thumbnail_shot2.jpg").relative_to(root))},
         ],
         "thumbnails_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "thumb_round": rnd,
@@ -741,33 +744,27 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
 
 
 def select_project_thumbnail(project_id: int, thumb_id: str) -> dict[str, Any]:
-    """Select one of the 3 thumbnails as the active thumbnail."""
-    if thumb_id not in ("poster", "shot1", "shot2"):
-        raise ValueError(f"Invalid thumbnail id: {thumb_id}. Must be poster, shot1, or shot2.")
-
+    """Select an immutable option path; never overwrite a queued/retained image."""
+    if thumb_id not in ('poster','shot1','shot2'):
+        raise ValueError('Invalid thumbnail id: choose poster, shot1 or shot2')
+    root=project_dir(project_id)
     with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        if p and p.stage_status == "running":
-            raise RuntimeError("A step is running on this project; wait for it to finish")
-
-    root = project_dir(project_id)
+        p=s.get(StudioProject,project_id)
+        if not p or not p.render:raise RuntimeError('Render this project first')
+        if p.stage_status in ('running','queued'):raise RuntimeError('A step is running on this project; wait for it to finish')
+        from ..export_versions import retain
+        retain(s,p);s.commit()
+        options={t['id']:t['file'] for t in p.render.get('thumbnails',[])}
+        target=root/options[thumb_id] if thumb_id in options else (root/p.render['file']).parent/f'thumbnail_{thumb_id}.jpg'
+    if not target.is_file():
+        result=generate_thumbnails_for_project(project_id)
+        options={t['id']:t['file'] for t in result.get('thumbnails',[])}
+        target=root/options[thumb_id]
+    if not target.resolve().is_relative_to(root.resolve()) or not target.is_file():
+        raise RuntimeError('Thumbnail option is missing or outside this project')
     with SessionLocal() as s:
-        render_dir = (root / s.get(StudioProject, project_id).render["file"]).parent
-    target = render_dir / f"thumbnail_{thumb_id}.jpg"
-    if not target.exists():
-        generate_thumbnails_for_project(project_id)
-
-    if target.exists():
-        shutil.copy(target, render_dir / "thumbnail.jpg")
-
-    with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        if not p:
-            raise RuntimeError("Project not found")
-        render_info = dict(p.render or {})
-        render_info["selected_thumbnail"] = thumb_id
-        render_info["thumbnail"] = "render/thumbnail.jpg"
-        render_info["thumbnails_updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        p.render = render_info
+        p=s.get(StudioProject,project_id)
+        p.render={**p.render,'selected_thumbnail':thumb_id,'thumbnail':str(target.relative_to(root)),
+                  'thumbnails_updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
         s.commit()
-    return render_info
+        return p.render
