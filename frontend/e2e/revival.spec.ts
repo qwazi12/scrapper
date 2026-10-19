@@ -28,7 +28,7 @@ test.beforeEach(async ({ page, context, request }) => {
   }, { api: stack.api, token: stack.token });
 });
 
-async function acceptExactExport(page: any) {
+async function acceptExactExport(page: any, screenshot?: string) {
   const form = page.getByRole("form", { name: "Exact export acceptance" });
   await expect(form).toBeVisible();
   const checks = form.getByRole("checkbox");
@@ -44,6 +44,7 @@ async function acceptExactExport(page: any) {
   await expect(ack).not.toBeChecked();
   await expect(save).toBeDisabled();
   await ack.check();
+  if (screenshot) await form.screenshot({ path: path.join(evidence, screenshot) });
   await save.click();
   await expect(form).toHaveCount(0);
 }
@@ -294,7 +295,7 @@ test("Editorial UI: reviewed research, cleared still, native Short and carousel,
     writeFileSync(path.join(evidence, `native-${fmt}-manifest.json`), JSON.stringify(item.manifest, null, 2));
     await review.screenshot({ path: path.join(evidence, `native-${fmt}-review.png`) });
     await review.getByRole("button", { name: `Approve inspected ${fmt}`, exact: true }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+    await acceptExactExport(page, `native-${fmt}-acceptance.png`);
     await review.getByRole("checkbox", { name: "default:instagram", exact: true }).check();
     await review.getByRole("button", { name: `Add ${fmt} to review queue`, exact: true }).click();
     await expect(review).toContainText("Queue item #");
@@ -824,7 +825,7 @@ test("Native formats UI creates actual single-image and private community/poll m
     const review = campaign.getByTestId(`native-export-${fmt}`);
     await expect(review).toContainText("Final decode: passed");
     await review.getByRole("button", { name: `Approve inspected ${fmt}`, exact: true }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+    await acceptExactExport(page, `native-${fmt}-acceptance.png`);
     if (fmt !== "image") {
       await expect(review.getByRole("group", { name: "Destinations for this export", exact: true })).toHaveCount(0);
       const button = review.getByRole("button", { name: "Download JSON manual package", exact: true });

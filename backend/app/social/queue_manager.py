@@ -808,6 +808,25 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
         raise upload_post.UploadPostError(f"Submission unresolved or already in progress: {exc}",status_code=409) from exc
 
 
+def require_native_queue(s,item):
+    native_id = item.research["native_export_id"]
+    from ..editorial.campaigns import exact_export,require_native_acceptance
+    native, fingerprint = exact_export(s, native_id)
+    require_native_acceptance(native,fingerprint)
+    if native.format in ("community","poll"):raise upload_post.UploadPostError("Manual native exports cannot publish",status_code=409)
+    if item.research.get("approval_fingerprint") != fingerprint:
+        raise upload_post.UploadPostError("Native export approval changed; inspect it before posting", status_code=409)
+    from ..models import CreativeCampaign
+    campaign = s.get(CreativeCampaign, native.campaign_id)
+    expected_caption = campaign.brief[{"carousel":"carousel_caption","image":"image_caption","reel":"reel_caption"}.get(native.format,"short_caption")]
+    if (item.title != campaign.brief["title"] or item.description != expected_caption or item.tags
+            or item.media_kind != ("images" if native.format in ("carousel","image") else "video")
+            or item.thumb_path != native.manifest["cover"]["file"]
+            or item.media_files != ([c["file"] for c in native.manifest["cards"]] if native.format in ("carousel","image") else [])
+            or item.video_path != native.manifest.get("video", {}).get("file")):
+        raise upload_post.UploadPostError("Native queue media/copy differs from its approved export; create and inspect a revised treatment", status_code=409)
+
+
 async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = False) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
@@ -822,19 +841,7 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         raise upload_post.UploadPostError(
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
     native_id = (item.research or {}).get("native_export_id")
-    if native_id:
-        from ..editorial.campaigns import exact_export
-        native, fingerprint = exact_export(s, native_id)
-        if (native.approval or {}).get("fingerprint") != fingerprint or item.research.get("approval_fingerprint") != fingerprint:
-            raise upload_post.UploadPostError("Native export approval changed; inspect it before posting", status_code=409)
-        from ..models import CreativeCampaign
-        campaign = s.get(CreativeCampaign, native.campaign_id)
-        expected_caption = campaign.brief["carousel_caption" if native.format == "carousel" else "short_caption"]
-        if (item.title != campaign.brief["title"] or item.description != expected_caption or item.tags
-                or item.thumb_path != native.manifest["cover"]["file"]
-                or item.media_files != ([c["file"] for c in native.manifest["cards"]] if native.format == "carousel" else [])
-                or item.video_path != native.manifest.get("video", {}).get("file")):
-            raise upload_post.UploadPostError("Native queue media/copy differs from its approved export; create and inspect a revised treatment", status_code=409)
+    if native_id:require_native_queue(s,item)
     images = [pathlib.Path(p) for p in (item.media_files or [])] if item.media_kind == "images" else []
     if item.media_kind == "images":
         if not native_id or not 1 <= len(images) <= 10 or any(not p.is_file() for p in images):
@@ -886,6 +893,10 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
     from ..file_use import pin
     paths=[video_path,*images]
     if item.thumb_path and not item.thumb_path.startswith('http'):paths.append(item.thumb_path)
+    if native_id:
+        from ..models import CreativeExport
+        native=s.get(CreativeExport,native_id)
+        paths.append(settings.data_path/'editorial'/'campaigns'/str(native.campaign_id)/native.id)
     try:
         with pin(paths,session=s):
             return await _submit_owned_media(item,s,video_path,images,regular)
@@ -895,6 +906,14 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
 
 
 async def _submit_owned_media(item,s,video_path,images,regular):
+    if (item.research or {}).get("native_export_id"):
+        s.refresh(item)
+        s.expire_all()
+        require_native_queue(s,item)  # Recheck exact files/acceptance under the media claim.
+        current_images=[pathlib.Path(p) for p in (item.media_files or [])] if item.media_kind=='images' else []
+        current_video=current_images[0] if current_images else pathlib.Path(item.video_path)
+        if current_images!=images or current_video!=video_path:
+            raise upload_post.UploadPostError("Native transport changed while acquiring media; review it again",status_code=409)
     item_id=item.id
     from .. import publication_journal as journal
     if needs_auto_seo(item) and auto_seo_enabled(s):

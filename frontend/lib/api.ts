@@ -1121,8 +1121,6 @@ export const api = {
   nativeCampaigns: () => req<NativeCampaign[]>("/api/editorial/campaigns", { headers: headers(false) }),
   nativeCreate: (data: unknown) => req<NativeCampaign>("/api/editorial/campaigns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   nativeRender: (cid: number, fmt: string) => req<NativeExport>(`/api/editorial/campaigns/${cid}/render/${fmt}`, { method: "POST", headers: headers() }),
-  nativeApprove: (id: string) => req<NativeExport>(`/api/editorial/exports/${id}/approve`,
-    { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true }) }),
   nativeEnqueue: (id: string, accounts: string[]) => req<{ queue_item_id: number; status: string }>(`/api/editorial/exports/${id}/enqueue`,
     { method: "POST", headers: headers(), body: JSON.stringify({ accounts }) }),
   nativeFile: (id: string, file: string) => withToken(`${apiBase()}/api/editorial/exports/${id}/file/${encodeURIComponent(file.split("/").pop() || "")}`),
@@ -1455,8 +1453,8 @@ export const api = {
   studioGenerateThumbnails: (id: number) =>
     req<StudioProject>(`/api/studio/projects/${id}/thumbnail/generate`, {
       method: "POST", headers: headers() }),
-  exportAcceptanceView: (kind: "studio" | "countdown", id: number) => req<ExportAcceptanceView>(`${kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/export-review`, { headers: headers(false) }),
-  approveReviewedExport: (kind: "studio" | "countdown", id: number, data: ExportAcceptanceRequest) => req<StudioProject | CountdownProject>(`${kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/approve-export`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  exportAcceptanceView: (kind: "studio" | "countdown" | "native", id: number | string) => req<ExportAcceptanceView>(`${kind === "native" ? "/api/editorial/exports" : kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/export-review`, { headers: headers(false) }),
+  approveReviewedExport: (kind: "studio" | "countdown" | "native", id: number | string, data: ExportAcceptanceRequest) => req<StudioProject | CountdownProject | NativeExport>(`${kind === "native" ? "/api/editorial/exports" : kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/${kind === "native" ? "approve" : "approve-export"}`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),

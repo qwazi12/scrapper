@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { api, EditorialOpportunity, IndexedAsset, NativeBeat, NativeCampaign, NativeExport, SocialAccount } from "@/lib/api";
-import { askConfirm } from "@/lib/dialogs";
+import { ExportAcceptance } from "./ExportAcceptance";
 
 const box = { border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--panel)" };
 const field = { display: "grid", gap: 5 };
@@ -122,10 +122,8 @@ function ExportReview({ item, accounts, busy, act }: { item: NativeExport; accou
     {item.manifest.manual_post && <div><p>{item.manifest.manual_post.text}</p><ol>{item.manifest.manual_post.options.map(option => <li key={option}>{option}</li>)}</ol>
       <p>Private manual export. No account, queue item, scheduled upload or publication has been created.</p></div>}
     <p>Inspect every frame or slide, narration, captions, source support, rights and platform copy. A passed decode does not verify those.</p>
-    <button disabled={busy || !!q.errors.length || !!item.approval} onClick={async () => {
-      if (await askConfirm("Have you inspected the complete export, post text/poll options, captions, sound where present, sources, asset permissions and platform copy?"))
-        act(() => api.nativeApprove(item.id), manual ? "Exact manual package approved. Download it for manual use; nothing is published." : "This exact export was approved. Choose explicit destinations before adding it to review.");
-    }}>Approve inspected {item.format}</button>
+    <ExportAcceptance kind="native" id={item.id} label={`Approve inspected ${item.format}`} disabled={busy || !!q.errors.length}
+      onApproved={() => { void act(async () => undefined, "Exact editorial acceptance saved. Delivery remains a separate action."); }} />
     {manual ? <div>{item.manifest.manual_assets?.map(file => <button key={file.file} disabled={busy || !item.approval} onClick={() => act(async () => {
       const blob = await api.nativeManualDownload(item.id, file.file);
       const url = URL.createObjectURL(blob); const link = document.createElement("a");

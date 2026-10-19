@@ -22,6 +22,7 @@ from ..db import get_session, SessionLocal
 from ..models import CreativeCampaign, CreativeExport, MediaAsset, QueueItem
 from ..social import enqueue
 from ..studio.media_quality import file_hash
+from ..studio.export_acceptance import AcceptanceIn,accept_view,require_view_acceptance,findings
 from .routes import Strict, digest, opportunity
 
 router = APIRouter(prefix="/api/editorial", dependencies=[Depends(require_token)])
@@ -189,20 +190,67 @@ def exact_export(s, eid):
         path = Path(item["file"]).resolve()
         if not path.is_relative_to(root) or not path.is_file() or file_hash(path) != item["sha256"]:
             raise HTTPException(409, "Export file missing or changed; render a new version")
-    return row, digest({"input": row.manifest["input_sha256"], "files": [x["sha256"] for x in files],"platform_copy":row.manifest.get("platform_copy"),"delivery":row.manifest.get("delivery")})
+    return row, digest({"policy":"native-editorial-acceptance-v2", "export_id":row.id,
+        "campaign_id":row.campaign_id,"format":row.format,"manifest":row.manifest,
+        "checks":NATIVE_CHECKS})
 
 
-class ApprovalIn(Strict):
-    reviewed: Literal[True]
+NATIVE_CHECKS={
+    "captions":"I inspected all on-screen text, caption wording, timing where present, contrast, clipping and safe areas.",
+    "visuals":"I inspected every delivered image or scene for relevance, identity, pacing and distracting repetitions.",
+    "rights":"I reviewed permission and intended use for every source, image, music, voice and other asset.",
+    "narration":"I reviewed facts, story, title and format copy, including full audio where present or the complete silent/manual treatment.",
+}
+
+
+def review_view(row,fingerprint):
+    from types import SimpleNamespace
+    rows=findings(SimpleNamespace(render={"quality":row.manifest["quality"]}))
+    used={}
+    for index,card in enumerate(row.manifest['cards'],1):
+        aid=card.get('asset_id')
+        asset=(row.manifest.get('inputs',{}).get('assets',{}).get(str(aid)) or {}) if aid else {}
+        sha=asset.get('sha256')
+        if sha and sha in used:
+            finding={"kind":"visual_repetition","message":f"Card {index} reuses the asset from card {used[sha]}; inspect whether repetition is intentional."}
+            rows.append({"id":digest(finding),**finding})
+        elif sha:used[sha]=index
+    return {"fingerprint":fingerprint,"checks":NATIVE_CHECKS,"findings":rows,
+        "measurements":row.manifest['quality'],"rights_status":"owner_attestation_required; automated measurements do not prove permission",
+        "source":{"title":f"Campaign #{row.campaign_id} · {row.format}","source":"Retained research, asset provenance and format copy"}}
+
+
+def require_native_acceptance(row,fingerprint):
+    try:require_view_acceptance(review_view(row,fingerprint),row.approval or {})
+    except RuntimeError as exc:raise HTTPException(409,str(exc)) from exc
+
+
+def export_use(eid,s,*,exclusive=False):
+    from ..file_use import pin
+    row=s.get(CreativeExport,eid)
+    if not row:raise HTTPException(404,"Export not found")
+    root=settings.data_path/'editorial'/'campaigns'/str(row.campaign_id)/row.id
+    return pin([root],exclusive=exclusive,session=s)
+
+
+@router.get("/exports/{eid}/export-review")
+def export_review(eid:str,s:Session=Depends(get_session)):
+    with export_use(eid,s):
+        s.expire_all()
+        row,fingerprint=exact_export(s,eid)
+        return review_view(row,fingerprint)
 
 
 @router.post("/exports/{eid}/approve")
-def approve_export(eid: str, req: ApprovalIn, s: Session = Depends(get_session)):
-    row, fingerprint = exact_export(s, eid)
-    row.approval = {"fingerprint": fingerprint, "at": datetime.now(UTC).isoformat(),
-                    "scope": "owner inspected research, rights, full media, captions and platform copy"}
-    s.commit()
-    return export_out(row)
+def approve_export(eid:str,req:AcceptanceIn,s:Session=Depends(get_session)):
+    from ..worker_leases import clock
+    with export_use(eid,s,exclusive=True):
+        s.expire_all()
+        row,fingerprint=exact_export(s,eid)
+        try:row.approval=accept_view(review_view(row,fingerprint),req,clock(s))
+        except RuntimeError as exc:raise HTTPException(409,str(exc)) from exc
+        s.commit()
+        return export_out(row)
 
 
 class EnqueueIn(Strict):
@@ -211,25 +259,26 @@ class EnqueueIn(Strict):
 
 @router.post("/exports/{eid}/enqueue")
 def enqueue_export(eid: str, req: EnqueueIn, s: Session = Depends(get_session)):
-    row, fingerprint = exact_export(s, eid)
-    if row.format in ('community','poll'):raise HTTPException(409,'Manual export only: this treatment cannot create queue items or publish through this integration')
-    if (row.approval or {}).get("fingerprint") != fingerprint: raise HTTPException(409, "Inspect and approve this exact export first")
-    from ..social.queue_manager import blocked_accounts
-    if blocked_accounts(req.accounts): raise HTTPException(400, "This destination is not permitted for Screen Central")
-    if row.format in ("carousel","image") and any(a.split(":")[-1] not in ("instagram", "facebook") for a in req.accounts):
-        raise HTTPException(400, "Choose explicit Instagram/Facebook destinations for this image treatment")
-    campaign = get_campaign(s, row.campaign_id)
-    caption = campaign.brief[{"carousel":"carousel_caption","image":"image_caption","reel":"reel_caption"}.get(row.format,"short_caption")]
-    candidate = QueueItem(pipeline="Native Studio", source=f"Editorial campaign #{campaign.id}", title=campaign.brief["title"],
-        description=caption, video_name=f"Campaign {campaign.id} {row.format} {eid}",
-        video_path=row.manifest.get("video", {}).get("file"), thumb_path=row.manifest["cover"]["file"],
-        media_kind="images" if row.format in ("carousel","image") else "video",
-        media_files=[card["file"] for card in row.manifest["cards"]] if row.format in ("carousel","image") else [],
-        accounts=req.accounts, status="review", research={"native_export_id": eid, "approval_fingerprint": fingerprint})
-    item, created = enqueue.claim(s, row, candidate)
-    s.commit()
-    return {"queue_item_id": item.id, "created": created, "status": item.status}
-
+    with export_use(eid,s,exclusive=True):
+        s.expire_all()
+        row, fingerprint = exact_export(s, eid)
+        if row.format in ('community','poll'):raise HTTPException(409,'Manual export only: this treatment cannot create queue items or publish through this integration')
+        require_native_acceptance(row,fingerprint)
+        from ..social.queue_manager import blocked_accounts
+        if blocked_accounts(req.accounts): raise HTTPException(400, "This destination is not permitted for Screen Central")
+        if row.format in ("carousel","image") and any(a.split(":")[-1] not in ("instagram", "facebook") for a in req.accounts):
+            raise HTTPException(400, "Choose explicit Instagram/Facebook destinations for this image treatment")
+        campaign = get_campaign(s, row.campaign_id)
+        caption = campaign.brief[{"carousel":"carousel_caption","image":"image_caption","reel":"reel_caption"}.get(row.format,"short_caption")]
+        candidate = QueueItem(pipeline="Native Studio", source=f"Editorial campaign #{campaign.id}", title=campaign.brief["title"],
+            description=caption, video_name=f"Campaign {campaign.id} {row.format} {eid}",
+            video_path=row.manifest.get("video", {}).get("file"), thumb_path=row.manifest["cover"]["file"],
+            media_kind="images" if row.format in ("carousel","image") else "video",
+            media_files=[card["file"] for card in row.manifest["cards"]] if row.format in ("carousel","image") else [],
+            accounts=req.accounts, status="review", research={"native_export_id": eid, "approval_fingerprint": fingerprint})
+        item, created = enqueue.claim(s, row, candidate)
+        s.commit()
+        return {"queue_item_id": item.id, "created": created, "status": item.status}
 
 @router.get("/exports/{eid}/file/{name}")
 def export_file(eid: str, name: str, s: Session = Depends(get_session)):
@@ -245,13 +294,14 @@ def export_file(eid: str, name: str, s: Session = Depends(get_session)):
 
 @router.get('/exports/{eid}/manual/{name}')
 def manual_export_file(eid:str,name:str,s:Session=Depends(get_session)):
-    row,fingerprint=exact_export(s,eid)
-    if row.format not in ('community','poll') or (row.approval or {}).get('fingerprint')!=fingerprint:
-        raise HTTPException(409,'Inspect and approve the exact manual export before downloading it')
-    match=next((item for item in row.manifest.get('manual_assets',[]) if Path(item['file']).name==name),None)
-    if not match:raise HTTPException(404,'Manual export file not found')
-    return FileResponse(match['file'],filename=name,media_type=match['content_type'],expected_sha256=match['sha256'])
-
+    with export_use(eid,s):
+        s.expire_all()
+        row,fingerprint=exact_export(s,eid)
+        if row.format not in ('community','poll'):raise HTTPException(409,'This is not a manual export')
+        require_native_acceptance(row,fingerprint)
+        match=next((item for item in row.manifest.get('manual_assets',[]) if Path(item['file']).name==name),None)
+        if not match:raise HTTPException(404,'Manual export file not found')
+        return FileResponse(match['file'],filename=name,media_type=match['content_type'],expected_sha256=match['sha256'])
 
 @router.get("/assets")
 def assets(s: Session = Depends(get_session)):

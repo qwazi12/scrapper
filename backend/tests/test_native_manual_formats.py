@@ -10,7 +10,7 @@ from backend.app import auth
 from backend.app.db import SessionLocal
 from backend.app.main import app
 from backend.app.models import QueueItem
-from backend.tests.test_native_campaigns import brief,research
+from backend.tests.test_native_campaigns import brief,research,approve_native
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def test_private_manual_package_is_actual_files_never_queue_or_publish(client,fm
     anonymous=TestClient(app)
     assert anonymous.get(url+'?g='+auth.media_pass()['pass']).status_code==401
     assert client.get(f"/api/editorial/exports/{eid}/file/{Path(json_file['file']).name}").status_code==404
-    assert client.post(f'/api/editorial/exports/{eid}/approve',json={'reviewed':True}).status_code==200
+    approve_native(client,eid)
     download=client.get(url)
     assert download.status_code==200 and download.json()==payload and 'attachment' in download.headers['content-disposition']
     assert client.post(f'/api/editorial/exports/{eid}/enqueue',json={'accounts':['default:youtube']}).status_code==409
@@ -71,7 +71,7 @@ def test_single_image_has_one_checked_image_and_its_own_caption(client):
     assert manifest['cards'][0]['alt']==body['image_text']
     with Image.open(manifest['cards'][0]['file']) as image:
         image.load();assert image.size==(1080,1350)
-    assert client.post(f'/api/editorial/exports/{eid}/approve',json={'reviewed':True}).status_code==200
+    approve_native(client,eid)
     assert client.post(f'/api/editorial/exports/{eid}/enqueue',json={'accounts':['default:youtube']}).status_code==400
     queue=client.post(f'/api/editorial/exports/{eid}/enqueue',json={'accounts':['default:instagram']})
     assert queue.status_code==200,queue.text

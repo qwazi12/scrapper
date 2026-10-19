@@ -49,6 +49,21 @@ def rendered(client):
     return oid, cid, result.json()
 
 
+def acceptance_request(client,eid):
+    response=client.get(f"/api/editorial/exports/{eid}/export-review")
+    assert response.status_code==200,response.text
+    current=response.json()
+    return {"expected_fingerprint":current["fingerprint"],"checks":list(current["checks"]),
+        "warning_decisions":{row["id"]:"Intentional synthetic test after inspecting all original media, text and sound." for row in current["findings"]},
+        "rights_rationale":"All media is originally generated for this isolated synthetic test and private inspection.","reviewed":True}
+
+
+def approve_native(client,eid):
+    result=client.post(f"/api/editorial/exports/{eid}/approve",json=acceptance_request(client,eid))
+    assert result.status_code==200,result.text
+    return result.json()
+
+
 def test_campaign_requires_reviewed_research_and_valid_beat_references(client):
     oid = research(client)
     assert client.post("/api/editorial/campaigns", json=brief(oid)).status_code == 409
@@ -71,7 +86,9 @@ def test_actual_carousel_approval_enqueue_and_simulated_photo_receipts(client, m
     data = {"accounts": ["default:instagram"]}
     assert client.post(f"/api/editorial/exports/{eid}/enqueue", json=data).status_code == 409
     assert client.post(f"/api/editorial/exports/{eid}/approve", json={"reviewed": False}).status_code == 422
-    assert client.post(f"/api/editorial/exports/{eid}/approve", json={"reviewed": True}).status_code == 200
+    assert client.post(f"/api/editorial/exports/{eid}/approve", json={"reviewed": True}).status_code == 422
+    body=acceptance_request(client,eid)
+    approve_native(client,eid)
     assert client.post(f"/api/editorial/exports/{eid}/enqueue", json={"accounts": ["default:youtube"]}).status_code == 400
     first = client.post(f"/api/editorial/exports/{eid}/enqueue", json=data).json()
     second = client.post(f"/api/editorial/exports/{eid}/enqueue", json=data).json()
@@ -97,7 +114,7 @@ def test_actual_carousel_approval_enqueue_and_simulated_photo_receipts(client, m
     assert again["id"] != eid and Path(manifest["cards"][0]["file"]).is_file()
     assert client.get(f"/api/editorial/exports/{eid}/file/card-1.png").status_code == 200
     Path(manifest["cards"][0]["file"]).write_bytes(b"tampered")
-    assert client.post(f"/api/editorial/exports/{eid}/approve", json={"reviewed": True}).status_code == 409
+    assert client.post(f"/api/editorial/exports/{eid}/approve", json=body).status_code == 409
 
 
 def test_asset_index_strips_metadata_deduplicates_and_checks_attestation(client):

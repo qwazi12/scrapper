@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, ExportAcceptanceView } from "../lib/api";
 
 export function ExportAcceptance({ kind, id, label, disabled, onApproved }: {
-  kind: "studio" | "countdown"; id: number; label: string; disabled: boolean; onApproved: () => void;
+  kind: "studio" | "countdown" | "native"; id: number | string; label: string; disabled: boolean; onApproved: () => void;
 }) {
   const [view, setView] = useState<ExportAcceptanceView | null>(null);
   const [checks, setChecks] = useState<string[]>([]);
@@ -41,7 +41,7 @@ export function ExportAcceptance({ kind, id, label, disabled, onApproved }: {
       } catch (e: unknown) { setMessage(e instanceof Error ? e.message : "Export acceptance failed"); setAck(null); }
       finally { setBusy(false); }
     }}>
-      <p>Watch and listen to the complete export above. Measurements cannot establish caption accuracy, relevance or permission. Changing the video, thumbnail, script, sources, plan or inspection requires a fresh review.</p>
+      <p>Inspect the complete delivered export above, including every image, post/poll option and all audio where present. Measurements cannot establish caption accuracy, relevance or permission. Changing the video, thumbnail, script, sources, plan or inspection requires a fresh review.</p>
       <p>Source context: {sourceLabel || "No source description was supplied; document all assets and permissions below."}</p>
       <details><summary>Inspection reference</summary><code style={{ overflowWrap: "anywhere" }}>{view.fingerprint}</code></details>
       {Object.entries(view.checks).map(([key, text]) => <label key={key}><input type="checkbox" disabled={busy} checked={checks.includes(key)} onChange={e => setChecks(e.target.checked ? [...checks, key] : checks.filter(item => item !== key))} /> {text}</label>)}

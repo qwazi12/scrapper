@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Literal
 
-from pydantic import BaseModel,Field
+from pydantic import BaseModel,ConfigDict,Field
 
 from ..publication_journal import digest
 from .media_quality import export_fingerprint
@@ -16,6 +16,7 @@ CHECKS={
 
 
 class AcceptanceIn(BaseModel):
+    model_config=ConfigDict(extra='forbid')
     expected_fingerprint: str=Field(min_length=64,max_length=64)
     checks: list[str]=Field(min_length=4,max_length=4)
     warning_decisions: dict[str,str]=Field(default_factory=dict,max_length=1000)
@@ -49,10 +50,13 @@ def view(project,root):
 
 
 def accept(project,root,request:AcceptanceIn,at):
-    current=view(project,root)
+    return accept_view(view(project,root),request,at)
+
+
+def accept_view(current,request:AcceptanceIn,at):
     if request.expected_fingerprint!=current['fingerprint']:
         raise RuntimeError('Export or inspection changed; reload and review the current files before approval')
-    if set(request.checks)!=set(CHECKS) or len(request.checks)!=len(CHECKS):
+    if set(request.checks)!=set(current['checks']) or len(request.checks)!=len(current['checks']):
         raise RuntimeError('Complete each editorial acceptance check exactly once')
     required={row['id'] for row in current['findings']}
     if set(request.warning_decisions)!=required:
@@ -67,10 +71,14 @@ def accept(project,root,request:AcceptanceIn,at):
 
 def require_acceptance(project,root):
     approval=(project.review or {}).get('export_approval') or {}
+    return require_view_acceptance(view(project,root),approval)
+
+
+def require_view_acceptance(current,approval):
     if approval.get('schema')!=2:raise RuntimeError('Review and approve this exact export first; complete editorial acceptance')
     try:
         request=AcceptanceIn(expected_fingerprint=approval.get('fingerprint'),checks=approval.get('checks'),
             warning_decisions=approval.get('warning_decisions'),rights_rationale=approval.get('rights_rationale'),reviewed=True)
         from datetime import datetime,timezone
-        accept(project,root,request,datetime.now(timezone.utc))
+        accept_view(current,request,datetime.now(timezone.utc))
     except (ValueError,TypeError,RuntimeError) as exc:raise RuntimeError('Review and approve this exact export first; acceptance evidence is incomplete') from exc
