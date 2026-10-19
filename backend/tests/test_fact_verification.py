@@ -58,8 +58,11 @@ def test_owner_semantic_review_binds_record_claim_identity_freshness_and_project
     assert not sources.usable(reviewed,[{'url':url}],facts={**facts,'media_type':'tv'},project_id=pid)
     assert not sources.usable(reviewed,[{'url':url}],facts=facts,project_id=pid+1)
     assert not sources.usable({**reviewed,'text':'Changed claim'},[{'url':url}],facts=facts,project_id=pid)
-    with SessionLocal() as s:
-        row=s.get(ResearchSourceRecord,rid); row.retrieved_at=datetime.now(timezone.utc)-timedelta(days=8); s.commit()
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(days=8)
+    monkeypatch.setattr(fv, "datetime", Later)
     assert not sources.usable(reviewed,[{'url':url}],facts=facts,project_id=pid)
     assert stage_script.storyboard(facts, r.json()['research'], [], pid)['R']==[]
 

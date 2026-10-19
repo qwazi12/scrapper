@@ -381,6 +381,26 @@ test("independent source review UI retains records and invalidates checked narra
   await page.getByText("Research — facts & sources", { exact: true }).click();
   await expect(page.getByText(/Owner verdict: supported/)).toBeVisible();
   await page.screenshot({ path: path.join(evidence, "independent-source-review.png"), fullPage: true });
+  await page.getByText("Review independent evidence", { exact: true }).click();
+  const records = await (await request.get(`${stack.api}/api/studio/projects/${pid}/source-records`, { headers })).json();
+  await page.getByLabel("Retrieved source record", { exact: true }).selectOption(records.records[0].id);
+  await page.getByLabel("Exact supporting or conflicting excerpt").fill("Original colored shapes change through six scenes.");
+  await page.getByLabel("Verdict", { exact: true }).selectOption("contradicted");
+  await page.getByLabel("Why the source supports or contradicts this claim").fill("A synthetic correction disputes the earlier reading; an explicit review is needed before restoring support.");
+  await page.getByRole("checkbox", { name: /I checked the exact context/ }).check();
+  await page.getByRole("button", { name: "Save evidence review", exact: true }).click();
+  await expect(page.getByText(/Owner verdict: contradicted/)).toBeVisible();
+  await page.getByLabel("Verdict", { exact: true }).selectOption("supported");
+  await page.getByRole("checkbox", { name: /I checked the exact context/ }).check();
+  await expect(page.getByRole("button", { name: "Save evidence review", exact: true })).toBeDisabled();
+  await expect(page.getByRole("group", { name: "Earlier conflicting or unresolved reviews", exact: true })).toContainText("A synthetic correction disputes");
+  await page.getByRole("checkbox", { name: /I reviewed this earlier decision/ }).check();
+  await page.getByLabel("How the earlier evidence was resolved").fill("I compared the exact synthetic source context with the earlier decision; the original scene description remains accurate.");
+  await page.getByRole("button", { name: "Save evidence review", exact: true }).click();
+  await expect(page.getByText(/Owner verdict: supported/)).toBeVisible();
+  await page.getByRole("button", { name: "Check saved script", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
+  await page.screenshot({ path: path.join(evidence, "independent-conflict-resolution.png"), fullPage: true });
 });
 
 test("residential worker claims, uploads over real HTTP and resumes the waiting Studio UI", async ({ page, request }) => {
@@ -598,10 +618,6 @@ test("retained export UI recovers prior words and media after invalidation and p
     `${i && savedSentences[i - 1].paragraph !== s.paragraph ? "\n" : ""}${s.text}\n`).join("").trim();
   const blob = detail.manifest.assets.find((a: any) => a.role === "video");
   const originalBytes = readFileSync(blob.blob);
-  await page.goto("/#longform/1");
-  await page.getByTestId("script-editor").fill(`A newer owner draft preserved before the explicit recovery, revision ${Date.now()}.`);
-  await page.getByRole("button", { name: "Save script", exact: true }).click();
-  await expect(page.getByTestId("research-blocked")).toBeVisible();
   const history = page.getByTestId("export-history");
   // This corpus compresses many owner sessions into minutes. Keep the real
   // server limit and exercise its explicit retry UI if the shared IP is busy.
@@ -612,14 +628,24 @@ test("retained export UI recovers prior words and media after invalidation and p
     };
     let response = await attempt(action);
     if (response.status() === 429) {
-      await expect(history.getByRole("alert")).toContainText("Rate limit exceeded");
+      await expect(page.getByText(/Rate limit exceeded/).first()).toBeVisible();
       const seconds = Number(response.headers()["retry-after"]);
       expect(seconds).toBeGreaterThan(0); expect(seconds).toBeLessThanOrEqual(60);
       await page.waitForTimeout(seconds * 1000 + 100);
       response = await attempt(retry);
     }
+    for (let n = 0; n < 4 && response.status() === 409 && (await response.text()).includes("Media is in use"); n++) {
+      await expect(page.getByText(/Media is in use/).first()).toBeVisible();
+      await page.waitForTimeout(1000); // Explicit UI retry after the active stream releases ownership.
+      response = await attempt(retry);
+    }
     expect(response.ok()).toBe(true);
   };
+  await page.goto("/#longform/1");
+  await page.getByTestId("script-editor").fill(`A newer owner draft preserved before the explicit recovery, revision ${Date.now()}.`);
+  await rateAware(`${stack.api}/api/studio/projects/1`, "PATCH",
+    () => page.getByRole("button", { name: "Save script", exact: true }).click());
+  await expect(page.getByTestId("research-blocked")).toBeVisible();
   await rateAware(`${stack.api}/api/export-history?kind=studio&project_id=1`, "GET",
     () => history.getByText("Retained export history", { exact: true }).click(),
     () => history.getByRole("button", { name: "Refresh history", exact: true }).click());

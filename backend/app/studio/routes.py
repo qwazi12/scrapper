@@ -854,6 +854,8 @@ class ClaimReviewIn(BaseModel):
     verdict: str
     rationale: str
     conflicts: list[str] = []
+    resolved_review_ids: list[str] = []
+    resolution_rationale: str = ""
 
 
 def _research_mutable(p):
@@ -863,29 +865,39 @@ def _research_mutable(p):
 
 @router.get("/projects/{project_id}/source-records")
 def source_records(project_id: int, s: Session = Depends(get_session)):
-    from ..models import ResearchSourceRecord
-    from .fact_verification import context
+    from ..models import ResearchSourceRecord, ResearchClaimReview
+    from .fact_verification import context, identity, claim_key
     p = _get(s, project_id)
-    return {"context": context(p.facts or {}), "records": [
+    return {"context": context(p.facts or {}),
+        "claim_keys": [claim_key(c.get("text", "")) for c in (p.research or {}).get("claims", [])],
+        "records": [
         {"id": r.id, "url": r.url, "requested_url": r.requested_url, "text": r.text,
          "sha256": r.sha256, "retrieved_at": r.retrieved_at}
-        for r in s.query(ResearchSourceRecord).filter_by(project_id=project_id).all()]}
+        for r in s.query(ResearchSourceRecord).filter_by(project_id=project_id, project_identity=identity(p)).all()],
+        "reviews": [{"id": r.id, "record_id": r.record_id, "claim": r.claim, "claim_key": claim_key(r.claim),
+            "excerpt": r.excerpt, "verdict": r.verdict, "rationale": r.rationale,
+            "conflicts": r.conflicts, "context": r.context, "reviewed_at": r.reviewed_at,
+            "resolved_review_ids": r.resolved_review_ids or [],
+            "resolution_rationale": r.resolution_rationale}
+            for r in s.query(ResearchClaimReview).filter_by(project_id=project_id,
+                project_identity=identity(p)).order_by(ResearchClaimReview.reviewed_at).all()]}
 
 
 @router.post("/projects/{project_id}/source-records")
 def fetch_source_record(project_id: int, req: SourceFetch, s: Session = Depends(get_session)):
-    from . import fact_verification as fv
-    p = _get(s, project_id); _research_mutable(p)
-    urls = [x.get("url") for x in (p.research or {}).get("sources", [])]
-    if req.url not in urls: raise HTTPException(400, "Choose a source attached to this research")
-    try:
-        row = fv.save_record(s, project_id, req.url)
-    except (ValueError, OSError) as exc:
-        raise HTTPException(422, f"Source could not be retrieved: {exc}")
-    s.commit()
-    return {"id": row.id, "url": row.url, "text": row.text, "sha256": row.sha256,
-            "retrieved_at": row.retrieved_at}
-
+    from ..file_use import pin
+    with pin([runner.project_dir(project_id)], exclusive=True, session=s):
+        from . import fact_verification as fv
+        p = _get(s, project_id); _research_mutable(p)
+        urls = [x.get("url") for x in (p.research or {}).get("sources", [])]
+        if req.url not in urls: raise HTTPException(400, "Choose a source attached to this research")
+        try:
+            row = fv.save_record(s, project_id, req.url)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(422, f"Source could not be retrieved: {exc}")
+        s.commit()
+        return {"id": row.id, "url": row.url, "text": row.text, "sha256": row.sha256,
+                "retrieved_at": row.retrieved_at}
 
 @router.post("/projects/{project_id}/claims/{claim_index}/review")
 def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Session = Depends(get_session)):
@@ -903,7 +915,8 @@ def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Sessi
         record = s.get(ResearchSourceRecord, req.record_id)
         urls = [research["sources"][i].get("url") for i in claim.get("sources", [])
                 if type(i) is int and 0 <= i < len(research.get("sources", []))]
-        if not record or record.project_id != project_id or record.requested_url not in urls:
+        if (not record or record.project_id != project_id or record.project_identity != fv.identity(p)
+                or record.requested_url not in urls):
             raise HTTPException(422, "Choose an independently retrieved record cited by this claim")
         if req.context != fv.context(p.facts or {}) or not all(req.context.values()):
             raise HTTPException(422, "Confirm the exact title, release year, medium and territory")
@@ -912,9 +925,20 @@ def review_claim(project_id: int, claim_index: int, req: ClaimReviewIn, s: Sessi
             raise HTTPException(422, "Provide a verdict, exact excerpt and a substantive semantic rationale")
         if req.verdict == "supported" and req.conflicts:
             raise HTTPException(422, "Resolve or reject conflicting evidence before marking support")
+        conflicts = fv.conflicting_reviews(s, p, claim["text"], p.facts or {})
+        if req.verdict == "supported":
+            if not fv.fresh(record):
+                raise HTTPException(422, "Retrieve a current source before marking support")
+            if set(req.resolved_review_ids) != {r.id for r in conflicts} or (conflicts and
+                    len(req.resolution_rationale.strip()) < 20):
+                raise HTTPException(422, "Review every earlier contradiction or unresolved decision and explain its resolution")
+        elif req.resolved_review_ids:
+            raise HTTPException(422, "Only an explicit supported decision can resolve earlier reviews")
         review = ResearchClaimReview(id=str(uuid.uuid4()), project_id=project_id, record_id=record.id,
+            project_identity=fv.identity(p),
             claim=claim["text"], excerpt=req.excerpt, context=req.context, verdict=req.verdict,
-            rationale=req.rationale.strip(), conflicts=req.conflicts)
+            rationale=req.rationale.strip(), conflicts=req.conflicts,
+            resolved_review_ids=req.resolved_review_ids, resolution_rationale=req.resolution_rationale.strip())
         s.add(review)
         claim["evidence"] = {"review_id": review.id, "verdict": req.verdict, "excerpt": req.excerpt,
             "record_sha256": record.sha256, "retrieved_at": record.retrieved_at.isoformat(),

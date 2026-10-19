@@ -356,6 +356,7 @@ class ResearchSourceRecord(Base):
     __tablename__ = "research_source_records"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     project_id: Mapped[int] = mapped_column(Integer, index=True)
+    project_identity: Mapped[str | None] = mapped_column(String(64), nullable=True)
     url: Mapped[str] = mapped_column(Text)
     requested_url: Mapped[str] = mapped_column(Text)
     text: Mapped[str] = mapped_column(Text)
@@ -367,6 +368,7 @@ class ResearchClaimReview(Base):
     __tablename__ = "research_claim_reviews"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     project_id: Mapped[int] = mapped_column(Integer, index=True)
+    project_identity: Mapped[str | None] = mapped_column(String(64), nullable=True)
     record_id: Mapped[str] = mapped_column(String(36))
     claim: Mapped[str] = mapped_column(Text)
     excerpt: Mapped[str] = mapped_column(Text)
@@ -374,6 +376,8 @@ class ResearchClaimReview(Base):
     verdict: Mapped[str] = mapped_column(String(16))
     rationale: Mapped[str] = mapped_column(Text)
     conflicts: Mapped[list] = mapped_column(JSON, default=list)
+    resolved_review_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    resolution_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -497,7 +501,7 @@ class ExportVersion(Base):
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # DDL is provided but has not been exercised in the local SQLite test lane.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

@@ -49,6 +49,36 @@ def _migrate() -> None:
 
     insp = inspect(engine)
     tables = insp.get_table_names()
+    # Legacy evidence stays readable, but unknown project identity is never
+    # invented by a migration. Re-fetch/re-review before using it as support.
+    evidence_columns = {
+        "research_source_records": {"project_identity": "VARCHAR(64)"},
+        "research_claim_reviews": {"project_identity": "VARCHAR(64)",
+            "resolved_review_ids": "JSON", "resolution_rationale": "TEXT"},
+    }
+    for table, additions in evidence_columns.items():
+        if table not in tables:
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        with engine.begin() as conn:
+            for column, sql_type in additions.items():
+                if column not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+            if engine.dialect.name == "sqlite":
+                for action in ("UPDATE", "DELETE"):
+                    conn.execute(text(f"CREATE TRIGGER IF NOT EXISTS {table}_no_{action.lower()} "
+                        f"BEFORE {action} ON {table} BEGIN SELECT RAISE(ABORT, "
+                        "'Evidence journal is append-only'); END"))
+            elif engine.dialect.name == "postgresql":
+                conn.execute(text("CREATE OR REPLACE FUNCTION scrapper_journal_immutable() "
+                    "RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION "
+                    "'Evidence journal is append-only'; END; $$"))
+                exists = conn.execute(text("SELECT 1 FROM pg_trigger WHERE tgname=:name "
+                    "AND tgrelid=to_regclass(:table)"),
+                    {"name": f"{table}_immutable", "table": table}).first()
+                if not exists:
+                    conn.execute(text(f"CREATE TRIGGER {table}_immutable BEFORE UPDATE OR DELETE "
+                        f"ON {table} FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()"))
     if "compilations" in tables and "queue_item_id" not in {c["name"] for c in insp.get_columns("compilations")}:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE compilations ADD COLUMN queue_item_id INTEGER"))

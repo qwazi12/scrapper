@@ -8,16 +8,19 @@ from __future__ import annotations
 import hashlib
 import http.client
 import ipaddress
+import re
 import socket
 import ssl
 import time
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
 from ..db import SessionLocal
-from ..models import ResearchClaimReview, ResearchSourceRecord
+from ..models import ResearchClaimReview, ResearchSourceRecord, StudioProject
+from ..publication_journal import identity
 from . import sources
 
 MAX_BYTES, MAX_REDIRECTS, MAX_AGE = 1_000_000, 3, 7 * 86400
@@ -106,8 +109,13 @@ def fetch(url: str) -> dict:
 
 
 def save_record(s, project_id: int, url: str) -> ResearchSourceRecord:
+    project = s.get(StudioProject, project_id)
+    if not project:
+        raise ValueError("Research project no longer exists")
+    project_identity = identity(project)
     data = fetch(url)
-    row = ResearchSourceRecord(id=str(uuid.uuid4()), project_id=project_id, **data)
+    row = ResearchSourceRecord(id=str(uuid.uuid4()), project_id=project_id,
+                               project_identity=project_identity, **data)
     s.add(row); s.flush()
     return row
 
@@ -116,17 +124,47 @@ def _aware(dt):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def claim_key(text: str) -> str:
+    """Keep case/punctuation edits from hiding an earlier review of these words.
+
+    This is lexical identity, not a claim of semantic equivalence of paraphrases.
+    """
+    return " ".join(re.findall(r"\w+", unicodedata.normalize("NFKC", text).casefold()))
+
+
+def conflicting_reviews(s, project, claim: str, facts: dict) -> list[ResearchClaimReview]:
+    return [r for r in s.query(ResearchClaimReview).filter_by(
+        project_id=project.id, project_identity=identity(project)).all()
+        if claim_key(r.claim) == claim_key(claim) and r.context == context(facts)
+        and (r.verdict in ("unresolved", "contradicted") or r.conflicts)]
+
+
+def fresh(record) -> bool:
+    return 0 <= (datetime.now(timezone.utc) - _aware(record.retrieved_at)).total_seconds() <= MAX_AGE
+
+
 def supported(claim: dict, source_list: list, facts: dict, project_id: int | None) -> bool:
     evidence = claim.get("evidence") or {}
     if not project_id or not isinstance(evidence, dict) or not isinstance(evidence.get("review_id"), str): return False
     with SessionLocal() as s:
+        project = s.get(StudioProject, project_id)
+        if not project or context(project.facts or {}) != context(facts):
+            return False
+        project_identity = identity(project)
         review = s.get(ResearchClaimReview, evidence["review_id"])
-        if not review or review.project_id != project_id or review.claim != claim.get("text"): return False
+        if (not review or review.project_id != project_id or review.project_identity != project_identity
+                or review.claim != claim.get("text")): return False
         record = s.get(ResearchSourceRecord, review.record_id)
-        if (not record or record.project_id != project_id or review.verdict != "supported" or review.conflicts
+        if (not record or record.project_id != project_id or record.project_identity != project_identity
+                or evidence.get("record_sha256") != record.sha256
+                or review.verdict != "supported" or review.conflicts
                 or review.context != context(facts) or not review.rationale.strip() or review.excerpt not in record.text
                 or record.sha256 != hashlib.sha256(record.text.encode()).hexdigest()
-                or not 0 <= (datetime.now(timezone.utc) - _aware(record.retrieved_at)).total_seconds() <= MAX_AGE): return False
+                or not fresh(record)): return False
+        conflicts = conflicting_reviews(s, project, review.claim, facts)
+        if conflicts and (not {r.id for r in conflicts}.issubset(set(review.resolved_review_ids or []))
+                or len((review.resolution_rationale or "").strip()) < 20):
+            return False
         refs = claim.get("sources")
         return isinstance(refs, list) and any(type(i) is int and 0 <= i < len(source_list)
             and record.requested_url == source_list[i].get("url") for i in refs)
