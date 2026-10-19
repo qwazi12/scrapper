@@ -1,5 +1,16 @@
 # Scrapper Memory
 
+## Drive sync repair — 2026-10-19 (Codex, in progress)
+
+The first real POST /api/drive/sync reached its tracked job but failed before
+importing anything: drive_sync imported a nonexistent logbus symbol from the
+logbus module. Changed that one import to use the module, matching other app
+callers. Added an isolated DB/fake Shared Drive integration test covering video
+pagination, Review-only imports, destination binding and repeat-sync deduplication.
+All 109 focused Drive/auth/archive/worker/queue tests pass with live network
+blocked. Actual downloads continue successfully; this repair is required for
+the owner-requested subsequent SocialPilot sync. No new publication is authorized.
+
 ## Shorts archive resumed — 2026-10-19 20:45 UTC (Codex)
 
 Owner reported sign-in was done. Rechecked Brave Personal: normal playback now

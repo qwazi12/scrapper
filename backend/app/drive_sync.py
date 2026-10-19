@@ -246,7 +246,7 @@ def sync_drive_to_queue(
     Scan a Google Drive folder and its channel subfolders, creating QueueItem records.
     """
     from .models import QueueItem
-    from .logbus import logbus
+    from . import logbus
 
     folder_id = extract_folder_id(folder_url_or_id)
     if not folder_id:
