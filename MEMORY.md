@@ -35,7 +35,8 @@ See docs/implementation/CLAUDE_REVIEW_20261019.md for the full review.
   route (receipt text says "estimated by Claude"); one $0.10 gemini hold (studio:144) left for the owner.
 - Silent refusal (0730d8a): pre-release queued rows (#751 countdown, catch-up LongForm rows) were refused every tick
   ("unbound legacy row"), visible only in Railway logs. Rows created before 2026-10-19 10:00 UTC are now allowed;
-  refusals write the reason on the row + activity log. #751 posted via Post now (confirming).
+  refusals write the reason on the row + activity log. #751 (age-gap countdown) posted via Post now: VERIFIED
+  YouTube NuU5bJLpDSE, FB reel 2130077567895699, IG DertrV1jtxB.
 - Countdown #9: 9/10 entries made; Sin City waits for the 00:00 ET budget reset, then render → approve → post.
 - c36114d: trailing end-card silence isn't a serious finding for one-tap Approve. 894 tests.
 
