@@ -1,5 +1,7 @@
 # Live Shorts archive — 2026-10-19
 
+Latest status check, **21:51 UTC**: the runner is **blocked and no longer running** after YouTube again requested sign-in/bot verification on Rock Movie video `BBDoUF82DCs`. **105 actual Shorts** are verified in Drive: Charan 57, Afridi 25, Rock Movie 23, using 1,027,787,300 video bytes. **3,901 remain; 1 skipped.** All archive leases are released. Afridi’s real 25-video turn completed and rotation to Rock Movie worked. Previously verified files remain preserved; the pending ledger excludes them from resumed downloads. Earlier running checkpoints below are historical.
+
 Owner update: the active Mac run now rotates through channels in repeated turns of **up to 25 verified Shorts each**, until available pending work is exhausted. Charan already had 57 verified uploads at the switch, so the first turn is AfridiAE. `scripts/archive_batch.py` uses the existing pending ledger and never resets successful entries. Runtime state is `artifacts/shorts-archive-20261019/round-robin/batch-state.json`; the older whole-channel continuation was stopped cleanly. This client-only change requires no server deployment. All 25 focused tests pass, including an isolated 26-video test proving 25 + 1 + 0 downloads across three visits with no duplicate media IDs.
 
 Owner resumed the ten-channel archive and explicitly chose the working LongForm Shared Drive connection. The archive resumed at 20:45 UTC after a successful playback and real Scrapper download check; it is not yet complete.

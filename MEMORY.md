@@ -1,5 +1,24 @@
 # Scrapper Memory
 
+## Archive blocked again — 2026-10-19 21:51 UTC status check (Codex)
+
+Live ledger now has 105 actual downloaded and verified Drive videos:
+Charan Ebenez 57, AfridiAE 25, Rock Movie 23. Total video bytes 1,027,787,300.
+3,901 remain, 1 restricted item is skipped. The round-robin runner completed
+Afridi's 25-video turn and moved to Rock Movie, confirming real channel rotation.
+It stopped on Rock video BBDoUF82DCs when YouTube again returned “Sign in to
+confirm you’re not a bot.” The local process is no longer running, run status is
+blocked, and no archive leases remain. The zero ledger-failed count does not
+mean no error: authentication challenges stay pending and explicitly blocked.
+
+Do not describe the archive as still running or complete. No repeated retries,
+cookie extraction, proxy rotation or challenge bypass. Existing uploaded IDs and
+Drive files remain preserved and will be excluded by the pending ledger on an
+authorized resumed run. Latest evidence: round-robin/batch-state.json,
+round-robin-log.txt and latest-owner-status-check.json under the ignored operation
+artifacts. Later channels' stored error messages may be from earlier attempts;
+the newest stopped attempt is Rock Movie, not a fresh failure on every channel.
+
 ## Owner requested 25-per-channel rotation — 2026-10-19 (Codex)
 
 Owner: “Do like 25 per account until u finish all. Dont redownload videos if
