@@ -1,5 +1,21 @@
 # Scrapper Memory
 
+## Current plan — 2026-10-19 (owner-approved, Claude) — supersedes the handoff below
+Owner: "Merge the branch into main, fix problems 1, 3 and 4, with tests. Prove one real LongForm and one real
+countdown end to end in production: render, approve, post. Turn posting back on."
+1. Merge codex/scrapper-revival-full-stack-20261018 (+ claude/review-20261019) into main; push → Railway/Vercel
+   deploy main, which ends the split (backend was main code, frontend 0e5e500 since 07:18 ET). DONE in this commit.
+2. Problem 1 (posting): definite Upload-Post rejections (HTTP 4xx) = not accepted → Retry automatically; only
+   timeouts/lost responses stay "unknown"; one-tap owner "didn't post — retry" (no evidence-URL form needed).
+3. Problem 3 (sign-off): one-tap Approve — the four checks + a remembered standard rights statement; only severe
+   findings need individual decisions.
+4. Problem 4 (fact gate): script stage removes/flags sentences failing the credit checks and continues instead of
+   stopping the whole breakdown.
+5. Prove in production: one LongForm + one Countdown render → approve → post, verify on the platforms.
+6. Turn auto-posting back on.
+Declined: bulk-downloading the 10 third-party channels' Shorts to repost (no permission from those creators).
+See docs/implementation/CLAUDE_REVIEW_20261019.md for the full review.
+
 ## Current handoff — release and stop (2026-10-19)
 
 The owner's latest instruction supersedes continuous local implementation:
