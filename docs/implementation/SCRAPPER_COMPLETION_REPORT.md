@@ -35,7 +35,7 @@ local slice. This report does not reset or replace the original product vision.
 | Audience / cost lineage | Read-only YouTube Analytics adapter for an existing declared grant, processed-day latency/revision/missing-value semantics, immutable owner content mappings and scoped recorded variable-cost evidence | Real private grant/report proof, IG/FB adapters, broader history pagination and refresh/retention lifecycle, legacy/delivery attribution; no verified invoice/profit claim |
 | Comments / corrections | Explicit bounded read-only thread/reply pages, separate durable cursors, redacted append-only source evidence, exact-context private drafts/decisions, stale-source invalidation and idempotent exact-claim correction follow-ups | Real provider proof, privacy/source-refresh/deletion lifecycle and deeper semantic reply assistance; no sending/moderation endpoint |
 | Learning / autonomy | Same-account/platform/format/age leave-one-out diagnostics, metric-specific missingness, explicit heuristic/sample limits, exact-context private owner decisions and linked manually completed experiments | No causal winner, beneficial-growth proof or execution authority; provider/billing evidence, deeper controlled outcomes and bounded autonomous operation remain |
-| Owner UX | Stable navigation/history, script/import/experiment browser drafts, stale-save/storage-failure guards, accessible controls, readable bounded typed errors, exact-origin credential cache, confirmed-save/read-refresh separation and retained queue snapshots/edits through outages | Remaining forms, broader platform-status design and full negative/crash/recovery/accessibility coverage |
+| Owner UX | Stable navigation/history, script/import/experiment/native-treatment browser drafts, stale-save/storage-failure guards, accessible controls, readable bounded typed errors, exact-origin credential cache, confirmed-save/read-refresh separation and retained queue snapshots/edits through outages | Remaining forms, broader platform-status design and full negative/crash/recovery/accessibility coverage |
 
 Native exact acceptance and image/Reel publishing-field corrections are locally
 verified and committed in304b5ae. They replace blanket native approval, bind the full
@@ -51,26 +51,28 @@ contain the ignored media, database snapshots or traces.
 
 | Lane | Verified result | Exact evidence |
 |---|---|---|
-| Full backend after native acceptance | **665 passed /1 optional skip**,64.17s,1 reported TestClient/httpx deprecation | `native-clips-backend1.txt`, `.xml` |
-| Actual PostgreSQL behavior | **189 passed**,20.28s,1 reported warning | `native-clips-pg1/pytest.txt`, `.xml` |
-| Actual private PostgreSQL recovery | **Passed**,1.115s;170608bytes; SHA256`b34eff81f27c2d15893b157b041d2f72a46bd43a55f702d8e9ef37af9360eaad`; source unchanged | `native-clips-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
+| Full backend after native draft recovery | **666 passed /1 optional skip**,66.02s,1 reported TestClient/httpx deprecation | `native-drafts-backend1.txt`, `.xml` |
+| Actual PostgreSQL behavior | **190 passed**,19.73s,1 reported warning | `native-drafts-pg1/pytest.txt`, `.xml` |
+| Actual private PostgreSQL recovery | **Passed**,0.819s;171292bytes; SHA256`9645c2c13ad02b723a7fd15de5399e3f94f46656c2a09132ed2344a5be368c7d`; source unchanged | `native-drafts-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
 | Selected clip contracts | **34 passed**,11.32s, actual hold/loop frame/audio checks, strict ranges/source claims | `native-clips-focused2.txt` |
 | Native acceptance focused | **22 passed**,2.24s, then all5 new contracts including actual generated-tone Reel render **passed**,2.63s | `native-acceptance-focused2.txt`, `native-acceptance-focused3.txt` |
-| Frontend production build | Passed after selected-clip controls and native rendering | `native-clips-build2.txt` |
+| Frontend production build | Passed after native template recovery and late-response protection | `native-drafts-build3.txt` |
 | Frontend error contracts | **6 passed**,114.49ms; typeless Node module warning reported | `api-errors-unit3.txt` |
-| Full browser regression before native slice | **20 passed**,3.9min; frozen backend/scripts SHA`e6214eab0d40e4d396422f5af813f17962cb09a205467e514b2a8e9deef410e0` | `e2e/history/owner-recovery5/stack.json`, report, traces/screenshots and verified DB snapshot |
+| Current full browser regression | **22 passed**,3.9min; frozen backend/scripts SHA`87cae4a6a3b3d498a4509c0c9b4deb79994e9e80ad459c1c99fe5bde39a47cc2`; complete media and recovery cases | `e2e/history/native-drafts3/` report/traces/screenshots/actual media/verified DB snapshot |
+| Earlier full browser before native slice | **20 passed**,3.9min; frozen backend/scripts SHA`e6214eab0d40e4d396422f5af813f17962cb09a205467e514b2a8e9deef410e0` | `e2e/history/owner-recovery5/stack.json`, report, traces/screenshots and verified DB snapshot |
 | Browser after native acceptance | **4 passed**,2.2min; fresh image/manual visual capture **1 passed**,3.7s. Frozen backend/scripts SHA`d1e6c1a4eff1c46fb56594de496936f9ee7b437c8a7f546ba48be4f526105e25` | `e2e/history/native-acceptance1/` and `native-acceptance3/` reports/traces/screenshots/verified DB snapshots |
 | Selected-video browser | Three existing native/asset workflows passed; corrected fresh selected-video flow **passed,8.0s**, including actual playback/seek. One preceding ambiguous-alert selector failure retained | `e2e/history/native-clips1/` and `native-clips3/`, frozen SHA`54a84d361118738f2565ef4548a5add4e475b11e6e1fce928f2e0654f2dd5d41` |
+| Native template recovery | Fresh focused UI **passed,3.5s**: all-copy/clip recovery, stale research, failed requests, late responses, storage failure and malformed cache. Expanded full22-browser regression passed (3.9min) | `e2e/history/native-drafts2/` |
 | Objective long-duration media | Actual600s procedural black/generated-tone corpus passes objective checks;2,636,742bytes,SHA`3d5486c63d64b2fd08d65140d21c59f66f562b41847930b25ca59f4fbddbbde2` | `export-acceptance-corpus/manifest.json` and source media |
 | Linux/container/CI | Prepared; **not executed** | `.github/workflows/quality.yml`, `scripts/e2e/Dockerfile` |
 | Real provider/staging/deployment | **Unverified; not executed** | No deployment/provider success receipt exists |
 
-The full browser20 includes actual LongForm and five independent Countdown
+The current full browser22 includes actual LongForm and five independent Countdown
 segment pipelines/stitch, native formats and private local downloads, independent
 source review, local worker handoff, simulated delivery/uncertainty/financial
 reconciliation, retained-media/history recovery, asset catalog, content lineage,
 comment/correction review, diagnostics→manual experiment, browser draft failures,
-API-origin credential recovery and real limiter recovery. Rate exhaustion is
+API-origin credential recovery, real limiter recovery, explicit selected-video playback/seek and native treatment recovery with stale-source/delayed-response protection. Rate exhaustion is
 fixture-seeded; the test waits the actual60-second window. It is not a600-request
 load benchmark. Independent fixture request buckets are reset between cases;
 production authorization/limits remain unchanged. Earlier failed runs and their

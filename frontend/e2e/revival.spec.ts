@@ -1316,3 +1316,129 @@ test("Native selected-video UI imports authorized media, chooses an interval and
   const isolationAfter = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
   expect(isolationAfter.fake_publish_receipts).toBe(isolationBefore.fake_publish_receipts);
 });
+
+test("Native campaign recovery keeps copy and clip choices private through stale research and failed requests", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  const opportunity = await request.post(`${stack.api}/api/editorial/opportunities`, { headers, data: {
+    title: "Native draft recovery original fixture", angle: "Compare original compositions through explicit owner-selected media and distinct format copy.",
+    audience: "Viewers of our original generated shape fixtures", formats: ["short", "reel", "carousel", "image", "community", "poll"],
+    evidence: [{ url: "https://example.invalid/native-draft-recovery", excerpt: "All media and text are original synthetic fixtures made for private local testing.", entity: "Original shapes", retrieved_at: new Date().toISOString() }],
+  } });
+  expect(opportunity.ok()).toBe(true); const oid = (await opportunity.json()).id;
+  expect((await request.post(`${stack.api}/api/editorial/opportunities/${oid}/approve`, { headers })).ok()).toBe(true);
+  const imported = await request.post(`${stack.api}/api/editorial/assets/media`, { headers, multipart: {
+    kind: "video", license: "owner_created", attestation: "Original locally generated footage, permitted for this private recovery fixture.", description: "Original colored panels and shapes from the isolated harness.",
+    file: { name: "original.mp4", mimeType: "video/mp4", buffer: readFileSync(path.join(stack.root, "fixtures/trailer.mp4")) },
+  } });
+  expect(imported.ok()).toBe(true); const aid = (await imported.json()).id;
+  const key = `screen-central:${stack.api}:native-campaign`;
+  const posts: any[] = [];
+  let mode = "validation"; let lateCreated = false; let releaseLate: () => void = () => {};
+  const lateGate = new Promise<void>(resolve => { releaseLate = resolve; });
+  await page.route("**/api/editorial/campaigns", async route => {
+    if (route.request().method() === "POST") {
+      posts.push(route.request().postDataJSON());
+      if (mode === "validation") return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: [{ loc: ["body", "title"], msg: "Repair the treatment title", input: "private-do-not-display" }] }) });
+      if (mode === "abort") return route.abort("failed");
+      if (mode === "late-response") { const response = await route.fetch(); expect(response.ok()).toBe(true); lateCreated = true; await lateGate; return route.fulfill({ response }); }
+    } else if (mode === "saved-read-failed") return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic view read unavailable" }) });
+    return route.continue();
+  });
+  await page.goto("/#editorial"); await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  const form = page.getByRole("form", { name: "Native campaign draft", exact: true });
+  await form.getByLabel("Approved research", { exact: true }).selectOption(String(oid));
+  await form.getByLabel("Campaign title", { exact: true }).fill("My unsaved original composition treatment");
+  for (const [index, text] of ["Can this original shape change the way a frame reads?", "Choose source intervals that support the new point instead of copying a narrative.", "Keep one clear original choice. Which composition would you keep?"].entries())
+    await form.getByLabel(`Beat text ${index + 1}`, { exact: true }).fill(text);
+  const treatments = form.getByRole("group", { name: "Treatments to make", exact: true });
+  for (const fmt of ["reel", "image", "community", "poll"]) await treatments.getByRole("checkbox", { name: fmt, exact: true }).check();
+  const words = { "Short caption": "My original Short copy remains private until I save it.", "Carousel caption": "My distinct original carousel copy also survives navigation.",
+    "Reel caption": "My separate Reel treatment copy should remain available.", "Single-image text": "One original shape changes this composition.", "Single-image caption": "Choose the clearest original still composition.",
+    "Community post text": "We created these original compositions. Which framing choice makes the point most clearly, and why?", "Poll question": "Which original frame makes the idea clearest?", "Poll options (one per line, 2–4)": "Quiet corner\nBold center", "Community question draft": "What would you change in this original composition?" };
+  for (const [label, value] of Object.entries(words)) await form.getByLabel(label, { exact: true }).fill(value);
+  await form.getByLabel("Visual for beat 1", { exact: true }).selectOption(String(aid));
+  await form.getByLabel("Video start for beat 1", { exact: true }).fill("0.5");
+  await form.getByLabel("Video end for beat 1", { exact: true }).fill("2.5");
+  await form.getByLabel("Video end treatment for beat 1", { exact: true }).selectOption("hold");
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeTruthy();
+  const cached = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  expect(posts).toHaveLength(0);
+  await expect(form.getByLabel("Campaign title", { exact: true })).toHaveValue("My unsaved original composition treatment");
+  // A newly reviewed source must not silently adopt the old recovered selection.
+  const old = (await (await request.get(`${stack.api}/api/editorial/opportunities`, { headers })).json()).find((row: any) => row.id === oid);
+  const edited = Object.fromEntries(["title", "angle", "audience", "formats", "evidence"].map(field => [field, old[field]]));
+  edited.angle = "Updated approved research context: inspect the original composition question again before reusing this private treatment.";
+  expect((await request.put(`${stack.api}/api/editorial/opportunities/${oid}`, { headers, data: edited })).ok()).toBe(true);
+  expect((await request.post(`${stack.api}/api/editorial/opportunities/${oid}/approve`, { headers })).ok()).toBe(true);
+  await page.reload(); await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  for (const [label, value] of Object.entries(words)) await expect(form.getByLabel(label, { exact: true })).toHaveValue(value);
+  await expect(form.getByLabel("Video start for beat 1", { exact: true })).toHaveValue("0.5");
+  await expect(form.getByLabel("Video end for beat 1", { exact: true })).toHaveValue("2.5");
+  await expect(form.getByLabel("Video end treatment for beat 1", { exact: true })).toHaveValue("hold");
+  const save = form.getByRole("button", { name: "Create native campaign", exact: true });
+  await expect(save).toBeDisabled(); expect(posts).toHaveLength(0);
+  await form.getByText("Current approved research context", { exact: true }).click();
+  await expect(form).toContainText("Updated approved research context");
+  await form.getByRole("button", { name: "Use current approved research for this draft", exact: true }).click();
+  for (const fmt of ["carousel", "image", "community", "poll"]) await treatments.getByRole("checkbox", { name: fmt, exact: true }).uncheck();
+  await save.click(); await expect(page.getByRole("status").filter({ hasText: "Repair the treatment title" })).toBeVisible();
+  await expect(page.getByText("private-do-not-display", { exact: false })).toHaveCount(0);
+  await expect(form.getByLabel("Campaign title", { exact: true })).toHaveValue("My unsaved original composition treatment");
+  mode = "abort"; await save.click(); await expect(page.getByRole("status").filter({ hasText: "could not be confirmed" })).toBeVisible();
+  expect(posts).toHaveLength(2);
+  await expect(form.getByLabel("Video end treatment for beat 1", { exact: true })).toHaveValue("hold");
+  mode = "late-response"; await save.click();
+  await expect.poll(() => lateCreated).toBe(true);
+  await expect(form.getByLabel("Campaign title", { exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await form.getByLabel("Campaign title", { exact: true }).fill("Newer private words after returning to the editor");
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toContain("Newer private words");
+  const lateResponse = page.waitForResponse(r => r.url().endsWith("/api/editorial/campaigns") && r.request().method() === "POST" && r.status() === 200);
+  releaseLate(); await (await lateResponse).finished();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  await expect(form.getByLabel("Campaign title", { exact: true })).toHaveValue("Newer private words after returning to the editor");
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toContain("Newer private words");
+  expect(posts).toHaveLength(3);
+  mode = "saved-read-failed"; await save.click();
+  await expect(page.getByRole("status").filter({ hasText: "Campaign draft saved." })).toContainText("Refresh unavailable");
+  await expect(form.getByLabel("Campaign title", { exact: true })).toHaveValue("");
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  expect(posts).toHaveLength(4);
+  expect(posts[3].beats[0]).toMatchObject({ asset_id: aid, clip_start: 0.5, clip_end: 2.5, clip_end_policy: "hold" });
+  expect(posts[3].expected_research_fingerprint).not.toBe(old.approval.fingerprint);
+  const campaigns = (await (await request.get(`${stack.api}/api/editorial/campaigns`, { headers })).json()).filter((row: any) => row.opportunity_id === oid);
+  expect(campaigns).toHaveLength(2);
+  expect(new Set(campaigns.map((row: any) => row.brief.title))).toEqual(new Set(["My unsaved original composition treatment", "Newer private words after returning to the editor"]));
+  mode = "read-ok"; await page.getByRole("button", { name: "Refresh native campaigns", exact: true }).click();
+  await expect(page.getByTestId(`campaign-${campaigns[0].id}`)).toBeVisible(); expect(posts).toHaveLength(4);
+  await page.evaluate(key => {
+    (window as any).__nativeDraftSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (name, value) { if (name === key) throw new DOMException("Synthetic storage failure", "QuotaExceededError"); return (window as any).__nativeDraftSetItem.call(this, name, value); };
+  }, key);
+  await form.getByLabel("Campaign title", { exact: true }).fill("Keep these words when storage fails");
+  await expect(form.getByRole("alert").filter({ hasText: "Browser draft storage is unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(form.getByLabel("Campaign title", { exact: true })).toHaveValue("Keep these words when storage fails");
+  await form.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.evaluate(({ key, cached }) => {
+    Storage.prototype.setItem = (window as any).__nativeDraftSetItem;
+    cached.value.beats = '{"malformed":"recover these private words"}'; localStorage.setItem(key, JSON.stringify(cached));
+  }, { key, cached });
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(form.getByRole("alert").filter({ hasText: "Recovered treatment data is malformed" })).toBeVisible();
+  await expect(save).toBeDisabled(); expect(posts).toHaveLength(4); expect(errors).toEqual([]);
+  await form.getByText("Retained treatment words", { exact: true }).click();
+  await expect(form).toContainText("recover these private words");
+  await form.screenshot({ path: path.join(evidence, "native-draft-recovery.png") });
+  await form.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  expect(posts).toHaveLength(4);
+});

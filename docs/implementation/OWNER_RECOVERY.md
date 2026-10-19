@@ -60,3 +60,34 @@ failed-storage recovery, linked experiment metadata, readable422 errors, missing
 responses, confirmed-save/read-refresh separation and API-origin auth recovery.
 Provider responses used by the local stack remain synthetic. These controls do
 not complete persistence for every other form or establish real provider success.
+
+Native campaign treatment drafts now preserve all format copy, selected formats,
+beat/source/asset selections, clip ranges and intentional end treatments. Their
+browser key includes the API origin. Restore/discard is explicit and never creates
+a campaign, render or queue item. Malformed recovered structures remain available
+as private text, while rendering/submission of that structure is blocked. They
+are not silently discarded or coerced into a different treatment.
+
+The form retains the selected approved research fingerprint. A recovered selection
+that differs from the current approved brief cannot save until the owner inspects
+the current source context and explicitly selects it. This keeps treatment words
+while requiring current research review. The new client always submits that
+fingerprint; a change after the displayed review returns409 at create. This API
+field is additive for older clients, which may omit it but still require current
+approved research and downstream input rechecks. It is not an independent semantic
+verification of the brief or every legacy caller's selection.
+
+The campaign form disables edits while its mounted save is pending. A confirmed
+receipt clears that mounted draft, and a failed view refresh remains a distinct
+read error. The read-only Refresh native campaigns button does not retry the
+mutation. Failed/unconfirmed requests retain the full draft. If the editor is
+left while a request is in flight, its late response cannot clear a newer editor's
+browser words; the retained draft stays available for explicit review against the
+current campaign list. No automatic request retry or deduplication of deliberately
+created private campaigns is implied. The actual scenario checks two distinct
+manual saves, not an automatic duplicate.
+
+Still-import file selection and other remaining forms are outside this native
+treatment recovery slice. Browser recovery is local/private storage, not a server
+backup or media-file archive. The current ledger records actual backend/PG/UI
+results, delayed-response and failed-storage cases before this slice is counted.

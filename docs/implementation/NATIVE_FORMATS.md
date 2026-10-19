@@ -13,3 +13,10 @@ Local evidence: full backend4:602 passed/1optional skip; actual PostgreSQL5:136 
 Current native acceptance also rechecks schema2 evidence at review-queue admission, private download and provider dispatch under media claims. Legacy blanket approvals cannot release files. Publisher comparisons use image/reel format-specific captions and the correct image/video kind; actual original-image and generated-tone Reel tests reach simulated transports. Latest backend/PG/build evidence is indexed in SCRAPPER_COMPLETION_REPORT.md; four actual media UI workflows passed, followed by a fresh visual-capture pass.
 
 Authorized catalog videos can now be selected with explicit bounded intervals and intentional hold/loop treatment, keeping source audio excluded. Retained range/byte provenance and each extended treatment join the exact acceptance gate. See NATIVE_CLIPS.md; this remains a card/inset treatment, not an automatic semantic recut engine.
+
+The native treatment form now has explicit private browser recovery for all copy,
+formats, beat/source/asset selections and selected-video choices, scoped to the API
+origin. A changed approved research version requires current-context review while
+preserving the draft. Confirmed create and failed view refresh are shown separately;
+late responses cannot erase a newer editor's words. See OWNER_RECOVERY.md for the
+exact behavior and remaining file-import/other-form limits.

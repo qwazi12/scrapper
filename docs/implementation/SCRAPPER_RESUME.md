@@ -41,16 +41,14 @@ descriptive diagnostics and reviewed manual experiments; WAL-aware SQLite recove
 and actual private PostgreSQL logical recovery; browser draft and queue recovery;
 supported lifespan/schema/image interfaces; structured native exact acceptance and
 format-correct image/Reel dispatch; explicit authorized video intervals, source
-claims, muted excerpts and actual hold/loop/browser playback proof. Do not restart these from older plans.
-Native acceptance is saved in304b5ae and selected video intervals have completed
-local verification; inspect the current local commit/Git
-history/state for later saved work before choosing the next slice.
+claims, muted excerpts and actual hold/loop/browser playback proof. Native
+treatment browser recovery now has focused all-copy/clip/stale-source/error/late-
+response/storage/malformed-cache proof and a passed full22-browser regression.
+Inspect current Git history/state and the ledger before choosing the next slice.
 
-Latest completed broad evidence: **665 backend passes /1 optional skip**,
-**189 actual PostgreSQL passes** plus native restore, **6 frontend error unit
-passes**, production build passed, **20 actual browser scenarios passed** before
-the native slice and **4 full media workflows passed** afterward plus1 fresh
-manual-format visual-capture pass.
+Latest completed broad evidence: **666 backend passes /1 optional skip**,
+**190 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+passes**, production build passed, **22 actual browser scenarios passed**.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not
 silence it or mutate the shared environment. Exact evidence paths are indexed in
 the report. More recent verified runs in the ledger supersede these counts.

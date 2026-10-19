@@ -7,7 +7,7 @@ export type EditorialOpportunity = {
   id: number; title: string; angle: string; audience: string; formats: string[];
   evidence: { url: string; excerpt: string; entity: string; retrieved_at: string }[];
   demand: number | null; demand_source: string | null; competition: string; feasibility: string;
-  planned_for: string | null; status: string;
+  planned_for: string | null; status: string; approval?: { fingerprint: string };
   feedback_refs?: number[];
   assessment?: { confidence: string; uncertainty: string[]; evidence_count: number };
 };

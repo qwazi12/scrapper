@@ -93,7 +93,7 @@ flowchart LR
   SNAP --> RESTORE[Offline lock / integrity / verified restore]
   PG[Disposable private PostgreSQL cluster] --> DUMP[Native custom archive / SHA]
   DUMP --> PGRESTORE[Least-privilege transactional restore / exact fingerprints]
-  UI[Owner forms] --> DRAFT[Browser recovery / identity / stale-save guards]
+  UI[Owner forms] --> DRAFT[Browser recovery / identity / stale-save guards / native templates]
   UI --> READ[Typed errors / retained queue snapshot / explicit read retry]
 ```
 

@@ -1,26 +1,37 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { api, EditorialOpportunity, IndexedAsset, NativeBeat, NativeCampaign, NativeExport, SocialAccount } from "@/lib/api";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { api, apiBase, EditorialOpportunity, IndexedAsset, NativeBeat, NativeCampaign, NativeExport, SocialAccount } from "@/lib/api";
 import { ExportAcceptance } from "./ExportAcceptance";
+import { useLocalDraft } from "../lib/localDraft";
+import { LocalDraftStatus } from "./LocalDraftStatus";
+import { emptyNativeForm, nativeBeats, nativeFormats } from "../lib/nativeDraft";
 
 const box = { border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--panel)" };
 const field = { display: "grid", gap: 5 };
-const blankBeats: NativeBeat[] = ["hook", "body", "payoff"].map(role => ({ role: role as NativeBeat["role"], text: "", source_refs: [1], asset_id: null }));
+
 
 export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpportunity[] }) {
+  const mounted = useRef(true);
   const approved = opportunities.filter(o => o.status === "approved");
   const [rows, setRows] = useState<NativeCampaign[]>([]);
   const [assets, setAssets] = useState<IndexedAsset[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
-  const [oid, setOid] = useState("");
-  const [title, setTitle] = useState("");
-  const [beats, setBeats] = useState(blankBeats);
-  const [selected, setSelected] = useState(["short", "carousel"]);
-  const [shortCaption, setShortCaption] = useState("");
-  const [carouselCaption, setCarouselCaption] = useState("");
-  const [question, setQuestion] = useState("");
-  const [copy, setCopy] = useState({ reel_caption: "", image_text: "", image_caption: "", community_text: "", poll_question: "", poll_options: "" });
+  const draft = useLocalDraft(`screen-central:${apiBase()}:native-campaign`, emptyNativeForm, { restoreTemplate: true });
+  const { oid, title, shortCaption, carouselCaption, question } = draft.value;
+  const decodedBeats = nativeBeats(draft.value.beats), decodedFormats = nativeFormats(draft.value.selected);
+  const invalidDraft = !decodedBeats || !decodedFormats;
+  const beats = decodedBeats || [], selected = decodedFormats || [];
+  const copy = { reel_caption: draft.value.reel_caption, image_text: draft.value.image_text, image_caption: draft.value.image_caption,
+    community_text: draft.value.community_text, poll_question: draft.value.poll_question, poll_options: draft.value.poll_options };
+  const change = (patch: Partial<typeof emptyNativeForm>) => draft.change({ ...draft.value, ...patch });
+  const setTitle = (title: string) => change({ title });
+  const setBeats = (beats: NativeBeat[]) => change({ beats: JSON.stringify(beats) });
+  const setSelected = (selected: string[]) => change({ selected: JSON.stringify(selected) });
+  const setShortCaption = (shortCaption: string) => change({ shortCaption });
+  const setCarouselCaption = (carouselCaption: string) => change({ carouselCaption });
+  const setQuestion = (question: string) => change({ question });
+  const setCopy = (next: typeof copy) => change(next);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [attestation, setAttestation] = useState("");
@@ -29,30 +40,40 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   const [file, setFile] = useState<File | null>(null);
   const incompatibleClips = beats.some(beat => assets.find(a => a.id === beat.asset_id)?.kind === "video") && selected.some(fmt => !["short", "reel"].includes(fmt));
   const chosen = approved.find(o => String(o.id) === oid);
+  const researchChanged = !!oid && (!chosen?.approval?.fingerprint || draft.value.researchFingerprint !== chosen.approval.fingerprint);
   async function load() {
     const [campaigns, media] = await Promise.all([api.nativeCampaigns(), api.nativeAssets()]);
-    setRows(campaigns); setAssets(media);
+    if (mounted.current) { setRows(campaigns); setAssets(media); }
   }
-  useEffect(() => { let alive = true;
+  useEffect(() => { let alive = true; mounted.current = true;
     Promise.all([api.nativeCampaigns(), api.nativeAssets(), api.socialAccounts()]).then(([c, a, ac]) => {
       if (alive) { setRows(c); setAssets(a); setAccounts(ac.accounts || []); }
     }).catch(e => alive && setMessage(e.message));
-    return () => { alive = false; };
+    return () => { alive = false; mounted.current = false; };
   }, []);
   async function act(fn: () => Promise<unknown>, success: string) {
     setBusy(true); setMessage("Working…");
-    try { await fn(); await load(); setMessage(success); }
-    catch (e) { setMessage(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    try {
+      await fn(); if (!mounted.current) return; setMessage(success);
+      try { await load(); } catch (error: unknown) { if (mounted.current) setMessage(`${success} Refresh unavailable: ${error instanceof Error ? error.message : "Try the view again"}`); }
+    }
+    catch (e) { if (mounted.current) setMessage(e instanceof Error ? e.message : String(e)); }
+    finally { if (mounted.current) setBusy(false); }
   }
   async function create(e: FormEvent) {
     e.preventDefault();
-    act(() => api.nativeCreate({ opportunity_id: Number(oid), title, formats: selected, beats,
-      short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question, ...copy, poll_options: copy.poll_options.split("\n").filter(text => text.trim()) }), "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
+    if (draft.pending || draft.conflict || invalidDraft || researchChanged || !chosen) return;
+    act(async () => {
+      await api.nativeCreate({ opportunity_id: Number(oid), expected_research_fingerprint: draft.value.researchFingerprint, title, formats: selected, beats,
+        short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question, ...copy, poll_options: copy.poll_options.split("\n").filter(text => text.trim()) });
+      if (mounted.current) draft.saved(emptyNativeForm);
+    }, "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
   }
   return <div style={{ display: "grid", gap: 16 }}>
     <h2>Native campaigns</h2><p>Use reviewed research for Short/Reel, carousel, single-image, community and poll treatments. Images use original cards and optional cleared stills. Short/Reel visuals can use explicit authorized video intervals; source audio stays muted. Community/polls produce private manual packages; they cannot create publishing queue items.</p>
     {message && <p role="status">{message}</p>}
+    <div><button disabled={busy} onClick={async () => { setBusy(true); try { await load(); setMessage("Native campaign view refreshed."); }
+      catch (error: unknown) { setMessage(error instanceof Error ? error.message : "Could not refresh native campaigns"); } finally { setBusy(false); } }}>Refresh native campaigns</button></div>
     <details style={box}><summary>Import a cleared still</summary><form style={{ display: "grid", gap: 10, marginTop: 12 }} onSubmit={e => {
       e.preventDefault(); if (file) act(() => api.nativeAssetUpload(file, license, attestation, tags), "Still indexed by content hash; duplicate imports reuse the existing asset.");
     }}>
@@ -62,18 +83,24 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       <label style={field}>Scene tags<input value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. original shapes, animation" /></label>
       <div><button disabled={busy}>Index cleared still</button></div>
     </form></details>
-    <form onSubmit={create} style={{ ...box, display: "grid", gap: 12 }}>
+    <form aria-label="Native campaign draft" onSubmit={create} style={box}>
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, display: "grid", gap: 12 }}>
       <h3>Draft a treatment</h3>
       <label style={field}>Approved research<select aria-label="Approved research" required value={oid} onChange={e => {
-        setOid(e.target.value); const row = approved.find(x => String(x.id) === e.target.value);
-        setTitle(row?.title.slice(0, 72) || ""); setSelected(["short", "carousel"].filter(f => row?.formats.includes(f)));
+        const row = approved.find(x => String(x.id) === e.target.value);
+        change({ oid: e.target.value, researchFingerprint: row?.approval?.fingerprint || "", title: row?.title.slice(0, 72) || "",
+          selected: JSON.stringify(["short", "carousel"].filter(f => row?.formats.includes(f))) });
       }}><option value="">Choose a reviewed brief</option>{approved.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></label>
+      {researchChanged && <div role="alert"><p>The selected research changed or is no longer available as an approved brief. Your treatment words remain private; review the current research before saving.</p>
+        {chosen && <><details><summary>Current approved research context</summary><p>{chosen.title} · {chosen.angle}</p>{chosen.evidence.map((source, index) => <p key={index}>{source.url} · {source.excerpt}</p>)}</details>
+          <button type="button" onClick={() => change({ researchFingerprint: chosen.approval?.fingerprint || "" })}>Use current approved research for this draft</button></>}
+      </div>}
       {!approved.length && <p>Approve an opportunity&apos;s research brief first.</p>}
-      <label style={field}>Campaign title<input required maxLength={72} value={title} onChange={e => setTitle(e.target.value)} /></label>
+      <label style={field}>Campaign title<input aria-label="Campaign title" required maxLength={72} value={title} onChange={e => setTitle(e.target.value)} /></label>
       <fieldset><legend>Treatments to make</legend>{["short", "reel", "carousel", "image", "community", "poll"].filter(f => chosen?.formats.includes(f)).map(f => <label key={f} style={{ marginRight: 16 }}>
         <input type="checkbox" checked={selected.includes(f)} onChange={e => setSelected(e.target.checked ? [...selected, f] : selected.filter(x => x !== f))} /> {f}</label>)}</fieldset>
       {beats.map((beat, i) => <fieldset key={i}><legend>{beat.role === "body" ? "Main insight" : beat.role === "hook" ? "Opening hook" : "Final payoff"}</legend>
-        <label style={field}>Beat text {i + 1}<textarea required minLength={12} maxLength={140} value={beat.text} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, text: e.target.value } : b))} /></label>
+        <label style={field}>Beat text {i + 1}<textarea aria-label={`Beat text ${i + 1}`} required minLength={12} maxLength={140} value={beat.text} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, text: e.target.value } : b))} /></label>
         <label style={field}>Research excerpt {i + 1}<select aria-label={`Research excerpt ${i + 1}`} value={beat.source_refs[0]} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, source_refs: [Number(e.target.value)] } : b))}>
           {(chosen?.evidence || []).map((e, n) => <option key={n} value={n + 1}>{n + 1}: {e.excerpt.slice(0, 80)}</option>)}</select></label>
         <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null, clip_start: null, clip_end: null, clip_end_policy: null } : b))}>
@@ -87,21 +114,24 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
           </select></label>
         </div>}
       </fieldset>)}
-      <label style={field}>Short caption<textarea required={selected.includes("short")} minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
-      <label style={field}>Carousel caption<textarea required={selected.includes("carousel")} minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
-      {selected.includes("reel") && <label style={field}>Reel caption<textarea required minLength={10} maxLength={2000} value={copy.reel_caption} onChange={e => setCopy({ ...copy, reel_caption: e.target.value })} /></label>}
+      <label style={field}>Short caption<textarea aria-label="Short caption" required={selected.includes("short")} minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
+      <label style={field}>Carousel caption<textarea aria-label="Carousel caption" required={selected.includes("carousel")} minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
+      {selected.includes("reel") && <label style={field}>Reel caption<textarea aria-label="Reel caption" required minLength={10} maxLength={2000} value={copy.reel_caption} onChange={e => setCopy({ ...copy, reel_caption: e.target.value })} /></label>}
       {selected.includes("image") && <>
-        <label style={field}>Single-image text<textarea required minLength={12} maxLength={140} value={copy.image_text} onChange={e => setCopy({ ...copy, image_text: e.target.value })} /></label>
-        <label style={field}>Single-image caption<textarea required minLength={10} maxLength={2000} value={copy.image_caption} onChange={e => setCopy({ ...copy, image_caption: e.target.value })} /></label>
+        <label style={field}>Single-image text<textarea aria-label="Single-image text" required minLength={12} maxLength={140} value={copy.image_text} onChange={e => setCopy({ ...copy, image_text: e.target.value })} /></label>
+        <label style={field}>Single-image caption<textarea aria-label="Single-image caption" required minLength={10} maxLength={2000} value={copy.image_caption} onChange={e => setCopy({ ...copy, image_caption: e.target.value })} /></label>
       </>}
-      {selected.includes("community") && <label style={field}>Community post text<textarea required minLength={10} maxLength={4000} value={copy.community_text} onChange={e => setCopy({ ...copy, community_text: e.target.value })} /></label>}
+      {selected.includes("community") && <label style={field}>Community post text<textarea aria-label="Community post text" required minLength={10} maxLength={4000} value={copy.community_text} onChange={e => setCopy({ ...copy, community_text: e.target.value })} /></label>}
       {selected.includes("poll") && <>
-        <label style={field}>Poll question<textarea required minLength={10} maxLength={255} value={copy.poll_question} onChange={e => setCopy({ ...copy, poll_question: e.target.value })} /></label>
-        <label style={field}>Poll options (one per line, 2–4)<textarea required value={copy.poll_options} onChange={e => setCopy({ ...copy, poll_options: e.target.value })} /></label>
+        <label style={field}>Poll question<textarea aria-label="Poll question" required minLength={10} maxLength={255} value={copy.poll_question} onChange={e => setCopy({ ...copy, poll_question: e.target.value })} /></label>
+        <label style={field}>Poll options (one per line, 2–4)<textarea aria-label="Poll options (one per line, 2–4)" required value={copy.poll_options} onChange={e => setCopy({ ...copy, poll_options: e.target.value })} /></label>
       </>}
-      <label style={field}>Community question draft<textarea maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
+      <label style={field}>Community question draft<textarea aria-label="Community question draft" maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
       {incompatibleClips && <p role="alert">Video intervals currently require a Short/Reel-only campaign. Choose stills for image, carousel or manual formats.</p>}
-      <div><button disabled={busy || !oid || !selected.length || incompatibleClips}>Create native campaign</button></div>
+      {invalidDraft && <div role="alert"><p>Recovered treatment data is malformed. It remains on this browser; recover the words below or discard the draft before creating a campaign.</p><details><summary>Retained treatment words</summary><pre style={{ whiteSpace: "pre-wrap" }}>{draft.value.beats.slice(0, 100000)}</pre></details></div>}
+      <LocalDraftStatus draft={draft} noun="native treatment template" destination="private campaign draft" />
+      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || invalidDraft || researchChanged || draft.conflict || !!draft.pending}>Create native campaign</button></div>
+      </fieldset>
     </form>
     {rows.map(c => <article key={c.id} style={box} data-testid={`campaign-${c.id}`}>
       <h3>{c.brief.title}</h3><p>Campaign #{c.id} · {c.stage_status} · {c.stage_message}</p>

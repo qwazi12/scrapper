@@ -74,6 +74,20 @@ def test_campaign_requires_reviewed_research_and_valid_beat_references(client):
     assert client.post("/api/editorial/campaigns", json=data).status_code == 422
 
 
+def test_native_draft_can_bind_the_exact_selected_approved_research_version(client):
+    oid=research(client)
+    client.post(f'/api/editorial/opportunities/{oid}/approve')
+    current=next(row for row in client.get('/api/editorial/opportunities').json() if row['id']==oid)
+    body={**brief(oid),'expected_research_fingerprint':current['approval']['fingerprint']}
+    assert client.post('/api/editorial/campaigns',json={**body,'expected_research_fingerprint':'0'*64}).status_code==409
+    assert client.post('/api/editorial/campaigns',json=body).status_code==200
+    edited={key:current[key] for key in ('title','angle','audience','formats','evidence')}
+    edited['angle']='A different approved angle still requires explicit selection before the cached native treatment is saved.'
+    assert client.put(f'/api/editorial/opportunities/{oid}',json=edited).status_code==200
+    assert client.post(f'/api/editorial/opportunities/{oid}/approve').status_code==200
+    assert client.post('/api/editorial/campaigns',json=body).status_code==409
+
+
 def test_actual_carousel_approval_enqueue_and_simulated_photo_receipts(client, monkeypatch):
     oid, cid, result = rendered(client)
     eid = result["id"]

@@ -51,6 +51,7 @@ class Beat(Strict):
 
 class CampaignIn(Strict):
     opportunity_id: int
+    expected_research_fingerprint: str | None = Field(default=None,min_length=64,max_length=64)
     title: str = Field(min_length=3, max_length=72)
     formats: list[NATIVE] = Field(min_length=1, max_length=6)
     beats: list[Beat] = Field(min_length=3, max_length=8)
@@ -149,8 +150,10 @@ def list_campaigns(s: Session = Depends(get_session)):
 @router.post("/campaigns")
 def create_campaign(req: CampaignIn, s: Session = Depends(get_session)):
     research, fingerprint = approved_research(s, req.opportunity_id)
+    if req.expected_research_fingerprint is not None and req.expected_research_fingerprint!=fingerprint:
+        raise HTTPException(409,'Selected research changed; review the current approved brief before saving this treatment')
     if not set(req.formats).issubset(research.data["formats"]): raise HTTPException(409, "Choose formats selected in the opportunity brief")
-    row = CreativeCampaign(opportunity_id=req.opportunity_id, brief={**req.model_dump(mode="json"), "research_fingerprint": fingerprint})
+    row = CreativeCampaign(opportunity_id=req.opportunity_id, brief={**req.model_dump(mode="json",exclude={'expected_research_fingerprint'}), "research_fingerprint": fingerprint})
     inputs(s, row)
     s.add(row); s.commit(); s.refresh(row)
     return campaign_out(s, row)
