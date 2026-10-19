@@ -80,14 +80,15 @@ export default function Page() {
         api.compilations(),
         api.stats(),
         api.queueCounts().then((r) => r.all).catch(async () => {
-          const fallback = await api.queue().catch(() => []);
+          const fallback = await api.queue();
           return fallback.length;
         }),
       ]);
+      if (typeof q !== "number" || !Number.isFinite(q) || q < 0) throw new Error("Queue counts could not be confirmed");
       setClips(c);
       setComps(cm);
       setStats(st);
-      setQueueCount(typeof q === "number" ? q : 0);
+      setQueueCount(q);
       setConnected(true);
       failures.current = 0;
     } catch {

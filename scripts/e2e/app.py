@@ -434,3 +434,37 @@ def edit_comment_fixture():
 
 @app.get('/api/e2e/comment-queries')
 def comment_queries():return {'queries':_comment_queries,'real_account_access':False}
+
+
+# Case isolation affects only this guarded fixture app, never production policy.
+from fastapi import Request
+from backend.app import auth as fixture_auth
+import inspect
+import time
+
+
+@app.post('/api/e2e/reset-request-budget')
+def reset_request_budget():
+    with fixture_auth._rl_lock:
+        count=len(fixture_auth._rate_limits)
+        fixture_auth._rate_limits.clear()
+    return {'fixture_only':True,'cleared_test_buckets':count,'policy_changed':False}
+
+
+@app.post('/api/e2e/exhaust-request-budget')
+def exhaust_request_budget(req:Request):
+    limit=inspect.signature(fixture_auth.check_rate_limit).parameters['max_per_minute'].default
+    with fixture_auth._rl_lock:fixture_auth._rate_limits[fixture_auth.client_ip(req)]=[time.time()]*limit
+    return {'mode':'seeded_exhaustion_fixture','per_minute_limit':limit,'policy_changed':False}
+
+
+@app.post('/api/e2e/queue-recovery-row')
+def queue_recovery_row():
+    from backend.app.models import QueueItem
+    path=ROOT/'data'/'queue-read-recovery.mp4'
+    shutil.copy2(TRAILER,path)
+    with SessionLocal() as s:
+        row=QueueItem(title='Original queue read recovery fixture',video_path=str(path),pipeline='Movie Clips',status='review',
+            source='Original locally generated fixture; never approved or scheduled')
+        s.add(row);s.commit();s.refresh(row)
+        return {'id':row.id,'title':row.title,'status':row.status,'fixture_only':True,'publication':'none'}

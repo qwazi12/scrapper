@@ -14,6 +14,10 @@ test.beforeEach(async ({ page, context, request }) => {
   expect(isolation.real_publish_disabled).toBe(true);
   expect(isolation.worker_mode).toBe("web_only");
   expect(isolation.scheduler_threads).toEqual([]);
+  // Independent browser contexts get independent test request windows. Production
+  // limits remain unchanged and a dedicated case exercises actual 429/retry.
+  const budget = await request.post(`${stack.api}/api/e2e/reset-request-budget`, { headers });
+  expect(budget.ok()).toBe(true); expect((await budget.json()).policy_changed).toBe(false);
   await context.route("**/*", route => {
     const hostname = new URL(route.request().url()).hostname;
     return ["127.0.0.1", "localhost"].includes(hostname) ? route.continue() : route.abort("blockedbyclient");
@@ -1053,6 +1057,11 @@ test("Learning diagnostics UI keeps peer evidence, cost limits and reviewed expe
   await expect(page.getByLabel("Experiment name", { exact: true })).toHaveValue(`Review ${subject} creative treatment`);
   await expect(page.getByLabel("Experiment platform", { exact: true })).toBeDisabled();
   await page.getByLabel("Control content IDs (comma separated)", { exact: true }).fill(ids.slice(0, 3).join(","));
+  await page.reload(); await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+  await page.getByRole("form", { name: "Creative experiment", exact: true }).getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(page.getByLabel("Experiment platform", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Experiment name", { exact: true })).toHaveValue(`Review ${subject} creative treatment`);
+  await page.getByLabel("Control content IDs (comma separated)", { exact: true }).fill(ids.slice(0, 3).join(","));
   await page.getByLabel("Variant content IDs (comma separated)", { exact: true }).fill(ids.slice(3).join(","));
   await page.getByLabel("Controls and known confounders", { exact: true }).fill("Compare original subjects at the same age; topic, duration, timing and reporting latency may differ.");
   await page.getByRole("button", { name: "Register experiment", exact: true }).click();
@@ -1077,4 +1086,156 @@ test("Learning diagnostics UI keeps peer evidence, cost limits and reviewed expe
   expect(after.fake_publish_receipts).toBe(before.fake_publish_receipts); expect(after.blocked_network_attempts).toBe(0);
   expect(await (await request.get(`${stack.api}/api/queue/counts`, { headers })).json()).toEqual(queues);
   await page.screenshot({ path: path.join(evidence, "learning-diagnostics-private-decision.png"), fullPage: true });
+});
+
+test("Owner form recovery preserves imports and experiments across navigation, errors and failed browser storage", async ({ page, request }) => {
+  const starting = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  const calls: string[] = [];
+  page.on("request", req => { if (req.method() === "POST" && /\/api\/editorial\/(feedback\/import|experiments)$/.test(req.url())) calls.push(req.url()); });
+  const open = async () => { await page.goto("/#editorial"); await page.getByRole("button", { name: "Audience & experiments", exact: true }).click(); };
+  await open();
+  const imported = page.getByRole("form", { name: "Authorized comment import", exact: true });
+  const experiment = page.getByRole("form", { name: "Creative experiment", exact: true });
+  const words = "How can an original composition make the visual promise clearer?";
+  await imported.getByLabel("Source content ID", { exact: true }).fill("private-import-recovery");
+  await imported.getByLabel("Comment export source", { exact: true }).fill("Owner-authorized original synthetic feedback export");
+  await imported.getByLabel("Comment texts", { exact: true }).fill(words);
+  await experiment.getByLabel("Experiment name", { exact: true }).fill("Private form recovery experiment");
+  await experiment.getByLabel("Hypothesis", { exact: true }).fill("A clearer original visual promise may change engaged viewing at comparable age.");
+  await experiment.getByLabel("Control content IDs (comma separated)", { exact: true }).fill("control-alpha,control-beta");
+  await experiment.getByLabel("Variant content IDs (comma separated)", { exact: true }).fill("variant-alpha,variant-beta");
+  await experiment.getByLabel("Controls and known confounders", { exact: true }).fill("Keep topic, duration and publication timing comparable; provider latency can differ.");
+  await page.getByRole("button", { name: "Performance evidence", exact: true }).click();
+  await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+  for (const form of [imported, experiment]) await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(imported.getByLabel("Comment texts", { exact: true })).toHaveValue(words);
+  await expect(experiment.getByLabel("Experiment name", { exact: true })).toHaveValue("Private form recovery experiment");
+  expect(calls).toHaveLength(0); // Recovery controls must never submit their enclosing form.
+  await page.reload(); await page.getByRole("button", { name: "Audience & experiments", exact: true }).click();
+  for (const form of [imported, experiment]) await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  expect(calls).toHaveLength(0);
+  await page.route(`${stack.api}/api/editorial/feedback/import`, route => route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({
+    detail: [{ loc: ["body", "comments", 0], msg: "Review the authorized source before importing", input: "private-validation-marker@example.invalid" }],
+  }) }));
+  await imported.getByRole("button", { name: "Import private feedback", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "comments.0: Review the authorized source before importing" })).toBeVisible();
+  await expect(page.getByText(/private-validation-marker/)).toHaveCount(0);
+  await expect(imported.getByLabel("Comment texts", { exact: true })).toHaveValue(words);
+  await page.unroute(`${stack.api}/api/editorial/feedback/import`);
+  let failRefresh = true;
+  await page.route(`${stack.api}/api/editorial/learning`, route => failRefresh ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic read-only refresh unavailable" }) }) : route.continue());
+  await imported.getByRole("button", { name: "Import private feedback", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Deidentified comments imported" })).toContainText("Refresh unavailable");
+  await expect(imported.getByLabel("Comment texts", { exact: true })).toHaveValue("");
+  failRefresh = false; await page.getByRole("button", { name: "Refresh audience evidence", exact: true }).click();
+  await expect(page.getByRole("article").filter({ hasText: words })).toBeVisible();
+  await expect(experiment.getByLabel("Experiment name", { exact: true })).toHaveValue("Private form recovery experiment");
+  await page.route(`${stack.api}/api/editorial/experiments`, route => route.abort("failed"));
+  await experiment.getByRole("button", { name: "Register experiment", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "The server response could not be confirmed" })).toBeVisible();
+  await expect(experiment.getByLabel("Experiment name", { exact: true })).toHaveValue("Private form recovery experiment");
+  await page.unroute(`${stack.api}/api/editorial/experiments`);
+  await experiment.getByRole("button", { name: "Register experiment", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Experiment registered" })).toBeVisible();
+  await expect(experiment.getByLabel("Experiment name", { exact: true })).toHaveValue("");
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    (window as any).restoreOwnerStorage = () => { Storage.prototype.setItem = original; };
+    Storage.prototype.setItem = function(key, value) {
+      if (key === "screen-central:comment-import") throw new DOMException("Synthetic browser storage failure", "QuotaExceededError");
+      original.call(this, key, value);
+    };
+  });
+  await imported.getByLabel("Comment texts", { exact: true }).fill("A private unsaved import remains on screen until deliberately discarded.");
+  await expect(imported.getByRole("alert")).toContainText("Browser draft storage is unavailable");
+  await page.getByRole("button", { name: "Performance evidence", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("will lose unsaved changes");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(imported.getByLabel("Comment texts", { exact: true })).toHaveValue("A private unsaved import remains on screen until deliberately discarded.");
+  const beforeDiscard = calls.length;
+  await imported.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  expect(calls).toHaveLength(beforeDiscard);
+  await page.evaluate(() => { (window as any).restoreOwnerStorage(); });
+  await page.screenshot({ path: path.join(evidence, "owner-form-recovery.png"), fullPage: true });
+  const after = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(after.fake_publish_receipts).toBe(starting.fake_publish_receipts); expect(after.blocked_network_attempts).toBe(0);
+});
+
+test("A refused access token is cached only for its original API origin", async ({ page, request }) => {
+  const fakeBase = "http://127.0.0.1:43210";
+  await page.route(`${fakeBase}/**`, route => route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic owner credential was refused" }) }));
+  await page.goto("/#settings");
+  await page.evaluate(base => localStorage.setItem("scrapper_api_base", base), fakeBase);
+  const refused = page.waitForResponse(response => response.url().startsWith(fakeBase) && response.status() === 401);
+  await page.getByRole("button", { name: /Editorial desk/ }).click(); await refused;
+  await expect(page.getByRole("status").filter({ hasText: /credential was refused|access token was refused/ }).first()).toBeVisible();
+  await page.evaluate(base => localStorage.setItem("scrapper_api_base", base), stack.api);
+  await page.getByRole("button", { name: /Settings & Channels/ }).click();
+  const recovered = page.waitForResponse(response => response.url() === `${stack.api}/api/editorial/insights` && response.status() === 200);
+  await page.getByRole("button", { name: /Editorial desk/ }).click(); await recovered;
+  await expect(page.getByRole("heading", { name: "Editorial desk", exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /credential was refused|access token was refused/ })).toHaveCount(0);
+  expect((await request.get(`${stack.api}/api/e2e/isolation`)).ok()).toBe(true);
+});
+
+test("Queue read recovery uses the real limiter with a seeded exhausted fixture budget", async ({ page, request }) => {
+  const before = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  const fixture = await (await request.post(`${stack.api}/api/e2e/queue-recovery-row`, { headers })).json();
+  expect(fixture.status).toBe("review");
+  const mutations: string[] = [];
+  page.on("request", req => { if (req.method() !== "GET" && /\/api\/(queue|autopost)(?:[/?]|$)/.test(req.url())) mutations.push(req.url()); });
+  await page.goto("/#socialpilot/queue");
+  await expect(page.getByText(fixture.title, { exact: true })).toBeVisible();
+  const edit = page.getByRole("dialog", { name: "Edit queue item", exact: true });
+  await page.getByRole("row").filter({ has: page.getByText(fixture.title, { exact: true }) }).getByTitle("Edit video metadata", { exact: true }).click();
+  const unsaved = "An owner queue title survives an unavailable background refresh.";
+  await edit.getByLabel("Queue item title", { exact: true }).fill(unsaved);
+  const seeded = await (await request.post(`${stack.api}/api/e2e/exhaust-request-budget`, { headers })).json();
+  expect(seeded.mode).toBe("seeded_exhaustion_fixture"); expect(seeded.per_minute_limit).toBe(600); expect(seeded.policy_changed).toBe(false);
+  const [denied] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/queue" && response.status() === 429),
+    page.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))),
+  ]);
+  const retry = Number(denied.headers()["retry-after"]); expect(retry).toBeGreaterThan(0); expect(retry).toBeLessThanOrEqual(60);
+  const unavailable = page.getByTestId("queue-unavailable");
+  await expect(unavailable.getByRole("alert")).toContainText("Rate limit exceeded");
+  await expect(unavailable).toContainText("Last loaded snapshot retained"); await expect(unavailable.getByText(fixture.title, { exact: false })).toBeVisible();
+  await expect(page.getByText("No queue items found for this selection.", { exact: true })).toHaveCount(0);
+  expect(mutations).toHaveLength(0);
+  await page.waitForTimeout(retry * 1000 + 150); // Real server window; no clock jump or automatic mutation retry.
+  let reviewedRecoveredDraft = false;
+  if (await edit.isVisible()) {
+    await expect(edit.getByLabel("Queue item title", { exact: true })).toHaveValue(unsaved);
+    reviewedRecoveredDraft = true; await edit.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+  await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/queue" && response.status() === 200),
+    page.getByRole("button", { name: "Refresh queue", exact: true }).click(),
+  ]);
+  await expect(unavailable).toHaveCount(0);
+  if (!reviewedRecoveredDraft) {
+    await expect(edit.getByLabel("Queue item title", { exact: true })).toHaveValue(unsaved);
+    await edit.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+  await expect(page.getByText(fixture.title, { exact: true })).toBeVisible();
+  // A first-load outage must also remain unavailable, rather than look like an empty queue.
+  const total = (await (await request.get(`${stack.api}/api/queue/counts`, { headers })).json()).all;
+  await expect(page.getByRole("button", { name: /SocialPilot AI/ })).toContainText(`${total} items`);
+  await page.goto("/#settings"); let fail = true;
+  await page.route(`${stack.api}/api/queue**`, route => fail && ["/api/queue", "/api/queue/counts"].includes(new URL(route.request().url()).pathname)
+    ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic queue read outage" }) }) : route.continue());
+  await page.getByRole("button", { name: /SocialPilot AI/ }).click();
+  await page.getByRole("button", { name: /Posting Queue/ }).first().click();
+  await expect(unavailable).toContainText("Current queue contents could not be confirmed");
+  await expect(unavailable.getByRole("alert")).toHaveText("503: Synthetic queue read outage");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByRole("button", { name: /SocialPilot AI/ })).toContainText(`${total} items`);
+  fail = false; await page.getByRole("button", { name: "Refresh queue", exact: true }).click();
+  await expect(unavailable).toHaveCount(0); await expect(page.getByText(fixture.title, { exact: true })).toBeVisible();
+  expect(mutations).toHaveLength(0);
+  const after = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(after.fake_publish_receipts).toBe(before.fake_publish_receipts); expect(after.blocked_network_attempts).toBe(0);
+  const stored = (await (await request.get(`${stack.api}/api/queue`, { headers })).json()).find((row: any) => row.id === fixture.id);
+  expect(stored.status).toBe("review"); expect(stored.title).toBe(fixture.title);
+  await page.screenshot({ path: path.join(evidence, "queue-read-recovery.png"), fullPage: true });
 });

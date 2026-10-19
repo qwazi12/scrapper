@@ -1,3 +1,5 @@
+import { ApiError, apiError } from "./apiErrors";
+
 // Thin client for the Scrapper backend API.
 // API base + access token come from env (NEXT_PUBLIC_*) or localStorage.
 
@@ -997,26 +999,28 @@ export type CostSummary = {
   settings: CostSettings;
 };
 
-// The token value the server last refused. Until a different one is saved, the
+// The API origin and token the server last refused. Until that pair changes, the
 // page sends nothing: its panels refresh every few seconds, and a wrong or
 // missing token used to fire dozens of failed sign-ins a minute (2026-10-04).
-let rejectedToken: string | null = null;
+let rejectedCredential: { base: string; token: string } | null = null;
 export function tokenRejected(): boolean {
-  return rejectedToken !== null && rejectedToken === token();
+  return rejectedCredential !== null && rejectedCredential.token === token() && rejectedCredential.base === apiBase();
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (tokenRejected()) {
-    throw new Error("401: the access token was refused — enter the value of ACCESS_TOKEN (Railway) under ⚙ Connection");
+    throw new ApiError(401, "The access token was refused. Enter the current access token under Connection.");
   }
-  const sent = token();
-  const res = await fetch(`${apiBase()}${path}`, init);
+  const sent = token(); const sentBase = apiBase();
+  let res: Response;
+  try { res = await fetch(`${sentBase}${path}`, init); }
+  catch { throw new ApiError(0, "The server response could not be confirmed. Check the current item state before retrying."); }
   if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 401 && !body.includes("media link")) rejectedToken = sent;
-    throw new Error(`${res.status}: ${body}`);
+    const error = await apiError(res);
+    if (res.status === 401 && !error.message.includes("media link") && token() === sent && apiBase() === sentBase) rejectedCredential = { base: sentBase, token: sent };
+    throw error;
   }
-  if (rejectedToken === sent) rejectedToken = null;
+  if (rejectedCredential?.token === sent && rejectedCredential.base === sentBase) rejectedCredential = null;
   return res.json() as Promise<T>;
 }
 
@@ -1066,7 +1070,7 @@ const withToken = mediaUrl;
 export async function downloadBackup(path: string, filename: string): Promise<void> {
   if (!/^\/api\/backup\/download\/scrapper_[^/]+\.db\.gz$/.test(path)) throw new Error("Invalid backup path");
   const res = await fetch(`${apiBase()}${path}`, { headers: headers(false), cache: "no-store" });
-  if (!res.ok) throw new Error(`Backup download failed (${res.status})`);
+  if (!res.ok) throw await apiError(res);
   const url = URL.createObjectURL(await res.blob());
   const link = document.createElement("a");
   link.href = url;
@@ -1124,7 +1128,7 @@ export const api = {
   nativeFile: (id: string, file: string) => withToken(`${apiBase()}/api/editorial/exports/${id}/file/${encodeURIComponent(file.split("/").pop() || "")}`),
   nativeManualDownload: async (id: string, file: string) => {
     const response = await fetch(`${apiBase()}/api/editorial/exports/${id}/manual/${encodeURIComponent(file.split("/").pop() || "")}`, { headers: headers(false) });
-    if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Manual export download failed"); }
+    if (!response.ok) throw await apiError(response);
     return response.blob();
   },
   contentSources: () => req<{ sources: ContentSource[] }>("/api/editorial/content-sources", { headers: headers(false) }),
@@ -1219,7 +1223,7 @@ export const api = {
     const t = token();
     if (t) h["x-access-token"] = t;
     const res = await fetch(`${apiBase()}/api/queue/${id}/thumbnail`, { method: "POST", headers: h, body: fd });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) throw await apiError(res);
     return res.json();
   },
   uploadCookies: async (file: File) => {
@@ -1229,7 +1233,7 @@ export const api = {
     const t = token();
     if (t) h["x-access-token"] = t;
     const res = await fetch(`${apiBase()}/api/cookies`, { method: "POST", headers: h, body: fd });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw await apiError(res);
     return res.json();
   },
 
@@ -1463,7 +1467,7 @@ export const api = {
     const t = token();
     if (t) h["x-access-token"] = t;
     const res = await fetch(`${apiBase()}/api/studio/projects/${id}/trailer-upload`, { method: "POST", headers: h, body: fd });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) throw await apiError(res);
     return res.json() as Promise<StudioProject>;
   },
   studioSetShot: (id: number, shotId: string, usable: boolean) =>

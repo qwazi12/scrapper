@@ -71,7 +71,7 @@ export function EditorialWorkspace() {
     {message && <p role="status">{message}</p>}
     {tab === "assets" && <AssetLibrary />}
     {tab === "campaigns" && <NativeCampaigns opportunities={rows} />}
-    {tab === "learning" && <AudienceLearning experimentSeed={experimentSeed} onEvidenceChanged={() => void load()} onFollowup={question => { void allowLocalNavigation().then(allowed => { if (!allowed) return;
+    {tab === "learning" && <AudienceLearning onExperimentSeedCleared={() => setExperimentSeed(null)} experimentSeed={experimentSeed} onEvidenceChanged={() => void load()} onFollowup={question => { void allowLocalNavigation().then(allowed => { if (!allowed) return;
       setEditing(undefined); setForm({ ...empty, title: question.text.slice(0, 255), angle: "Research a sourced response to this audience question; choose an original explanation.",
         audience: "Viewers asking: " + question.text.slice(0, 500), feedback_refs: [question.id] }); setTab("plan"); });
     }} />}

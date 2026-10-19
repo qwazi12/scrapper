@@ -7,7 +7,7 @@ type Fields = Record<string, string>;
 type Draft<T> = { basis: string; value: T; at: string; conflict?: boolean };
 
 /** Preserve unsaved words across navigation without replacing a newer server edit. */
-export function useLocalDraft<T extends Fields>(key: string, server: T) {
+export function useLocalDraft<T extends Fields>(key: string, server: T, { restoreTemplate = false }: { restoreTemplate?: boolean } = {}) {
   const serialized = JSON.stringify(server);
   const [value, setValue] = useState(server);
   const [baseline, setBaseline] = useState(serialized);
@@ -75,7 +75,7 @@ export function useLocalDraft<T extends Fields>(key: string, server: T) {
 
   function restore() {
     if (!pending) return;
-    change(pending.value); setConflict(pending.conflict === true || pending.basis !== serialized); setPending(null);
+    change(pending.value); setConflict(pending.conflict === true || (!restoreTemplate && pending.basis !== serialized)); setPending(null);
   }
 
   return { value, change, dirty, pending, conflict, storageError, restore,
