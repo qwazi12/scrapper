@@ -10,6 +10,14 @@ deferred. No public media posts, comment replies or paid test generations are
 part of this release. Historical entries below describe earlier authorization
 and evidence at their dates; this section controls the current handoff.
 
+Current release status: source is pushed to the feature branch; runtime commit
+`0e5e500` is live on existing Railway and Vercel production. Five-page read-only
+Playwright smoke and auth checks passed; original project counts preserved,
+verified production backup retained, auto-posting PAUSED. Current Linux backend
+868passed/1skip and frontend checks passed; Completed Linux browser run:29passed/4failed; final duplicate run still pending
+at handoff. See the release record for exact scope and failure evidence.
+Do not resume implementation or Shorts work after the requested release/stop.
+
 Implementation checkpoint: `98a6eb9` (motion cache ownership). Existing evidence:
 868 backend passes/1 optional skip, 390 actual PostgreSQL passes with native
 restore, 32 browser passes, production frontend build and TypeScript pass.
@@ -21,13 +29,13 @@ Remaining implementation plan (pending future owner instruction after release):
 
 | Order | Roadmap | Work to implement | Required tests and acceptance |
 |---|---|---|---|
-| 1 | C05 speech and captions | Record requested prepared speech, voice/configuration and input-audio hash; show word substitutions against approved script/captions; preserve source words and distinguish request records from transcripts. Extend Studio, native video and Countdown consistently. | Missing/legacy/future metadata stays unconfirmed; lexical changes require an explicit exact-export review; punctuation-only changes do not invent a mismatch. Persisted versions/fingerprints and real UI acknowledgment invalidation must pass. Actual voice/caption alignment needs approved rendered-media review. |
+| 1 | C05 speech and captions | First reproduce and resolve the Linux synthetic Countdown audio/video duration mismatch without weakening the250ms validation gate; record requested prepared speech, voice/configuration and input-audio hash; show word substitutions against approved script/captions; preserve source words and distinguish request records from transcripts. Extend Studio, native video and Countdown consistently. | Missing/legacy/future metadata stays unconfirmed; lexical changes require an explicit exact-export review; punctuation-only changes do not invent a mismatch. Persisted versions/fingerprints and real UI acknowledgment invalidation must pass. Actual voice/caption alignment needs approved rendered-media review. Repeat the exact Top5/legacy Countdown browser cases on Linux, checking full ffprobe stream durations and successful review/queue admission. |
 | 2 | C01–C02 factual and category evidence | Broader material claims/unseen entities; independent specialized awards, box-office, anime, true-event, rating and exclusivity evidence; wider ambiguous-language handling. | Contradiction, stale source, wrong entity/year/territory, missing evidence and ambiguous category corpus must refuse before paid generation/delivery. No automatic fill, list shrink or unsupported truth claims. |
 | 3 | C04, C06 asset lifecycle and relevance | Remaining temporary-file consumers; ownership-proven remote reclamation; semantic beat/scene/music matching and musical transitions. | Concurrent reader/cleanup, interrupted copies, lost leases, provenance/dedup and source-change tests; no sole-copy deletion. Real rendered samples must match the intended scenes/music. Remote automatic deletion stays disabled until proven. |
 | 4 | C07 creative formats | Source-aware recuts, deeper Reel treatments and posted-source resend workflow. | Original-source/version-bound recuts and format-specific metadata/acceptance; actual Short/Reel playback and private manual-export UI. Preserve original narration/history. |
 | 5 | C08–C09 audience and comments | Real authorized metrics/IG-FB adapters, legacy attribution, refresh/deletion/privacy lifecycle and deeper private reply assistance. | Scope/account separation, missing/late/revised data, pagination/dedup, deletion and stale-draft tests; distinguish actual provider reads from fixtures. Replies stay private unless separately authorized. |
 | 6 | C10 learning and autonomy | Controlled experiments, real performance/cost reconciliation and bounded execution authority. | Comparable-age/format cohorts, negative/conflicting outcomes, rejection/stale-plan gates and real billing evidence. No causal/growth claim from descriptive fixtures; execution remains disabled until explicitly approved and verified. |
-| 7 | C11–C12 operations | Wider worker/process crash and stop-all upgrade recovery; official provider contracts/invoices; Linux/container/CI and production restore/media-volume coverage. | Real kill/restart/expiry and unknown-outcome tests, stop-old/start-new rollout, baseline upgrade/rollback, isolated Linux browser suite, restore checksum/schema/sequence/media checks. Never auto-retry uncertain external publishing. |
+| 7 | C11–C12 operations | Package the actual worker modules in the offline test image (current image copies only scripts/e2e); verify failed-render ownership releases before legacy recovery; wider worker/process crash and stop-all upgrade recovery; official provider contracts/invoices; Linux/container/CI and production restore/media-volume coverage. | Real kill/restart/expiry and unknown-outcome tests, stop-old/start-new rollout, baseline upgrade/rollback, isolated Linux browser suite, restore checksum/schema/sequence/media checks. Never auto-retry uncertain external publishing. |
 | 8 | C13 owner experience | Remaining form persistence, typed per-platform statuses, accessibility and negative/outage coverage. | Draft recovery, late-response/identity mismatch/cancellation, error/retry and keyboard/accessibility tests through actual UI. No misleading empty or success states. |
 | 9 | C14 final editorial/release package | Consolidate historical documentation; repeat complete scenarios; inspect actual long narration, caption timing, scene relevance, transitions and sound. | Evidence manifest binds exact source/build/media; human editorial acceptance plus passing backend, PostgreSQL, production build/TypeScript and browser suites. Real HyperFrames/Chrome and provider lanes must run before marked verified. |
 | Retain | C03 | Keep immutable export/input history, identity-safe recovery and deletion protection working. | Existing retained-version, queued-source and deletion-survival regression tests remain required for every affected slice. |
@@ -2111,3 +2119,47 @@ environment and wider roadmap remain unverified. No archive/auth/paid/public/
 account/push/deploy action.
 
 Owner status question answered in commentary: whole roadmap remains unfinished, broad factual/category, speech/caption/editorial, semanticasset/music/recut, audience/comment/learning, crash/Linux/provider, UX/docs/release lanes stilllisted; push/deploy/livetest onlyaftercompletion, Shortsdeferred. Continuewithoutcheckpointstop. Currentmotionexistingindex +docs/MEMORY tocommitnow. NextC05evidencegap: existingtts.speakable silentlysoftensprofanity/removesquotes whilecaption/scriptretainraw words. Planrecords desiredspoken text/voice/audio-inputhash atcurrentgeneration, makeslexicalsubstitution anexplicitreviewfinding, leaveslegacyrequestedtextunconfirmed withoutguessingcurrentrules. Do notclaimrequestmetadata is a transcript/providerreceipt. ExtendStudio/native/Countdown coherently, protectretainedfacts/fingerprints/wordpreservation, preservecurrentlanguagepolicy untilownerchoice ratherthanrewriteapprovedwords. No C05code/test yet. Then contract/docs consolidation andotherC01-C14 remain.
+
+## Release saved and implementation stopped — 2026-10-19
+
+Owner's explicit release-and-stop instruction has been carried out. Remaining C01–C14
+plan is mapped at the top of this file; A01 archive remains deferred. All source,
+tests and documentation are saved on GitHub branch
+`codex/scrapper-revival-full-stack-20261018`. Runtime commit0e5e500 is live on the
+existing Railway backend and Vercel frontend; main remains unchanged. Two later
+commits affect only CI/test packaging. No PR or merge was requested or performed.
+
+Production backup36,253,696bytes SHA
+c170be4ae258f65259c64cf94ecbab83c9d97e796ef748fb3ebdfd8775620471 was verified and
+retained privately both locally and on the persistent volume. Startup's own
+pre-migration backup was independently decoded and integrity checked. Disposable
+production-copy upgrade rehearsal preserved all original row projections with
+networking blocked. Actual production additive startup migration succeeded;
+optional offline identity table rebuilding was rehearsed only. New schema and
+publisher write fence verified;241 runtime/source files match the release.
+Project counts preserved. One Studio archive bookkeeping field posted_at was
+filled from its already-posted queue record; narration, facts, scripts and media
+references were preserved.
+
+Live Playwright: five pages HTTP200/connected, no client exceptions or mutation
+requests. Owner stats200; missing/invalid token401. Backup status/download and
+private Studio/Countdown/asset reads refuse unauthenticated access. Current
+version0e5e500, healthy actual Linux/Python3.12.15/FFmpeg backend. Vercel
+production READY and promoted; short error-log query returned no records.
+Auto-posting deliberately remains PAUSED; no public content/replies, paid test
+generation, OAuth grant or actual Shorts/Drive archive transfer performed.
+
+GitHub Linux backend868passed/1skip208.02s; frontend checks passed. Earlier
+shallow baseline/source-index setup failures are recorded, with corrective CI
+commits. Linux browser runa81d679:29passed/4failed10.2min. Actual evidence shows
+missing worker modules in the test image, fail-closed Top5 audio/video timing
+drift over250ms, and a following legacy upgrade409 ownership refusal. Preserve
+those validation/ownership gates. These are explicit next tasks at the top of
+MEMORY.md; no all-green Linux/browser/full-roadmap claim. A duplicate browser
+run on identical application/spec source remains pending at stop. Prior Mac
+full32 and actual localPG390 remain separately identified local evidence.
+
+Release IDs, test URLs, source/backup hashes, limitations and private evidence
+paths are recorded in docs/implementation/RELEASE_20261019.md. Credentials, private
+databases, raw artifacts and videos remain excluded from GitHub. No further
+implementation or follow-up automation; resume only on a new owner instruction.

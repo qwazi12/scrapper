@@ -1019,3 +1019,16 @@ is not an editorial/design/speech-quality example. Original local footage/tone,
 actual FFmpeg, simulated CLI/provider/cloud, externalspend0. The real renderer
 environment and wider roadmap remain unverified. No archive/auth/paid/public/
 account/push/deploy action.
+
+## Owner-requested release and stop — 2026-10-19
+
+Remaining plan is mapped in root MEMORY.md. Full source/history saved to existing
+feature branch on GitHub. Runtime0e5e500 deployed to existing Railway and Vercel
+production after verified private backup and production-copy upgrade rehearsal.
+Actual live five-page/auth smoke and241-file source check passed. Auto-posting
+paused; no public/paid/archive action. Source snapshot integrity and remaining
+Linux CI failures are detailed in RELEASE_20261019.md. Current Linux backend
+868passed/1skip, frontend passed, browser completed prior run29passed/4failed
+(missing worker imports, stream-duration gate and ownership refusal). No bypass
+or all-green claim. Identical-source repeat browser still pending at handoff.
+Stop implementation now per owner, with C01–C14 partial and A01 deferred.

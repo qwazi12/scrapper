@@ -12,6 +12,13 @@ Latest owner update authorizes push, deployment and live tests after verified im
 ledger record actual evidence. The original vision and acceptance criteria stay
 in SCRAPPER_CODEX_UNATTENDED_EXECUTION.md and the Phase 0 milestone plan.
 
+Current release0e5e500 is deployed. Implementation has stopped at the owner's
+request. The immediate next C05 task is the captured Linux/espeak Countdown
+stream-duration mismatch; C04/C11 must diagnose the subsequent ownership refusal,
+and C12 must include real local/archive worker modules in the offline image.
+Linux backend868/1skip and frontend passed; Linux browser29passed/4failed.
+These are open follow-ups, not authorization to keep working after this release.
+
 This queue distinguishes unfinished engineering from unavailable external proof.
 A fixture pass does not close a real-provider acceptance lane. No percentage or
 full-roadmap completion is inferred from the growing test count.
