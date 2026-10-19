@@ -20,6 +20,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   const [shortCaption, setShortCaption] = useState("");
   const [carouselCaption, setCarouselCaption] = useState("");
   const [question, setQuestion] = useState("");
+  const [copy, setCopy] = useState({ reel_caption: "", image_text: "", image_caption: "", community_text: "", poll_question: "", poll_options: "" });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [attestation, setAttestation] = useState("");
@@ -46,10 +47,10 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   async function create(e: FormEvent) {
     e.preventDefault();
     act(() => api.nativeCreate({ opportunity_id: Number(oid), title, formats: selected, beats,
-      short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question }), "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
+      short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question, ...copy, poll_options: copy.poll_options.split("\n").filter(text => text.trim()) }), "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
   }
   return <div style={{ display: "grid", gap: 16 }}>
-    <h2>Native campaigns</h2><p>Use reviewed research for a distinct Short/Reel and a swipeable carousel. This first treatment uses original beat cards and optional cleared stills.</p>
+    <h2>Native campaigns</h2><p>Use reviewed research for Short/Reel, carousel, single-image, community and poll treatments. Images use original cards and optional cleared stills. Community/polls produce private manual packages; they cannot create publishing queue items.</p>
     {message && <p role="status">{message}</p>}
     <details style={box}><summary>Import a cleared still</summary><form style={{ display: "grid", gap: 10, marginTop: 12 }} onSubmit={e => {
       e.preventDefault(); if (file) act(() => api.nativeAssetUpload(file, license, attestation, tags), "Still indexed by content hash; duplicate imports reuse the existing asset.");
@@ -68,7 +69,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       }}><option value="">Choose a reviewed brief</option>{approved.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}</select></label>
       {!approved.length && <p>Approve an opportunity&apos;s research brief first.</p>}
       <label style={field}>Campaign title<input required maxLength={72} value={title} onChange={e => setTitle(e.target.value)} /></label>
-      <fieldset><legend>Treatments to make</legend>{["short", "reel", "carousel"].filter(f => chosen?.formats.includes(f)).map(f => <label key={f} style={{ marginRight: 16 }}>
+      <fieldset><legend>Treatments to make</legend>{["short", "reel", "carousel", "image", "community", "poll"].filter(f => chosen?.formats.includes(f)).map(f => <label key={f} style={{ marginRight: 16 }}>
         <input type="checkbox" checked={selected.includes(f)} onChange={e => setSelected(e.target.checked ? [...selected, f] : selected.filter(x => x !== f))} /> {f}</label>)}</fieldset>
       {beats.map((beat, i) => <fieldset key={i}><legend>{beat.role === "body" ? "Main insight" : beat.role === "hook" ? "Opening hook" : "Final payoff"}</legend>
         <label style={field}>Beat text {i + 1}<textarea required minLength={12} maxLength={140} value={beat.text} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, text: e.target.value } : b))} /></label>
@@ -77,8 +78,18 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
         <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null } : b))}>
           <option value="">Original graphic</option>{assets.map(a => <option key={a.id} value={a.id}>#{a.id}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
       </fieldset>)}
-      <label style={field}>Short/Reel caption<textarea required minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
-      <label style={field}>Carousel caption<textarea required minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
+      <label style={field}>Short caption<textarea required={selected.includes("short")} minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
+      <label style={field}>Carousel caption<textarea required={selected.includes("carousel")} minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
+      {selected.includes("reel") && <label style={field}>Reel caption<textarea required minLength={10} maxLength={2000} value={copy.reel_caption} onChange={e => setCopy({ ...copy, reel_caption: e.target.value })} /></label>}
+      {selected.includes("image") && <>
+        <label style={field}>Single-image text<textarea required minLength={12} maxLength={140} value={copy.image_text} onChange={e => setCopy({ ...copy, image_text: e.target.value })} /></label>
+        <label style={field}>Single-image caption<textarea required minLength={10} maxLength={2000} value={copy.image_caption} onChange={e => setCopy({ ...copy, image_caption: e.target.value })} /></label>
+      </>}
+      {selected.includes("community") && <label style={field}>Community post text<textarea required minLength={10} maxLength={4000} value={copy.community_text} onChange={e => setCopy({ ...copy, community_text: e.target.value })} /></label>}
+      {selected.includes("poll") && <>
+        <label style={field}>Poll question<textarea required minLength={10} maxLength={255} value={copy.poll_question} onChange={e => setCopy({ ...copy, poll_question: e.target.value })} /></label>
+        <label style={field}>Poll options (one per line, 2–4)<textarea required value={copy.poll_options} onChange={e => setCopy({ ...copy, poll_options: e.target.value })} /></label>
+      </>}
       <label style={field}>Community question draft<textarea maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
       <div><button disabled={busy || !oid || !selected.length}>Create native campaign</button></div>
     </form>
@@ -97,24 +108,35 @@ function ExportReview({ item, accounts, busy, act }: { item: NativeExport; accou
   act: (fn: () => Promise<unknown>, success: string) => Promise<void> }) {
   const [targets, setTargets] = useState<string[]>([]);
   const q = item.manifest.quality;
-  const available = accounts.filter(a => !a.id.startsWith("mk:") && (item.format !== "carousel" || ["instagram", "facebook"].includes(a.id.split(":").pop() || "")));
+  const manual = item.manifest.delivery === "manual_only";
+  const available = accounts.filter(a => !a.id.startsWith("mk:") && (!["carousel", "image"].includes(item.format) || ["instagram", "facebook"].includes(a.id.split(":").pop() || "")));
   return <section style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid var(--border)" }} data-testid={`native-export-${item.format}`}>
     <h4>{item.format} export · {item.id.slice(0, 8)}</h4>
-    <p>Final decode: {q.decode} · {q.width ? `${q.width} × ${q.height}` : "1080 × 1350 slides"}{q.seconds ? ` · ${q.seconds.toFixed(2)}s` : ""}</p>
+    <p>Final decode: {q.decode} · {q.width ? `${q.width} × ${q.height}` : "1080 × 1350 images"}{q.seconds ? ` · ${q.seconds.toFixed(2)}s` : ""}</p>
     {q.errors.map(e => <p key={e} role="alert">Blocked: {e}</p>)}{q.warnings.map(w => <p key={w}>Review: {w}</p>)}
     {item.manifest.video && <video controls preload="metadata" style={{ width: "100%", maxWidth: 300, aspectRatio: "9/16", background: "black" }} src={api.nativeFile(item.id, item.manifest.video.file)} />}
     <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "12px 0" }}>{item.manifest.cards.map((card, i) => <figure key={card.file} style={{ margin: 0, minWidth: 170, maxWidth: 220 }}>
       <img src={api.nativeFile(item.id, card.file)} alt={card.alt} style={{ width: "100%", borderRadius: 8 }} /><figcaption>Card {i + 1}: {card.alt}</figcaption>
     </figure>)}</div>
+    {item.manifest.platform_copy && <p><strong>Format copy:</strong> {item.manifest.platform_copy}</p>}
+    {item.manifest.manual_post && <div><p>{item.manifest.manual_post.text}</p><ol>{item.manifest.manual_post.options.map(option => <li key={option}>{option}</li>)}</ol>
+      <p>Private manual export. No account, queue item, scheduled upload or publication has been created.</p></div>}
     <p>Inspect every frame or slide, narration, captions, source support, rights and platform copy. A passed decode does not verify those.</p>
     <button disabled={busy || !!q.errors.length || !!item.approval} onClick={async () => {
-      if (await askConfirm("Have you inspected the complete export, captions, sound where present, sources, asset permissions and platform copy?"))
-        act(() => api.nativeApprove(item.id), "This exact export was approved. Choose explicit destinations before adding it to review.");
+      if (await askConfirm("Have you inspected the complete export, post text/poll options, captions, sound where present, sources, asset permissions and platform copy?"))
+        act(() => api.nativeApprove(item.id), manual ? "Exact manual package approved. Download it for manual use; nothing is published." : "This exact export was approved. Choose explicit destinations before adding it to review.");
     }}>Approve inspected {item.format}</button>
-    <fieldset style={{ marginTop: 12 }}><legend>Destinations for this export</legend>{available.map(a => <label key={a.id} style={{ display: "block" }}>
-      <input type="checkbox" checked={targets.includes(a.id)} onChange={e => setTargets(e.target.checked ? [...targets, a.id] : targets.filter(x => x !== a.id))} /> {a.id}
-    </label>)}</fieldset>
-    <button disabled={busy || !item.approval || !targets.length || !!item.queue_item_id} onClick={() => act(() => api.nativeEnqueue(item.id, targets), "Added to the review queue. Posting remains a separate approval.")}>Add {item.format} to review queue</button>
+    {manual ? <div>{item.manifest.manual_assets?.map(file => <button key={file.file} disabled={busy || !item.approval} onClick={() => act(async () => {
+      const blob = await api.nativeManualDownload(item.id, file.file);
+      const url = URL.createObjectURL(blob); const link = document.createElement("a");
+      link.href = url; link.download = file.file.split("/").pop() || "manual-post"; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, "Manual posting package downloaded. Nothing has been published.")}>Download {file.file.endsWith(".json") ? "JSON" : "text"} manual package</button>)}</div> : <>
+      <fieldset style={{ marginTop: 12 }}><legend>Destinations for this export</legend>{available.map(a => <label key={a.id} style={{ display: "block" }}>
+        <input type="checkbox" checked={targets.includes(a.id)} onChange={e => setTargets(e.target.checked ? [...targets, a.id] : targets.filter(x => x !== a.id))} /> {a.id}
+      </label>)}</fieldset>
+      <button disabled={busy || !item.approval || !targets.length || !!item.queue_item_id} onClick={() => act(() => api.nativeEnqueue(item.id, targets), "Added to the review queue. Posting remains a separate approval.")}>Add {item.format} to review queue</button>
+    </>}
     {item.queue_item_id && <p>Queue item #{item.queue_item_id}. Open SocialPilot → Posting Queue to review and approve.</p>}
   </section>;
 }

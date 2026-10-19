@@ -81,12 +81,21 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
                 "quality": {"errors": [], "warnings": [], "status": "needs_owner_review"},
                 "limitations": ["Beat-card treatment; no semantic footage search or word-aligned karaoke captions",
                                 "Owner must inspect narration, relevance, originality and all rights"]}
+    manifest['platform_copy']={
+        'short':brief.get('short_caption'),'reel':brief.get('reel_caption'),
+        'carousel':brief.get('carousel_caption'),'image':brief.get('image_caption'),
+        'community':brief.get('community_text'),'poll':brief.get('poll_question'),
+    }.get(fmt)
+    manifest['delivery']='manual_only' if fmt in ('community','poll') else 'explicit_destination_review_queue'
     segments, timeline, total = [], [], 0.0
     vertical = fmt in ("short", "reel")
-    for i, beat in enumerate(brief["beats"]):
+    beats=brief['beats']
+    if fmt=='image':beats=[{**brief['beats'][0],'text':brief['image_text']}]
+    if fmt in ('community','poll'):beats=[brief['beats'][0]]
+    for i, beat in enumerate(beats):
         control.check()
         path = root / f"card-{i + 1}.png"
-        manifest["cards"].append(card(path, brief["title"], beat, i, len(brief["beats"]), vertical=vertical,
+        manifest["cards"].append(card(path, brief["title"], beat, i, len(beats), vertical=vertical,
                                       asset=assets.get(beat.get("asset_id"))))
         if vertical:
             narration = root / f"voice-{i + 1}.mp3"
@@ -128,7 +137,20 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
         # Full image decode and native aspect are checked, not inferred from names.
         for item in manifest["cards"]:
             with Image.open(item["file"]) as image: image.load()
-        manifest["quality"]["decode"] = "passed"
+        manifest["quality"].update(decode="passed",width=manifest["cards"][0]["width"],height=manifest["cards"][0]["height"])
+    if fmt in ('community','poll'):
+        post={'format':fmt,'title':brief['title'],'text':brief['community_text'] if fmt=='community' else brief['poll_question'],
+            'options':brief.get('poll_options',[]) if fmt=='poll' else [],'source_refs':sorted({ref for beat in brief['beats'] for ref in beat['source_refs']}),
+            'delivery':'manual_only','publication_status':'not_published'}
+        text=post['text']+('\n\n'+'\n'.join(f"{index+1}. {option}" for index,option in enumerate(post['options'])) if post['options'] else '')
+        manifest['manual_post']=post
+        manifest['manual_assets']=[]
+        for extension,content,ctype in [('json',json.dumps(post,ensure_ascii=False,indent=2),'application/json'),('txt',text+'\n','text/plain; charset=utf-8')]:
+            path=root/f'{fmt}-post.{extension}'
+            path.write_text(content,encoding='utf-8')
+            manifest['manual_assets'].append({'file':str(path),'sha256':file_hash(path),'content_type':ctype})
+        manifest['limitations']=['Local manual posting package; no queue item, account assignment, schedule or publication was created',
+            'Owner must inspect all text, options, source support and permissions before manual use']
     cover = root / "cover.png"
     shutil.copyfile(manifest["cards"][0]["file"], cover)
     manifest["cover"] = {"file": str(cover), "sha256": file_hash(cover)}

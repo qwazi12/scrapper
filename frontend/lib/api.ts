@@ -21,9 +21,12 @@ export type NativeExport = { id: string; campaign_id: number; format: string; qu
   approval: { fingerprint: string; at: string } | null;
   manifest: { cards: { file: string; alt: string; sha256: string; caption_lines: number }[];
     video?: { file: string }; cover: { file: string }; quality: { decode: string; errors: string[]; warnings: string[]; seconds?: number; width?: number; height?: number };
+    delivery?: string; platform_copy?: string;
+    manual_post?: { format: string; title: string; text: string; options: string[]; delivery: string; publication_status: string };
+    manual_assets?: { file: string; sha256: string; content_type: string }[];
     limitations: string[]; timeline?: { start: number; end: number; text: string }[] } };
 export type NativeCampaign = { id: number; opportunity_id: number; stage_status: string; stage_message: string | null;
-  brief: { title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; carousel_caption: string; community_question: string };
+  brief: { title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; reel_caption?: string; carousel_caption: string; community_question: string; image_text?: string; image_caption?: string; community_text?: string; poll_question?: string; poll_options?: string[] };
   exports: NativeExport[] };
 export type IndexedAsset = { id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string } };
 export type AudienceFeedback = { id: number; text: string; category: string; classification: string; reply_draft: string; approved_for_manual_use: boolean; privacy_note: string };
@@ -1085,6 +1088,11 @@ export const api = {
   nativeEnqueue: (id: string, accounts: string[]) => req<{ queue_item_id: number; status: string }>(`/api/editorial/exports/${id}/enqueue`,
     { method: "POST", headers: headers(), body: JSON.stringify({ accounts }) }),
   nativeFile: (id: string, file: string) => withToken(`${apiBase()}/api/editorial/exports/${id}/file/${encodeURIComponent(file.split("/").pop() || "")}`),
+  nativeManualDownload: async (id: string, file: string) => {
+    const response = await fetch(`${apiBase()}/api/editorial/exports/${id}/manual/${encodeURIComponent(file.split("/").pop() || "")}`, { headers: headers(false) });
+    if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Manual export download failed"); }
+    return response.blob();
+  },
   nativeAssets: () => req<IndexedAsset[]>("/api/editorial/assets", { headers: headers(false) }),
   nativeAssetUpload: (file: File, license: string, attestation: string, tags: string) => {
     const body = new FormData(); body.append("file", file); body.append("license", license); body.append("attestation", attestation); body.append("tags", tags);

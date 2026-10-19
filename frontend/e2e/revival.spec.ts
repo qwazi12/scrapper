@@ -255,7 +255,7 @@ test("Editorial UI: reviewed research, cleared still, native Short and carousel,
   for (let i = 0; i < 3; i++) await page.getByLabel(`Beat text ${i + 1}`, { exact: true }).fill(texts[i]);
   const assets = await (await request.get(`${stack.api}/api/editorial/assets`, { headers })).json();
   await page.getByLabel("Visual for beat 2", { exact: true }).selectOption(String(assets[0].id));
-  await page.getByLabel("Short/Reel caption", { exact: true }).fill("Watch our original shape shift attention across the frame. Which composition would you keep?");
+  await page.getByLabel("Short caption", { exact: true }).fill("Watch our original shape shift attention across the frame. Which composition would you keep?");
   await page.getByLabel("Carousel caption", { exact: true }).fill("Swipe through three original visual choices. Pause on the clearest frame and tell us why.");
   await page.getByLabel("Community question draft", { exact: true }).fill("Which visual change made the biggest difference to your reading of the frame?");
   await page.getByRole("button", { name: "Create native campaign", exact: true }).click();
@@ -774,4 +774,62 @@ test("retained delivery UI preserves published bytes and remains available when 
   const after = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
   expect(after.fake_publish_receipts).toBe(before.fake_publish_receipts);
   expect(after.blocked_network_attempts).toBe(0);
+});
+
+test("Native formats UI creates actual single-image and private community/poll manual packages", async ({ page, request }) => {
+  const before = await (await request.get(`${stack.api}/api/queue/counts`, { headers })).json();
+  await page.goto("/#editorial");
+  await page.getByLabel("Topic", { exact: true }).fill("Original Manual Format Fixtures");
+  await page.getByLabel("Original angle", { exact: true }).fill("Compare original composition choices through a single image, community discussion and poll.");
+  await page.getByLabel("Audience and question", { exact: true }).fill("Viewers discussing our original generated shapes and framing choices.");
+  await page.getByLabel("Research source URL", { exact: true }).fill("https://example.invalid/original-manual-assets");
+  await page.getByLabel("Supporting excerpt", { exact: true }).fill("All compositions and words in this isolated fixture were created for local tests; no borrowed media is used.");
+  const suitable = page.getByRole("group", { name: "Suitable formats", exact: true });
+  for (const fmt of ["short", "carousel"]) await suitable.getByRole("checkbox", { name: fmt, exact: true }).uncheck();
+  for (const fmt of ["image", "community", "poll"]) await suitable.getByRole("checkbox", { name: fmt, exact: true }).check();
+  await page.getByRole("button", { name: "Create opportunity", exact: true }).click();
+  const opportunity = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Original Manual Format Fixtures", exact: true }) });
+  await opportunity.getByRole("button", { name: "Approve research brief", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+  await expect(opportunity).toContainText("approved");
+  const opportunities = await (await request.get(`${stack.api}/api/editorial/opportunities`, { headers })).json();
+  const oid = opportunities.find((row: any) => row.title === "Original Manual Format Fixtures").id;
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByLabel("Approved research", { exact: true }).selectOption(String(oid));
+  const treatments = page.getByRole("group", { name: "Treatments to make", exact: true });
+  for (const fmt of ["image", "community", "poll"]) await treatments.getByRole("checkbox", { name: fmt, exact: true }).check();
+  for (const [index, text] of ["Can a shape change the meaning of a frame?", "Our original composition moves attention toward a quiet corner.", "Choose the frame that makes the intended idea clearest."].entries())
+    await page.getByLabel(`Beat text ${index + 1}`, { exact: true }).fill(text);
+  await page.getByLabel("Single-image text", { exact: true }).fill("One original shape can change a scene.");
+  await page.getByLabel("Single-image caption", { exact: true }).fill("Choose the original frame with the clearest emphasis.");
+  await page.getByLabel("Community post text", { exact: true }).fill("We created three original shape compositions. Which change made the intended idea clearest, and why?");
+  await page.getByLabel("Poll question", { exact: true }).fill("Which original composition would you choose?");
+  await page.getByLabel("Poll options (one per line, 2–4)", { exact: true }).fill("Bold center\nQuiet corner\nMoving edge");
+  await page.getByRole("button", { name: "Create native campaign", exact: true }).click();
+  const campaigns = async () => (await request.get(`${stack.api}/api/editorial/campaigns`, { headers })).json();
+  await expect.poll(async () => (await campaigns()).some((row: any) => row.opportunity_id === oid)).toBe(true);
+  const cid = (await campaigns()).find((row: any) => row.opportunity_id === oid).id;
+  const campaign = page.getByTestId(`campaign-${cid}`);
+  for (const fmt of ["image", "community", "poll"]) {
+    await campaign.getByRole("button", { name: `Render ${fmt}`, exact: true }).click();
+    const review = campaign.getByTestId(`native-export-${fmt}`);
+    await expect(review).toContainText("Final decode: passed");
+    await review.getByRole("button", { name: `Approve inspected ${fmt}`, exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
+    if (fmt !== "image") {
+      await expect(review.getByRole("group", { name: "Destinations for this export", exact: true })).toHaveCount(0);
+      const button = review.getByRole("button", { name: "Download JSON manual package", exact: true });
+      await expect(button).toBeEnabled();
+      const [download] = await Promise.all([page.waitForEvent("download"), button.click()]);
+      const file = path.join(evidence, `native-${fmt}-manual.json`); await download.saveAs(file);
+      const payload = JSON.parse(readFileSync(file, "utf8"));
+      expect(payload.delivery).toBe("manual_only"); expect(payload.publication_status).toBe("not_published");
+      expect(payload.options).toEqual(fmt === "poll" ? ["Bold center", "Quiet corner", "Moving edge"] : []);
+    }
+    await review.screenshot({ path: path.join(evidence, `native-${fmt}-manual-review.png`) });
+  }
+  const after = await (await request.get(`${stack.api}/api/queue/counts`, { headers })).json();
+  expect(after).toEqual(before);
+  const completed = (await campaigns()).find((row: any) => row.id === cid);
+  expect(completed.exports.every((item: any) => !item.queue_item_id)).toBe(true);
 });

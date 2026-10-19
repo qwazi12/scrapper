@@ -6,7 +6,7 @@ import { askConfirm } from "@/lib/dialogs";
 import { NativeCampaigns } from "./NativeCampaigns";
 import { AudienceLearning } from "./AudienceLearning";
 
-const formats = ["longform", "short", "reel", "carousel", "image", "community"];
+const formats = ["longform", "short", "reel", "carousel", "image", "community", "poll"];
 const panel = { background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 12, padding: 18 };
 const field = { display: "grid", gap: 5 };
 const empty = { title: "", angle: "", audience: "", formats: ["short", "carousel"], url: "", excerpt: "", planned_for: "", feedback_refs: [] as number[] };

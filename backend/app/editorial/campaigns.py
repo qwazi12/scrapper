@@ -26,7 +26,7 @@ from .routes import Strict, digest, opportunity
 
 router = APIRouter(prefix="/api/editorial", dependencies=[Depends(require_token)])
 UTC = timezone.utc
-NATIVE = Literal["short", "reel", "carousel"]
+NATIVE = Literal["short", "reel", "carousel", "image", "community", "poll"]
 
 
 class Beat(Strict):
@@ -39,10 +39,16 @@ class Beat(Strict):
 class CampaignIn(Strict):
     opportunity_id: int
     title: str = Field(min_length=3, max_length=72)
-    formats: list[NATIVE] = Field(min_length=1, max_length=3)
+    formats: list[NATIVE] = Field(min_length=1, max_length=6)
     beats: list[Beat] = Field(min_length=3, max_length=8)
-    short_caption: str = Field(min_length=10, max_length=2000)
-    carousel_caption: str = Field(min_length=10, max_length=2000)
+    short_caption: str = Field(default="", max_length=2000)
+    reel_caption: str = Field(default="", max_length=2000)
+    carousel_caption: str = Field(default="", max_length=2000)
+    image_text: str = Field(default="", max_length=140)
+    image_caption: str = Field(default="", max_length=2000)
+    community_text: str = Field(default="", max_length=4000)
+    poll_question: str = Field(default="", max_length=255)
+    poll_options: list[str] = Field(default_factory=list,max_length=4)
     community_question: str = Field(default="", max_length=1000)
 
     @model_validator(mode="after")
@@ -51,6 +57,15 @@ class CampaignIn(Strict):
             raise ValueError("Use a hook, body beats and a final payoff")
         if len({b.text.casefold().strip() for b in self.beats}) != len(self.beats): raise ValueError("Repeated beat text needs an original treatment")
         if len(set(self.formats)) != len(self.formats): raise ValueError("Choose each treatment once")
+        for fmt,field in [('short','short_caption'),('reel','reel_caption'),('carousel','carousel_caption'),('image','image_caption'),('community','community_text'),('poll','poll_question')]:
+            if fmt in self.formats and len(getattr(self,field).strip())<10:
+                raise ValueError(f'Write a distinct {field} for the selected format')
+        if 'image' in self.formats and len(self.image_text.strip())<12:raise ValueError('Write the single-image treatment')
+        if 'poll' in self.formats:
+            self.poll_options=[text.strip() for text in self.poll_options]
+            if not 2<=len(self.poll_options)<=4 or any(not 2<=len(text)<=80 for text in self.poll_options):
+                raise ValueError('A poll needs two to four options, each 2–80 characters')
+            if len({text.casefold() for text in self.poll_options})!=len(self.poll_options):raise ValueError('Poll options must be distinct')
         return self
 
 
@@ -164,13 +179,13 @@ def exact_export(s, eid):
     quality = row.manifest.get("quality", {})
     if quality.get("errors") or quality.get("decode") != "passed": raise HTTPException(409, "Export quality checks did not pass")
     root = (settings.data_path / "editorial" / "campaigns" / str(campaign.id) / row.id).resolve()
-    files = [*row.manifest["cards"], row.manifest["cover"]]
+    files = [*row.manifest["cards"], row.manifest["cover"],*row.manifest.get("manual_assets",[])]
     if row.manifest.get("video"): files.append(row.manifest["video"])
     for item in files:
         path = Path(item["file"]).resolve()
         if not path.is_relative_to(root) or not path.is_file() or file_hash(path) != item["sha256"]:
             raise HTTPException(409, "Export file missing or changed; render a new version")
-    return row, digest({"input": row.manifest["input_sha256"], "files": [x["sha256"] for x in files]})
+    return row, digest({"input": row.manifest["input_sha256"], "files": [x["sha256"] for x in files],"platform_copy":row.manifest.get("platform_copy"),"delivery":row.manifest.get("delivery")})
 
 
 class ApprovalIn(Strict):
@@ -193,18 +208,19 @@ class EnqueueIn(Strict):
 @router.post("/exports/{eid}/enqueue")
 def enqueue_export(eid: str, req: EnqueueIn, s: Session = Depends(get_session)):
     row, fingerprint = exact_export(s, eid)
+    if row.format in ('community','poll'):raise HTTPException(409,'Manual export only: this treatment cannot create queue items or publish through this integration')
     if (row.approval or {}).get("fingerprint") != fingerprint: raise HTTPException(409, "Inspect and approve this exact export first")
     from ..social.queue_manager import blocked_accounts
     if blocked_accounts(req.accounts): raise HTTPException(400, "This destination is not permitted for Screen Central")
-    if row.format == "carousel" and any(a.split(":")[-1] not in ("instagram", "facebook") for a in req.accounts):
-        raise HTTPException(400, "Choose explicit Instagram/Facebook destinations for this carousel")
+    if row.format in ("carousel","image") and any(a.split(":")[-1] not in ("instagram", "facebook") for a in req.accounts):
+        raise HTTPException(400, "Choose explicit Instagram/Facebook destinations for this image treatment")
     campaign = get_campaign(s, row.campaign_id)
-    caption = campaign.brief["carousel_caption" if row.format == "carousel" else "short_caption"]
+    caption = campaign.brief[{"carousel":"carousel_caption","image":"image_caption","reel":"reel_caption"}.get(row.format,"short_caption")]
     candidate = QueueItem(pipeline="Native Studio", source=f"Editorial campaign #{campaign.id}", title=campaign.brief["title"],
         description=caption, video_name=f"Campaign {campaign.id} {row.format} {eid}",
         video_path=row.manifest.get("video", {}).get("file"), thumb_path=row.manifest["cover"]["file"],
-        media_kind="images" if row.format == "carousel" else "video",
-        media_files=[card["file"] for card in row.manifest["cards"]] if row.format == "carousel" else [],
+        media_kind="images" if row.format in ("carousel","image") else "video",
+        media_files=[card["file"] for card in row.manifest["cards"]] if row.format in ("carousel","image") else [],
         accounts=req.accounts, status="review", research={"native_export_id": eid, "approval_fingerprint": fingerprint})
     item, created = enqueue.claim(s, row, candidate)
     s.commit()
@@ -220,6 +236,16 @@ def export_file(eid: str, name: str, s: Session = Depends(get_session)):
     root = (settings.data_path / "editorial" / "campaigns" / str(row.campaign_id) / eid).resolve()
     if not match or not Path(match).resolve().is_relative_to(root) or not Path(match).is_file(): raise HTTPException(404, "Media file missing")
     return FileResponse(match)
+
+
+@router.get('/exports/{eid}/manual/{name}')
+def manual_export_file(eid:str,name:str,s:Session=Depends(get_session)):
+    row,fingerprint=exact_export(s,eid)
+    if row.format not in ('community','poll') or (row.approval or {}).get('fingerprint')!=fingerprint:
+        raise HTTPException(409,'Inspect and approve the exact manual export before downloading it')
+    match=next((item for item in row.manifest.get('manual_assets',[]) if Path(item['file']).name==name),None)
+    if not match:raise HTTPException(404,'Manual export file not found')
+    return FileResponse(match['file'],filename=name,media_type=match['content_type'])
 
 
 @router.get("/assets")

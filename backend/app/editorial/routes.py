@@ -19,7 +19,7 @@ from ..studio.sources import tier
 
 router = APIRouter(prefix="/api/editorial", tags=["editorial"], dependencies=[Depends(require_token)])
 UTC = timezone.utc
-Format = Literal["longform", "short", "reel", "carousel", "image", "community"]
+Format = Literal["longform", "short", "reel", "carousel", "image", "community", "poll"]
 
 
 def digest(data) -> str:
@@ -48,7 +48,7 @@ class OpportunityIn(Strict):
     title: str = Field(min_length=3, max_length=255)
     angle: str = Field(min_length=15, max_length=2000)
     audience: str = Field(min_length=5, max_length=1000)
-    formats: list[Format] = Field(min_length=1, max_length=6)
+    formats: list[Format] = Field(min_length=1, max_length=7)
     evidence: list[Evidence] = Field(default_factory=list, max_length=20)
     demand: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     demand_source: str | None = Field(default=None, max_length=500)
