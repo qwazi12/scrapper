@@ -76,7 +76,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
         <label style={field}>Research excerpt {i + 1}<select aria-label={`Research excerpt ${i + 1}`} value={beat.source_refs[0]} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, source_refs: [Number(e.target.value)] } : b))}>
           {(chosen?.evidence || []).map((e, n) => <option key={n} value={n + 1}>{n + 1}: {e.excerpt.slice(0, 80)}</option>)}</select></label>
         <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null } : b))}>
-          <option value="">Original graphic</option>{assets.map(a => <option key={a.id} value={a.id}>#{a.id}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
+          <option value="">Original graphic</option>{assets.filter(a => a.kind === "image").map(a => <option key={a.id} value={a.id}>#{a.id}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
       </fieldset>)}
       <label style={field}>Short caption<textarea required={selected.includes("short")} minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
       <label style={field}>Carousel caption<textarea required={selected.includes("carousel")} minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>

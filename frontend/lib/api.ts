@@ -29,6 +29,9 @@ export type NativeCampaign = { id: number; opportunity_id: number; stage_status:
   brief: { title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; reel_caption?: string; carousel_caption: string; community_question: string; image_text?: string; image_caption?: string; community_text?: string; poll_question?: string; poll_options?: string[] };
   exports: NativeExport[] };
 export type IndexedAsset = { id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string } };
+export type CatalogAsset = IndexedAsset & { score: number; matching_spans: { start: number; end: number; text: string }[];
+  provenance: IndexedAsset["provenance"] & { description?: string; people?: string[];
+    media?: { seconds: number; bytes: number; caption_count: number; frames: { at: number; sha256: string }[] } } };
 export type AudienceFeedback = { id: number; text: string; category: string; classification: string; reply_draft: string; approved_for_manual_use: boolean; privacy_note: string };
 export type LearningReport = { delivery: string; live_comment_ingestion: string; feedback: AudienceFeedback[];
   question_groups: { topic_token: string; n: number; suggestion: string; feedback_ids: number[] }[];
@@ -1092,6 +1095,13 @@ export const api = {
     const response = await fetch(`${apiBase()}/api/editorial/exports/${id}/manual/${encodeURIComponent(file.split("/").pop() || "")}`, { headers: headers(false) });
     if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Manual export download failed"); }
     return response.blob();
+  },
+  assetSearch: (q: string, kind: string) => req<{ assets: CatalogAsset[]; total: number; method: string }>(`/api/editorial/assets/search?${new URLSearchParams({ q, ...(kind ? { kind } : {}) })}`, { headers: headers(false) }),
+  assetMedia: (id: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/media`),
+  assetFrame: (id: number, index: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/frame/${index}`),
+  assetImport: (file: File, fields: Record<string, string>) => {
+    const body = new FormData(); body.append("file", file); Object.entries(fields).forEach(([key, value]) => body.append(key, value));
+    return req<IndexedAsset & { duplicate: boolean }>("/api/editorial/assets/media", { method: "POST", headers: headers(false), body });
   },
   nativeAssets: () => req<IndexedAsset[]>("/api/editorial/assets", { headers: headers(false) }),
   nativeAssetUpload: (file: File, license: string, attestation: string, tags: string) => {

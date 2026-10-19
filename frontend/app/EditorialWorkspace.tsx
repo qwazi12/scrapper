@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, EditorialInsights, EditorialOpportunity } from "@/lib/api";
 import { askConfirm } from "@/lib/dialogs";
+import { AssetLibrary } from "./AssetLibrary";
 import { NativeCampaigns } from "./NativeCampaigns";
 import { AudienceLearning } from "./AudienceLearning";
 
@@ -60,9 +61,11 @@ export function EditorialWorkspace() {
       <button aria-pressed={tab === "plan"} onClick={() => setTab("plan")}>Opportunities & calendar</button>
       <button aria-pressed={tab === "performance"} onClick={() => setTab("performance")}>Performance evidence</button>
       <button aria-pressed={tab === "campaigns"} onClick={() => setTab("campaigns")}>Native campaigns</button>
+      <button aria-pressed={tab === "assets"} onClick={() => setTab("assets")}>Asset library</button>
       <button aria-pressed={tab === "learning"} onClick={() => setTab("learning")}>Audience & experiments</button>
     </div>
     {message && <p role="status">{message}</p>}
+    {tab === "assets" && <AssetLibrary />}
     {tab === "campaigns" && <NativeCampaigns opportunities={rows} />}
     {tab === "learning" && <AudienceLearning onFollowup={question => {
       setEditing(undefined); setForm({ ...empty, title: question.text.slice(0, 255), angle: "Research a sourced response to this audience question; choose an original explanation.",

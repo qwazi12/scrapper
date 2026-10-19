@@ -98,6 +98,7 @@ def inputs(s, campaign):
             path = Path(asset.file_path).resolve() if asset else None
             if not asset or not path.is_relative_to(settings.data_path.resolve() / "editorial" / "assets") or not path.is_file() or file_hash(path) != asset.sha256:
                 raise HTTPException(409, "A selected asset is missing or changed; reimport and inspect it")
+            if asset.kind!="image":raise HTTPException(409,"Beat-card visuals require an indexed still image; video/audio assets need a compatible treatment")
             if not asset.provenance.get("attestation"): raise HTTPException(409, "Asset rights attestation missing")
             assets[str(aid)] = {"sha256": asset.sha256, "provenance": asset.provenance}
     return {"brief": campaign.brief, "research_fingerprint": fingerprint, "assets": assets}
@@ -235,7 +236,8 @@ def export_file(eid: str, name: str, s: Session = Depends(get_session)):
     match = next((x.get("file") for x in files if x.get("file") and Path(x["file"]).name == name), None)
     root = (settings.data_path / "editorial" / "campaigns" / str(row.campaign_id) / eid).resolve()
     if not match or not Path(match).resolve().is_relative_to(root) or not Path(match).is_file(): raise HTTPException(404, "Media file missing")
-    return FileResponse(match)
+    expected=next(item["sha256"] for item in files if item.get("file")==match)
+    return FileResponse(match,expected_sha256=expected)
 
 
 @router.get('/exports/{eid}/manual/{name}')
@@ -245,13 +247,13 @@ def manual_export_file(eid:str,name:str,s:Session=Depends(get_session)):
         raise HTTPException(409,'Inspect and approve the exact manual export before downloading it')
     match=next((item for item in row.manifest.get('manual_assets',[]) if Path(item['file']).name==name),None)
     if not match:raise HTTPException(404,'Manual export file not found')
-    return FileResponse(match['file'],filename=name,media_type=match['content_type'])
+    return FileResponse(match['file'],filename=name,media_type=match['content_type'],expected_sha256=match['sha256'])
 
 
 @router.get("/assets")
 def assets(s: Session = Depends(get_session)):
-    return [{"id": a.id, "sha256": a.sha256, "kind": a.kind, "tags": a.tags, "provenance": a.provenance}
-            for a in s.query(MediaAsset).order_by(MediaAsset.id.desc()).all()]
+    from .asset_catalog import out
+    return [out(a) for a in s.query(MediaAsset).order_by(MediaAsset.id.desc()).limit(100)]
 
 
 @router.post("/assets")

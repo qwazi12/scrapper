@@ -833,3 +833,35 @@ test("Native formats UI creates actual single-image and private community/poll m
   const completed = (await campaigns()).find((row: any) => row.id === cid);
   expect(completed.exports.every((item: any) => !item.queue_item_id)).toBe(true);
 });
+
+test("Asset library UI indexes original media, finds owner captions and reuses duplicates", async ({ page, request }) => {
+  await page.goto("/#editorial");
+  await page.getByRole("button", { name: "Asset library", exact: true }).click();
+  await page.getByText("Index a local video or audio asset", { exact: true }).click();
+  await page.getByLabel("Local media file", { exact: true }).setInputFiles(path.join(stack.root, "fixtures/trailer.mp4"));
+  await page.getByLabel("Asset rights and intended use", { exact: true }).fill("Original procedural shape footage created by the isolated fixture; permitted for these local tests.");
+  await page.getByLabel("Asset scene description", { exact: true }).fill("Original moving shapes and color panels composed for a synthetic local test.");
+  await page.getByLabel("Asset tags", { exact: true }).fill("original shapes, procedural");
+  await page.getByLabel("People/entities (owner labels)", { exact: true }).fill("No real people");
+  await page.getByRole("button", { name: "Add caption interval", exact: true }).click();
+  await page.getByLabel("Cue 1 start", { exact: true }).fill("0");
+  await page.getByLabel("Cue 1 end", { exact: true }).fill("1");
+  await page.getByLabel("Cue 1 text", { exact: true }).fill("A turquoise fixture moves across the original frame.");
+  await page.getByRole("button", { name: "Index local media", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Media indexed locally" })).toBeVisible();
+  await page.getByLabel("Search asset context", { exact: true }).fill("turquoise");
+  await page.getByLabel("Filter asset kind", { exact: true }).selectOption("video");
+  await page.getByRole("button", { name: "Search indexed assets", exact: true }).click();
+  const result = await (await request.get(`${stack.api}/api/editorial/assets/search?q=turquoise&kind=video`, { headers })).json();
+  expect(result.method).toBe("lexical_tags_description_owner_captions");
+  const indexed = page.getByTestId(`indexed-asset-${result.assets[0].id}`);
+  await expect(indexed).toContainText("A turquoise fixture moves across the original frame.");
+  await expect(indexed.locator("img")).toHaveCount(3);
+  await expect.poll(async () => indexed.locator("video").evaluate((element: HTMLVideoElement) => element.readyState)).toBeGreaterThan(0);
+  await indexed.getByRole("button", { name: "Preview 0.00–1.00s", exact: true }).click();
+  await page.getByRole("button", { name: "Index local media", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Duplicate media reused" })).toBeVisible();
+  const after = await (await request.get(`${stack.api}/api/editorial/assets/search?q=turquoise&kind=video`, { headers })).json();
+  expect(after.assets.filter((row: any) => row.id === result.assets[0].id)).toHaveLength(1);
+  await page.screenshot({ path: path.join(evidence, "authorized-asset-library.png"), fullPage: true });
+});
