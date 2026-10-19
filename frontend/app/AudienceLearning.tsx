@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { CommentInbox } from "./CommentInbox";
 import { FeedbackCard } from "./FeedbackCard";
-import { api, AudienceFeedback, LearningReport } from "@/lib/api";
+import { api, AudienceFeedback, ExperimentSeed, LearningReport } from "@/lib/api";
 
 const box = { border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--panel)" };
 const field = { display: "grid", gap: 5 };
 
-export function AudienceLearning({ onFollowup, onEvidenceChanged }: { onFollowup: (question: AudienceFeedback) => void; onEvidenceChanged?: () => void }) {
+export function AudienceLearning({ onFollowup, onEvidenceChanged, experimentSeed }: { experimentSeed?: ExperimentSeed | null; onFollowup: (question: AudienceFeedback) => void; onEvidenceChanged?: () => void }) {
   const [report, setReport] = useState<LearningReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -17,6 +17,8 @@ export function AudienceLearning({ onFollowup, onEvidenceChanged }: { onFollowup
   const [platform, setPlatform] = useState("youtube");
   const [source, setSource] = useState("");
   const [experiment, setExperiment] = useState({ name: "", hypothesis: "", platform: "youtube", format: "short", control: "", variant: "", metric: "engaged_views", age: "24", controls: "", account: "" });
+  useEffect(() => { if (experimentSeed) setExperiment(previous => ({ ...previous, ...experimentSeed,
+    control: "", variant: "", controls: "", metric: experimentSeed.metric })); }, [experimentSeed]);
   const load = useCallback(async () => setReport(await api.editorialLearning()), []);
   useEffect(() => { load().catch(e => setMessage(e.message)); }, [load]);
   async function act(fn: () => Promise<unknown>, success: string) {
@@ -45,17 +47,17 @@ export function AudienceLearning({ onFollowup, onEvidenceChanged }: { onFollowup
       e.preventDefault(); act(() => api.editorialExperiment({ name: experiment.name, hypothesis: experiment.hypothesis, platform: experiment.platform,
         format: experiment.format, control_ids: experiment.control.split(",").map(s => s.trim()).filter(Boolean),
         variant_ids: experiment.variant.split(",").map(s => s.trim()).filter(Boolean), metric: experiment.metric,
-        age_hours: Number(experiment.age), minimum_per_group: 5, controls: experiment.controls, account_id: experiment.account || null }), "Experiment registered. At least five comparable observations per group are needed for a descriptive comparison.");
-    }}><h3>Register a creative experiment</h3>
+        age_hours: Number(experiment.age), minimum_per_group: 5, controls: experiment.controls, account_id: experiment.account || null, learning_decision_id: experimentSeed?.decision_id || null }), "Experiment registered. At least five comparable observations per group are needed for a descriptive comparison.");
+    }}><h3>Register a creative experiment</h3>{experimentSeed && <p>Based on a private learning decision. Choose distinct control/variant content and document confounders before registration.</p>}
       <label style={field}>Experiment name<input required minLength={5} value={experiment.name} onChange={e => setExperiment({ ...experiment, name: e.target.value })} /></label>
       <label style={field}>Hypothesis<textarea required minLength={15} value={experiment.hypothesis} onChange={e => setExperiment({ ...experiment, hypothesis: e.target.value })} /></label>
-      <label style={field}>Experiment platform<select value={experiment.platform} onChange={e => setExperiment({ ...experiment, platform: e.target.value })}>{["youtube", "instagram", "facebook"].map(p => <option key={p}>{p}</option>)}</select></label>
-      <label style={field}>Experiment account/channel (blank for unlinked owner imports)<input maxLength={128} value={experiment.account} onChange={e => setExperiment({ ...experiment, account: e.target.value })} /></label>
-      <label style={field}>Experiment format<select value={experiment.format} onChange={e => setExperiment({ ...experiment, format: e.target.value })}>{["short", "reel", "longform", "carousel", "image", "community", "poll"].map(p => <option key={p}>{p}</option>)}</select></label>
+      <label style={field}>Experiment platform<select aria-label="Experiment platform" disabled={!!experimentSeed} value={experiment.platform} onChange={e => setExperiment({ ...experiment, platform: e.target.value })}>{["youtube", "instagram", "facebook"].map(p => <option key={p}>{p}</option>)}</select></label>
+      <label style={field}>Experiment account/channel (blank for unlinked owner imports)<input disabled={!!experimentSeed} maxLength={128} value={experiment.account} onChange={e => setExperiment({ ...experiment, account: e.target.value })} /></label>
+      <label style={field}>Experiment format<select aria-label="Experiment format" disabled={!!experimentSeed} value={experiment.format} onChange={e => setExperiment({ ...experiment, format: e.target.value })}>{["short", "reel", "longform", "carousel", "image", "community", "poll"].map(p => <option key={p}>{p}</option>)}</select></label>
       <label style={field}>Control content IDs (comma separated)<input required value={experiment.control} onChange={e => setExperiment({ ...experiment, control: e.target.value })} /></label>
       <label style={field}>Variant content IDs (comma separated)<input required value={experiment.variant} onChange={e => setExperiment({ ...experiment, variant: e.target.value })} /></label>
-      <label style={field}>Success measure<select value={experiment.metric} onChange={e => setExperiment({ ...experiment, metric: e.target.value })}>{["engaged_views", "views", "retention_percent", "average_view_seconds"].map(p => <option key={p}>{p}</option>)}</select></label>
-      <label style={field}>Publication age<select value={experiment.age} onChange={e => setExperiment({ ...experiment, age: e.target.value })}>{[24, 72, 168, 720].map(h => <option key={h} value={h}>{h} hours</option>)}</select></label>
+      <label style={field}>Success measure<select aria-label="Success measure" value={experiment.metric} onChange={e => setExperiment({ ...experiment, metric: e.target.value })}>{["engaged_views", "views", "retention_percent", "average_view_seconds", "average_view_percent", "impressions", "click_through_percent"].map(p => <option key={p}>{p}</option>)}</select></label>
+      <label style={field}>Publication age<select aria-label="Publication age" disabled={!!experimentSeed} value={experiment.age} onChange={e => setExperiment({ ...experiment, age: e.target.value })}>{[24, 72, 168, 720].map(h => <option key={h} value={h}>{h} hours</option>)}</select></label>
       <label style={field}>Controls and known confounders<textarea required minLength={10} value={experiment.controls} onChange={e => setExperiment({ ...experiment, controls: e.target.value })} /></label>
       <div><button disabled={busy}>Register experiment</button></div>
     </form>

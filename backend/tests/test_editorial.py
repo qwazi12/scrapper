@@ -72,7 +72,7 @@ def test_import_is_idempotent_and_cohorts_never_mix_age_or_format(client):
     assert shorts["n"] == 2 and shorts["medians"]["views"] == 150
 
 
-@pytest.mark.parametrize("patch", [{"metrics": {"views": -1}}, {"metrics": {"views": True}}, {"metrics": {}},
+@pytest.mark.parametrize("patch", [{"metrics": {"views": -1}}, {"metrics": {"views": True}}, {"metrics": {"average_view_percent": True}}, {"metrics": {"average_view_seconds": "5"}}, {"metrics": {}},
                                  {"published_at": "2026-01-01T00:00:00"}, {"observed_at": "2099-01-01T00:00:00Z"},
                                  {"metrics": {"clicks": 2, "impressions": 1}}])
 def test_bad_measurements_are_rejected(client, patch):

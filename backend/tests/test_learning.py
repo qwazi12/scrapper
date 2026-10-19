@@ -50,6 +50,7 @@ def test_experiments_require_comparable_observations_and_never_invent_winner(cli
     assert client.post("/api/editorial/experiments", json=experiment_data()).status_code == 200
     result = client.get("/api/editorial/learning").json()["experiments"][0]["result"]
     assert result["status"] == "insufficient_comparable_data" and result["relative_median_change_percent"] is None
+    assert result["design"] == "publication_timing_unverified"
     now = datetime.now(timezone.utc)
     for group, value in [("a", 100), ("b", 150)]:
         for i in range(5):

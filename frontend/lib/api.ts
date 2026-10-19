@@ -11,11 +11,22 @@ export type EditorialOpportunity = {
 };
 export type EditorialInsights = {
   adapters: { platform: string; status: string; reason: string; live_metrics: null; imported_observations: number }[];
-  observation_count: number;
+  observation_count: number; observation_version: string;
   cohorts: { platform: string; account_id?: string; format: string; age_hours: number; n: number; confidence: string;
     medians: Record<string, number | null>; metric_samples: Record<string, number>; limitations: string }[];
   next_actions: string[]; claim: string;
 };
+export type PerformanceDiagnostic = {
+  key: string; version: string; platform: string; account_id: string; format: string; age_hours: number;
+  content_id: string; observation_key: string; source_title: string | null; observed_at: string;
+  measures: { metric: string; value: number | null; peer_n: number; peer_median: number | null; ratio: number | null; status: string }[];
+  cost: { status: string; amount_usd: number | null; per_1000: number | null; denominator: string | null; as_of?: string; scope: string; limitation: string };
+  suggestions: { kind: string; text: string; support_metric: string | null }[]; unknowns: string[]; limitations: string[];
+  last_decision: LearningDecision | null;
+};
+export type LearningDecision = { id: string; action: string; version: string; created_at: string; matches_current_evidence: boolean | null;
+  data: { rationale: string; diagnostic: PerformanceDiagnostic; execution: string } };
+export type ExperimentSeed = { decision_id: string; name: string; hypothesis: string; platform: string; account: string; format: string; age: string; metric: string };
 export type ContentSource = { kind: "export_version" | "native_export" | "delivery_archive"; id: string; title: string; fingerprint: string; created_at: string;
   preview: { kind: "video" | "image"; file?: string; role?: string; index?: number } | null };
 export type ContentMappingDecision = { platform: string; account_id: string; content_id: string; format: string; published_at: string;
@@ -1138,6 +1149,9 @@ export const api = {
   editorialSave: (data: unknown, id?: number) => req<EditorialOpportunity>(`/api/editorial/opportunities${id ? `/${id}` : ""}`,
     { method: id ? "PUT" : "POST", headers: headers(), body: JSON.stringify(data) }),
   editorialApprove: (id: number) => req<EditorialOpportunity>(`/api/editorial/opportunities/${id}/approve`, { method: "POST", headers: headers() }),
+  learningDiagnostics: (q = "", offset = 0) => req<{ total: number; items: PerformanceDiagnostic[]; policy: { mode: string } }>(`/api/editorial/learning-diagnostics?${new URLSearchParams({ q, offset: String(offset) })}`, { headers: headers(false) }),
+  learningReview: (id: string, data: { expected_version: string; action: "plan_experiment" | "defer" | "reject"; rationale: string; reviewed: true }) => req<LearningDecision>(`/api/editorial/learning-diagnostics/${id}/review`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  learningHistory: (id: string) => req<{ total: number; decisions: LearningDecision[] }>(`/api/editorial/learning-diagnostics/${id}/history`, { headers: headers(false) }),
   editorialInsights: () => req<EditorialInsights>("/api/editorial/insights", { headers: headers(false) }),
   editorialObservation: (data: unknown) => req<{ key: string; created: boolean }>("/api/editorial/observations",
     { method: "POST", headers: headers(), body: JSON.stringify(data) }),

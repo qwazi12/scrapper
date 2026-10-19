@@ -90,6 +90,8 @@ from .editorial import comments
 app.include_router(comments.router)
 from .editorial import feedback_review
 app.include_router(feedback_review.router)
+from .editorial import performance_diagnostics
+app.include_router(performance_diagnostics.router)
 
 
 @app.middleware("http")

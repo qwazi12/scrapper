@@ -1016,3 +1016,65 @@ test("Comment inbox UI resumes read-only pages, preserves drafts and records exa
   await page.evaluate(() => { (window as any).restoreFeedbackStorage(); });
   await page.screenshot({ path: path.join(evidence, "comment-inbox-private-review.png"), fullPage: true });
 });
+
+test("Learning diagnostics UI keeps peer evidence, cost limits and reviewed experiment planning private", async ({ page, request }) => {
+  const before = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  const queues = await (await request.get(`${stack.api}/api/queue/counts`, { headers })).json();
+  const published = new Date(Date.now() - 25 * 3600000).toISOString();
+  const observed = new Date(Date.now() - 3600000).toISOString();
+  const subject = "diagnostic-ui-subject";
+  const ids = [subject, ...Array.from({ length: 5 }, (_, index) => `diagnostic-ui-peer-${index}`)];
+  const add = async (id: string, low = false) => {
+    const result = await request.post(`${stack.api}/api/editorial/observations`, { headers, data: {
+      platform: "youtube", content_id: id, format: "short", published_at: published, observed_at: observed,
+      metrics: { views: low ? 100 : 1000, impressions: low ? 100 : 1000, clicks: low ? 1 : 100, average_view_percent: low ? 30 : 80 },
+      source: "Owner-authorized original synthetic performance export; no real account accessed",
+    } }); expect(result.ok()).toBe(true);
+  };
+  for (const id of ids) await add(id, id === subject);
+  await page.goto("/#editorial"); await page.getByRole("button", { name: "Performance evidence", exact: true }).click();
+  const find = async () => {
+    await page.getByLabel("Find diagnostic content ID", { exact: true }).fill(subject);
+    await page.getByRole("button", { name: "Find performance diagnostic", exact: true }).click();
+  };
+  await find();
+  const card = page.getByTestId(`performance-diagnostic-${subject}`);
+  await expect(card).toBeVisible(); await expect(card).toContainText("Recorded cost: Unavailable");
+  const ctr = card.getByRole("row").filter({ has: page.getByRole("cell", { name: "click through percent", exact: true }) });
+  await expect(ctr).toContainText("observed below peer median");
+  const rationale = card.getByLabel("Decision rationale", { exact: true });
+  const ack = card.getByRole("checkbox", { name: "I reviewed these exact measures, cost limits and confounders.", exact: true });
+  const save = card.getByRole("button", { name: "Record private learning decision", exact: true });
+  await rationale.fill("Review one truthful packaging concept while keeping topic and timing comparable; this cohort is observational.");
+  await ack.check(); await rationale.fill("Review topic, duration, packaging and latency confounders before a matched, privately planned experiment.");
+  await expect(ack).not.toBeChecked(); await expect(save).toBeDisabled(); await ack.check(); await save.click();
+  await expect(card.getByRole("status")).toHaveText("Private planning decision recorded. No action executed.");
+  await card.getByRole("button", { name: "Draft experiment from reviewed evidence", exact: true }).click();
+  await expect(page.getByLabel("Experiment name", { exact: true })).toHaveValue(`Review ${subject} creative treatment`);
+  await expect(page.getByLabel("Experiment platform", { exact: true })).toBeDisabled();
+  await page.getByLabel("Control content IDs (comma separated)", { exact: true }).fill(ids.slice(0, 3).join(","));
+  await page.getByLabel("Variant content IDs (comma separated)", { exact: true }).fill(ids.slice(3).join(","));
+  await page.getByLabel("Controls and known confounders", { exact: true }).fill("Compare original subjects at the same age; topic, duration, timing and reporting latency may differ.");
+  await page.getByRole("button", { name: "Register experiment", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Experiment registered" })).toBeVisible();
+  const experiment = page.getByRole("article").filter({ has: page.getByRole("heading", { name: `Review ${subject} creative treatment`, exact: true }) });
+  await expect(experiment).toContainText("insufficient comparable data"); await expect(experiment).toContainText("No causal conclusion or automatic winner");
+  const learning = await (await request.get(`${stack.api}/api/editorial/learning`, { headers })).json();
+  const saved = learning.experiments.find((row: any) => row.name === `Review ${subject} creative treatment`);
+  expect(saved.learning_context.decision_id).toMatch(/^[a-f0-9]{64}$/);
+  expect(saved.metric).toBe("click_through_percent"); expect(saved.result.winner).toBeNull();
+  await page.getByRole("button", { name: "Performance evidence", exact: true }).click(); await find();
+  await card.getByLabel("Learning decision", { exact: true }).selectOption("defer");
+  const unsaved = "Keep these private review words if another comparable observation changes the peer evidence during review.";
+  await rationale.fill(unsaved); await ack.check();
+  await add("diagnostic-ui-new-peer");
+  await save.click(); await expect(card.getByRole("status").filter({ hasText: "Measures, peers, source mapping or cost context changed" })).toBeVisible();
+  await expect(rationale).toHaveValue(unsaved); await expect(ack).not.toBeChecked();
+  await find(); await expect(card).toContainText("Evidence changed since this decision.");
+  await card.getByRole("button", { name: "Inspect private learning decisions", exact: true }).click();
+  await expect(card.getByText("Most recent 1 decisions", { exact: true })).toBeVisible();
+  const after = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(after.fake_publish_receipts).toBe(before.fake_publish_receipts); expect(after.blocked_network_attempts).toBe(0);
+  expect(await (await request.get(`${stack.api}/api/queue/counts`, { headers })).json()).toEqual(queues);
+  await page.screenshot({ path: path.join(evidence, "learning-diagnostics-private-decision.png"), fullPage: true });
+});

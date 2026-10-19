@@ -138,9 +138,9 @@ class Metrics(Strict):
     clicks: int | None = Field(default=None, ge=0, strict=True)
     likes: int | None = Field(default=None, ge=0, strict=True)
     comments: int | None = Field(default=None, ge=0, strict=True)
-    average_view_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    average_view_percent: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    retention_percent: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    average_view_seconds: float | None = Field(default=None, ge=0, strict=True, allow_inf_nan=False)
+    average_view_percent: float | None = Field(default=None, ge=0, strict=True, allow_inf_nan=False)
+    retention_percent: float | None = Field(default=None, ge=0, le=100, strict=True, allow_inf_nan=False)
 
 
 class ObservationIn(Strict):
@@ -204,22 +204,13 @@ def _utc(value):
 
 
 def cohorts(rows):
-    groups = {}
-    # Only snapshots within 10% of the same publication age can be compared.
-    # One content item contributes at most once to each age cohort.
-    for row in rows:
-        age = (_utc(row.observed_at) - _utc(row.published_at)).total_seconds() / 3600
-        window = next((n for n in (24, 72, 168, 720) if abs(age - n) <= n * .1), None)
-        if window is None: continue
-        key = (row.platform, row.provenance.get("account_id") or "unspecified_owner_import", row.format, window)
-        items = groups.setdefault(key, {})
-        old = items.get(row.content_id)
-        if old is None or abs(age - window) < abs(old[1] - window): items[row.content_id] = (row, age)
+    from .performance_diagnostics import selected_cohorts
+    groups=selected_cohorts(rows)
     result = []
     for (platform, account, fmt, window), items in sorted(groups.items()):
         medians, samples = {}, {}
         for metric in Metrics.model_fields:
-            values = [row.metrics.get(metric) for row, age in items.values() if row.metrics.get(metric) is not None]
+            values = [row.metrics.get(metric) for row in items.values() if row.metrics.get(metric) is not None]
             medians[metric] = median(values) if values else None
             samples[metric] = len(values)
         result.append({"platform": platform, "account_id":account,"format": fmt, "age_hours": window, "n": len(items),
@@ -238,6 +229,7 @@ def insights(s: Session = Depends(get_session)):
     adapters.extend({"platform":p,"status":"unavailable","reason":"Private analytics adapter not connected; import an authorized export","live_metrics":None,"imported_observations":sum(r.platform==p for r in rows)} for p in ('instagram','facebook'))
     return {"adapters":adapters,
             "cohorts": cohorts(rows), "observation_count": len(rows),
+            "observation_version":digest(sorted((r.key,r.metrics,r.provenance,_utc(r.observed_at).isoformat(),_utc(r.published_at).isoformat()) for r in rows)),
             "next_actions": ["Import age-matched observations before comparing formats"] if not rows else
                             ["Review small samples and provider latency before choosing an experiment"],
             "claim": "No automated causal or growth claims"}

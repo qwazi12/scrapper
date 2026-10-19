@@ -522,6 +522,16 @@ class RemoteCopyEvidence(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class LearningDecision(Base):
+    __tablename__='learning_decisions'
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    diagnostic_key: Mapped[str]=mapped_column(String(64),index=True)
+    version: Mapped[str]=mapped_column(String(64),index=True)
+    action: Mapped[str]=mapped_column(String(32))
+    data: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
 class CommentEvidence(Base):
     """Redacted provider comment versions; author identifiers are never stored."""
     __tablename__='comment_evidence'
@@ -571,7 +581,7 @@ class ContentLineage(Base):
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # Both dialects reject raw UPDATE/DELETE as an integrity violation.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__, LearningDecision.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, ContentBinding, EditorialInsights, EditorialOpportunity } from "@/lib/api";
+import { api, ContentBinding, ExperimentSeed, EditorialInsights, EditorialOpportunity } from "@/lib/api";
 import { allowLocalNavigation } from "../lib/navigationGuard";
 import { askConfirm } from "@/lib/dialogs";
 import { ContentLineage } from "./ContentLineage";
 import { AssetLibrary } from "./AssetLibrary";
 import { NativeCampaigns } from "./NativeCampaigns";
+import { PerformanceDiagnostics } from "./PerformanceDiagnostics";
 import { AudienceLearning } from "./AudienceLearning";
 
 const formats = ["longform", "short", "reel", "carousel", "image", "community", "poll"];
@@ -20,6 +21,7 @@ export function EditorialWorkspace() {
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState<number | undefined>();
   const [tab, setTab] = useState("plan");
+  const [experimentSeed, setExperimentSeed] = useState<ExperimentSeed | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const load = useCallback(async () => {
@@ -69,7 +71,7 @@ export function EditorialWorkspace() {
     {message && <p role="status">{message}</p>}
     {tab === "assets" && <AssetLibrary />}
     {tab === "campaigns" && <NativeCampaigns opportunities={rows} />}
-    {tab === "learning" && <AudienceLearning onEvidenceChanged={() => void load()} onFollowup={question => { void allowLocalNavigation().then(allowed => { if (!allowed) return;
+    {tab === "learning" && <AudienceLearning experimentSeed={experimentSeed} onEvidenceChanged={() => void load()} onFollowup={question => { void allowLocalNavigation().then(allowed => { if (!allowed) return;
       setEditing(undefined); setForm({ ...empty, title: question.text.slice(0, 255), angle: "Research a sourced response to this audience question; choose an original explanation.",
         audience: "Viewers asking: " + question.text.slice(0, 500), feedback_refs: [question.id] }); setTab("plan"); });
     }} />}
@@ -109,6 +111,7 @@ export function EditorialWorkspace() {
       <ContentLineage onChanged={() => void load().catch(e => setMessage(e.message))} />
       {insights.adapters.map(a => <div style={panel} key={a.platform}><strong>{a.platform}: {a.status}</strong><p>{a.reason}</p>
         <p>{a.imported_observations} imported observations · Live metrics: unavailable</p></div>)}
+      <PerformanceDiagnostics revision={insights.observation_version} onExperiment={seed => { void allowLocalNavigation().then(allowed => { if (allowed) { setExperimentSeed(seed); setTab("learning"); } }); }} />
       <ObservationForm busy={busy} onSave={data => action(() => api.editorialObservation(data), "Observation imported. Comparisons keep format and publication age separate.")} />
       <div style={{ ...panel, overflowX: "auto" }}><h2>Publication-age cohorts</h2><p>One observation per content item near 24h, 72h, 7d or 30d. Missing measures stay unavailable.</p>
         <table><thead><tr>{["Platform / format", "Age", "Items", "Median views", "Engaged views", "Confidence"].map(h => <th key={h}>{h}</th>)}</tr></thead>
