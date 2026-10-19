@@ -35,7 +35,7 @@ local slice. This report does not reset or replace the original product vision.
 | Audience / cost lineage | Read-only YouTube Analytics adapter for an existing declared grant, processed-day latency/revision/missing-value semantics, immutable owner content mappings and scoped recorded variable-cost evidence | Real private grant/report proof, IG/FB adapters, broader history pagination and refresh/retention lifecycle, legacy/delivery attribution; no verified invoice/profit claim |
 | Comments / corrections | Explicit bounded read-only thread/reply pages, separate durable cursors, redacted append-only source evidence, exact-context private drafts/decisions, stale-source invalidation and idempotent exact-claim correction follow-ups | Real provider proof, privacy/source-refresh/deletion lifecycle and deeper semantic reply assistance; no sending/moderation endpoint |
 | Learning / autonomy | Same-account/platform/format/age leave-one-out diagnostics, metric-specific missingness, explicit heuristic/sample limits, exact-context private owner decisions and linked manually completed experiments | No causal winner, beneficial-growth proof or execution authority; provider/billing evidence, deeper controlled outcomes and bounded autonomous operation remain |
-| Owner UX | Stable navigation/history, script/import/experiment/native-treatment browser drafts, stale-save/storage-failure guards, accessible controls, readable bounded typed errors, exact-origin credential cache, confirmed-save/read-refresh separation and retained queue snapshots/edits through outages | Remaining forms, broader platform-status design and full negative/crash/recovery/accessibility coverage |
+| Owner UX | Stable navigation/history, script/comment/experiment/native-treatment/asset-metadata browser drafts, stale-save/storage-failure guards, accessible controls, readable bounded typed errors, exact-origin credential cache, confirmed-save/read-refresh separation and retained queue snapshots/edits through outages | Remaining forms, broader platform-status design and full negative/crash/recovery/accessibility coverage |
 
 Native exact acceptance and image/Reel publishing-field corrections are locally
 verified and committed in304b5ae. They replace blanket native approval, bind the full
@@ -56,9 +56,10 @@ contain the ignored media, database snapshots or traces.
 | Actual private PostgreSQL recovery | **Passed**,0.836s;175838bytes; SHA256`bd8814ef0e669dc3f6859bb46ec1cd961553f44cfbf219ddc10b8189c6100ff9`; source unchanged | `native-audio-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
 | Selected clip contracts | **34 passed**,11.32s, actual hold/loop frame/audio checks, strict ranges/source claims | `native-clips-focused2.txt` |
 | Native acceptance focused | **22 passed**,2.24s, then all5 new contracts including actual generated-tone Reel render **passed**,2.63s | `native-acceptance-focused2.txt`, `native-acceptance-focused3.txt` |
-| Frontend production build | Passed after background audio and stable import labels; explicit tsc passed | `native-audio-build2.txt`, `native-audio-tsc1.txt` |
+| Frontend production build | Passed after asset metadata/read recovery; explicit tsc passed | `asset-recovery-build1.txt`, `asset-recovery-tsc2.txt` |
 | Frontend error contracts | **6 passed**,114.49ms; typeless Node module warning reported | `api-errors-unit3.txt` |
-| Full browser before background-audio slice | **22 passed**,3.9min; frozen backend/scripts SHA`87cae4a6a3b3d498a4509c0c9b4deb79994e9e80ad459c1c99fe5bde39a47cc2`; complete media and recovery cases | `e2e/history/native-drafts3/` report/traces/screenshots/actual media/verified DB snapshot |
+| Current full browser regression | **23 passed**,4.1min; includes background audio, asset import/read recovery and all prior media/safety cases; frozen backend/scripts SHA`0d1bc77c485bb79d66222829505b1fc6d502566754d1d3928e751ab8c66a99c6` | `e2e/history/asset-recovery4/` report/traces/screenshots/actual media/verified DB snapshot |
+| Earlier full browser before background-audio slice | **22 passed**,3.9min; frozen backend/scripts SHA`87cae4a6a3b3d498a4509c0c9b4deb79994e9e80ad459c1c99fe5bde39a47cc2`; complete media and recovery cases | `e2e/history/native-drafts3/` report/traces/screenshots/actual media/verified DB snapshot |
 | Earlier full browser before native slice | **20 passed**,3.9min; frozen backend/scripts SHA`e6214eab0d40e4d396422f5af813f17962cb09a205467e514b2a8e9deef410e0` | `e2e/history/owner-recovery5/stack.json`, report, traces/screenshots and verified DB snapshot |
 | Browser after native acceptance | **4 passed**,2.2min; fresh image/manual visual capture **1 passed**,3.7s. Frozen backend/scripts SHA`d1e6c1a4eff1c46fb56594de496936f9ee7b437c8a7f546ba48be4f526105e25` | `e2e/history/native-acceptance1/` and `native-acceptance3/` reports/traces/screenshots/verified DB snapshots |
 | Selected-video browser | Three existing native/asset workflows passed; corrected fresh selected-video flow **passed,8.0s**, including actual playback/seek. One preceding ambiguous-alert selector failure retained | `e2e/history/native-clips1/` and `native-clips3/`, frozen SHA`54a84d361118738f2565ef4548a5add4e475b11e6e1fce928f2e0654f2dd5d41` |
@@ -68,12 +69,12 @@ contain the ignored media, database snapshots or traces.
 | Linux/container/CI | Prepared; **not executed** | `.github/workflows/quality.yml`, `scripts/e2e/Dockerfile` |
 | Real provider/staging/deployment | **Unverified; not executed** | No deployment/provider success receipt exists |
 
-The latest full browser22 baseline (before the later scoped audio change) includes actual LongForm and five independent Countdown
+The current full browser23 includes actual LongForm and five independent Countdown
 segment pipelines/stitch, native formats and private local downloads, independent
 source review, local worker handoff, simulated delivery/uncertainty/financial
 reconciliation, retained-media/history recovery, asset catalog, content lineage,
 comment/correction review, diagnostics→manual experiment, browser draft failures,
-API-origin credential recovery, real limiter recovery, explicit selected-video playback/seek and native treatment recovery with stale-source/delayed-response protection. Rate exhaustion is
+API-origin credential recovery, real limiter recovery, explicit mixed video/audio playback/seek, native treatment recovery, asset metadata/caption recovery, duplicate-provenance receipts and stale search protection. Rate exhaustion is
 fixture-seeded; the test waits the actual60-second window. It is not a600-request
 load benchmark. Independent fixture request buckets are reset between cases;
 production authorization/limits remain unchanged. Earlier failed runs and their

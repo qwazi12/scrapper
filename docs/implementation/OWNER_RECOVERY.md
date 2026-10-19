@@ -91,3 +91,25 @@ Still-import file selection and other remaining forms are outside this native
 treatment recovery slice. Browser recovery is local/private storage, not a server
 backup or media-file archive. The current ledger records actual backend/PG/UI
 results, delayed-response and failed-storage cases before this slice is counted.
+
+The Asset library import template now recovers its API-origin-scoped permission,
+description, tags, entity labels and caption intervals. Only metadata and a last
+selected filename/size hint are stored. File bytes are never placed in browser
+draft storage; after leaving/reloading, the owner must choose the local file again.
+Restore/discard cannot import. Malformed recovered caption structures stay private
+and readable while import is blocked. Mounted imports disable edits; late receipts
+from an unmounted editor cannot clear a newer editor's metadata.
+
+A confirmed new-asset receipt clears that submitted metadata draft without clearing
+the current file selection or template. Catalog-refresh failure is reported
+separately from the confirmed import. Duplicate reuse preserves the server's
+existing permissions/annotations; it does not clear newer unsaved form metadata
+or claim that those words replaced the asset record. No automatic import retry or
+provenance revision is implied.
+
+Catalog read failures retain the last loaded results, label them potentially out
+of date, and offer a read-only refresh. Initial failure leaves contents unconfirmed
+rather than presenting zero as a healthy result. Request generations prevent older
+search responses from replacing a newer query's rows/counts/error state. Query
+inputs remain stable during import; the post-import read uses their current
+submitted context instead of silently resetting them.

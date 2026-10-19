@@ -46,13 +46,14 @@ treatment browser recovery now has focused all-copy/clip/stale-source/error/late
 response/storage/malformed-cache proof and a passed full22-browser regression.
 Explicit authorized background-audio selection/mixing/retention/acceptance also has
 verified scoped native/copy/import UI evidence. Inspect current Git history/state
-and the ledger before choosing the next slice.
+and the ledger before choosing the next slice. Asset import metadata/caption
+recovery, truthful receipt/duplicate states and stale-search protection have also
+passed the complete23-scenario regression.
 
 Latest completed broad evidence: **671 backend passes /1 optional skip**,
 **195 actual PostgreSQL passes** plus native restore, **6 frontend error unit
-passes**, production build/tsc passed, **22 actual browser scenarios passed**
-before the later background-audio slice, which has passed scoped native/manual/
-recovery and corrected combined video/audio/catalog UI proof.
+passes**, production build/tsc passed, **23 actual browser scenarios passed**,
+including background audio and asset-import metadata/catalog read recovery.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not
 silence it or mutate the shared environment. Exact evidence paths are indexed in
 the report. More recent verified runs in the ledger supersede these counts.

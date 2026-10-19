@@ -1482,3 +1482,116 @@ test("Native campaign recovery keeps copy and clip choices private through stale
   await form.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
   expect(posts).toHaveLength(4);
 });
+
+test("Asset import recovery retains private metadata, honest receipts and current catalog reads", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  const files = ["asset-recovery-original", "asset-recovery-second"].map(name => path.join(stack.root, `fixtures/${name}.wav`));
+  for (const [i, file] of files.entries()) execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `sine=f=${1234 + i}:d=3`, file]);
+  const key = `screen-central:${stack.api}:asset-import`;
+  let reads = "fail", mode = "validation", posts = 0, lateCreated = false, slowHeld = false;
+  let releaseLate: () => void = () => {}, releaseSlow: () => void = () => {};
+  const lateGate = new Promise<void>(resolve => { releaseLate = resolve; }), slowGate = new Promise<void>(resolve => { releaseSlow = resolve; });
+  await page.route("**/api/editorial/assets/search*", async route => {
+    if (new URL(route.request().url()).searchParams.get("q") === "slow-first") { const response = await route.fetch(); slowHeld = true; await slowGate; return route.fulfill({ response }); }
+    if (reads === "fail") return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic catalog read unavailable" }) });
+    return route.continue();
+  });
+  await page.route("**/api/editorial/assets/media", async route => {
+    if (route.request().method() !== "POST") return route.continue(); posts++;
+    if (mode === "validation") return route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: [{ loc: ["body", "description"], msg: "Repair the source description", input: "private-validation-input" }] }) });
+    if (mode === "abort") return route.abort("failed");
+    if (mode === "late") {
+      // Browser multipart replay omits file bytes. Create the same local fixture
+      // import explicitly, then delay its real receipt; direct UI upload passed above.
+      const meta = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).value, key);
+      const response = await request.post(route.request().url(), { headers, multipart: { kind: meta.kind, license: meta.license,
+        attestation: meta.attestation, description: meta.description, tags: meta.tags, people: meta.people,
+        caption_cues: JSON.stringify(JSON.parse(meta.cues).map((cue: { start: string; end: string; text: string }) => ({ start: Number(cue.start), end: Number(cue.end), text: cue.text }))),
+        file: { name: path.basename(files[1]), mimeType: "audio/wav", buffer: readFileSync(files[1]) } } });
+      expect(response.ok(), await response.text()).toBe(true); lateCreated = true; await lateGate; return route.fulfill({ response });
+    }
+    return route.continue();
+  });
+  const openImport = async () => { await page.getByRole("button", { name: "Asset library", exact: true }).click(); await page.getByText("Index a local video or audio asset", { exact: true }).click(); };
+  await page.goto("/#editorial"); await openImport();
+  await expect(page.getByRole("alert").filter({ hasText: "Asset catalog unavailable" })).toContainText("Catalog contents are unconfirmed");
+  await expect(page.getByText("0 matching assets", { exact: false })).toHaveCount(0);
+  reads = "normal"; await page.getByRole("button", { name: "Refresh asset catalog", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Asset catalog unavailable" })).toHaveCount(0);
+  const form = page.getByRole("form", { name: "Authorized asset import", exact: true });
+  await form.getByLabel("Asset kind", { exact: true }).selectOption("audio");
+  await form.getByLabel("Local media file", { exact: true }).setInputFiles(files[0]);
+  const rights = "Original locally generated tones, authorized for this private metadata recovery fixture.", description = "Original recoverytone signal and owner caption metadata, created for local tests.";
+  await form.getByLabel("Asset rights and intended use", { exact: true }).fill(rights);
+  await form.getByLabel("Asset scene description", { exact: true }).fill(description);
+  await form.getByLabel("Asset tags", { exact: true }).fill("original, recoverytone");
+  await form.getByLabel("People/entities (owner labels)", { exact: true }).fill("No real people");
+  await form.getByRole("button", { name: "Add caption interval", exact: true }).click();
+  for (const [label, value] of [["start", "0.2"], ["end", "1.8"], ["text", "My original private caption words survive navigation."]]) await form.getByLabel(`Cue 1 ${label}`, { exact: true }).fill(value);
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click(); await openImport();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(form.getByLabel("Asset rights and intended use", { exact: true })).toHaveValue(rights);
+  await expect(form.getByLabel("Cue 1 text", { exact: true })).toHaveValue("My original private caption words survive navigation."); expect(posts).toBe(0);
+  await page.reload(); await openImport(); await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  for (const [label, value] of [["Asset kind", "audio"], ["Asset scene description", description], ["Cue 1 start", "0.2"], ["Cue 1 end", "1.8"]]) await expect(form.getByLabel(label, { exact: true })).toHaveValue(value);
+  await expect(form.getByRole("status").filter({ hasText: "Choose the local file again" })).toBeVisible();
+  const index = form.getByRole("button", { name: "Index local media", exact: true });
+  await expect(index).toBeDisabled(); expect(posts).toBe(0);
+  await form.getByLabel("Local media file", { exact: true }).setInputFiles(files[0]);
+  await index.click(); await expect(page.getByRole("status").filter({ hasText: "Repair the source description" })).toBeVisible();
+  await expect(page.getByText("private-validation-input", { exact: false })).toHaveCount(0);
+  await expect(form.getByLabel("Asset rights and intended use", { exact: true })).toHaveValue(rights);
+  mode = "abort"; await index.click(); await expect(page.getByRole("status").filter({ hasText: "could not be confirmed" })).toBeVisible(); expect(posts).toBe(2);
+  mode = "real"; reads = "fail";
+  const [saved] = await Promise.all([page.waitForResponse(r => r.url().endsWith("/api/editorial/assets/media") && r.request().method() === "POST" && r.status() === 200), index.click()]);
+  const id = (await saved.json()).id;
+  await expect(page.getByRole("status").filter({ hasText: "Media indexed locally" })).toContainText("Catalog refresh unavailable");
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeNull(); expect(posts).toBe(3);
+  const retained = await (await request.get(`${stack.api}/api/editorial/assets/${id}`, { headers })).json();
+  expect(retained.caption_cues[0]).toMatchObject({ start: 0.2, end: 1.8, text: "My original private caption words survive navigation." });
+  reads = "normal"; await page.getByRole("button", { name: "Refresh asset catalog", exact: true }).click();
+  await expect(page.getByTestId(`indexed-asset-${id}`)).toBeVisible(); expect(posts).toBe(3);
+  await form.getByLabel("Asset scene description", { exact: true }).fill("New private metadata must not silently replace the retained duplicate's provenance.");
+  await index.click(); await expect(page.getByRole("status").filter({ hasText: "Duplicate media reused" })).toContainText("form metadata has not replaced");
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toContain("New private metadata");
+  expect((await (await request.get(`${stack.api}/api/editorial/assets/${id}`, { headers })).json()).provenance.description).toBe(description);
+  mode = "late"; await form.getByLabel("Local media file", { exact: true }).setInputFiles(files[1]); await index.click();
+  await expect.poll(() => lateCreated).toBe(true); await expect(form.getByLabel("Asset scene description", { exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click(); await openImport();
+  await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  const newer = "Newer private metadata after returning to the editor must survive the late receipt.";
+  await form.getByLabel("Asset scene description", { exact: true }).fill(newer);
+  const lateResponse = page.waitForResponse(r => r.url().endsWith("/api/editorial/assets/media") && r.request().method() === "POST" && r.status() === 200);
+  releaseLate(); await (await lateResponse).finished(); await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  await expect(form.getByLabel("Asset scene description", { exact: true })).toHaveValue(newer);
+  await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toContain("Newer private metadata"); expect(posts).toBe(5);
+  const cached = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  await page.evaluate(key => { (window as any).__assetDraftSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function (name, value) {
+    if (name === key) throw new DOMException("Synthetic storage failure", "QuotaExceededError"); return (window as any).__assetDraftSetItem.call(this, name, value);
+  }; }, key);
+  await form.getByLabel("Cue 1 text", { exact: true }).fill("Keep my private caption when browser storage fails.");
+  await expect(form.getByRole("alert").filter({ hasText: "Browser draft storage is unavailable" })).toBeVisible();
+  await page.getByRole("button", { name: "Native campaigns", exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(form.getByLabel("Cue 1 text", { exact: true })).toHaveValue("Keep my private caption when browser storage fails.");
+  await form.getByRole("button", { name: "Discard unsaved changes", exact: true }).click(); await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
+  await page.evaluate(({ key, cached }) => { Storage.prototype.setItem = (window as any).__assetDraftSetItem; cached.value.cues = '{"malformed":"recover these private caption words"}'; localStorage.setItem(key, JSON.stringify(cached)); }, { key, cached });
+  await openImport(); await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
+  await expect(form.getByRole("alert").filter({ hasText: "Recovered asset-import data is malformed" })).toBeVisible(); await expect(index).toBeDisabled();
+  await form.getByText("Retained caption words", { exact: true }).click(); await expect(form).toContainText("recover these private caption words");
+  await form.screenshot({ path: path.join(evidence, "asset-import-recovery.png") });
+  await form.getByRole("button", { name: "Discard unsaved changes", exact: true }).click();
+  const search = page.getByRole("form", { name: "Asset search", exact: true });
+  await search.getByLabel("Search asset context", { exact: true }).fill("slow-first"); await search.getByRole("button", { name: "Search indexed assets", exact: true }).click();
+  await expect.poll(() => slowHeld).toBe(true);
+  await search.getByLabel("Search asset context", { exact: true }).fill("recoverytone"); await search.getByRole("button", { name: "Search indexed assets", exact: true }).click();
+  await expect(page.getByTestId(`indexed-asset-${id}`)).toBeVisible(); await expect(page.getByText("Last loaded search: recoverytone", { exact: false })).toBeVisible();
+  const slowResponse = page.waitForResponse(r => r.url().includes("/api/editorial/assets/search") && new URL(r.url()).searchParams.get("q") === "slow-first");
+  releaseSlow(); await (await slowResponse).finished(); await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  await expect(page.getByTestId(`indexed-asset-${id}`)).toBeVisible(); await expect(page.getByText("Last loaded search: recoverytone", { exact: false })).toBeVisible();
+  reads = "fail"; await search.getByRole("button", { name: "Refresh asset catalog", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Asset catalog unavailable" })).toContainText("Showing the last loaded results");
+  await expect(page.getByTestId(`indexed-asset-${id}`)).toBeVisible(); expect(posts).toBe(5); expect(errors).toEqual([]);
+  await page.screenshot({ path: path.join(evidence, "asset-catalog-read-recovery.png"), fullPage: true });
+  reads = "normal"; await search.getByRole("button", { name: "Refresh asset catalog", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Asset catalog unavailable" })).toHaveCount(0); expect(posts).toBe(5);
+});
