@@ -39,6 +39,8 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   const [license, setLicense] = useState("owner_created");
   const [file, setFile] = useState<File | null>(null);
   const incompatibleClips = beats.some(beat => assets.find(a => a.id === beat.asset_id)?.kind === "video") && selected.some(fmt => !["short", "reel"].includes(fmt));
+  const incompatibleAudio = beats.some(beat => !!beat.background_audio_id) && selected.some(fmt => !["short", "reel"].includes(fmt));
+  const missingAudio = beats.some(beat => !!beat.background_audio_id && !assets.some(asset => asset.id === beat.background_audio_id && asset.kind === "audio"));
   const chosen = approved.find(o => String(o.id) === oid);
   const researchChanged = !!oid && (!chosen?.approval?.fingerprint || draft.value.researchFingerprint !== chosen.approval.fingerprint);
   async function load() {
@@ -70,7 +72,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
     }, "Campaign draft saved. Render each selected treatment, then inspect its complete output.");
   }
   return <div style={{ display: "grid", gap: 16 }}>
-    <h2>Native campaigns</h2><p>Use reviewed research for Short/Reel, carousel, single-image, community and poll treatments. Images use original cards and optional cleared stills. Short/Reel visuals can use explicit authorized video intervals; source audio stays muted. Community/polls produce private manual packages; they cannot create publishing queue items.</p>
+    <h2>Native campaigns</h2><p>Use reviewed research for Short/Reel, carousel, single-image, community and poll treatments. Images use original cards and optional cleared stills. Short/Reel visuals can use explicit authorized video intervals; source audio stays muted. Optional background audio is selected separately with its own permissions and mix review. Community/polls produce private manual packages; they cannot create publishing queue items.</p>
     {message && <p role="status">{message}</p>}
     <div><button disabled={busy} onClick={async () => { setBusy(true); try { await load(); setMessage("Native campaign view refreshed."); }
       catch (error: unknown) { setMessage(error instanceof Error ? error.message : "Could not refresh native campaigns"); } finally { setBusy(false); } }}>Refresh native campaigns</button></div>
@@ -113,6 +115,17 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
             <option value="">Choose intentionally</option><option value="hold">Hold the last frame if narration continues</option><option value="loop">Loop this interval if narration continues</option>
           </select></label>
         </div>}
+        <label>Background audio for beat {i + 1}<select aria-label={`Background audio for beat ${i + 1}`} value={beat.background_audio_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, background_audio_id: e.target.value ? Number(e.target.value) : null, audio_start: null, audio_end: null, audio_end_policy: null, audio_gain_db: null } : b))}>
+          <option value="">No background audio</option>{assets.filter(asset => asset.kind === "audio").map(asset => <option key={asset.id} value={asset.id}>#{asset.id} · {asset.tags.join(", ") || asset.provenance.license}</option>)}</select></label>
+        {beat.background_audio_id && assets.some(asset => asset.id === beat.background_audio_id && asset.kind === "audio") && <div style={{ display: "grid", gap: 8 }}>
+          <audio controls preload="metadata" src={api.assetMedia(beat.background_audio_id)} />
+          <p>Preview is the indexed source, before mixing. Choose 0.25–12 seconds and a relative level from −36 to −12 dB. The stems are leveled before this background reduction; inspect the complete final soundtrack for masking and repetition. Narration remains complete, and background audio fades at the beat end.</p>
+          {(["audio_start", "audio_end"] as const).map(key => <label key={key}>{`Background ${key === "audio_start" ? "start" : "end"} for beat ${i + 1}`}<input aria-label={`Background ${key === "audio_start" ? "start" : "end"} for beat ${i + 1}`} required type="number" min={0} max={assets.find(asset => asset.id === beat.background_audio_id)?.provenance.media?.seconds} step="0.001" value={beat[key] ?? ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, [key]: e.target.value === "" ? null : Number(e.target.value) } : b))} /></label>)}
+          <label>Background relative level for beat {i + 1} (dB)<input aria-label={`Background relative level for beat ${i + 1} (dB)`} required type="number" min={-36} max={-12} step="0.5" value={beat.audio_gain_db ?? ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, audio_gain_db: e.target.value === "" ? null : Number(e.target.value) } : b))} /></label>
+          <label>Background end treatment for beat {i + 1}<select aria-label={`Background end treatment for beat ${i + 1}`} required value={beat.audio_end_policy || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, audio_end_policy: e.target.value as "silence" | "loop" || null } : b))}>
+            <option value="">Choose intentionally</option><option value="silence">Finish the excerpt, then leave background silence</option><option value="loop">Loop this interval if narration continues</option>
+          </select></label>
+        </div>}
       </fieldset>)}
       <label style={field}>Short caption<textarea aria-label="Short caption" required={selected.includes("short")} minLength={10} maxLength={2000} value={shortCaption} onChange={e => setShortCaption(e.target.value)} /></label>
       <label style={field}>Carousel caption<textarea aria-label="Carousel caption" required={selected.includes("carousel")} minLength={10} maxLength={2000} value={carouselCaption} onChange={e => setCarouselCaption(e.target.value)} /></label>
@@ -128,9 +141,11 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       </>}
       <label style={field}>Community question draft<textarea aria-label="Community question draft" maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
       {incompatibleClips && <p role="alert">Video intervals currently require a Short/Reel-only campaign. Choose stills for image, carousel or manual formats.</p>}
+      {incompatibleAudio && <p role="alert">Background audio currently requires a Short/Reel-only campaign.</p>}
+      {missingAudio && <p role="alert">A selected background source is unavailable in the current audio library. Choose a current source or remove that selection.</p>}
       {invalidDraft && <div role="alert"><p>Recovered treatment data is malformed. It remains on this browser; recover the words below or discard the draft before creating a campaign.</p><details><summary>Retained treatment words</summary><pre style={{ whiteSpace: "pre-wrap" }}>{draft.value.beats.slice(0, 100000)}</pre></details></div>}
       <LocalDraftStatus draft={draft} noun="native treatment template" destination="private campaign draft" />
-      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || invalidDraft || researchChanged || draft.conflict || !!draft.pending}>Create native campaign</button></div>
+      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || incompatibleAudio || missingAudio || invalidDraft || researchChanged || draft.conflict || !!draft.pending}>Create native campaign</button></div>
       </fieldset>
     </form>
     {rows.map(c => <article key={c.id} style={box} data-testid={`campaign-${c.id}`}>
@@ -159,6 +174,7 @@ function ExportReview({ item, accounts, busy, act }: { item: NativeExport; accou
       <img src={api.nativeFile(item.id, card.file)} alt={card.alt} style={{ width: "100%", borderRadius: 8 }} /><figcaption>Card {i + 1}: {card.alt}</figcaption>
     </figure>)}</div>
     {!!item.manifest.visual_sources?.length && <div><strong>Selected video intervals</strong><ul>{item.manifest.visual_sources.map(source => <li key={source.card}>Card {source.card} · asset #{source.asset_id} · {source.source_start.toFixed(3)}–{source.source_end.toFixed(3)}s · {source.end_policy === "hold" ? "hold last frame" : "loop selected interval"} · {source.presentation_seconds.toFixed(3)}s presentation · source audio excluded</li>)}</ul></div>}
+    {!!item.manifest.audio_sources?.length && <div><strong>Selected background audio</strong><ul>{item.manifest.audio_sources.map(source => <li key={source.card}>Card {source.card} · audio asset #{source.asset_id} · {source.source_start.toFixed(3)}–{source.source_end.toFixed(3)}s · relative level {source.gain_db.toFixed(1)}dB · {source.end_policy === "loop" ? "loop if needed" : "finish, then background silence"} · faded at the beat end</li>)}</ul></div>}
     {item.manifest.platform_copy && <p><strong>Format copy:</strong> {item.manifest.platform_copy}</p>}
     {item.manifest.manual_post && <div><p>{item.manifest.manual_post.text}</p><ol>{item.manifest.manual_post.options.map(option => <li key={option}>{option}</li>)}</ol>
       <p>Private manual export. No account, queue item, scheduled upload or publication has been created.</p></div>}

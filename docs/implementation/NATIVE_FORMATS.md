@@ -20,3 +20,5 @@ origin. A changed approved research version requires current-context review whil
 preserving the draft. Confirmed create and failed view refresh are shown separately;
 late responses cannot erase a newer editor's words. See OWNER_RECOVERY.md for the
 exact behavior and remaining file-import/other-form limits.
+
+Authorized indexed audio can now provide an explicit optional background interval/relative level and silence-or-loop ending for Short/Reel beats. Narration stems target a consistent reference across the campaign; visual-source audio stays excluded. Retained audio provenance and a mandatory per-track review decision join exact acceptance. NATIVE_AUDIO.md distinguishes these local mechanics from subjective mix quality and automatic semantic music selection.

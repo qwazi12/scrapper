@@ -44,11 +44,15 @@ format-correct image/Reel dispatch; explicit authorized video intervals, source
 claims, muted excerpts and actual hold/loop/browser playback proof. Native
 treatment browser recovery now has focused all-copy/clip/stale-source/error/late-
 response/storage/malformed-cache proof and a passed full22-browser regression.
-Inspect current Git history/state and the ledger before choosing the next slice.
+Explicit authorized background-audio selection/mixing/retention/acceptance also has
+verified scoped native/copy/import UI evidence. Inspect current Git history/state
+and the ledger before choosing the next slice.
 
-Latest completed broad evidence: **666 backend passes /1 optional skip**,
-**190 actual PostgreSQL passes** plus native restore, **6 frontend error unit
-passes**, production build passed, **22 actual browser scenarios passed**.
+Latest completed broad evidence: **671 backend passes /1 optional skip**,
+**195 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+passes**, production build/tsc passed, **22 actual browser scenarios passed**
+before the later background-audio slice, which has passed scoped native/manual/
+recovery and corrected combined video/audio/catalog UI proof.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not
 silence it or mutate the shared environment. Exact evidence paths are indexed in
 the report. More recent verified runs in the ledger supersede these counts.

@@ -46,7 +46,9 @@ flowchart LR
 
 The catalog accepts authorized video/audio. Native Short/Reel-only campaigns
 can select explicit video intervals with silent retained excerpts and intentional
-hold/loop treatment; audio-as-visual and incompatible mixed formats reject. Short/Reel visual
+hold/loop treatment. Explicit authorized background audio has separate intervals,
+relative levels and silence/loop endings; audio-as-visual and incompatible mixed
+formats reject. Short/Reel visual
 treatments are still related beat cards. Image, carousel, community and poll have
 format-specific copy; community/poll delivery is private/manual only. Native
 approval now uses the same structured acceptance mechanism as the two studios,
@@ -135,7 +137,7 @@ The current evidence index is in [SCRAPPER_COMPLETION_REPORT.md](SCRAPPER_COMPLE
 Detailed contracts: [local safety](LOCAL_CONTRACTS_20261018.md),
 [media lifecycle](MEDIA_LIFECYCLE_20261018.md), [export acceptance](EXPORT_ACCEPTANCE.md),
 [assets](ASSET_CATALOG.md), [native formats](NATIVE_FORMATS.md),
-[selected video intervals](NATIVE_CLIPS.md),
+[selected video intervals](NATIVE_CLIPS.md), [background audio](NATIVE_AUDIO.md),
 [audience lineage](AUDIENCE_LINEAGE.md), [comments](COMMENT_WORKFLOW.md),
 [learning](LEARNING_DIAGNOSTICS.md), [database recovery](DATABASE_RECOVERY.md),
 and [owner recovery](OWNER_RECOVERY.md). The progress ledger retains earlier

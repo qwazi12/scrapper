@@ -54,8 +54,8 @@ export function AssetLibrary() {
         <label style={field}>Asset kind<select aria-label="Asset kind" value={kind} onChange={e => setKind(e.target.value)}><option value="video">Video</option><option value="audio">Audio</option></select></label>
         <label style={field}>Local media file<input type="file" required accept="video/*,audio/*" onChange={e => setFile(e.target.files?.[0] || null)} /></label>
         <label style={field}>Asset permission<select aria-label="Asset permission" value={license} onChange={e => setLicense(e.target.value)}><option value="owner_created">I created this media</option><option value="licensed">I hold a suitable license</option></select></label>
-        <label style={field}>Asset rights and intended use<textarea required minLength={20} maxLength={2000} value={attestation} onChange={e => setAttestation(e.target.value)} /></label>
-        <label style={field}>Asset scene description<textarea required minLength={10} maxLength={2000} value={description} onChange={e => setDescription(e.target.value)} /></label>
+        <label style={field}>Asset rights and intended use<textarea aria-label="Asset rights and intended use" required minLength={20} maxLength={2000} value={attestation} onChange={e => setAttestation(e.target.value)} /></label>
+        <label style={field}>Asset scene description<textarea aria-label="Asset scene description" required minLength={10} maxLength={2000} value={description} onChange={e => setDescription(e.target.value)} /></label>
         <label style={field}>Asset tags<input maxLength={2500} value={tags} onChange={e => setTags(e.target.value)} /></label>
         <label style={field}>People/entities (owner labels)<input maxLength={2000} value={people} onChange={e => setPeople(e.target.value)} /></label>
         <fieldset><legend>Owner-supplied caption intervals (optional)</legend>

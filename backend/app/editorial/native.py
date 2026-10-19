@@ -75,6 +75,26 @@ def card(path: Path, title: str, beat: dict, index: int, total: int, *, vertical
             "asset_id": beat.get("asset_id"), "visual": "owner_selected_asset" if asset else "original_graphic"}
 
 
+def background_excerpt(root,index,beat,assets):
+    aid=beat.get('background_audio_id')
+    if not aid:return None
+    source=assets.get(aid)
+    start,end,policy,gain=(beat.get(key) for key in ('audio_start','audio_end','audio_end_policy','audio_gain_db'))
+    if not source or policy not in ('silence','loop') or not 0<=start<end or not .25<=end-start<=12 or not -36<=gain<=-12:
+        raise ValueError('Invalid explicit background-audio selection')
+    path=root/f'background-{index + 1}.m4a'
+    media.run(['ffmpeg','-v','error','-y','-ss',str(start),'-i',str(source),'-t',str(end-start),
+        '-map','0:a:0','-vn','-sn','-dn','-map_metadata','-1','-af','asetpts=PTS-STARTPTS',
+        '-c:a','aac','-b:a','128k','-ar','48000','-ac','2',str(path)],timeout=60)
+    actual=media.duration(path)
+    if not .2<=actual<=12.1 or abs(actual-(end-start))>.1:
+        raise ValueError('Selected background-audio interval was truncated; no export can be promoted')
+    return {'file':str(path),'sha256':file_hash(path),'asset_id':aid,'source_sha256':file_hash(source),
+        'source_start':start,'source_end':end,'excerpt_seconds':actual,'end_policy':policy,'gain_db':gain,
+        'normalization_reference_lufs':-18,'mix_policy':'normalized stems with fixed relative gain; no automatic speech ducking',
+        'card':index+1}
+
+
 def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
     root.mkdir(parents=True, exist_ok=False)
     manifest = {"schema": 1, "input_sha256": digest(brief), "format": fmt, "cards": [],
@@ -89,6 +109,12 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
     manifest['delivery']='manual_only' if fmt in ('community','poll') else 'explicit_destination_review_queue'
     segments, timeline, total = [], [], 0.0
     vertical = fmt in ("short", "reel")
+    normalized_voice=any(beat.get('background_audio_id') for beat in brief['beats'])
+    if not vertical and normalized_voice:
+        raise ValueError('Background audio is supported only in Short/Reel treatments')
+    if normalized_voice:
+        manifest['audio_mix_policy']={'narration_reference_lufs':-18,'background_gain_bounds_db':[-36,-12],
+            'scope':'All narration stems targeted consistently; selected background gain is relative to normalized stems. Final mix is normalized separately. No automatic speech ducking or semantic music selection.'}
     beats=brief['beats']
     if fmt=='image':beats=[{**brief['beats'][0],'text':brief['image_text']}]
     if fmt in ('community','poll'):beats=[brief['beats'][0]]
@@ -136,18 +162,44 @@ def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
             seconds = readable
             seconds = math.ceil((seconds + .15) * 30) / 30
             segment = root / f"beat-{i + 1}.mp4"
+            background=background_excerpt(root,i,beat,assets)
             args=['ffmpeg','-v','error','-y','-loop','1','-framerate','30','-i',str(path)]
+            video_graph=None
             if clip:
                 if visual['end_policy']=='loop':args+=['-stream_loop','-1']
                 args+=['-i',str(clip),'-i',str(narration)]
                 footprint='scale=810:440:force_original_aspect_ratio=decrease,pad=810:440:(ow-iw)/2:(oh-ih)/2:color=0x0d1523,setsar=1,setpts=PTS-STARTPTS'
                 if visual['end_policy']=='hold':footprint+=f',tpad=stop_mode=clone:stop_duration={seconds:.6f}'
-                args+=['-filter_complex',f'[1:v]{footprint}[excerpt];[0:v][excerpt]overlay=90:500:shortest=1[v]',
-                    '-map','[v]','-map','2:a:0']
+                video_graph=f'[1:v]{footprint}[excerpt];[0:v][excerpt]overlay=90:500:shortest=1[v]'
                 visual['presentation_seconds']=seconds
-            else:args+=['-i',str(narration),'-map','0:v:0','-map','1:a:0','-vf','scale=1080:1920,setsar=1']
+            else:args+=['-i',str(narration)]
+            if background:
+                voice_index=2 if clip else 1;bed_index=voice_index+1
+                if background['end_policy']=='loop':args+=['-stream_loop','-1']
+                args+=['-i',background['file']]
+                voice=','.join([*filters,f'apad=whole_dur={seconds:.6f}',f'atrim=duration={seconds:.6f}',
+                    'asetpts=PTS-STARTPTS','loudnorm=I=-18:TP=-3:LRA=7','aresample=48000','aformat=channel_layouts=stereo'])
+                bed=[]
+                if background['end_policy']=='loop':bed.append(f'atrim=duration={seconds:.6f}')
+                ending=seconds if background['end_policy']=='loop' else min(seconds,background['excerpt_seconds'])
+                bed+=['asetpts=PTS-STARTPTS','loudnorm=I=-18:TP=-3:LRA=7','aresample=48000','aformat=channel_layouts=stereo',
+                    f"volume={background['gain_db']:.6f}dB",'afade=t=in:st=0:d=0.05',f'afade=t=out:st={max(0,ending-.05):.6f}:d=0.05',
+                    f'apad=whole_dur={seconds:.6f}',f'atrim=duration={seconds:.6f}']
+                video_graph=video_graph or '[0:v]scale=1080:1920,setsar=1[v]'
+                graph=f"{video_graph};[{voice_index}:a]{voice}[voice];[{bed_index}:a]{','.join(bed)}[bed];[voice][bed]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.85[a]"
+                args+=['-filter_complex',graph,'-map','[v]','-map','[a]']
+                background['presentation_seconds']=seconds
+                manifest.setdefault('audio_sources',[]).append(background)
+            else:
+                if video_graph:args+=['-filter_complex',video_graph,'-map','[v]','-map','2:a:0']
+                else:args+=['-map','0:v:0','-map','1:a:0','-vf','scale=1080:1920,setsar=1']
+                audio_filters=[*filters,'apad','alimiter=limit=0.85']
+                if normalized_voice:
+                    audio_filters=[*filters,f'apad=whole_dur={seconds:.6f}',f'atrim=duration={seconds:.6f}',
+                        'asetpts=PTS-STARTPTS','loudnorm=I=-18:TP=-3:LRA=7','aresample=48000','aformat=channel_layouts=stereo','alimiter=limit=0.85']
+                args+=['-af',','.join(audio_filters)]
             media.run([*args, "-t", str(seconds),
-                       "-af", ",".join([*filters, "apad", "alimiter=limit=0.85"]), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
+                       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", str(segment)], timeout=180)
             segments.append(segment)
             timeline.append({"start": round(total, 3), "end": round(total + seconds, 3), "text": beat["text"], "card": path.name})

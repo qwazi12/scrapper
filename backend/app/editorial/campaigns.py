@@ -38,6 +38,11 @@ class Beat(Strict):
     clip_start: float | None = Field(default=None,ge=0,le=300,strict=True,allow_inf_nan=False)
     clip_end: float | None = Field(default=None,gt=0,le=300,strict=True,allow_inf_nan=False)
     clip_end_policy: Literal['hold','loop'] | None = None
+    background_audio_id: int | None = Field(default=None,gt=0,strict=True)
+    audio_start: float | None = Field(default=None,ge=0,le=300,strict=True,allow_inf_nan=False)
+    audio_end: float | None = Field(default=None,gt=0,le=300,strict=True,allow_inf_nan=False)
+    audio_end_policy: Literal['silence','loop'] | None = None
+    audio_gain_db: float | None = Field(default=None,ge=-36,le=-12,strict=True,allow_inf_nan=False)
 
     @model_validator(mode='after')
     def clip_selection(self):
@@ -46,6 +51,16 @@ class Beat(Strict):
                 raise ValueError('Video selection needs an asset, start, end and explicit hold/loop policy')
             if not .25<=self.clip_end-self.clip_start<=12:
                 raise ValueError('Select a video interval of 0.25–12 seconds')
+        return self
+
+    @model_validator(mode='after')
+    def audio_selection(self):
+        values=(self.background_audio_id,self.audio_start,self.audio_end,self.audio_end_policy,self.audio_gain_db)
+        if any(value is not None for value in values):
+            if any(value is None for value in values):
+                raise ValueError('Background audio needs an asset, start, end, relative level and explicit silence/loop policy')
+            if not .25<=self.audio_end-self.audio_start<=12:
+                raise ValueError('Select a background-audio interval of 0.25–12 seconds')
         return self
 
 
@@ -127,6 +142,22 @@ def inputs(s, campaign):
                 raise HTTPException(409,'Still images cannot carry video interval settings')
             if not asset.provenance.get("attestation"): raise HTTPException(409, "Asset rights attestation missing")
             assets[str(aid)] = {"sha256": asset.sha256, "provenance": asset.provenance}
+        audio_id=beat.get('background_audio_id')
+        if audio_id:
+            if not set(campaign.brief['formats']).issubset({'short','reel'}):
+                raise HTTPException(409,'Background audio currently requires Short/Reel-only campaigns')
+            asset=s.get(MediaAsset,audio_id)
+            if not asset or asset.kind!='audio':raise HTTPException(409,'Choose an indexed authorized audio asset for the background soundtrack')
+            from .asset_catalog import verify_existing
+            verify_existing(asset)
+            if not asset.provenance.get('attestation'):raise HTTPException(409,'Background audio rights attestation missing')
+            start,end,policy,gain=(beat.get(key) for key in ('audio_start','audio_end','audio_end_policy','audio_gain_db'))
+            seconds=asset.provenance.get('media',{}).get('seconds')
+            if (type(start) not in (int,float) or type(end) not in (int,float) or policy not in ('silence','loop')
+                or type(gain) not in (int,float) or not -36<=gain<=-12 or type(seconds) not in (int,float)
+                or not 0<=start<end<=seconds or not .25<=end-start<=12):
+                raise HTTPException(409,'Choose an explicit bounded audio interval, relative level and silence/loop policy')
+            assets[str(audio_id)]={'sha256':asset.sha256,'provenance':asset.provenance}
     return {"brief": campaign.brief, "research_fingerprint": fingerprint, "assets": assets}
 
 
@@ -216,7 +247,7 @@ def exact_export(s, eid):
     quality = row.manifest.get("quality", {})
     if quality.get("errors") or quality.get("decode") != "passed": raise HTTPException(409, "Export quality checks did not pass")
     root = (settings.data_path / "editorial" / "campaigns" / str(campaign.id) / row.id).resolve()
-    files = [*row.manifest["cards"], row.manifest["cover"],*row.manifest.get("manual_assets",[]),*row.manifest.get('visual_sources',[])]
+    files = [*row.manifest["cards"], row.manifest["cover"],*row.manifest.get("manual_assets",[]),*row.manifest.get('visual_sources',[]),*row.manifest.get('audio_sources',[])]
     if row.manifest.get("video"): files.append(row.manifest["video"])
     for item in files:
         path = Path(item["file"]).resolve()
@@ -252,6 +283,10 @@ def review_view(row,fingerprint):
             treatment='holds the last frame' if source['end_policy']=='hold' else 'loops the selected interval'
             finding={'kind':'clip_end_treatment','message':f"Card {source['card']} {treatment}: selected {source['source_start']:.3f}–{source['source_end']:.3f}s, presented for {source['presentation_seconds']:.3f}s. Source audio is excluded; review the complete treatment."}
             rows.append({'id':digest(finding),**finding})
+    for source in row.manifest.get('audio_sources',[]):
+        treatment='loops if needed' if source['end_policy']=='loop' else 'ends in silence if narration continues'
+        finding={'kind':'background_audio','message':f"Card {source['card']} background audio: selected {source['source_start']:.3f}–{source['source_end']:.3f}s, presented for {source['presentation_seconds']:.3f}s with relative level {source['gain_db']:.1f}dB after stem normalization; {treatment}, faded at the beat end. Listen for masking, repetition and distracting cuts; confirm permissions."}
+        rows.append({'id':digest(finding),**finding})
     return {"fingerprint":fingerprint,"checks":NATIVE_CHECKS,"findings":rows,
         "measurements":row.manifest['quality'],"rights_status":"owner_attestation_required; automated measurements do not prove permission",
         "source":{"title":f"Campaign #{row.campaign_id} · {row.format}","source":"Retained research, asset provenance and format copy"}}

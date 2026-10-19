@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -27,6 +27,12 @@ test.beforeEach(async ({ page, context, request }) => {
     localStorage.setItem("scrapper_token", token);
   }, { api: stack.api, token: stack.token });
 });
+
+function originalAudioFixture() {
+  const file = path.join(stack.root, "fixtures/native-original-background.wav");
+  if (!existsSync(file)) execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=1100:d=3", file]);
+  return file;
+}
 
 async function acceptExactExport(page: any, screenshot?: string) {
   const form = page.getByRole("form", { name: "Exact export acceptance" });
@@ -1255,6 +1261,15 @@ test("Native selected-video UI imports authorized media, chooses an interval and
     page.getByRole("button", { name: "Index local media", exact: true }).click(),
   ]);
   expect(indexed.ok()).toBe(true); const aid = (await indexed.json()).id;
+  await page.getByLabel("Asset kind", { exact: true }).selectOption("audio");
+  await page.getByLabel("Local media file", { exact: true }).setInputFiles(originalAudioFixture());
+  await page.getByLabel("Asset rights and intended use", { exact: true }).fill("Original generated1100Hz tone created locally for this private background-audio fixture.");
+  await page.getByLabel("Asset scene description", { exact: true }).fill("Original synthetic tone; objective mix and source-provenance fixture, not a musical quality sample.");
+  const [audioIndexed] = await Promise.all([
+    page.waitForResponse(r => r.url().endsWith("/api/editorial/assets/media") && r.request().method() === "POST"),
+    page.getByRole("button", { name: "Index local media", exact: true }).click(),
+  ]);
+  expect(audioIndexed.ok()).toBe(true); const audioId = (await audioIndexed.json()).id;
   await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
   await page.getByLabel("Topic", { exact: true }).fill("Original selected-video treatment fixture");
   await page.getByLabel("Original angle", { exact: true }).fill("Use an explicit original source interval while separately narrating a new visual composition lesson.");
@@ -1280,6 +1295,11 @@ test("Native selected-video UI imports authorized media, chooses an interval and
   await page.getByLabel("Video start for beat 1", { exact: true }).fill("1");
   await page.getByLabel("Video end for beat 1", { exact: true }).fill("3");
   await page.getByLabel("Video end treatment for beat 1", { exact: true }).selectOption("loop");
+  await page.getByLabel("Background audio for beat 1", { exact: true }).selectOption(String(audioId));
+  await page.getByLabel("Background start for beat 1", { exact: true }).fill("0.25");
+  await page.getByLabel("Background end for beat 1", { exact: true }).fill("1.25");
+  await page.getByLabel("Background relative level for beat 1 (dB)", { exact: true }).fill("-24");
+  await page.getByLabel("Background end treatment for beat 1", { exact: true }).selectOption("loop");
   await page.getByLabel("Short caption", { exact: true }).fill("Compare this original interval with the new narrated visual point. Which composition reads most clearly?");
   const [saved] = await Promise.all([
     page.waitForResponse(r => r.url().endsWith("/api/editorial/campaigns") && r.request().method() === "POST"), create.click(),
@@ -1292,6 +1312,8 @@ test("Native selected-video UI imports authorized media, chooses an interval and
   await expect(review).toContainText("1.000–3.000s");
   await expect(review).toContainText("loop selected interval");
   await expect(review).toContainText("source audio excluded");
+  await expect(review).toContainText("Selected background audio");
+  await expect(review).toContainText("relative level -24.0dB");
   const player = review.locator("video");
   await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
   await player.evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
@@ -1299,12 +1321,14 @@ test("Native selected-video UI imports authorized media, chooses an interval and
   await player.evaluate((video: HTMLVideoElement) => video.pause());
   const campaigns = await (await request.get(`${stack.api}/api/editorial/campaigns`, { headers })).json();
   const exported = campaigns.find((row: any) => row.id === cid).exports[0];
+  expect(exported.manifest.audio_sources[0]).toMatchObject({ asset_id: audioId, source_start: 0.25, source_end: 1.25, end_policy: "loop", gain_db: -24 });
   expect(exported.manifest.visual_sources[0]).toMatchObject({ asset_id: aid, source_start: 1, source_end: 3, end_policy: "loop", source_audio: "excluded" });
   copyFileSync(exported.manifest.video.file, path.join(evidence, "native-selected-clip-final.mp4"));
   writeFileSync(path.join(evidence, "native-selected-clip-manifest.json"), JSON.stringify(exported.manifest, null, 2));
   execFileSync("ffmpeg", ["-v", "error", "-xerror", "-i", exported.manifest.video.file, "-f", "null", "-"]);
   await review.getByRole("button", { name: "Approve inspected short", exact: true }).click();
   await expect(page.getByRole("form", { name: "Exact export acceptance" })).toContainText("loops the selected interval");
+  await expect(page.getByRole("form", { name: "Exact export acceptance" })).toContainText("background audio");
   await acceptExactExport(page, "native-selected-clip-acceptance.png");
   await review.getByRole("checkbox", { name: "default:instagram", exact: true }).check();
   await review.getByRole("button", { name: "Add short to review queue", exact: true }).click();
@@ -1331,6 +1355,11 @@ test("Native campaign recovery keeps copy and clip choices private through stale
     file: { name: "original.mp4", mimeType: "video/mp4", buffer: readFileSync(path.join(stack.root, "fixtures/trailer.mp4")) },
   } });
   expect(imported.ok()).toBe(true); const aid = (await imported.json()).id;
+  const audioImported = await request.post(`${stack.api}/api/editorial/assets/media`, { headers, multipart: {
+    kind: "audio", license: "owner_created", attestation: "Original generated tone made for this private local recovery fixture.", description: "Original synthetic1100Hz tone for explicit background-audio selection.",
+    file: { name: "original-tone.wav", mimeType: "audio/wav", buffer: readFileSync(originalAudioFixture()) },
+  } });
+  expect(audioImported.ok()).toBe(true); const audioId = (await audioImported.json()).id;
   const key = `screen-central:${stack.api}:native-campaign`;
   const posts: any[] = [];
   let mode = "validation"; let lateCreated = false; let releaseLate: () => void = () => {};
@@ -1360,6 +1389,11 @@ test("Native campaign recovery keeps copy and clip choices private through stale
   await form.getByLabel("Video start for beat 1", { exact: true }).fill("0.5");
   await form.getByLabel("Video end for beat 1", { exact: true }).fill("2.5");
   await form.getByLabel("Video end treatment for beat 1", { exact: true }).selectOption("hold");
+  await form.getByLabel("Background audio for beat 1", { exact: true }).selectOption(String(audioId));
+  await form.getByLabel("Background start for beat 1", { exact: true }).fill("0.25");
+  await form.getByLabel("Background end for beat 1", { exact: true }).fill("1.25");
+  await form.getByLabel("Background relative level for beat 1 (dB)", { exact: true }).fill("-24");
+  await form.getByLabel("Background end treatment for beat 1", { exact: true }).selectOption("silence");
   await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeTruthy();
   const cached = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
   await page.getByRole("button", { name: "Opportunities & calendar", exact: true }).click();
@@ -1379,6 +1413,11 @@ test("Native campaign recovery keeps copy and clip choices private through stale
   await expect(form.getByLabel("Video start for beat 1", { exact: true })).toHaveValue("0.5");
   await expect(form.getByLabel("Video end for beat 1", { exact: true })).toHaveValue("2.5");
   await expect(form.getByLabel("Video end treatment for beat 1", { exact: true })).toHaveValue("hold");
+  await expect(form.getByLabel("Background audio for beat 1", { exact: true })).toHaveValue(String(audioId));
+  await expect(form.getByLabel("Background start for beat 1", { exact: true })).toHaveValue("0.25");
+  await expect(form.getByLabel("Background end for beat 1", { exact: true })).toHaveValue("1.25");
+  await expect(form.getByLabel("Background relative level for beat 1 (dB)", { exact: true })).toHaveValue("-24");
+  await expect(form.getByLabel("Background end treatment for beat 1", { exact: true })).toHaveValue("silence");
   const save = form.getByRole("button", { name: "Create native campaign", exact: true });
   await expect(save).toBeDisabled(); expect(posts).toHaveLength(0);
   await form.getByText("Current approved research context", { exact: true }).click();
@@ -1411,6 +1450,7 @@ test("Native campaign recovery keeps copy and clip choices private through stale
   await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
   expect(posts).toHaveLength(4);
   expect(posts[3].beats[0]).toMatchObject({ asset_id: aid, clip_start: 0.5, clip_end: 2.5, clip_end_policy: "hold" });
+  expect(posts[3].beats[0]).toMatchObject({ background_audio_id: audioId, audio_start: 0.25, audio_end: 1.25, audio_gain_db: -24, audio_end_policy: "silence" });
   expect(posts[3].expected_research_fingerprint).not.toBe(old.approval.fingerprint);
   const campaigns = (await (await request.get(`${stack.api}/api/editorial/campaigns`, { headers })).json()).filter((row: any) => row.opportunity_id === oid);
   expect(campaigns).toHaveLength(2);
