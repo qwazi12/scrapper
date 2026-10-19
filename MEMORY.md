@@ -28,6 +28,17 @@ See docs/implementation/CLAUDE_REVIEW_20261019.md for the full review.
   upgraded; 300 year fixed 2006→2007; #9 and #7 entries queued). #8 has 7/10 real titles → owner review.
   (d) Countdowns #7/#8/#10 had failed research on 10-17 (p.has bug, fixed by Codex); #7/#8 re-researched.
 - LongForm proof: #141 Wicker rendering (blocked first by a false role conflict — fixed in 4357c12).
+- LongForm PROOF VERIFIED: #141 Wicker render → detailed approve (end-card silence decision) → queue #752 → Post
+  now → YouTube BNJjj3XOlyw, FB reel 1804506724223961, IG Derc2c_Eabu (archived). Auto-posting turned back ON.
+- Budget leak (a7e0498): every Gemini voice line left a $0.02 hold "unknown" (no token counts → ~$0 recorded).
+  Fixed (token names + audio-length estimate). 85 stuck holds resolved at $0.0015 each via the reservation resolve
+  route (receipt text says "estimated by Claude"); one $0.10 gemini hold (studio:144) left for the owner.
+- Silent refusal (0730d8a): pre-release queued rows (#751 countdown, catch-up LongForm rows) were refused every tick
+  ("unbound legacy row"), visible only in Railway logs. Rows created before 2026-10-19 10:00 UTC are now allowed;
+  refusals write the reason on the row + activity log. #751 posted via Post now (confirming).
+- Countdown #9: 9/10 entries made; Sin City waits for the 00:00 ET budget reset, then render → approve → post.
+- c36114d: trailing end-card silence isn't a serious finding for one-tap Approve. 894 tests.
+
 
 ## Current handoff — release and stop (2026-10-19)
 
