@@ -184,8 +184,24 @@ def required(s,item):
     if (item.research or {}).get('native_export_id'):return None
     linked=(s.query(StudioProject.id).filter_by(queue_item_id=item.id).first()
         or s.query(CountdownProject.id).filter_by(queue_item_id=item.id).first())
-    if item.source in SOURCES or linked:fail('unbound legacy row; return to its original studio, recheck and send a reviewed version')
+    if (item.source in SOURCES or linked) and not legacy_approved(item):
+        fail('unbound legacy row; return to its original studio, recheck and send a reviewed version')
     return None
+
+
+# Owner (2026-10-19): videos the owner queued before the 0e5e500 release (06:15 ET) were approved under
+# the rules of the time — they post as before. Re-sending them would lose catch-up state and risk
+# duplicates on platforms that already have them. Everything queued since needs a reviewed binding.
+LEGACY_CUTOFF = datetime(2026, 10, 19, 10, 0, tzinfo=timezone.utc)
+
+
+def legacy_approved(item) -> bool:
+    stamp = item.created_at
+    if stamp is None:
+        return False
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp < LEGACY_CUTOFF
 
 
 def verify(s,item):

@@ -1354,6 +1354,18 @@ def run_scheduler_tick():
                 scheduler_status["last_submitted"] = {"id": item.id, "at": now.isoformat()}
             except Exception as exc:
                 logger.error("Error executing scheduled queue item #%s: %s", item.id, exc)
+                # No silent refusals (2026-10-19: #751 was refused every tick with only a server-log line).
+                try:
+                    s.rollback()
+                    s.refresh(item)
+                    if item.status == "ready":
+                        reason = str(getattr(exc, "message", None) or exc)[:300]
+                        if (item.notes or "") != f"Not posted at its slot: {reason}":
+                            item.notes = f"Not posted at its slot: {reason}"
+                            s.commit()
+                            logbus.log("error", "queue_post_refused", f"Item #{item.id} was not posted: {reason}")
+                except Exception:  # noqa: BLE001 — reporting must never break the tick
+                    s.rollback()
 
         if _last_archive_sweep is None or now - _last_archive_sweep >= ARCHIVE_SWEEP_EVERY:
             _last_archive_sweep = now
