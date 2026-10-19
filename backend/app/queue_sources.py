@@ -80,7 +80,7 @@ def _countdown(s,project,segments):
     from .studio.countdown import current_contract
     ranking=project.ranking or {};proof=ranking.get('eligibility') or {}
     if not current_contract(project):fail('legacy countdown needs current title eligibility before a new delivery')
-    rule=eligibility.criteria(project.topic,settings.studio_region)
+    rule=eligibility.criteria(project.topic,settings.studio_region,today=clock(s).date())
     try:
         checked=datetime.fromisoformat(proof.get('checked_at',''))
         if checked.tzinfo is None:raise ValueError('unknown evidence timezone')

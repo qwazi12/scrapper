@@ -137,7 +137,8 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         d.update(ranking=c.ranking, notes=c.notes, script=c.script, segments=segs)
         from .countdown_eligibility import criteria
         from ..config import settings
-        d["eligibility_criteria"] = criteria(c.topic, settings.studio_region)
+        from ..worker_leases import clock
+        d["eligibility_criteria"] = criteria(c.topic, settings.studio_region, today=clock(s).date())
         d["ranking_version"] = digest(c.ranking)
         saved=bool(c.ranking or c.script or c.segment_ids or c.render)
         d['saved_contract']='current' if current_contract(c) else 'new' if not saved else 'legacy' if legacy_contract(c) else 'unsupported'
@@ -338,7 +339,8 @@ def confirm_titles(s, c: CountdownProject) -> None:
         from . import countdown_eligibility, tmdb
         from ..config import settings
         try:
-            eligibility = countdown_eligibility.verify(entries, c.topic, settings.studio_region)
+            from ..worker_leases import clock
+            eligibility = countdown_eligibility.verify(entries, c.topic, settings.studio_region, checked_at=clock(s))
         except (ValueError, tmdb.TMDBError, OSError) as exc:
             raise HTTPException(409, f"Countdown eligibility needs review: {exc}") from exc
         c.ranking = {**c.ranking, "eligibility": eligibility}
@@ -615,10 +617,13 @@ def require_current_eligibility(s, c, *, stored_only=False, current_segment_id=N
     from . import countdown_eligibility as eligibility
     from ..config import settings
     proof = (c.ranking or {}).get("eligibility") or {}
-    rule = eligibility.criteria(c.topic, settings.studio_region)
+    from ..worker_leases import clock
+    now=clock(s)
+    rule = eligibility.criteria(c.topic, settings.studio_region, today=now.date())
     try:
         checked = datetime.datetime.fromisoformat(proof.get("checked_at", ""))
-        age = (_now() - checked.astimezone(UTC)).total_seconds()
+        if checked.tzinfo is None:raise ValueError('Unknown proof timezone')
+        age = (now - checked.astimezone(UTC)).total_seconds()
     except (ValueError, TypeError):
         age = -1
     if proof.get("criteria") != rule or not 0 <= age <= (86400 if rule["providers"] else 7 * 86400):

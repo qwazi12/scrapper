@@ -79,3 +79,20 @@ completed; actual200/queue commit is retained with that failed trace in history1
 The corrected case waits for HTTP and persisted queue ID. Cloud/Drive delivery
 is simulated; original local generated media/offline speech are actual. Later
 DB-clock admission changes are a separate source generation.
+
+## Database time for category admission
+
+Confirmation stamps category checks with the database clock. Owner criteria,
+child narration admission and retained dispatch use that same clock/date. Naive
+timestamps are unconfirmed, rather than interpreted in a machine's timezone.
+An eight-day-expired proof cannot inherit a skewed app clock and pass narration
+only to fail later at dispatch. Explicit checked time also controls year/window
+criteria consistently. Ranking meaning and provider factual truth remain separate.
+
+Two regressions reproduced before correction. Expanded focused60passed4.15s;
+full backend788passed/1optional skip83.21s; actualPG310passed40.71s, native restore
+1.348s212987bytes/source unchanged/SHA
+dad8ba0f379c49a2929bd4bf439454cca95f6966dd0eef19cd623a861eacfa64.
+Actual current scoped UI2passed2.6min (normalTop5 and legacy recovery through new
+export/source), sourcee0ec9d6d797ca52a912ff8a58a47417390c88cf24cf4915baac99cf776d65302,
+evidence history/countdown-clock-admission1. The preceding full30 is separate.

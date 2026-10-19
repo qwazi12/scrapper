@@ -793,3 +793,19 @@ with original synthetic assets/offline speech and simulated providers/Drive,
 not excellent real-content or cloud proof. Unsupported legacy formats, specialized
 category/semantic/freshness and other C01–C14 remain. See COUNTDOWN_SAVED_CONTRACTS.md.
 Separate next DB-clock work is outside this full30. No paid/public/account/archive/push/deploy.
+
+## Database-clock category freshness verified
+
+Two regressions reproduced expired-proof admission with skewed app clock and
+naive-timezone inference. Producer/view/worker/retained dispatch now share DB
+clock and date criteria; naive proof refuses. Expanded focused60passed4.15s,
+full backend788passed/1skip83.21s; realPG310passed40.71s/native restore1.348s,
+212987bytes/SHAdad8ba0f379c49a2929bd4bf439454cca95f6966dd0eef19cd623a861eacfa64,
+source unchanged. Scoped actual browser2passed2.6min normalTop5 and legacy recovery;
+sourcee0ec9d6d797ca52a912ff8a58a47417390c88cf24cf4915baac99cf776d65302,
+evidence history/countdown-clock-admission1, verified snapshotSHA
+ef430e013f1ba99e1e9add8915735f36a4e607bdcd213579abea5705bc02e6d9.
+Owned stack stopped. Application frontend unchanged build2/full30; no full30 claim
+for later clock source. Original roadmap remains unfinished. Next malformed
+legacy-format/count/provenance corpus reproduced5failures; keep that separate
+from this commit until repaired/verified. No paid/public/account/archive/push/deploy.

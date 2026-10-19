@@ -148,8 +148,11 @@ def evaluate(entry: dict, facts: dict, rule: dict, providers: dict | None = None
     return errors
 
 
-def verify(entries: list[dict], topic: str, territory: str) -> dict:
-    rule = criteria(topic, territory)
+def verify(entries: list[dict], topic: str, territory: str, *, checked_at: dt.datetime | None = None) -> dict:
+    checked_at=checked_at or dt.datetime.now(dt.timezone.utc)
+    if checked_at.tzinfo is None:raise ValueError('Category retrieval time needs an explicit timezone')
+    checked_at=checked_at.astimezone(dt.timezone.utc)
+    rule = criteria(topic, territory, today=checked_at.date())
     checked, errors = [], []
     for e in entries:
         facts = tmdb.fact_sheet(e.get("media_type") or "movie", int(e["tmdb_id"]), region=territory)
@@ -163,5 +166,5 @@ def verify(entries: list[dict], topic: str, territory: str) -> dict:
             "facts": facts, "providers": providers, "sha256": digest([facts, providers]), "source": facts.get("source")})
     if errors:
         raise ValueError("; ".join(errors))
-    return {"criteria": rule, "records": checked, "checked_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    return {"criteria": rule, "records": checked, "checked_at": checked_at.isoformat(),
             "scope": "canonical category metadata and current territory availability; ranking preference remains editorial"}
