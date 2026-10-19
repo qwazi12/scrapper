@@ -491,7 +491,7 @@ def legacy_checked_script(pid:int):
 
 
 @app.post('/api/e2e/legacy-countdown')
-def legacy_countdown():
+def legacy_countdown(unsupported:bool=False):
     """Original local test media and private words; no old verification grant."""
     from uuid import uuid4
     from backend.app.models import CountdownProject,StudioProject
@@ -505,7 +505,7 @@ def legacy_countdown():
             'why_it_ranks':'Our editorial preference for the original visual structure of this synthetic example.'} for index in range(1,6)]
         words={'title':'Private saved synthetic countdown','intro':'Five original synthetic visual studies. Which would you put first?',
             'outro':'Which original visual study would you put first, and why?'}
-        c=CountdownProject(topic='Top 5 Synthetic Animated Films',fmt='top5',stage='segments',stage_status='stopped',
+        c=CountdownProject(topic='Top 5 Synthetic Animated Films',fmt='top3' if unsupported else 'top5',stage='segments',stage_status='stopped',
             ranking={'entries':entries},script=words,review={'private_note':'Keep the original saved review words.'})
         s.add(c);s.flush()
         p=StudioProject(tmdb_id=51,title='Synthetic Film 51',stage_status='done',

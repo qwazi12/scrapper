@@ -1775,3 +1775,53 @@ Clock current scoped2 now browser(next output), owned stack14008, root/hash in a
 Current scoped browser **2passed2.6min**, sourcee0ec9d6d797ca52a912ff8a58a47417390c88cf24cf4915baac99cf776d65302, root scrapper-e2e-ujyi1rfz. Actual normalTop5 and complete legacy recovery/new export/source passed under DB clock. All reports/traces/synthetic media/frozen backend/runtime ledgers/fakeDrive/verified snapshot saved history/countdown-clock-admission1. SnapshotSHAef430e013f1ba99e1e9add8915735f36a4e607bdcd213579abea5705bc02e6d9. Owned stack14008stopped; no active stack. Backend788/1skip,PG310/restore1.348s verified; current frontend unchangedbuild2/full30. Staged clock files match this source; save docs/MEMORY with existing index now.
 
 Next independent untracked backend/tests/test_countdown_format_admission.py reproduced **5failed0.58s**: top3/top100/unknown current contract skips expected-count check and creates2children; legacy unknown fmt is exposed as upgradeable and can become current; retained Countdown inputs omit fmt. No production format fix yet; keep this test OUT of clock commit. Plan: keep unsupported formats readable/unmodified but block confirm/upgrade/paid work; preserve requested fmt in immutable export inputs and bind it to final acceptance; require retained source format/count proof (no inferred backfill), provide owner recovery message for older proof without format. Only Top5/10/15 are product-supported. Add actual format/approval/old-retained-negative regressions and current happy flows before commit. Reconcile stale approval/legacy queue semantics, no sole-copy loss. Broad specialized category/semantic coverage remains C02/C01 work. Original roadmap unfinished. No archive/auth/paid/public/account/push/deploy. Continue without checkpoint stop.
+
+## Supported Countdown format/acceptance — uncommitted current slice
+
+HEAD2abeae1 (C02 prior15fcfcb saved). New format corpus reproduced5failed0.58s: top3/top100/unknown current format skipped expected count and created2children, unknown legacyfmt couldupgrade, immutable inputs lackedfmt. Current require_contract rejects unsupported actual formats; owner view marks unsupported; upgrade leaves words/media/list unchanged; current category/make admission requires exact requested count. ExportVersion inputs nowretainfmt; format changes dependency-invalidate current render/acceptance while preserving oldfmt/bytes/history. Final fingerprint conditionally binds requestedfmt for Countdown only (LongForm unaffected). Retained Countdown requires explicit knownfmt/exact count/current acceptance marker, never guessed backfill from live project. Older formatless records remain readable but require review/resend.
+
+Owner export view shows requested TopN; approval records countdown_format. Send UI requires that exact recorded format plus current contract/bookends, so old pre-format acceptance does not appear ready. Source evidence includes human-readable retainedformat. Saved unsupported panel gives separate supported-draft recovery message. New tests use actual1s generatedmedia/inspection toprove fingerprint change and immutable oldbyte retention/approval cleanup, and retained missingfmt/wrongcount/missingformat-acceptance refusal. These tests are not full narration/editorial proof. Current compatibility103passed4.17s; focused3(previous9fmtcases)52passed4.73s. Expanded10fmtcases included broad current results below.
+
+Current full backend **798passed/1skip79.93s**, actualPG **320passed38.32s**, native restore **1.050s**,213611bytes,SHAfb3e3faa29f25a48ea16ef8806cdd7b8e6d9202e4fbca7056914a9aa43fc6990,source unchanged. One reported Python dependency warning remains. Production frontend build2passed, explicit tsc1session35648 (inspect output); app stable since build. No broad source edit while these ran. No active old stacks.
+
+ACTIVE fresh full31 E2E stack43028/browser(next output),root/hash in artifacts/e2e/countdown-format-admission1-stack.txt, prelaunch exactspec countdown-format-admission1-spec.ts. Adds unsupported oldformat actual UI/no conversion/no work/retained-byte+format/history proof, plus all prior30 including actualnormalTop5 and fulllegacy recovery. New snapshotfmt/acceptance marker must be exercised in actual media/queueSource workflows. No full31 result yet. Do not rebuild.next or replace runner while active; archive all root extras/actual media/source/report/traces/verified WAL-aware snapshot before stopping owned stack. C02format changes uncommitted, prior full30 remains distincta1pre-format source. No roadmap completion inferred. No archive/auth/paid/public/account/push/deploy. Continue independently while frozen tests run.
+
+## Full31 format proof archived; final live-owner guard and acceptance capture active
+
+Full browser1 **31passed6.6min**, source1878b2f082605102ec12647bfb2c6249da9068eb2aabf780fb526e3ceba08377. NormalTop5/legacy recovery use explicitfmt inputs/fingerprint/current acceptance marker; new unsupported-format UI passed516ms, retained exactfmt/words/old bytes and all action attempts blocked. All prior flows passed. Broad798backend/1skip79.93s,PG320/restore1.050s,build2/tsc1passed. Full evidence in history/countdown-format-admission1, verified snapshotSHAa78628799c6d31cba340b49af96aa09ed44b78d69cb80b85bf1dd5374beda82e, all root runtime ledgers/fakeDrive/source/media/reports/traces/executed spec retained. Owned stack43028stopped. Unsupported screenshot inspected: readable words/history with explicit separate-supported-draft message; new work disabled (green disabled styling remains a C13 polish issue). Expected old countdown-acceptance.png did not exist; no false visual-inspection claim. Added explicit requested-format DOM assertion and dedicated screenshot filename for current scoped capture instead.
+
+Code review caught widened-stop regression: current schema1 + unknownfmt + LIVE parent lease was stopped by tick because old live guard tested schema only. New regression reproduced **1failed/10baseline passes0.90s**. Fixed both tick loops to preserve any live unsupported-schema OR unsupportedfmt owner; after lease release it stops for review without another stage. Focused24passed1.05s with worker-leases/clock corpus. New final broad backend2session88982 artifacts/countdown-format-admission-backend2.txt/xml and actualPG2session47409 artifacts/countdown-format-admission-pg2 are active/current; do not assign old798/320 counts to this tiny later source until actual results. No production Python edits since launch.
+
+ACTIVE scoped2 stack28726/browser(next output), root/hash in countdown-format-admission2-stack.txt, cases actualnormalTop5 with explicit Requested Countdown format:Top5 form assertion/capture plus unsupported no-Resume/no-Send proof. Frontend application unchangedbuild2 (test-only assertions refined), no rebuild.next while active. Need archive exact source/report/traces/media/all root extras/verified snapshot before stop, inspect countdown-format-acceptance.png, then docs/commit all supported-format slice on HEAD2abeae1. Current full31 remains distinct pre-final-live-guard source. Original roadmap incomplete; no archive/auth/paid/public/account/push/deploy.
+
+Disk cleanup: first helper invocation failed import before mutation; rerun with PYTHONPATH=. verified exact known stopped marked roots' files against archives/tar and took verified post-stop SQLite snapshots before removing only5duplicate roots (queue-source-binding3,legacy-upgrade1/2,clock-admission1,publisher-compatibility1). **3703files/226239455logical bytes** verified; every post-stop snapshot hash exactly equals original archived snapshot. All content/runtime extras are retained; reclamation proofs under each archive/reclaimed-root-proof.json. No active, unrelated, original attachment or sole-copy media removed. df free rose roughly1.5GiB→1.8GiB (OS fluctuations); further safe cleanup only with equivalent exact mapping.
+
+## Supported Countdown formats and exact acceptance verified
+
+Only Top5/Top10/Top15 admit current work, with the exact requested entry count.
+Unsupported saved formats remain readable with original words/media/history;
+they cannot be silently converted or promoted through legacy recovery. A live
+parent lease is preserved before stopped-work recovery. Immutable export inputs
+and the final fingerprint retain requested format. Acceptance records that exact
+format; retained dispatch requires explicit format/count/acceptance proof and
+never infers it from a changed live draft. Older formatless exports need current
+review/resend. The interface displays the format and explains supported recovery.
+
+Full backend **799passed/1optional skip77.86s**; actual PostgreSQL **321passed37.23s**,
+native restore **1.233s**,214393bytes,source unchanged,SHA
+0d5e4639e11b7e3762d2279e1b08302ad56d1d2c5943acf5bd0b0948a876384c.
+Production build2/explicit tsc1 passed. Pre-final-live-owner-guard full browser
+**31passed6.6min** is retained separately in history/countdown-format-admission1.
+Final source scoped browser **2passed1.3min** covers actual Top5 media/render,
+explicit requested-format acceptance and immutable queue source, plus unsupported
+format readable/no-conversion/disabled-work behavior. SourceSHA
+5e8c1277ccfc172d4661e674eba8a733e01583dea4e5d0432ac380a847fdef09;
+evidence artifacts/e2e/history/countdown-format-admission2; verified WAL-aware
+snapshotSHA96990334c1acca28b8d924bf0d618a706c53f0bd52d74805da0c104dd640eeab.
+Format acceptance screenshot inspected. Original synthetic assets/offline speech
+are actual; provider/cloud services simulated; external spend$0. Owned stack
+stopped after preserving media/source/runtime ledgers/reports/traces/snapshot.
+These results do not close specialized category/editorial/semantic or C01–C14.
+No archive/auth/paid/public/account/push/deploy action.
+
+Save supported-format slice now. Next independent category-boolean corpus will be separate; no broader completion inferred.

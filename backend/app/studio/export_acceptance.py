@@ -44,6 +44,7 @@ def findings(project):
 
 def view(project,root):
     return {'fingerprint':export_fingerprint(project,root),'checks':CHECKS,'findings':findings(project),
+        'requested_format':getattr(project,'fmt',None),
         'measurements':(project.render or {}).get('quality'),
         'rights_status':'owner_attestation_required; automated measurements do not prove permission',
         'source':getattr(project,'trailer',None)}

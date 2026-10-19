@@ -9,7 +9,7 @@ function Snapshot({ value }: { value: QueuedSourceSnapshot }) {
     ? script.sentences.flatMap(sentence => sentence && typeof sentence.text === "string" ? [sentence.text] : [])
     : [script.intro, script.outro].filter((text): text is string => typeof text === "string" && text.length > 0);
   return <article style={{ borderTop: "1px solid #475569", marginTop: 16 }}>
-    <h3>{value.title} · {value.kind === "studio" ? "LongForm" : "Countdown"}</h3>
+    <h3>{value.title} · {value.kind === "studio" ? "LongForm" : `Countdown${value.format ? ` · ${value.format.replace(/^top/, "Top ")}` : ""}`}</h3>
     <h4>Exact retained narration{value.kind === "countdown" ? " — intro and outro" : ""}</h4>
     {words.length ? words.map((text, index) => <p key={index} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{text}</p>) : <p>No narration text in this source snapshot.</p>}
     <details><summary>Complete retained script and timing</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{JSON.stringify(value.script, null, 2)}</pre></details>

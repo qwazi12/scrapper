@@ -78,3 +78,31 @@ Continue the dependency-ordered remaining contracts and negative-path tests in
 C01–C14. Keep current docs honest, run checks appropriate to each change, commit
 verified slices locally, and continue. Do not call the complete objective achieved
 while required independent work or external proof remains.
+
+## Supported Countdown formats and exact acceptance verified
+
+Only Top5/Top10/Top15 admit current work, with the exact requested entry count.
+Unsupported saved formats remain readable with original words/media/history;
+they cannot be silently converted or promoted through legacy recovery. A live
+parent lease is preserved before stopped-work recovery. Immutable export inputs
+and the final fingerprint retain requested format. Acceptance records that exact
+format; retained dispatch requires explicit format/count/acceptance proof and
+never infers it from a changed live draft. Older formatless exports need current
+review/resend. The interface displays the format and explains supported recovery.
+
+Full backend **799passed/1optional skip77.86s**; actual PostgreSQL **321passed37.23s**,
+native restore **1.233s**,214393bytes,source unchanged,SHA
+0d5e4639e11b7e3762d2279e1b08302ad56d1d2c5943acf5bd0b0948a876384c.
+Production build2/explicit tsc1 passed. Pre-final-live-owner-guard full browser
+**31passed6.6min** is retained separately in history/countdown-format-admission1.
+Final source scoped browser **2passed1.3min** covers actual Top5 media/render,
+explicit requested-format acceptance and immutable queue source, plus unsupported
+format readable/no-conversion/disabled-work behavior. SourceSHA
+5e8c1277ccfc172d4661e674eba8a733e01583dea4e5d0432ac380a847fdef09;
+evidence artifacts/e2e/history/countdown-format-admission2; verified WAL-aware
+snapshotSHA96990334c1acca28b8d924bf0d618a706c53f0bd52d74805da0c104dd640eeab.
+Format acceptance screenshot inspected. Original synthetic assets/offline speech
+are actual; provider/cloud services simulated; external spend$0. Owned stack
+stopped after preserving media/source/runtime ledgers/reports/traces/snapshot.
+These results do not close specialized category/editorial/semantic or C01–C14.
+No archive/auth/paid/public/account/push/deploy action.

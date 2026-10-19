@@ -107,6 +107,7 @@ def export_fingerprint(project, root: Path) -> str:
     if hasattr(project, "ranking"):
         inputs.update(ranking=project.ranking, segment_ids=project.segment_ids,
                       segment_fingerprints=render.get("segment_fingerprints"))
+        if hasattr(project,'fmt'):inputs['format']=project.fmt
     return hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False,default=str).encode()).hexdigest()
 
 

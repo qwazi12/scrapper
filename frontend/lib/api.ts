@@ -196,6 +196,7 @@ export type QueueItem = {
 };
 
 export type QueuedSourceSnapshot = {
+  format?: string | null;
   id: string; kind: "studio" | "countdown"; title: string; project_id: number;
   current_project_matches: boolean; captured_at: string; source_created_at: string;
   script: unknown; facts: unknown; approval: unknown;
@@ -764,7 +765,7 @@ export type CountdownProject = {
   queue_item_id?: number | null;
   queue_status?: string | null;
   review: { reviewed_at?: string | null; delete_after?: string | null; auto?: boolean; keyword?: string; keywords?: string[];
-            export_approval?: { fingerprint: string; approved_at: string };
+            export_approval?: { fingerprint: string; approved_at: string; countdown_format?: string };
             demand?: { overall?: number; monthly_searches?: number; growth_pct?: number } };
   created_at: string;
   updated_at: string;
@@ -965,7 +966,7 @@ export type QueueThumbOptions = {
   options: { id: string; label: string; desc: string; file: string }[];
 };
 
-export type ExportAcceptanceView = { fingerprint: string; checks: Record<string, string>;
+export type ExportAcceptanceView = { fingerprint: string; checks: Record<string, string>; requested_format?: string | null;
   findings: { id: string; kind: string; message: string }[]; source: unknown; rights_status: string };
 export type ExportAcceptanceRequest = { expected_fingerprint: string; checks: string[];
   warning_decisions: Record<string, string>; rights_rationale: string; reviewed: true };

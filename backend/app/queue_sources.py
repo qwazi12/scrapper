@@ -77,9 +77,13 @@ def retained(s,eid,*,approve):
 
 def _countdown(s,project,segments):
     from .studio import countdown_eligibility as eligibility
-    from .studio.countdown import current_contract
+    from .studio.countdown import current_contract,COUNTS
     ranking=project.ranking or {};proof=ranking.get('eligibility') or {}
     if not current_contract(project):fail('legacy countdown needs current title eligibility before a new delivery')
+    if getattr(project,'fmt',None) not in COUNTS:fail('retained Countdown format is unconfirmed; review and resend its current supported draft')
+    if len(project.segment_ids or [])!=COUNTS[project.fmt]:fail('retained Countdown count differs from its requested format')
+    if ((project.review or {}).get('export_approval') or {}).get('countdown_format')!=project.fmt:
+        fail('retained Countdown needs current acceptance of its requested format; review and resend from its studio')
     rule=eligibility.criteria(project.topic,settings.studio_region,today=clock(s).date())
     try:
         checked=datetime.fromisoformat(proof.get('checked_at',''))

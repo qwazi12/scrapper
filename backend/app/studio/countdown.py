@@ -141,7 +141,7 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         d["eligibility_criteria"] = criteria(c.topic, settings.studio_region, today=clock(s).date())
         d["ranking_version"] = digest(c.ranking)
         saved=bool(c.ranking or c.script or c.segment_ids or c.render)
-        d['saved_contract']='current' if current_contract(c) else 'new' if not saved else 'legacy' if legacy_contract(c) else 'unsupported'
+        d['saved_contract']='unsupported' if c.fmt not in COUNTS else 'current' if current_contract(c) else 'new' if not saved else 'legacy' if legacy_contract(c) else 'unsupported'
         d['contract_upgrade_version']=contract_upgrade_version(c) if saved and not current_contract(c) else None
         d["bookend_version"] = bookend_version(s, c)
         d["bookend_reviewed"] = (c.review or {}).get("bookend_review", {}).get("version") == d["bookend_version"]
@@ -173,12 +173,14 @@ def contract_upgrade_version(c):
 
 
 def require_contract(c):
+    if hasattr(c,'fmt') and c.fmt not in COUNTS:
+        raise HTTPException(409,'Unsupported saved Countdown format. Keep its words/history and create a separate Top5, Top10 or Top15 review draft; no old list was converted.')
     if not current_contract(c):
         raise HTTPException(409,'This saved Countdown contract is unconfirmed. Review and upgrade its saved list before confirming, voicing or rendering; original words and history are retained.')
 
 
 def stop_unconfirmed(c):
-    if current_contract(c):return False
+    if current_contract(c) and c.fmt in COUNTS:return False
     c.stage_status='stopped'
     c.stage_message='Saved Countdown needs explicit review and upgrade before more segment or render work. Original words are retained.'
     return True
@@ -452,7 +454,7 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
         # Research/render the daily cap paused: carry on once there's budget again.
         for c in s.query(CountdownProject).filter(CountdownProject.stage.in_(["research", "render"]),
                                                   CountdownProject.stage_status == "paused").all():
-            if not current_contract(c) and live(f'countdown:{c.id}'):continue
+            if (not current_contract(c) or c.fmt not in COUNTS) and live(f'countdown:{c.id}'):continue
             if (c.stage=='render' or has_saved_inputs(c)) and stop_unconfirmed(c):
                 s.commit();continue
             if _budget_ok() and not control.running("countdown", c.id):
@@ -461,7 +463,7 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
         for c in s.query(CountdownProject).filter(CountdownProject.stage == "segments",
                                                   CountdownProject.stage_status.in_(["waiting", "running", "paused"])) \
                 .order_by(CountdownProject.id).all():
-            if not current_contract(c) and live(f'countdown:{c.id}'):continue
+            if (not current_contract(c) or c.fmt not in COUNTS) and live(f'countdown:{c.id}'):continue
             if stop_unconfirmed(c):
                 s.commit();continue
             if fix_lengths(s, c):
@@ -616,6 +618,9 @@ def require_bookends(s, c):
 def require_current_eligibility(s, c, *, stored_only=False, current_segment_id=None):
     from . import countdown_eligibility as eligibility
     from ..config import settings
+    require_contract(c)
+    if len(entries_of(c))!=COUNTS[c.fmt]:
+        raise HTTPException(409,f'{FMT_NAME(c.fmt)} requires exactly {COUNTS[c.fmt]} entries; review and repair the ranking')
     proof = (c.ranking or {}).get("eligibility") or {}
     from ..worker_leases import clock
     now=clock(s)
@@ -830,6 +835,7 @@ def approve_countdown_export(cid: int,req:AcceptanceIn) -> dict[str, Any]:
             from ..worker_leases import clock
             try:approval=accept(c,comp_dir(c),req,clock(s))
             except RuntimeError as exc:raise HTTPException(409,str(exc))
+            approval['countdown_format']=c.fmt
             c.review = {**(c.review or {}), "export_approval": approval}
             s.commit()
             return out(s, c)
@@ -1906,7 +1912,7 @@ def upgrade_saved_contract(cid:int,req:ContractUpgradeIn):
             lock(s);c=_get(s,cid)
             if c.stage_status in ('running','queued','waiting') or live(f'countdown:{cid}'):
                 raise HTTPException(409,'Stop or finish active Countdown work before reviewing its saved contract')
-            if current_contract(c) or not legacy_contract(c):
+            if c.fmt not in COUNTS or current_contract(c) or not legacy_contract(c):
                 raise HTTPException(409,'This saved contract is current or unsupported; refresh and inspect its version instead of downgrading it')
             if not req.reviewed or req.expected_version!=contract_upgrade_version(c):
                 raise HTTPException(409,'Saved Countdown identity or words changed; reload and review the current saved list')

@@ -43,6 +43,7 @@ export function ExportAcceptance({ kind, id, label, disabled, onApproved }: {
     }}>
       <p>Inspect the complete delivered export above, including every image, post/poll option and all audio where present. Measurements cannot establish caption accuracy, relevance or permission. Changing the video, thumbnail, script, sources, plan or inspection requires a fresh review.</p>
       <p>Source context: {sourceLabel || "No source description was supplied; document all assets and permissions below."}</p>
+      {view.requested_format && <p>Requested Countdown format: <strong>{view.requested_format.replace(/^top/, "Top ")}</strong>. Review the exact entry count, title and narration against this format.</p>}
       <details><summary>Inspection reference</summary><code style={{ overflowWrap: "anywhere" }}>{view.fingerprint}</code></details>
       {Object.entries(view.checks).map(([key, text]) => <label key={key}><input type="checkbox" disabled={busy} checked={checks.includes(key)} onChange={e => setChecks(e.target.checked ? [...checks, key] : checks.filter(item => item !== key))} /> {text}</label>)}
       {view.findings.map((row, index) => <label key={row.id}>{row.message}

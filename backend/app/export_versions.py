@@ -19,7 +19,7 @@ from .config import settings
 from .models import CountdownProject, ExportVersion, StudioProject
 from .publication_journal import digest, identity
 
-FIELDS=('script','plan','facts','research','trailer','shots','ranking','segment_ids','target_minutes')
+FIELDS=('script','plan','facts','research','trailer','shots','ranking','segment_ids','target_minutes','fmt')
 
 
 def kind(project):return 'studio' if isinstance(project,StudioProject) else 'countdown'
@@ -167,7 +167,7 @@ def retain_changed_exports(s,context,instances):
         source_changed=source_changed or any(a.get('sha256') and b.get('sha256') and a['sha256']!=b['sha256']
                                               for a,b in zip(old_sources,new_sources))
         changed=(source_changed or spoken(old.get('script'))!=spoken(new.get('script')) or any(
-            old.get(k)!=new.get(k) for k in ('plan','ranking','segment_ids','target_minutes')))
+            old.get(k)!=new.get(k) for k in ('plan','ranking','segment_ids','target_minutes','fmt')))
         if isinstance(project,StudioProject) and source_changed:
             from .studio.research_gate import invalidate
             if old.get('script')==new.get('script'):

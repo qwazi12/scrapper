@@ -256,7 +256,8 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   await expect.poll(async () => (await getCountdown()).render.thumb_round).toBe(1);
   await page.screenshot({ path: path.join(evidence, "countdown-review.png"), fullPage: true });
   await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
-  await acceptExactExport(page);
+  await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText("Requested Countdown format: Top 5");
+  await acceptExactExport(page, "countdown-format-acceptance.png");
   await page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await expect.poll(async () => !!(await getCountdown()).queue_item_id).toBe(true);
@@ -264,6 +265,7 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   const countdownSource = await (await request.get(`${stack.api}/api/queue/${queuedExport.queue_item_id}/source-context`, { headers })).json();
   expect(countdownSource.state).toBe("checks_passed");
   expect(countdownSource.binding.kind).toBe("countdown");
+  expect(countdownSource.source.format).toBe("top5");
   expect(countdownSource.segments).toHaveLength(5);
   expect(countdownSource.source.script).toEqual(queuedExport.script);
   const queuedThumbnail = readFileSync(queuedExport.render.thumbnail);
@@ -363,6 +365,39 @@ test("Legacy saved Countdown UI preserves exact words and old media through expl
   await page.screenshot({ path: path.join(evidence, "legacy-countdown-new-reviewed-export.png"), fullPage: true });
   expect((await (await request.get(`${stack.api}/api/e2e/isolation`)).json()).fake_publish_receipts).toBe(starting);
   expect(errors).toEqual([]);
+});
+
+test("Unsupported saved Countdown format stays readable without conversion or paid work", async ({ page, request }) => {
+  const fixture = await (await request.post(`${stack.api}/api/e2e/legacy-countdown?unsupported=true`, { headers })).json();
+  const cid = fixture.id;
+  const before = readFileSync(fixture.old_video);
+  const receiptCount = (await (await request.get(`${stack.api}/api/e2e/isolation`)).json()).fake_publish_receipts;
+  await page.goto(`/#countdowns/${cid}`);
+  const form = page.getByRole("form", { name: "Saved Countdown upgrade", exact: true });
+  await expect(form.getByRole("alert")).toContainText("unsupported");
+  await expect(page.getByRole("button", { name: "▶ Resume", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true })).toBeDisabled();
+  await expect(form.getByRole("button", { name: "Create current review draft", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel(/^Intro hook/)).toHaveValue(fixture.words.intro);
+  await expect(page.getByRole("button", { name: "Recheck title eligibility", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "▶ Make segments", exact: true })).toBeDisabled();
+  const current = await (await request.get(`${stack.api}/api/countdowns/${cid}`, { headers })).json();
+  expect(current.saved_contract).toBe("unsupported"); expect(current.fmt).toBe("top3");
+  for (const action of ["confirm", "make", "render"]) {
+    expect((await request.post(`${stack.api}/api/countdowns/${cid}/${action}`, { headers })).status()).toBe(409);
+  }
+  expect((await request.post(`${stack.api}/api/countdowns/${cid}/upgrade-saved-contract`, { headers,
+    data: { expected_version: current.contract_upgrade_version, reviewed: true } })).status()).toBe(409);
+  const history = page.getByTestId("export-history");
+  await history.getByText("Retained export history", { exact: true }).click();
+  await history.getByRole("button", { name: "Retain current export", exact: true }).click();
+  await expect(history.getByRole("button", { name: /^Inspect retained export / }).first()).toBeVisible();
+  const versions = await (await request.get(`${stack.api}/api/export-history?kind=countdown&project_id=${cid}`, { headers })).json();
+  const detail = await (await request.get(`${stack.api}/api/export-history/${versions.versions[0].id}`, { headers })).json();
+  expect(detail.manifest.snapshot.inputs.fmt).toBe("top3"); expect(detail.manifest.snapshot.inputs.script).toEqual(fixture.words);
+  expect(readFileSync(fixture.old_video).equals(before)).toBe(true);
+  expect((await (await request.get(`${stack.api}/api/e2e/isolation`)).json()).fake_publish_receipts).toBe(receiptCount);
+  await page.screenshot({ path: path.join(evidence, "unsupported-countdown-format-retained.png"), fullPage: true });
 });
 
 test("Editorial UI: reviewed research, cleared still, native Short and carousel, simulated delivery", async ({ page, request }) => {

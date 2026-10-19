@@ -902,7 +902,7 @@ function VideoPart({ c, onChange, reload }: { c: CountdownProject; onChange: (c:
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>
-        <button className="primary" style={{ fontSize: 12 }} disabled={busy || !!c.queue_item_id || !c.review.export_approval}
+        <button className="primary" style={{ fontSize: 12 }} disabled={busy || !!c.queue_item_id || c.saved_contract !== "current" || !c.bookend_reviewed || c.review.export_approval?.countdown_format !== c.fmt}
                 onClick={async () => {
                   if (!(await askConfirm("Send to the Countdowns queue as Ready to Post on Screen Central? It takes the next Countdowns post time (12:00 by default) and a copy is saved to Drive."))) return;
                   setBusy(true);
