@@ -652,3 +652,18 @@ Explicit tscpassed; application frontend unchanged. Actual scoped browser2passed
 restoration/reuse), source1764093d2253b4c9849188cec1be7dbe9f52f0aeba679488a32c6ba35c05e8fa.
 Evidence history/still-integrity1; owned stack stopped after preservation. Original
 roadmap continues with bounded-picker/older selected-source recovery.
+
+### Older selected native assets recover outside the recent picker
+
+Reused exact owner-authenticated details for retained selections beyond100 recent
+rows. IDs/private words/timing stay visible and retained; read failure is explicitly
+unconfirmed.15s read deadline, canceled superseded requests, generation/unmount
+guards and explicit refresh fence stalled/late reads. New metadata never updates a
+draft's expected version without review. Initial new fixture correctly deduplicated
+4hue frames, failing setup at97unique; changed to101distinct per-frame RGB images.
+Fresh focused3passed14.8s then full26passed4.2min; build3/tsc2passed. Backend remains
+683/1skip,PG207/native restore. Full evidence history/native-source-recovery4,
+source1764093d2253b4c9849188cec1be7dbe9f52f0aeba679488a32c6ba35c05e8fa; owned stack
+stopped after preserving all media/trace/verified snapshot. No paid/public/account
+activity. Next C01 credit-context grammar correction is a distinct working-copy
+slice and not represented by this full26 source generation.

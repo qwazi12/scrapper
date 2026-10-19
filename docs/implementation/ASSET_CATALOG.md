@@ -70,3 +70,11 @@ never report reuse success. Tests cover verified/missing/corrupt concurrent winn
 Actual UI shows the refusal and succeeds only after exact byte restoration. Current
 evidence: backend683passes/1skip,PG207passes/native restore; scoped browser2passes
 in history/still-integrity1. Full24 earlier browser evidence remains separate.
+
+Native pickers remain bounded to100 recent rows, while saved/restored/revised
+selections outside that window retrieve exact current metadata separately. An
+omitted row is explicitly unconfirmed rather than assumed deleted. Source reads
+have cancellation/deadlines, stale-result fencing and explicit retry; private IDs,
+copy and intervals remain retained. Creation stays blocked until sources are read
+and current permissions/metadata versions match the explicitly reviewed draft.
+New source metadata never silently replaces a draft's expected version.

@@ -16,6 +16,9 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   const approved = opportunities.filter(o => o.status === "approved");
   const [rows, setRows] = useState<NativeCampaign[]>([]);
   const [assets, setAssets] = useState<IndexedAsset[]>([]);
+  const [catalogGeneration, setCatalogGeneration] = useState(0), [sourceRefresh, setSourceRefresh] = useState(0);
+  const [sourceLoading, setSourceLoading] = useState(false), [sourceErrors, setSourceErrors] = useState<Record<string, string>>({});
+  const sourceReads = useRef(0);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const draft = useLocalDraft(`screen-central:${apiBase()}:native-campaign`, emptyNativeForm, { restoreTemplate: true });
   const { oid, title, shortCaption, carouselCaption, question } = draft.value;
@@ -54,15 +57,39 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       image_caption: b.image_caption || "", community_text: b.community_text || "", poll_question: b.poll_question || "", poll_options: (b.poll_options || []).join("\n") });
     setReplacement(null); setMessage(`Campaign #${c.id} copied into a private revised treatment. Review current research and source metadata before creating its new version.`);
   }
+  const selectedAssetIds = JSON.stringify([...new Set(beats.flatMap(beat => [beat.asset_id, beat.background_audio_id]).filter((id): id is number => !!id))].sort((a, b) => a - b));
+  useEffect(() => {
+    const generation = ++sourceReads.current;
+    const missing = (JSON.parse(selectedAssetIds) as number[]).filter(id => !assets.some(asset => asset.id === id));
+    setSourceErrors({}); setSourceLoading(!!missing.length);
+    if (!missing.length) return;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
+    void Promise.allSettled(missing.map(id => api.nativeAsset(id, controller.signal))).then(results => {
+      clearTimeout(timeout);
+      if (!mounted.current || generation !== sourceReads.current) return;
+      const found: IndexedAsset[] = [], errors: Record<string, string> = {};
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled" && result.value.id === missing[index]) found.push(result.value);
+        else errors[String(missing[index])] = result.status === "rejected" && result.reason instanceof Error ? result.reason.message : "Source context could not be confirmed";
+      });
+      // A newer catalog read takes precedence over an older exact-source response.
+      setAssets(current => [...current, ...found.filter(asset => !current.some(row => row.id === asset.id))]);
+      setSourceErrors(errors); setSourceLoading(false);
+    });
+    return () => { sourceReads.current++; clearTimeout(timeout); controller.abort(); };
+    // Current assets are sampled at selection/explicit refresh/catalog receipt.
+    // Appending an exact selected result must not retry other failed reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAssetIds, sourceRefresh, catalogGeneration]);
   const chosen = approved.find(o => String(o.id) === oid);
   const researchChanged = !!oid && (!chosen?.approval?.fingerprint || draft.value.researchFingerprint !== chosen.approval.fingerprint);
   async function load() {
     const [campaigns, media] = await Promise.all([api.nativeCampaigns(), api.nativeAssets()]);
-    if (mounted.current) { setRows(campaigns); setAssets(media); }
+    if (mounted.current) { setRows(campaigns); setAssets(media); setCatalogGeneration(value => value + 1); }
   }
   useEffect(() => { let alive = true; mounted.current = true;
     Promise.all([api.nativeCampaigns(), api.nativeAssets(), api.socialAccounts()]).then(([c, a, ac]) => {
-      if (alive) { setRows(c); setAssets(a); setAccounts(ac.accounts || []); }
+      if (alive) { setRows(c); setAssets(a); setCatalogGeneration(value => value + 1); setAccounts(ac.accounts || []); }
     }).catch(e => alive && setMessage(e.message));
     return () => { alive = false; mounted.current = false; };
   }, []);
@@ -77,7 +104,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
   }
   async function create(e: FormEvent) {
     e.preventDefault();
-    if (draft.pending || draft.conflict || invalidDraft || researchChanged || sourceChanged || !chosen) return;
+    if (draft.pending || draft.conflict || invalidDraft || researchChanged || sourceChanged || sourceLoading || !chosen) return;
     act(async () => {
       await api.nativeCreate({ opportunity_id: Number(oid), expected_research_fingerprint: draft.value.researchFingerprint, title, formats: selected, beats,
         short_caption: shortCaption, carousel_caption: carouselCaption, community_question: question, ...copy, poll_options: copy.poll_options.split("\n").filter(text => text.trim()) });
@@ -89,6 +116,12 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
     {message && <p role="status">{message}</p>}
     <div><button disabled={busy} onClick={async () => { setBusy(true); try { await load(); setMessage("Native campaign view refreshed."); }
       catch (error: unknown) { setMessage(error instanceof Error ? error.message : "Could not refresh native campaigns"); } finally { setBusy(false); } }}>Refresh native campaigns</button></div>
+    {!!JSON.parse(selectedAssetIds).length && <div>
+      <p>The picker shows up to 100 recent assets. Selected older sources are read individually; absence from that picker does not establish deletion.</p>
+      <button disabled={busy} onClick={() => { setAssets(current => current.filter(asset => !(JSON.parse(selectedAssetIds) as number[]).includes(asset.id))); setSourceRefresh(value => value + 1); }}>Refresh selected asset context</button>
+      {sourceLoading && <p role="status">Reading selected source metadata…</p>}
+      {Object.entries(sourceErrors).map(([id, error]) => <p role="alert" key={id}>Asset #{id} context is unconfirmed. Private copy and timing remain retained. {error}</p>)}
+    </div>}
     <details style={box}><summary>Import a cleared still</summary><form style={{ display: "grid", gap: 10, marginTop: 12 }} onSubmit={e => {
       e.preventDefault(); if (file) act(() => api.nativeAssetUpload(file, license, attestation, tags), "Still indexed by content hash; duplicate imports reuse the existing asset.");
     }}>
@@ -119,14 +152,14 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
         <label style={field}>Research excerpt {i + 1}<select aria-label={`Research excerpt ${i + 1}`} value={beat.source_refs[0]} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, source_refs: [Number(e.target.value)] } : b))}>
           {(chosen?.evidence || []).map((e, n) => <option key={n} value={n + 1}>{n + 1}: {e.excerpt.slice(0, 80)}</option>)}</select></label>
         <label style={field}>Visual for beat {i + 1}<select aria-label={`Visual for beat ${i + 1}`} value={beat.asset_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, asset_id: e.target.value ? Number(e.target.value) : null, asset_metadata_version: assets.find(a => String(a.id) === e.target.value)?.metadata_version || null, clip_start: null, clip_end: null, clip_end_policy: null } : b))}>
-          <option value="">Original graphic</option>{assets.filter(a => ["image", "video"].includes(a.kind)).map(a => <option key={a.id} value={a.id}>#{a.id} · {a.kind}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
+          <option value="">Original graphic</option>{beat.asset_id && !assets.some(asset => asset.id === beat.asset_id) && <option value={beat.asset_id}>{`Selected #${beat.asset_id} · context unconfirmed`}</option>}{assets.filter(a => ["image", "video"].includes(a.kind)).map(a => <option key={a.id} value={a.id}>#{a.id} · {a.kind}: {a.tags.join(", ") || a.provenance.license}</option>)}</select></label>
         {(["visual", "audio"] as const).map(kind => {
           const id = kind === "visual" ? beat.asset_id : beat.background_audio_id;
           const version = kind === "visual" ? beat.asset_metadata_version : beat.audio_metadata_version;
           const asset = assets.find(a => a.id === id);
           return id ? <div key={kind}><p>Selected {kind} #{id} · use permission: {asset?.use_status || "unavailable"}</p>
             {asset && <details><summary>{`Current ${kind} provenance for beat ${i + 1}`}</summary><p>{asset.provenance.description}</p><p>{asset.provenance.license} · {asset.provenance.attestation}</p><code style={{ overflowWrap: "anywhere" }}>{asset.sha256}</code></details>}
-            {(!asset || asset.use_status !== "permitted" || version !== asset.metadata_version) && <div role="alert"><p>This source is unavailable, blocked or has changed since selection. Retained words and timing remain private.</p>
+            {(!asset || asset.use_status !== "permitted" || version !== asset.metadata_version) && <div role="alert"><p>This source needs current metadata and permission review. Retained words and timing remain private.</p>
               {asset?.use_status === "permitted" && <button type="button" onClick={() => setBeats(beats.map((b, j) => j === i ? { ...b, [kind === "visual" ? "asset_metadata_version" : "audio_metadata_version"]: asset.metadata_version } : b))}>{`Use current ${kind} metadata for beat ${i + 1}`}</button>}</div>}
           </div> : null;
         })}
@@ -139,7 +172,7 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
           </select></label>
         </div>}
         <label>Background audio for beat {i + 1}<select aria-label={`Background audio for beat ${i + 1}`} value={beat.background_audio_id || ""} onChange={e => setBeats(beats.map((b, j) => j === i ? { ...b, background_audio_id: e.target.value ? Number(e.target.value) : null, audio_metadata_version: assets.find(a => String(a.id) === e.target.value)?.metadata_version || null, audio_start: null, audio_end: null, audio_end_policy: null, audio_gain_db: null } : b))}>
-          <option value="">No background audio</option>{assets.filter(asset => asset.kind === "audio").map(asset => <option key={asset.id} value={asset.id}>#{asset.id} · {asset.tags.join(", ") || asset.provenance.license}</option>)}</select></label>
+          <option value="">No background audio</option>{beat.background_audio_id && !assets.some(asset => asset.id === beat.background_audio_id) && <option value={beat.background_audio_id}>{`Selected #${beat.background_audio_id} · context unconfirmed`}</option>}{assets.filter(asset => asset.kind === "audio").map(asset => <option key={asset.id} value={asset.id}>#{asset.id} · {asset.tags.join(", ") || asset.provenance.license}</option>)}</select></label>
         {beat.background_audio_id && assets.some(asset => asset.id === beat.background_audio_id && asset.kind === "audio") && <div style={{ display: "grid", gap: 8 }}>
           <audio controls preload="metadata" src={api.assetMedia(beat.background_audio_id)} />
           <p>Preview is the indexed source, before mixing. Choose 0.25–12 seconds and a relative level from −36 to −12 dB. The stems are leveled before this background reduction; inspect the complete final soundtrack for masking and repetition. Narration remains complete, and background audio fades at the beat end.</p>
@@ -165,10 +198,10 @@ export function NativeCampaigns({ opportunities }: { opportunities: EditorialOpp
       <label style={field}>Community question draft<textarea aria-label="Community question draft" maxLength={1000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
       {incompatibleClips && <p role="alert">Video intervals currently require a Short/Reel-only campaign. Choose stills for image, carousel or manual formats.</p>}
       {incompatibleAudio && <p role="alert">Background audio currently requires a Short/Reel-only campaign.</p>}
-      {missingAudio && <p role="alert">A selected background source is unavailable in the current audio library. Choose a current source or remove that selection.</p>}
+      {missingAudio && <p role="alert">A selected background source is unconfirmed in this view. Refresh selected asset context, choose a current source or remove that selection.</p>}
       {invalidDraft && <div role="alert"><p>Recovered treatment data is malformed. It remains on this browser; recover the words below or discard the draft before creating a campaign.</p><details><summary>Retained treatment words</summary><pre style={{ whiteSpace: "pre-wrap" }}>{draft.value.beats.slice(0, 100000)}</pre></details></div>}
       <LocalDraftStatus draft={draft} noun="native treatment template" destination="private campaign draft" />
-      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || incompatibleAudio || missingAudio || invalidDraft || researchChanged || sourceChanged || draft.conflict || !!draft.pending}>Create native campaign</button></div>
+      <div><button disabled={busy || !oid || !selected.length || incompatibleClips || incompatibleAudio || missingAudio || invalidDraft || researchChanged || sourceChanged || sourceLoading || draft.conflict || !!draft.pending}>Create native campaign</button></div>
       </fieldset>
     </form>
     {rows.map(c => <article key={c.id} style={box} data-testid={`campaign-${c.id}`}>

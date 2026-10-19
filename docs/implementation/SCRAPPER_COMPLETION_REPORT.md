@@ -56,11 +56,11 @@ contain the ignored media, database snapshots or traces.
 | Actual private PostgreSQL recovery | **Passed**,0.976s;183480bytes; SHA256`f16040e919f01269cee6aa1439305ddc0bf7f67364912361838bd64687730cd9`; source unchanged | `still-integrity-pg1/restore-drill.txt`, `restore-*/restore-manifest.json`, archive/fingerprints/logs |
 | Selected clip contracts | **34 passed**,11.32s, actual hold/loop frame/audio checks, strict ranges/source claims | `native-clips-focused2.txt` |
 | Native acceptance focused | **22 passed**,2.24s, then all5 new contracts including actual generated-tone Reel render **passed**,2.63s | `native-acceptance-focused2.txt`, `native-acceptance-focused3.txt` |
-| Frontend production build | Passed after reviewed asset revisions; explicit tsc passed | `asset-annotations-build2.txt`, `asset-annotations-tsc1.txt` |
+| Frontend production build | Passed after older selected-source recovery; explicit tsc passed | `native-source-recovery-build3.txt`, `native-source-recovery-tsc2.txt` |
 | Frontend error contracts | **6 passed**,114.49ms; typeless Node module warning reported | `api-errors-unit3.txt` |
 | Current still/source review UI | **2 passed**,12.0s; current source includes publisher cleanup and still integrity; actual duplicate409, exact recovery and revised-native render/acceptance | `e2e/history/still-integrity1/` |
 | Reviewed asset decisions focused UI | **1 passed**,11.1s; real source/import, private draft recovery, stale competing decision, block/re-permit history and revised native source render/acceptance; fresh full24 regression also passed | `e2e/history/asset-annotations1/` |
-| Current full browser regression | **24 passed**,4.4min; includes reviewed metadata/use decisions and revised native sources plus all prior media/safety cases; frozen backend/scripts SHA`7f5a78fba426bc0731aa01156f6f6fb02f7958141c829d7edbf8f481ba57af24` | `e2e/history/asset-annotations2/` report/traces/screenshots/actual media/verified DB snapshot |
+| Current full browser regression | **26 passed**,4.2min; includes still duplicate integrity and older exact-source recovery beyond the real100-row picker, reviewed metadata/use decisions, native sources and prior media/safety cases; frozen backend/scripts SHA`1764093d2253b4c9849188cec1be7dbe9f52f0aeba679488a32c6ba35c05e8fa` | `e2e/history/native-source-recovery4/` report/traces/screenshots/actual media/verified DB snapshot |
 | Earlier full browser before background-audio slice | **22 passed**,3.9min; frozen backend/scripts SHA`87cae4a6a3b3d498a4509c0c9b4deb79994e9e80ad459c1c99fe5bde39a47cc2`; complete media and recovery cases | `e2e/history/native-drafts3/` report/traces/screenshots/actual media/verified DB snapshot |
 | Earlier full browser before native slice | **20 passed**,3.9min; frozen backend/scripts SHA`e6214eab0d40e4d396422f5af813f17962cb09a205467e514b2a8e9deef410e0` | `e2e/history/owner-recovery5/stack.json`, report, traces/screenshots and verified DB snapshot |
 | Browser after native acceptance | **4 passed**,2.2min; fresh image/manual visual capture **1 passed**,3.7s. Frozen backend/scripts SHA`d1e6c1a4eff1c46fb56594de496936f9ee7b437c8a7f546ba48be4f526105e25` | `e2e/history/native-acceptance1/` and `native-acceptance3/` reports/traces/screenshots/verified DB snapshots |
@@ -71,13 +71,12 @@ contain the ignored media, database snapshots or traces.
 | Linux/container/CI | Prepared; **not executed** | `.github/workflows/quality.yml`, `scripts/e2e/Dockerfile` |
 | Real provider/staging/deployment | **Unverified; not executed** | No deployment/provider success receipt exists |
 
-The current full browser24 precedes the later helper-only publication cleanup repair
-(covered by actual SQLite/PG conflict/ownership regression tests). It includes actual LongForm and five independent Countdown
+The current full browser26 includes actual LongForm and five independent Countdown
 segment pipelines/stitch, native formats and private local downloads, independent
 source review, local worker handoff, simulated delivery/uncertainty/financial
 reconciliation, retained-media/history recovery, asset catalog, content lineage,
 comment/correction review, diagnostics→manual experiment, browser draft failures,
-API-origin credential recovery, real limiter recovery, explicit mixed video/audio playback/seek, native treatment recovery, asset metadata/caption recovery, duplicate-provenance receipts, stale search protection, immutable metadata/use decisions, stale recovered review words and explicit revised-source native rendering/acceptance. Rate exhaustion is
+API-origin credential recovery, real limiter recovery, explicit mixed video/audio playback/seek, native treatment recovery, asset metadata/caption recovery, duplicate-provenance receipts, stale search protection, immutable metadata/use decisions, stale recovered review words explicit revised-source native rendering/acceptance, still integrity refusals/exact recovery and older selected-source read failure/cancellation/version recovery. Rate exhaustion is
 fixture-seeded; the test waits the actual60-second window. It is not a600-request
 load benchmark. Independent fixture request buckets are reset between cases;
 production authorization/limits remain unchanged. Earlier failed runs and their

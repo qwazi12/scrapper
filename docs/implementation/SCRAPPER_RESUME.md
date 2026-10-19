@@ -50,11 +50,12 @@ and the ledger before choosing the next slice. Asset import metadata/caption
 recovery, truthful receipt/duplicate states and stale-search protection have also
 passed the complete23-scenario regression. Reviewed immutable asset metadata/use
 permission decisions, stale/recovered review words and explicitly rebound revised
-native treatments passed focused actual UI and the complete24-browser regression.
+native treatments passed focused actual UI and the complete24-browser regression. Still integrity and selected sources outside
+the actual100-row picker now also passed the complete26-browser regression.
 
 Latest completed broad evidence: **683 backend passes /1 optional skip**,
 **207 actual PostgreSQL passes** plus native restore, **6 frontend error unit
-passes**, production build/tsc passed, **24 actual browser scenarios passed**,
+passes**, production build/tsc passed, **26 actual browser scenarios passed**,
 including background audio and asset-import metadata/catalog read recovery.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not
 silence it or mutate the shared environment. Exact evidence paths are indexed in

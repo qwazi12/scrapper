@@ -1707,3 +1707,67 @@ test("Still duplicate UI refuses corrupted retained bytes and recovers only exac
   expect(createHash("sha256").update(readFileSync(retained)).digest("hex")).toBe(source.sha256);
   expect(errors).toEqual([]);
 });
+
+test("Older selected assets recover beyond the real 100-row picker with explicit source-version review", async ({ page, request }) => {
+  const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
+  const template = path.join(stack.root, "fixtures/older-source-%03d.png");
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=32x32:r=30:d=4", "-vf", "format=gbrp,geq=r=N*2:g=X*8:b=Y*8,format=rgb24", "-frames:v", "101", template]);
+  const ids: number[] = [];
+  for (let i = 1; i <= 101; i++) {
+    const file = path.join(stack.root, `fixtures/older-source-${String(i).padStart(3, "0")}.png`);
+    const result = await request.post(`${stack.api}/api/editorial/assets`, { headers, multipart: {
+      license: "owner_created", attestation: "These original procedural hue frames were generated for the isolated bounded-picker test.", tags: `olderasset${i}`,
+      file: { name: path.basename(file), mimeType: "image/png", buffer: readFileSync(file) } } });
+    expect(result.ok(), await result.text()).toBe(true); ids.push((await result.json()).id);
+  }
+  expect(new Set(ids).size).toBe(101); const aid = ids[0];
+  const recent = await (await request.get(`${stack.api}/api/editorial/assets`, { headers })).json();
+  expect(recent).toHaveLength(100); expect(recent.some((a: any) => a.id === aid)).toBe(false);
+  const exact = await (await request.get(`${stack.api}/api/editorial/assets/${aid}`, { headers })).json();
+  const research = await request.post(`${stack.api}/api/editorial/opportunities`, { headers, data: {
+    title: "Original older source recovery study", angle: "Explain an original color progression with a retained earlier source and current owner context.",
+    audience: "Viewers learning original visual design", formats: ["carousel"], evidence: [{ url: "https://example.org/older-original-source",
+      excerpt: "All original procedural hue frames were created by this isolated local fixture.", entity: "Synthetic hue study", retrieved_at: new Date().toISOString() }] } });
+  expect(research.ok(), await research.text()).toBe(true); const oid = (await research.json()).id;
+  expect((await request.post(`${stack.api}/api/editorial/opportunities/${oid}/approve`, { headers })).ok()).toBe(true);
+  const result = await request.post(`${stack.api}/api/editorial/campaigns`, { headers, data: { opportunity_id: oid, title: "A retained original color frame", formats: ["carousel"],
+    beats: ["hook", "body", "payoff"].map((role, i) => ({ role, text: ["Can one original color frame give this opening a clear focus?", "A second deliberate composition changes our visual emphasis.", "The final frame completes this original synthetic color study."][i], source_refs: [1], ...(i === 0 ? { asset_id: aid, asset_metadata_version: exact.metadata_version } : {}) })),
+    carousel_caption: "Swipe through the original color treatment and inspect the intended source.", short_caption: "", community_question: "" } });
+  expect(result.ok(), await result.text()).toBe(true); const cid = (await result.json()).id;
+  let refuse = true, reads = 0, holdNext = false, held = false;
+  let releaseOld: () => void = () => {}; const oldGate = new Promise<void>(resolve => { releaseOld = resolve; });
+  await page.route(`**/api/editorial/assets/${aid}`, async route => {
+    reads++;
+    if (holdNext) { holdNext = false; held = true; await oldGate; return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic older source read failed late" }) }).catch(() => {}); }
+    return refuse ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic exact-source read unavailable" }) }) : route.continue();
+  });
+  await page.goto("/#editorial"); await page.getByRole("button", { name: "Native campaigns", exact: true }).click();
+  await page.getByTestId(`campaign-${cid}`).getByRole("button", { name: "Draft revised treatment", exact: true }).click();
+  const draft = page.getByRole("form", { name: "Native campaign draft", exact: true });
+  await expect(page.getByRole("alert").filter({ hasText: `Asset #${aid} context is unconfirmed` })).toBeVisible();
+  await expect(draft.getByLabel("Visual for beat 1", { exact: true })).toHaveValue(String(aid));
+  await draft.getByLabel("Campaign title", { exact: true }).fill("Retained private words while source reads fail");
+  await expect(draft.getByRole("button", { name: "Create native campaign", exact: true })).toBeDisabled();
+  const reviewEndpoint = `${stack.api}/api/editorial/assets/${aid}/metadata-review`;
+  const current = await (await request.get(reviewEndpoint, { headers })).json();
+  const revised = await request.post(reviewEndpoint, { headers, data: { ...current.metadata, expected_version: current.version,
+    description: "The current owner context identifies the original red hue frame.", rationale: "Review the original generated frame before allowing a revised private treatment.", reviewed: true } });
+  expect(revised.ok(), await revised.text()).toBe(true); const version = (await revised.json()).view.version;
+  holdNext = true; await page.getByRole("button", { name: "Refresh selected asset context", exact: true }).click();
+  await expect.poll(() => held).toBe(true);
+  // An explicit newer read cancels a stalled older read without clearing draft words.
+  refuse = false; await page.getByRole("button", { name: "Refresh selected asset context", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: `Asset #${aid} context is unconfirmed` })).toHaveCount(0);
+  await expect(draft.getByRole("button", { name: "Use current visual metadata for beat 1", exact: true })).toBeVisible();
+  await expect(draft.getByLabel("Campaign title", { exact: true })).toHaveValue("Retained private words while source reads fail");
+  await expect(draft.getByRole("button", { name: "Create native campaign", exact: true })).toBeDisabled();
+  await draft.getByText("Current visual provenance for beat 1", { exact: true }).click(); await expect(draft).toContainText("The current owner context identifies the original red hue frame.");
+  await draft.getByRole("button", { name: "Use current visual metadata for beat 1", exact: true }).click();
+  await draft.screenshot({ path: path.join(evidence, "older-selected-source-recovered.png") });
+  const saved = page.waitForResponse(r => r.url().endsWith("/api/editorial/campaigns") && r.request().method() === "POST" && r.status() === 200);
+  await draft.getByRole("button", { name: "Create native campaign", exact: true }).click(); const body = await (await saved).json();
+  expect(body.brief.title).toBe("Retained private words while source reads fail"); expect(body.brief.beats[0]).toMatchObject({ asset_id: aid, asset_metadata_version: version });
+  releaseOld(); await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  await expect(page.getByRole("alert").filter({ hasText: `Asset #${aid} context is unconfirmed` })).toHaveCount(0);
+  expect(reads).toBeGreaterThanOrEqual(3); expect(errors).toEqual([]);
+});

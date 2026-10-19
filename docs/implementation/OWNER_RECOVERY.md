@@ -123,3 +123,13 @@ Saved native campaigns can be copied into a revised private treatment; dirty dra
 replacement requires an explicit choice, and changed research/source versions must
 be reviewed before new creation. Timing/gain/copy is preserved; old manifests and
 content mappings stay historical evidence. See ASSET_CATALOG.md.
+
+Native treatment selections outside the bounded100-recent-asset picker now read
+current metadata by exact owner-authenticated ID. The selected ID remains visible
+while context is unconfirmed. Failed reads preserve copy/timing and block creation;
+explicit selected-context refresh can supersede a stalled request. A15-second batch
+deadline and generation/unmount guards fence late results. Current source metadata
+is displayed for comparison; the draft's original expected version is retained
+until the owner explicitly adopts current metadata. Revoked permissions still
+block use. This is recovery of a selected existing source, not full catalog
+pagination or semantic search.

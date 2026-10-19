@@ -1153,6 +1153,7 @@ export const api = {
     const body = new FormData(); body.append("file", file); Object.entries(fields).forEach(([key, value]) => body.append(key, value));
     return req<IndexedAsset & { duplicate: boolean }>("/api/editorial/assets/media", { method: "POST", headers: headers(false), body });
   },
+  nativeAsset: (id: number, signal?: AbortSignal) => req<IndexedAsset>(`/api/editorial/assets/${id}`, { headers: headers(false), signal }),
   nativeAssets: () => req<IndexedAsset[]>("/api/editorial/assets", { headers: headers(false) }),
   nativeAssetUpload: (file: File, license: string, attestation: string, tags: string) => {
     const body = new FormData(); body.append("file", file); body.append("license", license); body.append("attestation", attestation); body.append("tags", tags);
