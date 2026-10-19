@@ -498,10 +498,32 @@ class ExportVersion(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class DeliveryArchive(Base):
+    """Exact content and delivery evidence outlives mutable queue rows."""
+    __tablename__ = "delivery_archives"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), index=True)
+    manifest: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class RemoteCopyEvidence(Base):
+    """Append-only retention decisions; a remote link alone is not a backup proof."""
+    __tablename__ = "remote_copy_evidence"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(24), default="drive")
+    file_id: Mapped[str] = mapped_column(String(128), index=True)
+    resource: Mapped[str] = mapped_column(String(96), index=True)
+    action: Mapped[str] = mapped_column(String(32))
+    evidence: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # DDL is provided but has not been exercised in the local SQLite test lane.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__):
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

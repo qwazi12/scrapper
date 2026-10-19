@@ -341,9 +341,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   async function handleDelete(id: number) {
     if (!await askConfirm("Delete this queue item?")) return;
-    await api.deleteQueueItem(id).catch(() => {});
-    loadQueue();
-    onChange();
+    try {
+      await api.deleteQueueItem(id);
+      loadQueue(); onChange();
+    } catch (e) { notify(`Queue item kept: ${e instanceof Error ? e.message : String(e)}`); }
   }
 
   async function handleBulkStatusChange(targetStatus: string) {
@@ -1304,8 +1305,8 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       {item.published_at && archiveDays !== null && archiveDays > 0 &&
                         (item.status === "posted" || item.status === "archived") && (
                         <div style={{ fontSize: 10, color: "var(--yellow)", marginTop: 2 }}
-                          title="Row is removed and the Drive file moved to trash">
-                          🗑 deletes {fmtET(new Date(parseApiDate(item.published_at) + archiveDays * 86400000).toISOString())}
+                          title="Queue row is removed after retaining delivery history; remote files stay in place">
+                          📚 retains history {fmtET(new Date(parseApiDate(item.published_at) + archiveDays * 86400000).toISOString())}
                         </div>
                       )}
                     </td>

@@ -75,8 +75,10 @@ require explicit evidence review; late receipts cannot trigger duplicate posting
 Financial holds have their own renewable request leases and owner reconciliation.
 File claims cover cooperating render/transfer/mutation/cleanup processes; deletion
 requires references and verified copies to agree. Countdown output directories
-are unique per attempt. Complete original-studio export history, every media
-response stream/trash path, PostgreSQL and real providers remain release gaps.
+are unique per attempt. Original-studio export history, response-lifetime file claims and retained delivery
+history are now implemented locally. Automated remote media/backup deletion is
+disabled; managed remote reclamation, remaining local backup/temp paths, PostgreSQL
+and real-provider behavior still need their acceptance lanes.
 
 ```mermaid
 flowchart LR
@@ -118,3 +120,22 @@ Safe E2E uses a fresh marked temporary root, synthetic token/database/assets,
 installed local speech, fake provider receipts, blocked external sockets and an
 OS sandbox (macOS) or externally isolated container (Linux). Web-only mode and
 safe-mode startup suppress schedulers, production recovery and maintenance.
+
+
+```mermaid
+flowchart LR
+  SOURCES[Immutable fetched records / original project identity] --> CONFLICTS[Explicit contradiction resolution / current context]
+  CONFLICTS --> NARRATION[Saved narration evidence gate]
+  CATEGORY[Canonical category / territory / freshness] --> COUNTDOWN[Campaign-owned ranked segments]
+  COUNTDOWN --> WORDS[Exact saved intro/outro + current research owner review]
+  WORDS --> STITCH[Final Countdown render]
+  STITCH --> VERSION[Append-only original export + content-addressed blobs]
+  NARRATION --> VERSION
+  VERSION --> RECOVER[Identity/version comparison / unchecked draft restore]
+  DELIVERED[Settled queue content + recorded receipts] --> HISTORY[Append-only delivery archive / retained media]
+  HISTORY --> PRIVATE[Owner history / hash-checked scoped file download]
+  TRANSFER[Remote creation / verified transfer receipt] --> REMOTE[Kept current and superseded copies]
+  RESPONSE[Media response] --> READ[Shared claim until final byte]
+```
+
+The last local verification is 542 backend tests/1 optional skip and 12 passing browser scenarios. A frozen backend/scripts source generation and its hash are recorded per new E2E run, preventing lazy imports from mixing code generations while development continues. Batch status keeps polling until the durable completion checkpoint is saved.

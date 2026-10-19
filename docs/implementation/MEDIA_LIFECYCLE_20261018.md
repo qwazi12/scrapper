@@ -20,8 +20,11 @@ asset and compilation references. A pending Studio worker handoff is a reference
 Operational log retention defaults to 30 days and 100,000 rows, separately from
 append-only financial and publication evidence.
 
-These contracts do not yet cover every media response stream or every legacy
-Drive trash path. A lease controls cooperating application processes;
+Production FileResponse paths now hold shared ownership through the final ASGI
+body, including Range/HEAD/cancellation and expired-generation rejection. Automatic
+Drive media and database-backup deletion paths are disabled: age, folder membership
+and a newer upload do not establish ownership or another copy of older bytes.
+Managed remote reclamation and remaining local backup/temp ownership still need work. A lease controls cooperating application processes;
 it cannot stop a person or unrelated process changing files on disk. Ordinary
 byte hashes do not establish media rights, relevance or editorial quality.
 
@@ -88,3 +91,12 @@ The last stricter archive-link comparison is backend-tested; safe browser mode
 suppresses archive scheduling. PostgreSQL, clock skew, crash-injected rolling
 upgrades, real providers, production-length media, retained original-studio export
 history, every stream/trash consumer and the full UI/rights matrix remain open.
+
+
+## Retained original exports and delivered content
+
+Studio/Countdown exports retain independent content-addressed media and saved-input/approval snapshots. Database guards make the records append-only. Upstream invalidation and project deletion retain the old bytes; restore compares the current project version/creation identity and restores only an unchecked draft. Thumbnail options have unique paths rather than overwriting older selected bytes.
+
+Settled queue-row reclamation first captures exact available local files, content, targets and delivery observations in DeliveryArchive, plus a publication-journal reference. A missing/legacy file remains explicitly unavailable. Shared readers may finish; an exclusive mutation or uncertain submission keeps the queue row. API history survives numeric-ID reuse, is owner-private, and verifies hashes before streaming. Unknown file types download as attachments with nosniff. The owner Settings history remains reachable when schedule reads fail.
+
+Drive creation IDs are retained even if checksum verification or content ownership later fails. Independently verified transfer receipts and kept current/superseded version records are append-only. Prior remote versions are retained rather than assuming the new render replaces their bytes. These are local mocked-provider contracts; no Drive account was contacted. Remote garbage collection is deliberately unavailable until managed-copy/reference proof exists.

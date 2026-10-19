@@ -1041,7 +1041,23 @@ export type RetainedVersion = { id: string; kind: "studio" | "countdown"; projec
 export type RetainedDetail = { id: string; kind: "studio" | "countdown"; project_id: number;
   manifest: { title: string; snapshot: { inputs: { script?: any }; render: any; approval: any } } };
 
+export type DeliveryHistory = {
+  retention: string; next_offset: number; has_more: boolean;
+  deliveries: { id: string; queue_id: number; created_at: string; title: string; pipeline: string; published_at: string | null; status: string; asset_count: number }[];
+  remote_copies: { id: string; resource: string; file_id: string; action: string; created_at: string;
+    evidence: { role?: string; link?: string; reason?: string; verification_recorded?: boolean; verification?: { sha256?: string; remote_file_id?: string; bytes?: number }; scope?: string; retention?: string } }[];
+};
+export type DeliveryDetail = { id: string; manifest: {
+  snapshot: { title: string; description: string; tags: string; status: string; accounts: string[];
+    published_at: string | null; drive_link?: string; notes?: string; publish_requests?: { state?: string; profile?: string; request_id?: string }[] };
+  assets: { role: string; mime: string; available: boolean; bytes?: number; sha256?: string; reason?: string }[];
+  delivery_scope: string; remote_retention: string;
+} };
+
 export const api = {
+  deliveryHistory: (offset = 0) => req<DeliveryHistory>(`/api/delivery-history?offset=${offset}`, { headers: headers(false) }),
+  deliveryDetail: (id: string) => req<DeliveryDetail>(`/api/delivery-history/${id}`, { headers: headers(false) }),
+  deliveryFile: (id: string, index: number) => mediaUrl(`/api/delivery-history/${id}/file/${index}`),
   retainedVersions: (kind?: string, projectId?: number) => req<{ project_version: string | null; versions: RetainedVersion[] }>(
     `/api/export-history${kind && projectId ? `?kind=${kind}&project_id=${projectId}` : ""}`, { headers: headers(false) }),
   retainedDetail: (id: string) => req<RetainedDetail>(`/api/export-history/${id}`, { headers: headers(false) }),

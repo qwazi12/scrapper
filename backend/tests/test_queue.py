@@ -105,7 +105,7 @@ def test_tick_posts_one_per_pipeline(session, monkeypatch):
 
 
 # --- archive sweep ----------------------------------------------------------
-def test_sweep_trashes_drive_file_and_deletes_after_4_days(session, monkeypatch):
+def test_sweep_retains_drive_file_and_delivery_history_before_removing_queue_row(session, monkeypatch):
     now = datetime.datetime.now(UTC)
     old = add(session, 1, status="posted", drive_link="https://drive.google.com/file/d/OLD/view",
               published_at=now - datetime.timedelta(days=4, minutes=1))[0]
@@ -116,12 +116,15 @@ def test_sweep_trashes_drive_file_and_deletes_after_4_days(session, monkeypatch)
     monkeypatch.setattr(ds, "trash_drive_file", lambda link: trashed.append(link) or True)
     old_id, fresh_id = old.id, fresh.id
     assert qm.sweep_archive(session, now) == 1
-    assert trashed == ["https://drive.google.com/file/d/OLD/view"]
+    assert trashed == []
+    from backend.app.models import DeliveryArchive
+    retained = session.query(DeliveryArchive).filter_by(queue_id=old_id).one()
+    assert retained.manifest["snapshot"]["drive_link"] == "https://drive.google.com/file/d/OLD/view"
     assert session.get(QueueItem, old_id) is None
     assert session.get(QueueItem, fresh_id) is not None
 
 
-def test_sweep_keeps_row_when_drive_trash_fails(session, monkeypatch):
+def test_sweep_never_calls_remote_trash_even_if_the_old_provider_is_unavailable(session, monkeypatch):
     now = datetime.datetime.now(UTC)
     it = add(session, 1, status="archived", drive_link="https://drive.google.com/file/d/X/view",
              published_at=now - datetime.timedelta(days=10))[0]
@@ -131,11 +134,12 @@ def test_sweep_keeps_row_when_drive_trash_fails(session, monkeypatch):
         raise RuntimeError("drive down")
 
     monkeypatch.setattr(ds, "trash_drive_file", boom)
-    assert qm.sweep_archive(session, now) == 0
-    assert session.get(QueueItem, it.id) is not None
+    it_id = it.id
+    assert qm.sweep_archive(session, now) == 1
+    assert session.get(QueueItem, it_id) is None
 
 
-def test_sweep_drops_row_when_robot_cannot_trash_owner_file(session, monkeypatch):
+def test_sweep_keeps_owner_remote_file_and_retains_its_reference(session, monkeypatch):
     now = datetime.datetime.now(UTC)
     it = add(session, 1, status="archived", drive_link="https://drive.google.com/file/d/Y/view",
              published_at=now - datetime.timedelta(days=10))[0]

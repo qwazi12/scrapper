@@ -114,8 +114,9 @@ class Settings(BaseSettings):
     # Default posts a day for every pipeline (owner rule 2026-10-04: 1 unless changed
     # by hand on the Pacing card). 0 = the old "every interval_hours" mode.
     post_posts_per_day: int = 1
-    # Posted/archived queue items (and their Drive file, moved to trash) are
-    # removed this many days after they were posted. 0 disables.
+    # Settled queue rows are removed after retaining content/delivery history.
+    # Remote files stay in place; a newer upload is not an old-version backup.
+    # 0 disables queue-row reclamation.
     archive_delete_days: int = 4
 
     # --- AI Metadata & Speech (Google Gemini) ---------------------------

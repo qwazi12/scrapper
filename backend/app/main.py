@@ -75,6 +75,8 @@ from . import vidiq  # noqa: E402  (vidIQ: topics, keywords, tags, trends — 20
 app.include_router(vidiq.router)
 from .editorial import routes as editorial_routes
 app.include_router(editorial_routes.router)
+from . import delivery_archive
+app.include_router(delivery_archive.router)
 from .editorial import campaigns as campaign_routes
 app.include_router(campaign_routes.router)
 from .editorial import learning as learning_routes

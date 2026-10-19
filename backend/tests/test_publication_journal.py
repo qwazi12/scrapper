@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import text
@@ -140,7 +141,12 @@ def test_journal_cannot_be_updated_or_deleted_and_survives_row_id_reuse(session,
         with pytest.raises(IntegrityError,match='append-only'):
             session.execute(text(sql),{'kind':'erased','identity':old_identity});session.commit()
         session.rollback()
-    session.delete(session.get(QueueItem,old_id));session.commit()
+    with pytest.raises(HTTPException, match='Reconcile'):
+        session.delete(session.get(QueueItem,old_id));session.commit()
+    session.rollback()
+    # Simulate an out-of-band legacy row removal, bypassing the safer owner/API
+    # and ORM paths, to keep testing journal identity under historical ID reuse.
+    session.execute(text('DELETE FROM queue_items WHERE id=:id'), {'id': old_id});session.commit()
     newer=QueueItem(id=old_id,title='A distinct row',pipeline='Test',accounts=[],status='review')
     session.add(newer);session.commit()
     assert journal.identity(newer)!=old_identity

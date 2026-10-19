@@ -201,7 +201,7 @@ def test_render_batch_runs_one_by_one_and_skips_unready(monkeypatch):
     monkeypatch.setattr(runner, "start_or_queue", fake_start)
     batch.start(ids)
     for _ in range(300):
-        if not batch.status["running"]:
+        if not batch.public()["running"]:
             break
         time.sleep(0.02)
     assert order == [(ids[0], "render", "render"), (ids[1], "plan", "render")]
@@ -392,3 +392,28 @@ def test_plus_two_today_only(client):
     tomorrow = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     assert costs.effective_cap(costs.settings_dict(), tomorrow) == 6.0              # gone tomorrow
     assert client.post("/api/costs/today-extra", json={"usd": 0}).status_code == 400
+
+
+def test_render_batch_keeps_polling_until_durable_completion_is_saved(monkeypatch):
+    import threading
+    from backend.app.studio import batch
+    entered, release = threading.Event(), threading.Event()
+    original = resume.finish
+    def finish(rid, state, error=None):
+        if state == 'done':
+            entered.set(); release.wait(5)
+        return original(rid, state, error)
+    monkeypatch.setattr(resume, 'finish', finish)
+    monkeypatch.setattr(batch, '_run', lambda ids, rid: [resume.add_done(rid, pid) for pid in ids])
+    batch.start([998877])
+    try:
+        assert entered.wait(5)
+        pending = batch.public()
+        assert pending['running'] and pending['finishing'] and pending['job_status'] == 'running'
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while batch.public()['running'] and time.monotonic() < deadline:
+        time.sleep(.02)
+    completed = batch.public()
+    assert not completed['running'] and not completed['finishing'] and completed['job_status'] == 'done'

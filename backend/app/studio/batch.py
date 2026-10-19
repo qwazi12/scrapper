@@ -133,4 +133,8 @@ def public() -> dict[str, Any]:
     with SessionLocal() as s:
         row = s.get(ResumableJob, status["rid"]) if status["rid"] else None
         out["job_status"] = row.status if row else None
+        # Work returning is earlier than tracked_thread's durable completion.
+        # Keep the owner polling through checkpoint/lease finalization.
+        out["finishing"] = bool(not out["running"] and row and row.status == "running")
+        out["running"] = bool(out["running"] or out["finishing"])
     return out

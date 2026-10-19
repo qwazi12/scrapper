@@ -829,6 +829,9 @@ def _drive_job(cid: int) -> dict[str, Any]:
         segs = list(c.segment_ids or [])
         reused = {int(e["segment_id"]) for e in entries_of(c) if e.get("reused") and e.get("segment_id")}
         version = render_version(c)
+        old_copy = dict((c.render or {}).get("drive") or {})
+        from ..publication_journal import identity
+        receipt_resource = f"CountdownProject:{identity(c)}"
     _set_drive(cid, {"status": "uploading", "error": None}, version)
     try:
         service = get_drive_service()
@@ -841,8 +844,12 @@ def _drive_job(cid: int) -> dict[str, Any]:
             body={"name": "Countdowns", "mimeType": "application/vnd.google-apps.folder", "parents": [parent]},
             fields="id", **drive_store.ALL).execute()["id"]
         stamp = _now().strftime("%Y-%m-%d")
-        v = drive_store._upload(service, video, folder, f"{title} ({stamp}).mp4")
-        t = drive_store._upload(service, thumb, folder, f"{title} — Thumbnail ({stamp}).jpg") if thumb.exists() else None
+        from ..delivery_archive import record_transfer, transfer_scope
+        with transfer_scope(receipt_resource, cid):
+            v = drive_store._upload(service, video, folder, f"{title} ({stamp}).mp4")
+            record_transfer(receipt_resource, cid, v, "video")
+            t = drive_store._upload(service, thumb, folder, f"{title} — Thumbnail ({stamp}).jpg") if thumb.exists() else None
+            if t: record_transfer(receipt_resource, cid, t, "thumbnail")
     except control.Cancelled:
         _set_drive(cid, {"status": "stopped", "error": "stopped"}, version)
         raise
@@ -853,13 +860,18 @@ def _drive_job(cid: int) -> dict[str, Any]:
         raise
     info = {"status": "saved", "error": None, "link": v.get("webViewLink"), "file_id": v["id"],
             "thumb_id": t['id'] if t else None, "thumb_link": t.get("webViewLink") if t else None,
-            "verification": v['verification'], "rendered_at": rendered_at, "saved_at": _now().isoformat()}
+            "verification": v['verification'], "thumb_verification": t['verification'] if t else None,
+            "rendered_at": rendered_at, "saved_at": _now().isoformat()}
     _set_drive(cid, info, version)
     with SessionLocal() as s:
         from ..budget_reservations import lock
         from .. import worker_leases, publication_journal
         lock(s)
         c = s.get(CountdownProject, cid)
+        if c:
+            from ..delivery_archive import retain_remote_versions
+            retain_remote_versions(s, c, old_copy, "retained_superseded_version")
+            retain_remote_versions(s, c, info, "retained_current_version")
         if (c and render_version(c) == version and c.queue_item_id
                 and (item := s.get(QueueItem, c.queue_item_id)) and item.status in ('review','ready','retry','error')
                 and item.video_path and Path(item.video_path).resolve() == video.resolve()

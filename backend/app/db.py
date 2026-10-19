@@ -32,6 +32,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 def init_db() -> None:
     from . import models  # noqa: F401  (register tables)
     from . import export_versions  # noqa: F401 (retain immutable exports on mutation)
+    from . import delivery_archive  # noqa: F401 (retain settled delivery evidence on deletion)
     from . import backup
 
     Base.metadata.create_all(engine)

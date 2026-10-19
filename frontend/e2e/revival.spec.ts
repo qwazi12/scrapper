@@ -115,6 +115,7 @@ test("all main navigation pages and same-document hash changes render without br
 });
 
 test("Top 5 real UI: five independent segment pipelines, final stitch, inspection and approval", async ({ page, request }) => {
+  const startingReceipts = (await (await request.get(`${stack.api}/api/e2e/isolation`)).json()).fake_publish_receipts;
   test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
@@ -182,7 +183,7 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   writeFileSync(path.join(evidence, "final-isolation.json"), JSON.stringify(isolation, null, 2));
   expect(isolation.blocked_network_attempts).toBe(0);
   expect(isolation.scheduler_threads).toEqual([]);
-  expect(isolation.fake_publish_receipts).toBe(3);  // only the explicit LongForm submit; no auto-posting
+  expect(isolation.fake_publish_receipts).toBe(startingReceipts);  // No automatic submission during the Countdown workflow.
   // Reproduce the immediate post-start stale GET, independently of timing.
   let injectedCountdownDone = false;
   await page.route(new RegExp(`/api/countdowns/${cid}$`), async route => {
@@ -693,4 +694,48 @@ test("retained export UI recovers prior words and media after invalidation and p
   await archive.getByRole("button", { name: `Inspect retained export ${original.id}`, exact: true }).click();
   await expect(archive.getByTestId("retained-version-detail")).toContainText("Original colored shapes");
   await page.screenshot({ path: path.join(evidence, "deleted-project-export-history.png"), fullPage: true });
+});
+
+
+test("retained delivery UI preserves published bytes and remains available when schedule settings fail", async ({ page, request }) => {
+  const before = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  const queued = await (await request.get(`${stack.api}/api/queue`, { headers })).json();
+  const original = queued.find((q: any) => q.status === "archived" && q.pipeline === "LongForm");
+  expect(original).toBeTruthy();
+  const originalBytes = readFileSync(original.video_path);
+  await page.goto("/#queue");
+  await page.getByRole("button", { name: /SocialPilot AI/ }).click();
+  await page.getByRole("button", { name: "🎬 LongForm Breakdowns", exact: true }).click();
+  await page.getByRole("button", { name: /Posted Archive/ }).click();
+  const row = page.getByRole("row").filter({ has: page.getByText(`#${original.id}`, { exact: true }) });
+  await row.getByTitle("Delete", { exact: true }).click();
+  const [removed] = await Promise.all([
+    page.waitForResponse(r => r.url() === `${stack.api}/api/queue/${original.id}` && r.request().method() === "DELETE"),
+    page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click(),
+  ]);
+  expect(removed.ok()).toBe(true);
+  const history = await (await request.get(`${stack.api}/api/delivery-history`, { headers })).json();
+  const retained = history.deliveries.find((d: any) => d.queue_id === original.id);
+  expect(retained).toBeTruthy();
+  const detail = await (await request.get(`${stack.api}/api/delivery-history/${retained.id}`, { headers })).json();
+  const video = detail.manifest.assets.findIndex((a: any) => a.role === "video");
+  const file = await request.get(`${stack.api}/api/delivery-history/${retained.id}/file/${video}`, { headers });
+  expect(file.ok()).toBe(true); expect((await file.body()).equals(originalBytes)).toBe(true);
+  expect(file.headers()["content-type"]).toContain("video/mp4");
+  await page.route(`${stack.api}/api/schedule`, async route => {
+    if (route.request().method() === "GET") await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic schedule service unavailable" }) });
+    else await route.continue();
+  });
+  await page.goto("/#settings");
+  await expect(page.getByRole("alert").filter({ hasText: "Schedule unavailable" })).toBeVisible();
+  const archive = page.getByTestId("delivery-history");
+  await archive.getByText("Retained delivery history and Drive versions", { exact: true }).click();
+  await archive.getByRole("button", { name: `Inspect retained delivery ${retained.id}`, exact: true }).click();
+  await expect(archive.getByTestId("retained-delivery-detail")).toContainText(original.title);
+  await expect(archive.getByTestId("retained-delivery-detail")).toContainText(original.description);
+  await expect(archive.getByRole("link", { name: /Open retained video/ })).toBeVisible();
+  await page.screenshot({ path: path.join(evidence, "retained-delivery-recovery.png"), fullPage: true });
+  const after = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
+  expect(after.fake_publish_receipts).toBe(before.fake_publish_receipts);
+  expect(after.blocked_network_attempts).toBe(0);
 });

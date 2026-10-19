@@ -1208,55 +1208,33 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
 
 
 def sweep_archive(s: Session, now: datetime.datetime) -> int:
-    """Delete posted/archived items ARCHIVE_DELETE_DAYS after posting, moving
-    their Drive file to trash first (recoverable there for 30 days)."""
+    """Reclaim queue rows only after retaining their exact delivery history.
+
+    Keep remote copies: their older bytes may have no other retained backup.
+    """
     if settings.archive_delete_days <= 0:
         return 0
-    from ..drive_sync import trash_drive_file
-
+    from fastapi import HTTPException
+    from ..delivery_archive import retain
     cutoff = now - datetime.timedelta(days=settings.archive_delete_days)
-    expired = (
-        s.query(QueueItem)
-        .filter(QueueItem.status.in_(["posted", "archived"]))
-        .filter(QueueItem.published_at.isnot(None))
-        .filter(QueueItem.published_at < cutoff)
-        .order_by(QueueItem.published_at)
-        .limit(ARCHIVE_SWEEP_BATCH)
-        .all()
-    )
+    expired = (s.query(QueueItem).filter(QueueItem.status.in_(["posted", "archived"]))
+        .filter(QueueItem.published_at.isnot(None), QueueItem.published_at < cutoff)
+        .order_by(QueueItem.published_at).limit(ARCHIVE_SWEEP_BATCH).all())
     removed = 0
     for item in expired:
-        trashed = False
-        # LongForm breakdowns stay in Drive permanently ("LongForm Studio" folder).
-        if item.drive_link and item.pipeline != "LongForm":
-            try:
-                trashed = trash_drive_file(item.drive_link)
-            except Exception as exc:
-                # Owner rule (2026-10-07): the robot can't trash a file it doesn't own —
-                # retrying never helps, so drop the row, leave the file for the owner
-                # to delete, and say so once with its link.
-                if "insufficientFilePermissions" in str(exc):
-                    logbus.log(
-                        "warning", "archive_drive_kept",
-                        f"Item #{item.id} ('{(item.title or '')[:40]}') removed; the robot can't delete its "
-                        f"Drive file (not its owner) — delete it yourself: {item.drive_link}",
-                        drive_link=item.drive_link,
-                    )
-                else:
-                    # Keep the row; the next sweep retries. Never orphan a Drive file.
-                    logbus.log("error", "archive_trash_failed", f"Item #{item.id}: {exc}")
-                    continue
-        logbus.log(
-            "info", "archive_deleted",
-            f"Item #{item.id} ('{(item.title or '')[:40]}') removed {settings.archive_delete_days}d after posting"
-            + (" — Drive file moved to trash" if trashed else ""),
-            drive_link=item.drive_link, published_at=str(item.published_at),
-        )
-        if item.pipeline == "LongForm":   # the studio archive rule needs to know when it posted
-            from ..studio import archive as studio_archive
-            studio_archive.note_posted(s, item)
-        s.delete(item)
-        s.commit()
+        qid = item.id
+        try:
+            archive_id = retain(s, item)
+            if item.pipeline == "LongForm":
+                from ..studio import archive as studio_archive
+                studio_archive.note_posted(s, item)
+            s.delete(item); s.commit()
+        except HTTPException as exc:
+            s.rollback()
+            logbus.log("warning", "archive_retention_blocked", f"Item #{qid} kept: {exc.detail}")
+            continue
+        logbus.log("info", "archive_deleted", f"Item #{qid}: queue row removed after retaining its delivery history; remote copies kept",
+                   archive_id=archive_id)
         removed += 1
     return removed
 

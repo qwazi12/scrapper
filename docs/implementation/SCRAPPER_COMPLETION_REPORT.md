@@ -12,7 +12,7 @@ paid API use, push or PR occurred. External test spend: **$0.00**. The Downloads
 handoff was absent; the attached text was copied into the feature worktree.
 No nested Codex process or recurring automation was launched.
 
-Latest continued checkpoint: **466 backend tests passed /1 optional skip**, production frontend build passed, and **all 10 browser scenarios passed**. Worker integrations, publication evidence, financial recovery, file claims, Studio/Countdown drafts, stale saves and protected Countdown lifecycle are implemented locally. The final stricter archived-queue backup-link comparison is backend-tested; safe browser mode disables archive scheduling. See the append-only progress ledger for exact runs and remaining gaps.
+Latest continued checkpoint: **542 backend tests passed /1 optional skip** (delivery-backend11, 43.33s), production build4 passed, and **all 12 browser scenarios passed** (delivery-browser6, 3.3min). This includes retained original-studio history, explicit contradiction lineage, Countdown category/bookend review, exact delivered-byte history and Settings recovery when schedule reads fail. The final batch durable-completion and remote-backup-pruning guards are backend-tested after that browser run. No full-roadmap completion is claimed. See the append-only ledger for exact evidence and remaining C01–C14 work.
 
 ## Implemented and verified scope
 
@@ -171,13 +171,13 @@ packaging honesty and narrative satisfaction still need editorial validation.
 | R01 | Retrieval + explicit semantic review workflow; mechanical gates repaired | Autonomous material-claim coverage, cross-source conflicts and broader adversarial phrasing |
 | R02 | Typed crew roles; independent source record/review UI | Integrate every structured credit into the material-claim verification contract |
 | R03 | Unsafe refs/domain-only admission blocked | Real safe retrieval, redirects/dead pages, semantic support, claim-specific freshness/territory workflow |
-| R04 | Partial: new exact counts/duplicates, no citable AI notes, provider conflicts and public stats contained | Category eligibility, supported rationale/trivia and checked intro/outro; manual canonical identity now rechecked |
+| R04 | Partial: recognized category/country/language/date/provider constraints, exact counts/ranks/IDs, bound owner intro/outro review and checked provider copy implemented | Specialized eligibility, complete factual rationale/trivia support and legacy saved-list upgrade remain |
 | R05 | Strict resolver repaired and tested | Category/country criteria and broader adversarial identity corpus; new-list confirmation now revalidates manual edits |
 | R06 | Queue intent/claim/uncertainty and enqueue race repaired in local fixtures | Append-only history, explicit owner uncertainty workflow and fenced dispatch locally implemented/tested; external provider proof and stronger in-flight file fencing still needed |
 | R07 | Scoped backup access repaired | Broader auth penetration testing remains outside proof |
-| R08 | Unsafe Drive path mechanism repaired | Shared/exclusive file claims and Drive/download decode/hash verification implemented locally; every legacy transfer/trash path and stale-temp matrix remain |
+| R08 | File response ownership and retained delivery/remote-version evidence implemented; automatic media/backup remote trash disabled | Managed remote reclamation, remaining local backup/temp ownership, PostgreSQL and real-provider validation remain |
 | R09 | Partial: bounded atomic video uploads/probes | Cookie/image caps and full-decode corruption corpus now locally tested; full request-ingress/negative UI matrix remains |
-| R10 | Partial: invalidation, undo and export fingerprints | Native versions immutable; original studios still need retained export history, every mutation/undo path and active queue file replacement protection |
+| R10 | Original/native immutable media history, upstream invalidation and identity-safe explicit draft recovery implemented locally | Continue broader mutation/undo and legacy migration matrices |
 | R11 | Partial: final-file QA + exact approval integrated in both studios | Captions/relevance/duplicate/rights validators, intentional-dark/silence policy, production-length corpus |
 | R12 | PARTIAL: editorial/calendar/imported cohort evidence with API/UI tests | Live authorized analytics adapters, historical content mapping and richer outcome lineage |
 | R13 | PARTIAL: actual native Short/carousel UI/media E2E and community draft | Broader creative treatments, single-image/poll flow, recut semantics, production Reel proof and real cleared-content editorial QA |

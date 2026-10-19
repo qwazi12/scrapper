@@ -212,22 +212,12 @@ def download_drive_file(drive_link_or_id: str, dest_dir: Optional[str] = None) -
 
 
 def trash_drive_file(drive_link_or_id: str) -> bool:
-    """Move a Drive file to trash (recoverable for 30 days). Returns False if
-    the file is already gone, so callers can still drop their record."""
-    from googleapiclient.errors import HttpError
+    """Legacy entry point fails closed until remote version/ref ownership exists.
 
-    file_id = extract_drive_file_id(drive_link_or_id)
-    if not file_id:
-        raise ValueError(f"Could not extract Google Drive file ID from {drive_link_or_id}")
-    try:
-        get_drive_service().files().update(
-            fileId=file_id, body={"trashed": True}, supportsAllDrives=True
-        ).execute()
-        return True
-    except HttpError as exc:
-        if exc.resp.status == 404:
-            return False
-        raise
+    Callers cannot prove that a newer render preserves the old version's bytes,
+    nor that a remote link is not used by a transfer, history or another project.
+    """
+    raise ValueError("Automatic Drive trash is disabled: keep remote versions until exact alternate-copy and reference ownership can be verified")
 
 
 def sync_drive_to_queue(

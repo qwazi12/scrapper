@@ -5,7 +5,7 @@ Provides:
 2. Integrity check via `PRAGMA integrity_check;`
 3. Gzip compression (.db.gz) and SHA-256 validation
 4. Local disk retention: keep 7 daily copies in `/data/backups/`
-5. Off-disk Google Drive retention: keep 30 daily copies in Shared Drive folder
+5. Off-disk Google Drive snapshots retained in Shared Drive folder
    (Scrapper Backups, folder id: 14z17C-cYIqUK8teqeOOVtnITx0GHHl8E)
 6. Automatic pre-migration snapshot in `init_db()`
 7. Nightly 3:00 AM Eastern automated trigger in scheduler
@@ -174,6 +174,7 @@ def create_backup(tag: str = "manual", upload_to_drive: bool = True) -> dict[str
         "status": "disabled",
         "error": None,
         "pruned": [],
+        "retention": "kept; automatic remote pruning is disabled",
     }
 
     if upload_to_drive and settings.backup_drive_folder_id:
@@ -294,40 +295,14 @@ def _upload_to_google_drive(file_path: pathlib.Path, folder_id: str) -> dict[str
 
 
 def prune_drive_backups(folder_id: str, keep_days: int = 30) -> list[str]:
-    """Delete backups in Google Drive folder older than keep_days."""
-    try:
-        from .drive_sync import get_drive_service
-        service = get_drive_service()
+    """Keep remote snapshots until managed-copy/reference checks can authorize pruning.
 
-        cutoff = datetime.datetime.now(timezone.utc) - datetime.timedelta(days=keep_days)
-        cutoff_iso = cutoff.isoformat().replace("+00:00", "Z")
-
-        q = f"'{folder_id}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false and createdTime < '{cutoff_iso}'"
-        results = (
-            service.files()
-            .list(
-                q=q,
-                fields="files(id, name, createdTime)",
-                includeItemsFromAllDrives=True,
-                supportsAllDrives=True,
-                pageSize=100,
-            )
-            .execute()
-        )
-
-        deleted = []
-        for item in results.get("files", []):
-            try:
-                service.files().delete(fileId=item["id"], supportsAllDrives=True).execute()
-                deleted.append(item.get("name", item["id"]))
-                logger.info("Pruned old Drive backup: %s (%s)", item.get("name"), item["id"])
-            except Exception as exc:
-                logger.warning("Failed to prune Drive backup %s: %s", item["id"], exc)
-
-        return deleted
-    except Exception as exc:
-        logger.warning("Could not prune Drive backups: %s", exc)
-        return []
+    Folder membership and age do not prove ownership or another usable backup.
+    In particular, the old implementation could permanently delete unrelated
+    owner files sharing the backup folder. No remote mutation is made here.
+    """
+    logger.info("Remote database snapshots retained; automatic Drive pruning is disabled")
+    return []
 
 
 def get_backup_status() -> dict[str, Any]:

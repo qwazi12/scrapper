@@ -13,10 +13,10 @@ full-roadmap completion is inferred from the growing test count.
 
 | Task | Local closure target | Status |
 |---|---|---|
-| C01 Material evidence | Typed structured fact/credit provenance, independent retrieval, conflicts, freshness, exact entity/context, complete narration coverage and escalation | OPEN; typed credit contradictions repaired, owner-reviewed web records exist |
-| C02 Countdown eligibility/narration | Genre/country/year/provider constraints, supported ranking rationale/trivia, checked intro/outro, no automatic unsupported fill | OPEN |
-| C03 Retained versions | Original-studio immutable media/input history, dependency invalidation, identity-safe draft recovery, deletion protection | IMPLEMENTED; expanded UI verification running |
-| C04 Storage ownership | Response-lifetime readers, remaining remote trash/transfer paths, sole-copy protection and safe cleanup/restore | PARTIAL; response streaming implemented/tested |
+| C01 Material evidence | Typed structured fact/credit provenance, independent retrieval, conflicts, freshness, exact entity/context, complete narration coverage and escalation | PARTIAL; typed credit/date contradictions, immutable entity-bound records and explicit contradiction resolution verified; broader factual coverage remains |
+| C02 Countdown eligibility/narration | Genre/country/year/provider constraints, supported ranking rationale/trivia, checked intro/outro, no automatic unsupported fill | PARTIAL; recognized category/territory constraints, exact ranks/segment IDs, rationale edits, fresh provider copy and bound owner bookend review implemented; specialized eligibility and legacy upgrades remain |
+| C03 Retained versions | Original-studio immutable media/input history, dependency invalidation, identity-safe draft recovery, deletion protection | VERIFIED locally; immutable bytes/input history, identity-safe draft recovery and deletion survival passed in the full 11-scenario browser7 run |
+| C04 Storage ownership | Response-lifetime readers, remaining remote trash/transfer paths, sole-copy protection and safe cleanup/restore | PARTIAL; response streaming, immutable delivered-byte history and kept remote-version receipts verified; automatic remote media/backup deletion disabled; remaining local backup/temp ownership and managed remote reclamation remain |
 | C05 Media acceptance | Caption timing/visibility, shot relevance and duplicates, rights manifest, intentional black/silence decisions, longer-duration corpus | OPEN |
 | C06 Intelligent assets | Authorized still/video/audio indexing, captions/semantics/identity, deduplication, provenance, beat-to-asset retrieval and reuse without copied narrative | PARTIAL; cleared-still index only |
 | C07 Native campaigns | Original Short/Reel treatments, recuts, single images, carousels, community/polls, format-specific metadata and manual export for unsupported APIs | PARTIAL; Short/carousel UI/media tested |

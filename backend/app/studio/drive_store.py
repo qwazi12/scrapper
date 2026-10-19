@@ -77,6 +77,8 @@ def _upload(service, path, parent: str, name: str) -> dict[str, Any]:
         status, resp = req.next_chunk()
         if status:
             control.progress(f"Uploading {name}: {int(status.progress() * 100)}% of {round(size / 1e6)} MB")
+    from ..delivery_archive import record_created
+    record_created(resp, sha, md5, size, name)
     if file_hash(path)!=sha:raise DriveStoreError('Local file changed during Drive transfer; old backup retained')
     remote=service.files().get(fileId=resp['id'],fields='id,size,md5Checksum',**ALL).execute()
     if remote.get('md5Checksum')!=md5 or int(remote.get('size',-1))!=size:
@@ -94,7 +96,7 @@ def save(project_id: int) -> dict[str, Any]:
     """Upload the current render. Runs inside a control job (Stop-able)."""
     from ..file_use import pin
     with pin([runner.project_dir(project_id)]):
-        from ..drive_sync import get_drive_service, trash_drive_file
+        from ..drive_sync import get_drive_service
 
         with SessionLocal() as s:
             p = s.get(StudioProject, project_id)
@@ -110,6 +112,8 @@ def save(project_id: int) -> dict[str, Any]:
             s.commit()
             title = _safe_name(p.title)
             rendered_at = p.render.get("rendered_at") or ""
+            from ..publication_journal import identity
+            receipt_resource = f"StudioProject:{identity(p)}"
 
         try:
             service = get_drive_service()
@@ -131,8 +135,12 @@ def save(project_id: int) -> dict[str, Any]:
                     "omnistream-bot@manhwa-engine.iam.gserviceaccount.com as Content manager, then move the "
                     "\"LongForm Studio\" folder into it (the folder ID stays the same). Then press Retry.")
             stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-            v = _upload(service, video, parent, f"{title} — Trailer Breakdown ({stamp}).mp4")
-            t = _upload(service, thumb, parent, f"{title} — Thumbnail ({stamp}){thumb.suffix}") if thumb and thumb.exists() else None
+            from ..delivery_archive import record_transfer, transfer_scope
+            with transfer_scope(receipt_resource, project_id):
+                v = _upload(service, video, parent, f"{title} — Trailer Breakdown ({stamp}).mp4")
+                record_transfer(receipt_resource, project_id, v, "video")
+                t = _upload(service, thumb, parent, f"{title} — Thumbnail ({stamp}){thumb.suffix}") if thumb and thumb.exists() else None
+                if t: record_transfer(receipt_resource, project_id, t, "thumbnail")
         except control.Cancelled:
             _set(project_id, {**old, "status": "stopped", "error": "stopped by user"})
             raise
@@ -146,24 +154,21 @@ def save(project_id: int) -> dict[str, Any]:
                 "file_id": v["id"], "link": v.get("webViewLink"),
                 "thumb_id": t["id"] if t else None, "thumb_link": t.get("webViewLink") if t else None,
                 "rendered_at": rendered_at, "verification":v['verification'],
+                "thumb_verification": t['verification'] if t else None,
                 "saved_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
         with SessionLocal() as s:
             from ..file_use import assert_current
             assert_current(s)
             p = s.get(StudioProject, project_id)
+            from ..delivery_archive import retain_remote_versions
+            retain_remote_versions(s, p, old, "retained_superseded_version")
+            retain_remote_versions(s, p, info, "retained_current_version")
             p.drive = info
             if p.queue_item_id and (item := s.get(QueueItem, p.queue_item_id)) and item.status in ("review", "ready", "retry", "error") and item.video_path and pathlib.Path(item.video_path).resolve()==video.resolve():
                 item.drive_link = info["link"]
             s.commit()
-        # Replace, not pile up: the previous upload of this project goes to trash.
-        for fid in (old.get("file_id"), old.get("thumb_id")):
-            with SessionLocal() as check:
-                referenced=any(fid and fid in (item.drive_link or '') for item in check.query(QueueItem))
-            if fid and not referenced and fid not in (info["file_id"], info["thumb_id"]):
-                try:
-                    trash_drive_file(fid)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("could not trash old Drive copy %s: %s", fid, exc)
+        # Keep prior versions. A successful new render is not a byte-identical
+        # alternate copy of an older export, even when no queue row uses it.
         logbus.log("info", "longform_drive_saved", f"Studio #{project_id}: saved to Drive '{FOLDER_NAME}'",
                    project=project_id, link=info["link"])
         try:
