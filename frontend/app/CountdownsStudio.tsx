@@ -4,6 +4,7 @@ import { useLocalDraft } from "../lib/localDraft";
 import { LocalDraftStatus } from "./LocalDraftStatus";
 import { ExportAcceptance } from "./ExportAcceptance";
 import { ExportHistory } from "./ExportHistory";
+import { SavedCountdownUpgrade } from "./SavedCountdownUpgrade";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   api, apiBase, parseApiDate,
@@ -731,8 +732,9 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
   const [segment, setSegment] = useState<number | null>(null);
   const [undoV, setUndoV] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const shownId = useRef(id); shownId.current = id;
 
-  async function load() { try { setC(await api.countdown(id)); } catch (e: any) { setErr(errText(e)); } }
+  async function load() { try { const value = await api.countdown(id); if (shownId.current === id) setC(value); } catch (e: any) { if (shownId.current === id) setErr(errText(e)); } }
   useEffect(() => { load(); }, [id]);
   useEffect(() => {
     // A render can start after the immediate refresh read the previous done
@@ -746,7 +748,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
 
   async function act(fn: () => Promise<any>, ok?: string) {
     setErr(""); setWorking(true);
-    try { const r = await fn(); if (r && typeof r === "object" && "id" in r && "stage" in r) setC(r); else await load(); if (ok) notify(ok); }
+    try { const r = await fn(); if (shownId.current !== id) return; if (r && typeof r === "object" && "id" in r && "stage" in r) setC(r); else await load(); if (ok) notify(ok); }
     catch (e: any) { setErr(errText(e)); }
     finally { setWorking(false); }
   }
@@ -754,7 +756,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
   if (segment !== null) {
     return <ProjectView id={segment} status={status} backLabel="← Back to the countdown" onBack={() => { setSegment(null); load(); }} />;
   }
-  if (!c) return <div style={card}>{err || "Loading…"}</div>;
+  if (!c || c.id !== id) return <div style={card}>{err || "Loading…"}</div>;
   const running = c.stage_status === "running";
   const confirmed = c.has.titles;
   const done: Record<string, boolean> = { research: c.has.ranking, titles: confirmed, segments: c.has.segments, script: c.has.segments && !!c.script, render: c.has.render };
@@ -790,12 +792,14 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {busyStatus(c) && <button className="danger" style={{ fontSize: 12 }} disabled={working} onClick={() => act(() => api.countdownStop(c.id), "Stopped. Finished parts are kept.")}>■ Stop</button>}
           {["stopped", "error", "paused"].includes(c.stage_status) && c.stage !== "new" && (
-            <button className="primary" style={{ fontSize: 12 }} disabled={working} onClick={() => act(() => api.countdownResume(c.id), "Resumed.")}>▶ Resume</button>
+            <button className="primary" style={{ fontSize: 12 }} disabled={working || c.saved_contract === "legacy" || c.saved_contract === "unsupported"} onClick={() => act(() => api.countdownResume(c.id), "Resumed.")}>▶ Resume</button>
           )}
           <UndoButton scope={`countdown:${c.id}`} version={`${undoV}-${c.updated_at}`} onUndone={() => { setUndoV((v) => v + 1); load(); }} />
           <button className="danger" style={{ fontSize: 11 }} disabled={working} onClick={async () => { if (await deleteCountdown(c)) onBack(); }}>Delete</button>
         </div>
       </div>
+
+      <SavedCountdownUpgrade key={`${c.id}:${c.contract_upgrade_version || c.saved_contract}`} project={c} onChanged={setC} />
 
       {/* Step stepper, like LongForm */}
       <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -814,18 +818,18 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
                 </button>
               )}
               {s.key === "titles" && (
-                <button style={tiny} disabled={working || running || !c.has.ranking || c.unmatched > 0}
+                <button style={tiny} disabled={working || running || !c.has.ranking || c.unmatched > 0 || c.saved_contract !== "current"}
                         title={c.unmatched ? "Swap or remove the unmatched titles first" : "Make a segment for each title"}
                         onClick={() => act(() => api.countdownConfirm(c.id), "Titles confirmed — segments are made one at a time.")}>
                   {confirmed ? "Recheck title eligibility" : "Confirm titles"}
                 </button>
               )}
               {s.key === "segments" && (
-                <button style={tiny} disabled={working || !confirmed || c.has.segments || c.stage_status === "running"} title="Make the segments (also retries a failed or waiting one)"
+                <button style={tiny} disabled={working || !confirmed || c.has.segments || c.stage_status === "running" || c.saved_contract !== "current"} title="Make the segments (also retries a failed or waiting one)"
                         onClick={() => act(() => api.countdownMake(c.id))}>▶ Make segments</button>
               )}
               {s.key === "render" && (
-                <button style={tiny} disabled={working || running || !c.has.segments || (c.ranking?.contract_version === 1 && !c.bookend_reviewed)}
+                <button style={tiny} disabled={working || running || !c.has.segments || !c.bookend_reviewed}
                         onClick={async () => { if (await askConfirm(c.has.render ? "Render the video again with the current script?" : "Render the countdown video now?")) act(() => api.countdownRender(c.id), "Rendering — it shows in the jobs bar."); }}>
                   {c.has.render ? "Re-render" : "Render video"}
                 </button>
@@ -835,7 +839,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
         ))}
         <div style={{ flex: "1 1 100%", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {nextStep && nextStep !== "render" && (
-            <button className="primary" style={{ fontSize: 11 }} disabled={working || busyStatus(c) || (nextStep === "titles" && c.unmatched > 0)}
+            <button className="primary" style={{ fontSize: 11 }} disabled={working || busyStatus(c) || (nextStep === "titles" && c.unmatched > 0) || (nextStep !== "research" && c.saved_contract !== "current")}
                     onClick={() => act(() => nextStep === "research" ? api.countdownResearch(c.id) : nextStep === "titles" ? api.countdownConfirm(c.id) : api.countdownMake(c.id))}>
               ▶ Continue to review (from {STEPS.find((x) => x.key === nextStep)?.label})
             </button>

@@ -745,6 +745,8 @@ export type CountdownEligibility = {
   date_from: string | null; date_to: string | null; providers: string[]; requires_independent_review: string[]; interpretation: string;
 };
 export type CountdownProject = {
+  saved_contract?: "current" | "new" | "legacy" | "unsupported";
+  contract_upgrade_version?: string | null;
   ranking_version?: string;
   eligibility_criteria?: CountdownEligibility;
   bookend_version?: string;
@@ -1549,6 +1551,8 @@ export const api = {
     req<CountdownProject>(`/api/countdowns/${id}/review-bookends`, { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true, expected_version }) }),
   countdownConfirm: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/confirm`, { method: "POST", headers: headers(false) }),
+  countdownUpgradeSaved: (id: number, expected_version: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/upgrade-saved-contract`, { method: "POST", headers: headers(), body: JSON.stringify({ expected_version, reviewed: true }) }),
   countdownMake: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/make`, { method: "POST", headers: headers(false) }),
   countdownStop: (id: number) =>

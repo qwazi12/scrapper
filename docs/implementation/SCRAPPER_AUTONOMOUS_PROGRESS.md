@@ -761,3 +761,35 @@ a security credential and cannot stop requests that never write the DB/already
 in flight. Stop-all/reconciliation and real operational rollout remain required;
 see DATABASE_RECOVERY.md. No public/paid/account/archive/push/deploy action.
 Continue C02 legacy eligibility/upgrade and other roadmap contracts.
+
+## Legacy Countdown current review drafts and direct worker admission
+
+Old lists cannot bypass current contract/category/bookend checks. Explicit
+version-and-creation-bound upgrade retains old files/words/ranking/note/history,
+clears unproven children/render/acceptance and makes a review draft. Current
+confirmation creates identity-bound independent children; common Studio runner
+checks parent context/eligibility before undo/paid stages under source claims.
+Paused/recovered old work stops for review. From-breakdowns creates an unconfirmed
+draft. Automation preserves incomplete rankings/format without added, removed or
+reordered titles; a complete supported list may still proceed to segments.
+
+Initial corpus8failed; expanded current compatibility64passed3.05s. Updated
+truthful five-title current orchestration fixture and clearly separated opaque
+file/claim mocks; no production bypass. Full backend784passed/1skip89.97s; real
+PG306passed37.13s, restore1.110s211077bytes/SHA
+1d96c341e86fc4e7d281b4ef0818283a9b458d7c2b97d48d31c919c5691b548f,
+source unchanged. Build2/tsc1passed. Full actual UI30passed6.6min; frozen source
+a1baef1e7ef85060be5412598c4a8dc23c58633cf698bafb21c5e5d9e1096518;
+reports/traces/actual media/exact prelaunch spec/component/frozen backend/root
+fake-provider ledgers/verified snapshot in history/countdown-legacy-upgrade2.
+SnapshotSHA9e5404419f6fa6f72b5d87a409bbb372373af0c30f7072c49287e0adcb9f803d.
+Initial scoped first case passed; legacy case read before accepted publish HTTP
+completed and failed its final GET. Both final200/queue commit and failed trace
+are retained in history1; corrected wait passes. Owned stack stopped.
+
+Visually inspected actual current accepted export/queue screenshot; warnings
+stay visible with explicit exact-file acceptance. This is local behavior/proof
+with original synthetic assets/offline speech and simulated providers/Drive,
+not excellent real-content or cloud proof. Unsupported legacy formats, specialized
+category/semantic/freshness and other C01–C14 remain. See COUNTDOWN_SAVED_CONTRACTS.md.
+Separate next DB-clock work is outside this full30. No paid/public/account/archive/push/deploy.

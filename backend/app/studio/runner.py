@@ -104,9 +104,11 @@ def stop(project_id: int) -> bool:
 def run_one(project_id: int, name: str, stop_event: threading.Event | None = None) -> str:
     """Run a single stage synchronously (used by the thread and by tests)."""
     from ..file_use import pin
-    with pin([project_dir(project_id)], exclusive=True), pin([settings.data_path/"studio"/"_motioncache", settings.data_path/"studio"/"_ttscache", settings.data_path/"audio"]):
+    from . import countdown
+    with pin([project_dir(project_id)], exclusive=True), pin([settings.data_path/"studio"/"_motioncache", settings.data_path/"studio"/"_ttscache", settings.data_path/"audio",*countdown.segment_use_paths(project_id)]):
         if name not in STAGES:
             raise ValueError(f"Unknown stage '{name}'. Stages: {', '.join(STAGES)}")
+        with SessionLocal() as s:countdown.require_segment_context(s,s.get(StudioProject,project_id),name)
         ev = stop_event or _stop_events.get(project_id)
         if ev and ev.is_set():
             _set(project_id, stage_status="stopped", stage_message=f"{name} stopped by user — re-run it when ready")

@@ -67,7 +67,7 @@ def test_build_checks_sizes_demand_and_skips_made():
     assert "44,631 searches/month" in t["checks"]["demand"]["why"] and t["keywords"] == ["best horror movies"]
 
 
-def test_automation_starts_one_a_day_and_stops_before_render(client):
+def test_automation_starts_one_a_day_and_preserves_incomplete_ranking_for_owner(client):
     _build([{"topic": "Top 10 Sci-Fi Movies", "keyword": "sci-fi", "group": "evergreen", "debate": 7,
              "best_format": "top10", "titles": _titles(15)}],
            {"overall": 70, "volume": 70, "competition": 30, "monthly_searches": 9000, "growth_pct": 5, "related": []})
@@ -79,20 +79,21 @@ def test_automation_starts_one_a_day_and_stops_before_render(client):
     with SessionLocal() as s:
         c = s.query(CountdownProject).one()
         assert c.review["auto"] is True and "Film 0" in (c.notes or "")
-        c.ranking = {"entries": [{"rank": 1, "title": "Film 0", "tmdb_id": 1000, "media_type": "movie"},
+        c.ranking = {"contract_version":1,"entries": [{"rank": 1, "title": "Film 0", "tmdb_id": 1000, "media_type": "movie"},
                                  {"rank": 2, "title": "Not real"}]}
         c.stage, c.stage_status = "research", "done"
         s.commit()
         cid = c.id
-    countdown.auto_titles(cid)                                       # fills from the topic's checked titles
+    countdown.auto_titles(cid)  # Topic candidates cannot supply missing editorial support.
     c = client.get(f"/api/countdowns/{cid}").json()
-    assert c["stage"] == "segments" and c["entry_count"] == 10 and c["unmatched"] == 0
+    assert c["stage"] == "research" and c["entry_count"] == 2 and c["unmatched"] == 1
+    assert not c['has']['titles'] and 'No titles were added' in c['stage_message']
 
 
 def test_auto_titles_stops_for_owner_when_too_few(client):
     with SessionLocal() as s:
         c = CountdownProject(topic="t", fmt="top10", review={"auto": True},
-                             ranking={"entries": [{"rank": 1, "title": "A", "tmdb_id": 1, "media_type": "movie"}]},
+                             ranking={"contract_version":1,"entries": [{"rank": 1, "title": "A", "tmdb_id": 1, "media_type": "movie"}]},
                              stage="research", stage_status="done")
         s.add(c)
         s.commit()
@@ -100,6 +101,35 @@ def test_auto_titles_stops_for_owner_when_too_few(client):
     countdown.auto_titles(cid)
     c = client.get(f"/api/countdowns/{cid}").json()
     assert c["stage"] == "research" and "Only 1 real titles" in c["stage_message"]
+
+
+def test_auto_titles_does_not_silently_shrink_or_reorder_requested_format(client):
+    from copy import deepcopy
+    entries=[{'rank':i+1,'title':f'Synthetic {i}','tmdb_id':9000+i,'media_type':'movie','year':2026,
+        'why_it_ranks':'Our editorial preference for the original visual structure of this synthetic example.'} for i in range(7)]
+    with SessionLocal() as s:
+        c=CountdownProject(topic='Top 10 Synthetic Films',fmt='top10',ranking={'contract_version':1,'entries':deepcopy(entries)})
+        s.add(c);s.commit();cid=c.id
+    countdown.auto_titles(cid)
+    with SessionLocal() as s:
+        c=s.get(CountdownProject,cid)
+        assert c.fmt=='top10' and c.ranking['entries']==entries and not c.segment_ids
+
+
+def test_complete_supported_automatic_ranking_can_confirm_without_adding_titles(client,monkeypatch):
+    from backend.app.studio import tmdb
+    entries=[{'rank':i+1,'title':f'Synthetic Auto Film {i}','tmdb_id':9100+i,'media_type':'movie','year':2026,
+        'why_it_ranks':'Our editorial preference for the original visual structure of this synthetic example.'} for i in range(5)]
+    monkeypatch.setattr(tmdb,'fact_sheet',lambda kind,ident,**kwargs:{'tmdb_id':ident,'media_type':kind,
+        'title':f'Synthetic Auto Film {ident-9100}','primary_date':'2026-01-01','genres':['Animation']})
+    with SessionLocal() as s:
+        c=CountdownProject(topic='Top 5 Animated Films',fmt='top5',ranking={'contract_version':1,'entries':entries})
+        s.add(c);s.commit();cid=c.id
+    countdown.auto_titles(cid)
+    with SessionLocal() as s:
+        c=s.get(CountdownProject,cid);assert c.stage=='segments' and len(c.segment_ids)==5
+        assert [e['tmdb_id'] for e in c.ranking['entries']]==[e['tmdb_id'] for e in entries]
+        assert not c.review or not c.review.get('bookend_review')
 
 
 def test_start_topic_refuses_a_size_it_cant_fill(client):

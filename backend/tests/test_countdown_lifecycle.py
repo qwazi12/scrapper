@@ -199,6 +199,9 @@ def test_late_drive_status_cannot_attach_to_a_replaced_render(session,campaign):
 
 
 def test_countdown_render_holds_segment_files_until_fingerprint_and_stitch_finish(session,campaign,monkeypatch):
+    # Storage/claim orchestration uses opaque file stubs, not a research or
+    # acceptance fixture. Actual eligibility/bookends/media are covered separately.
+    monkeypatch.setattr(countdown,'require_bookends',lambda s,c:None)
     from backend.app.studio.compilations import stitch
     cid,root=campaign
     p=StudioProject(tmdb_id=99881,title='Synthetic source segment');session.add(p);session.flush()

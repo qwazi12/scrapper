@@ -140,3 +140,23 @@ used. Queued-source contract: QUEUED_STUDIO_SOURCES.md.
 A later runtime database-write protocol fence is being verified separately;
 full29 does not include it. Broader C01–C14 and external/operational proof remain
 incomplete. Continue from MEMORY.md rather than stopping at this evidence index.
+
+## Legacy Countdown recovery and direct worker verification
+
+Latest complete UI generation is **30passed6.6min**, source
+a1baef1e7ef85060be5412598c4a8dc23c58633cf698bafb21c5e5d9e1096518.
+Legacy upgrade preserves words/ranking/old media/history and requires current
+review, new identity-bound children and new export acceptance. Direct worker and
+scheduler admission enforce the parent; automation does not fabricate missing
+editorial support or silently change the requested format. Backend784/1optional
+skip and actualPG306/restore1.110s passed, build2/tsc1passed.
+Evidence history/countdown-legacy-upgrade2; COUNTDOWN_SAVED_CONTRACTS.md describes
+limits. The corrected test waits actual publish HTTP/queue persistence; the prior
+failed immediate-read trace/final committed state are preserved separately.
+Root simulated provider/photo ledgers and fake-Drive copies are retained under
+root-runtime (also backfilled from stopped marked roots for the preceding five
+archives). Actual Drive/public transfers remain unexecuted/deferred.
+
+Later DB-clock category admission is separately verified; this full30 is not its
+source generation. C01–C14 remain unfinished, including broader specialized
+eligibility, unknown legacy formats and factual/editorial/provider/operational proof.

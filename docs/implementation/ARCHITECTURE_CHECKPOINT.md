@@ -174,3 +174,16 @@ copy/cover changes require revising the source. Working render/cover revisions
 can coexist with retained queued bytes. This is typed consistency plus owner
 acceptance, not independent complete truth or legal certification. See
 [queued source contract](QUEUED_STUDIO_SOURCES.md) and [credit context](CREDIT_CONTEXT.md).
+
+## Legacy Countdown draft recovery and parent-owned workers
+
+A saved legacy list uses an explicit owner/context-CAS recovery action, retaining
+its words/media/history before clearing unproven child links and approval. A new
+current draft must confirm category/count/rationale, create independent children
+whose context binds parent creation identity, review bookends and accept the new
+export. The common Studio runner claims the parent source and validates membership
+and current category facts before undo/paid work. Scheduler recovery does not
+automatically spend on old lists. Candidate-topic titles cannot silently fill
+gaps, discard entries, invent rationales or shrink formats. See
+[Countdown saved contracts](COUNTDOWN_SAVED_CONTRACTS.md). Full30 actual local UI
+proof is separate from the next database-clock admission refinement.

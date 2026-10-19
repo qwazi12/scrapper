@@ -488,3 +488,32 @@ def legacy_checked_script(pid:int):
             'check_issues':[],'check_scope':'storyboard_only'}
         row.plan=None;row.render=None;s.commit()
         return {'id':row.id,'stored_check':'ok','words':words,'fixture_only':True,'publication':'none'}
+
+
+@app.post('/api/e2e/legacy-countdown')
+def legacy_countdown():
+    """Original local test media and private words; no old verification grant."""
+    from uuid import uuid4
+    from backend.app.models import CountdownProject,StudioProject
+    key=uuid4().hex
+    root=settings.data_path/'studio'/'compilations'/key
+    (root/'thumbnails').mkdir(parents=True)
+    shutil.copyfile(TRAILER,root/'final_compilation.mp4')
+    shutil.copyfile(TRAILER.parent/'poster.jpg',root/'thumbnails'/'thumbnail.jpg')
+    with SessionLocal() as s:
+        entries=[{'rank':index,'tmdb_id':50+index,'media_type':'movie','title':f'Synthetic Film {50+index}','year':2026,
+            'why_it_ranks':'Our editorial preference for the original visual structure of this synthetic example.'} for index in range(1,6)]
+        words={'title':'Private saved synthetic countdown','intro':'Five original synthetic visual studies. Which would you put first?',
+            'outro':'Which original visual study would you put first, and why?'}
+        c=CountdownProject(topic='Top 5 Synthetic Animated Films',fmt='top5',stage='segments',stage_status='stopped',
+            ranking={'entries':entries},script=words,review={'private_note':'Keep the original saved review words.'})
+        s.add(c);s.flush()
+        p=StudioProject(tmdb_id=51,title='Synthetic Film 51',stage_status='done',
+            facts={'origin':'countdown','is_countdown':True,'countdown':{'countdown_id':c.id}},
+            script={'sentences':[{'text':'Original private legacy segment words.','paragraph':1}]})
+        s.add(p);s.flush();c.segment_ids=[p.id]
+        c.render={'compilation_id':key,'file':str(root/'final_compilation.mp4'),
+            'thumbnail':str(root/'thumbnails'/'thumbnail.jpg'),'thumbnails':{'poster':'thumbnail.jpg'},
+            'selected_thumbnail':'poster','chapters':[],'seconds':12,'minutes':.2}
+        s.commit()
+        return {'id':c.id,'old_segment_id':p.id,'words':words,'old_video':str(root/'final_compilation.mp4'),'fixture_only':True,'publication':'none'}

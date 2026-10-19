@@ -14,7 +14,7 @@ from .publication_journal import digest,identity
 from .worker_leases import clock
 
 POLICY='original-studio-source-v1'
-SOURCES={'LongForm Studio','Countdowns Studio'}
+SOURCES={'LongForm Studio','Countdowns Studio','Countdown Studio'}
 COPY_FIELDS=('title','description','tags','pipeline','source','research','video_path','thumb_path','media_kind','media_files')
 
 
@@ -77,8 +77,9 @@ def retained(s,eid,*,approve):
 
 def _countdown(s,project,segments):
     from .studio import countdown_eligibility as eligibility
+    from .studio.countdown import current_contract
     ranking=project.ranking or {};proof=ranking.get('eligibility') or {}
-    if ranking.get('contract_version')!=1:fail('legacy countdown needs current title eligibility before a new delivery')
+    if not current_contract(project):fail('legacy countdown needs current title eligibility before a new delivery')
     rule=eligibility.criteria(project.topic,settings.studio_region)
     try:
         checked=datetime.fromisoformat(proof.get('checked_at',''))
