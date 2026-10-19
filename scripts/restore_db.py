@@ -5,7 +5,7 @@ Safely restores a SQLite snapshot into the live Scrapper database.
 
 Features:
 - Dry-run by default: displays side-by-side row count comparison between Current and Backup.
-- Requires `--confirm` flag to execute.
+- Requires `--confirm --offline-confirmed` and an exclusive maintenance lock.
 - Creates an emergency pre-restore snapshot (`scrapper_pre_restore_<timestamp>.db.gz`)
   before replacing the active database so any restore can be undone.
 - Performs `PRAGMA integrity_check;` before and after restore.
@@ -14,10 +14,7 @@ Features:
 from __future__ import annotations
 
 import argparse
-import datetime
-from datetime import timezone
 import gzip
-import os
 import pathlib
 import shutil
 import sqlite3
@@ -37,6 +34,9 @@ except Exception:
     BACKUPS_DIR = pathlib.Path("data/backups").resolve()
 
 
+from backend.app.sqlite_snapshots import compressed_snapshot, unique_stem, offline_lock, snapshot_raw, integrity
+
+
 def get_table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Return a mapping of {table_name: row_count} for user tables."""
     cur = conn.cursor()
@@ -45,7 +45,8 @@ def get_table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     counts = {}
     for t in sorted(tables):
         try:
-            cur.execute(f'SELECT COUNT(*) FROM "{t}";')
+            quoted = t.replace('"', '""')
+            cur.execute(f'SELECT COUNT(*) FROM "{quoted}";')
             counts[t] = cur.fetchone()[0]
         except Exception:
             counts[t] = -1
@@ -55,12 +56,8 @@ def get_table_counts(conn: sqlite3.Connection) -> dict[str, int]:
 def run_integrity_check(db_path: pathlib.Path) -> bool:
     """Verify database passes SQLite integrity check."""
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        cur = conn.cursor()
-        cur.execute("PRAGMA integrity_check;")
-        res = cur.fetchall()
-        conn.close()
-        return bool(res and res[0][0].lower() == "ok")
+        integrity(db_path)
+        return True
     except Exception as exc:
         print(f"❌ Integrity check failed for {db_path}: {exc}", file=sys.stderr)
         return False
@@ -85,7 +82,12 @@ def main() -> int:
         action="store_true",
         help="Actually apply the restore. Without this flag, only a dry-run comparison is shown.",
     )
+    parser.add_argument('--offline-confirmed', action='store_true',
+        help='Confirm all app and worker processes, including older versions, are stopped.')
     args = parser.parse_args()
+    if args.confirm and not args.offline_confirmed:
+        print('Restore refused: stop all app/workers, then use --confirm --offline-confirmed.', file=sys.stderr)
+        return 1
 
     src_path = pathlib.Path(args.from_file).resolve()
     target_path = pathlib.Path(args.target_db).resolve()
@@ -98,17 +100,25 @@ def main() -> int:
     print(f"🎯 Target live database:     {target_path}\n")
 
     # 1. Unpack if compressed .gz
-    temp_dir = tempfile.mkdtemp(prefix="scrapper_restore_")
+    target_path.parent.mkdir(parents=True,exist_ok=True)
+    temp_dir = tempfile.mkdtemp(prefix=".scrapper_restore_",dir=target_path.parent)
     decompressed_path = pathlib.Path(temp_dir) / "snapshot.db"
 
     try:
         if src_path.suffix == ".gz":
             print("📦 Decompressing .db.gz archive for verification...")
             with gzip.open(src_path, "rb") as f_in, open(decompressed_path, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+                total=0
+                # Bound decompression by available target storage; preserve headroom.
+                limit=max(0,(shutil.disk_usage(target_path.parent).free-16*1024*1024)//3)
+                while chunk:=f_in.read(1024*1024):
+                    total+=len(chunk)
+                    if total>limit:raise RuntimeError('Insufficient free space for restore and emergency snapshot')
+                    f_out.write(chunk)
             inspect_db = decompressed_path
         else:
-            inspect_db = src_path
+            snapshot_raw(src_path,decompressed_path)
+            inspect_db = decompressed_path
 
         # 2. Check snapshot integrity
         if not run_integrity_check(inspect_db):
@@ -124,7 +134,7 @@ def main() -> int:
         target_exists = target_path.is_file()
         current_counts: dict[str, int] = {}
         if target_exists:
-            target_conn = sqlite3.connect(f"file:{target_path}?mode=ro", uri=True)
+            target_conn = sqlite3.connect(target_path.as_uri()+'?mode=ro',uri=True)
             current_counts = get_table_counts(target_conn)
             target_conn.close()
 
@@ -153,47 +163,28 @@ def main() -> int:
         # 5. Handle Dry Run vs Confirm
         if not args.confirm:
             print("ℹ️  [DRY RUN COMPLETE] No changes were made to the live database.")
-            print("To execute this restore, run again with --confirm:\n")
-            print(f"  python scripts/restore_db.py --from \"{src_path}\" --confirm\n")
+            print("To execute this restore, stop all app/workers and run again with --confirm --offline-confirmed:\n")
+            print(f"  python scripts/restore_db.py --from \"{src_path}\" --confirm --offline-confirmed\n")
             return 0
 
-        # --- EXECUTE RESTORE ---
-        print("⚠️  --confirm supplied: Proceeding with live database restoration...")
-
-        # A. Save emergency pre-restore snapshot of current database
-        backups_dir = target_path.parent / "backups"
-        backups_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        pre_restore_file = backups_dir / f"scrapper_pre_restore_{ts}.db.gz"
-
-        if target_exists:
-            print(f"🛡️  Creating emergency pre-restore backup: {pre_restore_file.name}...")
-            with open(target_path, "rb") as f_in, gzip.open(pre_restore_file, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
-            print(f"✓ Pre-restore snapshot saved ({pre_restore_file.stat().st_size} bytes).")
-
-        # B. Perform lock-safe restore using sqlite3 online backup
-        print(f"🔄 Restoring snapshot into {target_path}...")
-        src_conn = sqlite3.connect(inspect_db)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        dst_conn = sqlite3.connect(str(target_path))
-
-        try:
-            src_conn.backup(dst_conn)
-        finally:
-            dst_conn.close()
-            src_conn.close()
-
-        # C. Post-restore verification
-        if not run_integrity_check(target_path):
-            print("❌ Post-restore integrity check failed!", file=sys.stderr)
-            if pre_restore_file.is_file():
-                print(f"⚠️  Restore was unsuccessful. You can recover with: {pre_restore_file}", file=sys.stderr)
-            return 1
-
-        print("✓ Post-restore integrity check passed successfully.")
-        print(f"\n🎉 DATABASE RESTORE COMPLETED SUCCESSFULLY from {src_path.name} into {target_path.name}!")
+        # All operations below run while an exclusive cooperating-process lock is held.
+        # The explicit offline flag also covers older app versions without this lock.
+        with offline_lock(target_path):
+            if target_path.is_file():
+                emergency=compressed_snapshot(target_path,target_path.parent/'backups',
+                    unique_stem('scrapper_pre_restore'))
+                print(f"Verified emergency snapshot: {emergency['path']} SHA256={emergency['sha256']}")
+            # SQLite backup is transactional; never copy raw WAL-less database bytes.
+            snapshot_raw(inspect_db,target_path)
+            integrity(target_path)
+            with sqlite3.connect(target_path) as restored:
+                if get_table_counts(restored)!=backup_counts:
+                    raise RuntimeError('Post-restore table counts differ from the verified snapshot')
+            print(f"DATABASE RESTORE COMPLETED SUCCESSFULLY from {src_path.name} into {target_path.name}")
         return 0
+    except Exception as exc:
+        print(f'Restore failed: {exc}',file=sys.stderr)
+        return 1
 
     finally:
         # Clean up temp decompression directory

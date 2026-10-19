@@ -16,18 +16,20 @@ import {
 import { PublishModal } from "./PublishModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { QueuePanel } from "./QueuePanel";
+import { allowNavigation } from "../lib/navigationGuard";
 import { readHash, writeHash } from "../lib/hashnav";
 import { DrivePanel } from "./DrivePanel";
 import { ChannelIngestPanel } from "./ChannelIngestPanel";
 import { SettingsOverview } from "./SettingsOverview";
 import { StudioPanel } from "./StudioPanel";
 import { CountdownsStudio } from "./CountdownsStudio";
+import { EditorialWorkspace } from "./EditorialWorkspace";
 import { JobsBar } from "./JobsBar";
 import { DialogHost } from "./DialogHost";
 import { SchedulerView } from "./PacingThrottle";
 import { askConfirm, notify } from "@/lib/dialogs";
 
-type NavTab = "scraper" | "socialpilot" | "longform" | "countdowns" | "comps" | "logs" | "settings";
+type NavTab = "scraper" | "socialpilot" | "longform" | "countdowns" | "editorial" | "comps" | "logs" | "settings";
 
 export default function Page() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -78,14 +80,15 @@ export default function Page() {
         api.compilations(),
         api.stats(),
         api.queueCounts().then((r) => r.all).catch(async () => {
-          const fallback = await api.queue().catch(() => []);
+          const fallback = await api.queue();
           return fallback.length;
         }),
       ]);
+      if (typeof q !== "number" || !Number.isFinite(q) || q < 0) throw new Error("Queue counts could not be confirmed");
       setClips(c);
       setComps(cm);
       setStats(st);
-      setQueueCount(typeof q === "number" ? q : 0);
+      setQueueCount(q);
       setConnected(true);
       failures.current = 0;
     } catch {
@@ -112,10 +115,11 @@ export default function Page() {
 
   // Sync hash with active tab if set in URL (#tab or #tab/sub; open projects add /id)
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    const syncHash = async () => {
+      if (!await allowNavigation(window.location.hash)) return;
       const [hash, sub] = readHash();
       const SUBS = ["queue", "longform", "countdowns", "scheduler", "ingest", "drive"];
-      if (["scraper", "socialpilot", "longform", "countdowns", "comps", "logs", "settings"].includes(hash)) {
+      if (["scraper", "socialpilot", "longform", "countdowns", "editorial", "comps", "logs", "settings"].includes(hash)) {
         setActiveTab(hash as NavTab);
         if (hash === "socialpilot" && SUBS.includes(sub)) setSocialPilotTab(sub as typeof socialPilotTab);
       } else if (hash === "queue") {
@@ -125,7 +129,14 @@ export default function Page() {
         setActiveTab("socialpilot");
         setSocialPilotTab("drive");
       }
-    }
+    };
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    window.addEventListener("popstate", syncHash);
+    return () => {
+      window.removeEventListener("hashchange", syncHash);
+      window.removeEventListener("popstate", syncHash);
+    };
   }, []);
 
   // Keep the SocialPilot sub-tab in the address too.
@@ -133,7 +144,8 @@ export default function Page() {
     if (activeTab === "socialpilot") writeHash(["socialpilot", socialPilotTab]);
   }, [activeTab, socialPilotTab]);
 
-  function handleTabSelect(tab: NavTab) {
+  async function handleTabSelect(tab: NavTab) {
+    if (!await allowNavigation(`#${tab}`)) return;
     setActiveTab(tab);
     setNavOpen(false);
     if (typeof window !== "undefined") {
@@ -292,6 +304,9 @@ export default function Page() {
             subtitle="Top 5 / 10 / 15 videos (8–12 min)"
           />
 
+          <NavButton active={activeTab === "editorial"} collapsed={collapsed} onClick={() => handleTabSelect("editorial")}
+            icon="📝" title="Editorial desk" subtitle="Research, calendar & measured learning" />
+
           {/* 3. Compilations & Stitching */}
           <NavButton
             active={activeTab === "comps"}
@@ -340,7 +355,7 @@ export default function Page() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: "var(--muted)" }}>Volume Storage</span>
                 <span className="mono" style={{ color: "#e6e9ef", fontWeight: 600 }}>
-                  {fmtBytes(stats?.storage_bytes ?? 0)} / 5 GB
+                  {stats?.disk ? `${stats.disk.used_gb} / ${stats.disk.total_gb} GB` : "Capacity unavailable"}
                 </span>
               </div>
               <div
@@ -355,14 +370,14 @@ export default function Page() {
                 <div
                   style={{
                     height: "100%",
-                    width: `${Math.min(100, Math.round(((stats?.storage_bytes ?? 0) / (5 * 1024 * 1024 * 1024)) * 100))}%`,
+                    width: `${stats?.disk?.percent_used ?? 0}%`,
                     background: "var(--accent)",
                   }}
                 />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
                 <span style={{ color: connected ? "var(--accent)" : "var(--red)", display: "flex", alignItems: "center", gap: 5 }}>
-                  <span>{connected ? "●" : "○"}</span> {connected ? "Railway Live" : "Disconnected"}
+                  <span>{connected ? "●" : "○"}</span> {connected ? (stats?.safe_e2e_mode ? "SAFE E2E · fake providers" : "API connected") : "Disconnected"}
                 </span>
                 <span style={{ color: "var(--muted)" }}>v2.5 Upload-Post</span>
               </div>
@@ -541,6 +556,7 @@ export default function Page() {
 
         {activeTab === "longform" && <StudioPanel />}
         {activeTab === "countdowns" && <CountdownsStudio />}
+        {activeTab === "editorial" && <EditorialWorkspace />}
 
         {/* Separate View 4: Live Activity Logs */}
         {activeTab === "logs" && (

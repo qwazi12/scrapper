@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { api, apiBase, BackupStatus, DiskSystemStatus, mediaUrl, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
+import React, { useCallback, useEffect, useState } from "react";
+import { api, apiBase, BackupStatus, DiskSystemStatus, downloadBackup, mediaUrl, parseApiDate, ScheduleConfig, ScheduleInfo, SocialAccount, TTSVoice } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { SpendingCard } from "./SpendingCard";
 import { PacingThrottle } from "./PacingThrottle";
+import { ExportHistory } from "./ExportHistory";
+import { DeliveryHistory } from "./DeliveryHistory";
 import { askConfirm, notify } from "../lib/dialogs";
 
 function fmtHour(h: number): string {
@@ -13,8 +15,11 @@ function fmtHour(h: number): string {
   return `${h12}${ampm}`;
 }
 
-function fmtSlot(iso: string, tz: string): string {
-  return new Date(parseApiDate(iso)).toLocaleString("en-US", {
+function fmtSlot(iso: string | null | undefined, tz: string): string {
+  if (!iso) return "Awaiting scheduler";
+  const date = new Date(parseApiDate(iso));
+  if (!Number.isFinite(date.getTime())) return "Schedule time unavailable";
+  return date.toLocaleString("en-US", {
     timeZone: tz, weekday: "short", hour: "numeric", minute: "2-digit",
   });
 }
@@ -218,8 +223,9 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
       )}
 
       <p style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
-        Lock-free SQLite snapshots taken nightly at <b>3:00 am Eastern</b> with automated <code>PRAGMA integrity_check</code>,
-        gzip compression, <b>7-day local disk retention</b> on Railway, and <b>30-day off-disk retention</b> in Google Drive.
+        SQLite online snapshots include committed WAL data and are checked for integrity and checksums before retention.
+        Local retention uses the configured copy count. Drive copies are kept; automatic remote deletion is disabled.
+        Scheduled backups require an active scheduler. PostgreSQL recovery needs a separate verified procedure.
       </p>
 
       {status && (
@@ -227,14 +233,14 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
           <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Database File</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-              {status.database_type.toUpperCase()} <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>(/data/scrapper.db)</span>
+              {status.database_type.toUpperCase()}
             </div>
           </div>
 
           <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px" }}>
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Local Retention</div>
             <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-              {status.local_copies_count} / {status.retention.keep_local} daily snapshots <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>(/data/backups/)</span>
+              {status.local_copies_count} / {status.retention.keep_local} retained snapshot copies
             </div>
           </div>
 
@@ -242,7 +248,7 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
             <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Google Drive Off-Disk</div>
             <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2, color: status.drive_status === "synced" ? "#34d399" : "#fbbf24" }}>
               {status.drive_status === "synced"
-                ? "✓ Synced (30-day retention)"
+                ? "✓ Snapshot uploaded; remote copies kept"
                 : status.drive_status.startsWith("Local disk")
                 ? "⚠️ Local disk only (Shared Drive pending)"
                 : status.drive_status}
@@ -262,7 +268,7 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
       {status && status.local_copies.length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 6, textTransform: "uppercase" }}>
-            Available Snapshots for 1-Click Restore &amp; Download:
+            Database backup files for download and offline recovery:
           </div>
           <div style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
             {status.local_copies.map((c, idx) => (
@@ -289,13 +295,12 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
                   <span style={{ color: "var(--muted)" }}>
                     {new Date(c.created_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Eastern
                   </span>
-                  <a
-                    href={mediaUrl(c.download_url)}
-                    download={c.filename}
+                  <button
+                    onClick={() => downloadBackup(c.download_url, c.filename).catch((e) => alert(e.message))}
                     style={{ color: "var(--accent)", textDecoration: "underline", fontSize: 11 }}
                   >
                     ⬇ Download .db.gz
-                  </a>
+                  </button>
                 </div>
               </div>
             ))}
@@ -304,8 +309,8 @@ function BackupCard({ card, h2 }: { card: React.CSSProperties; h2: React.CSSProp
       )}
 
       <div style={{ marginTop: 12, padding: "8px 12px", background: "rgba(255,255,255,0.03)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 11, color: "var(--muted)" }}>
-        🛠️ <b>Safe Recovery CLI:</b> To dry-run inspect or restore a backup on Railway, run:
-        <code style={{ display: "block", marginTop: 4, color: "#38bdf8" }}>python scripts/restore_db.py --from /data/backups/&lt;filename&gt; --confirm</code>
+        🛠️ <b>Recovery inspection:</b> Use exact absolute paths to compare a SQLite snapshot. Applying a restore requires stopping every app and worker, then adding --confirm --offline-confirmed.
+        <code style={{ display: "block", marginTop: 4, color: "#38bdf8" }}>python scripts/restore_db.py --from /absolute/snapshot.db.gz --to /absolute/scrapper.db</code>
       </div>
     </div>
   );
@@ -488,14 +493,22 @@ export function SettingsOverview() {
   const [ttsCheckTesting, setTtsCheckTesting] = useState(false);
   const [ttsCheckResult, setTtsCheckResult] = useState("");
 
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const reloadSchedule = useCallback(async () => {
+    setScheduleLoading(true);
+    try { setSched(await api.schedule()); setErr(""); }
+    catch (e) { setSched(null); setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setScheduleLoading(false); }
+  }, []);
+
   // Refresh the schedule/heartbeat every 30s so the status stays live.
   useEffect(() => {
     const t = setInterval(() => {
       setNow(Date.now());
-      api.schedule().then(setSched).catch(() => {});
+      void reloadSchedule();
     }, 30000);
     return () => clearInterval(t);
-  }, []);
+  }, [reloadSchedule]);
 
   useEffect(() => {
     api.ttsVoices()
@@ -558,7 +571,7 @@ export function SettingsOverview() {
 
   useEffect(() => {
     api.seo().then(setSeo).catch(() => {});
-    api.schedule().then(setSched).catch((e) => setErr(String(e.message || e)));
+    void reloadSchedule();
     api.socialAccounts()
       .then((r) => {
         setAccounts(r.accounts || []);
@@ -566,27 +579,27 @@ export function SettingsOverview() {
         if (!r.configured) setAccountsMsg(r.message || "Upload-Post is not configured");
       })
       .catch((e) => setAccountsMsg(`Could not load accounts: ${e.message || e}`));
-  }, []);
+  }, [reloadSchedule]);
 
-  if (err) {
-    return <div style={{ ...card, color: "var(--red)" }}>Could not load settings: {err}</div>;
-  }
-  if (!sched) {
-    return <div style={{ ...card, color: "var(--muted)" }}>Loading settings…</div>;
-  }
-
-  const tzShort = sched.timezone === "America/New_York" ? "Eastern" : sched.timezone;
-  const sc = sched.scheduler;
-  const tickAgo = sc.last_tick_at ? Math.round((now - parseApiDate(sc.last_tick_at)) / 1000) : null;
-  const alive = sc.enabled && tickAgo !== null && tickAgo < sc.tick_seconds * 3 + 30;
-  const pipelines = Object.entries(sched.pipelines);
+  const tzShort = sched?.timezone === "America/New_York" ? "Eastern" : sched?.timezone || "";
+  const sc = sched?.scheduler;
+  const tickAgo = sc?.last_tick_at ? Math.round((now - parseApiDate(sc.last_tick_at)) / 1000) : null;
+  const alive = sc?.enabled && tickAgo !== null && tickAgo < sc.tick_seconds * 3 + 30;
+  const pipelines = Object.entries(sched?.pipelines || {});
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <SpendingCard card={card} h2={h2} />
       <BackupCard card={card} h2={h2} />
       <DiskCard card={card} h2={h2} />
+      <ExportHistory />
+      <DeliveryHistory />
 
+      {!sched && <div style={card}>
+        <p role={err ? "alert" : "status"}>{err ? `Schedule unavailable: ${err}` : "Loading schedule…"}</p>
+        <button disabled={scheduleLoading} onClick={() => void reloadSchedule()}>Retry loading schedule</button>
+      </div>}
+      {sched && sc && <>
       {/* Posting schedule */}
       <div style={card}>
         <h2 style={h2}>⏰ Posting Schedule</h2>
@@ -752,8 +765,8 @@ export function SettingsOverview() {
           <h2 style={h2}>🗑 Posted Archive Cleanup</h2>
           <div style={{ fontSize: 12 }}>
             {sched.archive_delete_days > 0 ? (
-              <>Posted/archived videos are removed <b>{sched.archive_delete_days} days</b> after posting, and their
-                Google Drive file is moved to Drive trash (recoverable there for 30 days).</>
+              <>Settled queue rows are removed <b>{sched.archive_delete_days} days</b> after posting once their delivery evidence and available local media are retained below.
+                Drive versions stay in place; a newer upload does not preserve the older version’s bytes.</>
             ) : (
               <span style={{ color: "var(--yellow)" }}>Disabled (ARCHIVE_DELETE_DAYS=0).</span>
             )}
@@ -921,6 +934,7 @@ export function SettingsOverview() {
           )}
         </div>
       </div>
+      </>}
     </div>
   );
 }

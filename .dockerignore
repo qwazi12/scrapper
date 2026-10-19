@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/.venv
+**/.next
+**/.env*
+data
+downloads
+logs
+artifacts
+.playwright-cli
+**/__pycache__
+**/*.tsbuildinfo

@@ -16,6 +16,7 @@ import datetime
 import pathlib
 
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from .config import settings
 from .logbus import log
@@ -55,6 +56,30 @@ def remove_compilation_files(comp: Compilation) -> None:
         pathlib.Path(comp.output_path).unlink(missing_ok=True)
 
 
+def delete_media(s, model, ident):
+    """Protect references and active readers before unlinking and deleting a row."""
+    from fastapi import HTTPException
+    from . import file_refs, file_use, worker_leases
+    from .budget_reservations import lock
+    row=s.get(model,ident,populate_existing=True)
+    if not row:return
+    paths=([row.file_path,row.thumb_path] if model is Clip else [row.output_path])
+    with file_use.pin(paths,exclusive=True,session=s):
+        lock(s)
+        s.refresh(row)
+        resource=('clip:' if model is Clip else 'compile:')+str(ident)
+        if row.status in (Status.queued,Status.running) or worker_leases.live(resource):
+            raise HTTPException(409,'Stop the active worker before deleting its media')
+        if (model is Clip and file_refs.clip_referenced(s,ident)) or (model is Compilation and s.query(QueueItem).filter(QueueItem.compilation_id==ident).first()):
+            raise HTTPException(409,'Media is referenced by a queue, Studio handoff or compilation')
+        if any(file_refs.protected(s,p,ignore=(model,ident)) for p in paths if p):
+            raise HTTPException(409,'Another saved artifact references this media')
+        file_use.assert_current(s)
+        if model is Clip:remove_clip_files(row)
+        else:remove_compilation_files(row)
+        s.delete(row);s.commit()
+
+
 def expires_at(created_at: datetime.datetime) -> datetime.datetime | None:
     if settings.retention_days <= 0:
         return None
@@ -77,13 +102,13 @@ def purge_expired(s: Session) -> dict:
     queued_clips = {
         row[0]
         for row in s.query(QueueItem.clip_id)
-        .filter(QueueItem.clip_id.isnot(None), QueueItem.status.in_(("review", "ready", "posting", "posted", "retry")))
+        .filter(QueueItem.clip_id.isnot(None))
         .all()
     }
     queued_comps = {
         row[0]
         for row in s.query(QueueItem.compilation_id)
-        .filter(QueueItem.compilation_id.isnot(None), QueueItem.status.in_(("review", "ready", "posting", "posted", "retry")))
+        .filter(QueueItem.compilation_id.isnot(None))
         .all()
     }
 
@@ -93,8 +118,12 @@ def purge_expired(s: Session) -> dict:
         if clip.id in queued_clips:
             continue  # SocialPilot scheduler/queue is exempt from retention
         if _aware(clip.created_at) < cutoff:
-            remove_clip_files(clip)
-            s.delete(clip)
+            from fastapi import HTTPException
+            try:delete_media(s,Clip,clip.id)
+            except HTTPException as exc:
+                s.rollback()
+                if exc.status_code==409:continue
+                raise
             n_clips += 1
             log("info", "retention_delete",
                 f"clip expired after {days}d: {clip.title or clip.source_url}")
@@ -105,8 +134,12 @@ def purge_expired(s: Session) -> dict:
         if comp.id in queued_comps:
             continue  # SocialPilot scheduler/queue is exempt from retention
         if _aware(comp.created_at) < cutoff:
-            remove_compilation_files(comp)
-            s.delete(comp)
+            from fastapi import HTTPException
+            try:delete_media(s,Compilation,comp.id)
+            except HTTPException as exc:
+                s.rollback()
+                if exc.status_code==409:continue
+                raise
             n_comps += 1
             log("info", "retention_delete", f"compilation #{comp.id} expired after {days}d")
 
@@ -231,10 +264,15 @@ def prune_lru_cache(cache_dir: pathlib.Path, max_bytes: int, target_ratio: float
     removed = 0
     for path, sz, _ in entries:
         try:
-            path.unlink(missing_ok=True)
+            from .file_use import pin, FileBusy, assert_current
+            with pin([path],exclusive=True):
+                assert_current()
+                path.unlink(missing_ok=True)
             freed += sz
             total_bytes -= sz
             removed += 1
+        except FileBusy:
+            continue
         except OSError as exc:
             log("warning", "cache_eviction_failed", str(exc), path=str(path))
         if total_bytes <= target_bytes:
@@ -244,10 +282,46 @@ def prune_lru_cache(cache_dir: pathlib.Path, max_bytes: int, target_ratio: float
     return {"files_removed": removed, "bytes_freed": freed, "remaining_bytes": total_bytes}
 
 
+def prune_motion_workdirs(cache_dir: pathlib.Path) -> dict:
+    """Reclaim only declared disposable work with no current file owner."""
+    import json,re,shutil
+    from .file_use import pin,FileBusy,assert_current,overlap
+    from .db import SessionLocal
+    from .models import FileUse,WorkerLease
+    from .worker_leases import clock
+    result={'work_dirs_removed':0,'bytes_freed':0}
+    if not cache_dir.is_dir():return result
+    pattern=re.compile(r'_work-((?:intro|release|cast|subscribe|endscreen)-[0-9a-f]{20})-[0-9a-f]{32}')
+    for path in cache_dir.iterdir():
+        match=pattern.fullmatch(path.name)
+        if not match or path.is_symlink() or not path.is_dir():continue
+        try:
+            with pin([path],exclusive=True) as claim:
+                if path.is_symlink() or path.resolve().parent!=cache_dir.resolve():continue
+                # Nested ordinary mutations share an invocation's claims. A
+                # reclaimer must also preserve that invocation's live work.
+                with SessionLocal() as session:
+                    uses=session.query(FileUse).join(WorkerLease,WorkerLease.resource==FileUse.resource).filter(
+                        FileUse.resource!=claim.resource,WorkerLease.expires_at>clock(session)).all()
+                    if any(overlap(path.resolve(),other) for use in uses for other in use.paths):continue
+                marker=path/'.scrapper-motion-work.json'
+                if marker.is_symlink() or not marker.is_file() or marker.stat().st_size>1024:continue
+                data=json.loads(marker.read_text())
+                if (not isinstance(data,dict) or type(data.get('schema')) is not int or data['schema']!=1
+                        or data.get('kind')!='motion_cache_work' or data.get('cache_key')!=match[1]):continue
+                size=sum(p.stat().st_size for p in path.rglob('*') if not p.is_symlink() and p.is_file())
+                assert_current();shutil.rmtree(path)
+                result['work_dirs_removed']+=1;result['bytes_freed']+=size
+        except FileBusy:continue
+        except (OSError,ValueError) as exc:log('warning','motion_work_cleanup_failed',str(exc)[:200],path=str(path))
+    return result
+
+
 def prune_all_caches() -> dict:
     """Enforce LRU cache caps across studio motion graphics, TTS, and temporary audio."""
     res = {}
     motion_dir = settings.data_path / "studio" / "_motioncache"
+    res['motion_work']=prune_motion_workdirs(motion_dir)
     res["motion"] = prune_lru_cache(motion_dir, settings.max_motion_cache_mb * 1024 * 1024)
 
     tts_dir = settings.data_path / "studio" / "_ttscache"
@@ -274,7 +348,10 @@ def cleanup_leftover_renders(max_age_seconds: int = 3600) -> dict:
             if rn.exists():
                 try:
                     if now - rn.stat().st_mtime > max_age_seconds:
-                        shutil.rmtree(rn, ignore_errors=True)
+                        from .file_use import pin,assert_current
+                        with pin([rn],exclusive=True):
+                            assert_current()
+                            shutil.rmtree(rn, ignore_errors=True)
                         removed += 1
                         log("info", "abandoned_render_cleaned", f"removed leftover {rn}")
                 except Exception as exc:
@@ -296,10 +373,13 @@ def cleanup_temp_downloads(max_age_seconds: int = 7200) -> dict:
             try:
                 if now - f.stat().st_mtime > max_age_seconds:
                     sz = f.stat().st_size
-                    f.unlink(missing_ok=True)
+                    from .file_use import pin,assert_current
+                    with pin([f],exclusive=True):
+                        assert_current()
+                        f.unlink(missing_ok=True)
                     removed += 1
                     freed += sz
-            except OSError:
+            except (OSError, HTTPException):
                 continue
     if removed:
         log("info", "temp_downloads_cleaned", f"removed {removed} orphaned partial downloads ({round(freed / 1e6, 1)} MB)")

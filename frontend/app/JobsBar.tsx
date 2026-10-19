@@ -42,7 +42,9 @@ export function JobsBar({ scope }: { scope?: string }) {
   const shown = jobs.filter(
     (j) =>
       (!scope || j.scope === scope) &&
-      (ACTIVE.includes(j.status) || ((j.status === "cancelled" || j.status === "error") && ago(j.finished_at) < 60))
+      (ACTIVE.includes(j.status) || ((j.status === "cancelled" || j.status === "error") && ago(j.finished_at) < 60 &&
+        !jobs.some(next => next.status === "done" && next.scope === j.scope && next.ref === j.ref && next.label === j.label &&
+          !!next.finished_at && !!j.finished_at && Date.parse(next.finished_at) >= Date.parse(j.finished_at))))
   );
   if (shown.length === 0) return null;
 
@@ -59,6 +61,7 @@ export function JobsBar({ scope }: { scope?: string }) {
         return (
           <div
             key={j.id}
+            data-testid={j.status === "error" ? "job-error" : "job-status"}
             style={{
               display: "flex",
               alignItems: "center",

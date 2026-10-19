@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # --- Auth ------------------------------------------------------------
     # Single shared token gating the whole API. Blank in local dev = open.
     access_token: str = ""
+    safe_e2e_mode: bool = False
+    safe_e2e_root: str = ""
+    max_upload_bytes: int = Field(default=500 * 1024 * 1024, ge=1)
 
     # --- Reliability layers ---------------------------------------------
     auto_update_ytdlp: bool = True          # Layer 1: self-healing engine
@@ -61,6 +64,8 @@ class Settings(BaseSettings):
     # Each clip/compilation gets its own rolling timer from its created_at, so
     # something scraped Thursday expires the following Tuesday. 0 disables.
     retention_days: int = 5
+    log_retention_days: int = Field(default=30, ge=0)
+    log_max_rows: int = Field(default=100000, ge=0)
     retention_sweep_minutes: int = 30       # how often the worker sweeps
 
     # --- Disk Space & Cache Management -----------------------------------
@@ -109,8 +114,9 @@ class Settings(BaseSettings):
     # Default posts a day for every pipeline (owner rule 2026-10-04: 1 unless changed
     # by hand on the Pacing card). 0 = the old "every interval_hours" mode.
     post_posts_per_day: int = 1
-    # Posted/archived queue items (and their Drive file, moved to trash) are
-    # removed this many days after they were posted. 0 disables.
+    # Settled queue rows are removed after retaining content/delivery history.
+    # Remote files stay in place; a newer upload is not an old-version backup.
+    # 0 disables queue-row reclamation.
     archive_delete_days: int = 4
 
     # --- AI Metadata & Speech (Google Gemini) ---------------------------
@@ -132,6 +138,8 @@ class Settings(BaseSettings):
     # YouTube Data API v3 key: trailer view/like counts for ranking breakdown
     # candidates (read-only stats; downloads never go through it). Optional.
     youtube_api_key: str = ""
+    # Existing read-only Analytics OAuth grant only; no OAuth flow or scope expansion.
+    youtube_analytics_authorized_user_json: str = ""
     tmdb_read_token: str = Field(
         default="",
         validation_alias=AliasChoices("API_READ_ACCESS_TOKEN", "TMDB_READ_ACCESS_TOKEN", "TMDB_API_READ_ACCESS_TOKEN"),
@@ -167,6 +175,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_schedule(self) -> "Settings":
+        if self.safe_e2e_mode:
+            from .e2e_safety import validate_storage
+            validate_storage(self.data_dir, self.database_url, self.safe_e2e_root)
         from zoneinfo import ZoneInfo
         ZoneInfo(self.post_timezone)  # raises on an unknown zone
         if not (0 <= self.post_start_hour <= self.post_end_hour <= 23):
@@ -225,3 +236,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+if settings.safe_e2e_mode:
+    from .e2e_safety import install_network_guard
+    install_network_guard()

@@ -20,6 +20,7 @@ import logging
 import os
 import pathlib
 import shutil
+from uuid import uuid4
 
 from ..config import settings
 from .. import control
@@ -85,49 +86,58 @@ def _digest(page: str, assets: dict[str, pathlib.Path]) -> str:
     return h.hexdigest()[:20]
 
 
-def render_piece(kind: str, values: dict, assets: dict[str, pathlib.Path] | None = None) -> pathlib.Path:
-    """Render one piece (cached). Raises MotionError with the reason."""
+def render_piece(kind: str, values: dict, assets: dict[str, pathlib.Path] | None = None,
+                 *, destination: pathlib.Path | None = None) -> pathlib.Path:
+    """Warm a cache entry, or copy it into an owned composition destination."""
     ok, why = available()
     if not ok:
         raise MotionError(why)
     assets = {k: v for k, v in (assets or {}).items() if v and v.exists()}
-    page = build_page(kind, values)
-    ext = "mov" if kind in OVERLAY_KINDS else "mp4"
-    out = cache_dir() / f"{kind}-{_digest(page, assets)}.{ext}"
-    if out.exists() and out.stat().st_size > 0:
-        return out
-    work = cache_dir() / f"_work-{out.stem}"
-    shutil.rmtree(work, ignore_errors=True)
-    work.mkdir(parents=True)
-    try:
-        (work / "index.html").write_text(page)
-        (work / "hyperframes.json").write_text('{"paths": {"assets": "."}}')
-        shutil.copy(_gsap(), work / "gsap.min.js")
-        shutil.copy(media._font_path(True), work / "font-bold.ttf")
-        shutil.copy(media._font_path(False), work / "font-regular.ttf")
-        for name, src in assets.items():
-            shutil.copy(src, work / name)
-        tmp = work / f"out.{ext}"
-        cmd = [binary(), "render", str(work), "-o", str(tmp), "--quiet", "-w", "1", "--fps", "30"]
-        if ext == "mov":
-            cmd += ["--format", "mov"]
-        try:
-            media.run(cmd, timeout=RENDER_TIMEOUT)
-        except control.Cancelled:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise MotionError(f"{kind}: HyperFrames render failed — {str(exc)[-300:]}") from exc
-        if not tmp.exists() or tmp.stat().st_size == 0:
-            raise MotionError(f"{kind}: HyperFrames produced no file")
-        tmp.replace(out)
-        return out
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+    from .. import cache_use,file_use
+    # A source cannot change between its cache digest and the copied CLI input.
+    with file_use.pin(assets.values()):
+        page = build_page(kind, values)
+        ext = "mov" if kind in OVERLAY_KINDS else "mp4"
+        out = cache_dir() / f"{kind}-{_digest(page, assets)}.{ext}"
+        work = cache_dir() / f"_work-{out.stem}-{uuid4().hex}"
+        destination=pathlib.Path(destination) if destination else None
+        copied=destination.with_name('.'+destination.name+'.'+uuid4().hex+'.tmp') if destination else None
+        targets=[out,work,*([destination,copied] if destination else [])]
+        with cache_use.writer(targets,wait_seconds=RENDER_TIMEOUT+30):
+            try:
+                if not (out.exists() and out.stat().st_size>0):
+                    work.mkdir(parents=True)
+                    (work/'.scrapper-motion-work.json').write_text(json.dumps({'schema':1,'kind':'motion_cache_work','cache_key':out.stem}))
+                    (work / "index.html").write_text(page)
+                    (work / "hyperframes.json").write_text('{"paths": {"assets": "."}}')
+                    shutil.copy(_gsap(), work / "gsap.min.js")
+                    shutil.copy(media._font_path(True), work / "font-bold.ttf")
+                    shutil.copy(media._font_path(False), work / "font-regular.ttf")
+                    for name, src in assets.items():shutil.copy(src,work/name)
+                    tmp=work/f'out.{ext}'
+                    cmd=[binary(),'render',str(work),'-o',str(tmp),'--quiet','-w','1','--fps','30']
+                    if ext=='mov':cmd+=['--format','mov']
+                    try:media.run(cmd,timeout=RENDER_TIMEOUT)
+                    except control.Cancelled:raise
+                    except Exception as exc:raise MotionError(f'{kind}: HyperFrames render failed — {str(exc)[-300:]}') from exc
+                    if not tmp.exists() or tmp.stat().st_size==0:raise MotionError(f'{kind}: HyperFrames produced no file')
+                    control.check();file_use.assert_current();tmp.replace(out)
+                if destination:
+                    destination.parent.mkdir(parents=True,exist_ok=True)
+                    control.check();file_use.assert_current();shutil.copyfile(out,copied)
+                    control.check();file_use.assert_current();copied.replace(destination)
+                    return destination
+                return out
+            finally:
+                # Only this invocation's namespace, even after its lease is lost.
+                if copied:copied.unlink(missing_ok=True)
+                shutil.rmtree(work,ignore_errors=True)
 
 
-def try_piece(kind: str, values: dict, assets: dict[str, pathlib.Path] | None, failures: list[str]) -> pathlib.Path | None:
+def try_piece(kind: str, values: dict, assets: dict[str, pathlib.Path] | None, failures: list[str],
+              *, destination: pathlib.Path | None = None) -> pathlib.Path | None:
     try:
-        return render_piece(kind, values, assets)
+        return render_piece(kind,values,assets,destination=destination) if destination else render_piece(kind,values,assets)
     except control.Cancelled:
         raise
     except Exception as exc:  # noqa: BLE001 — one piece failing falls back to its static version

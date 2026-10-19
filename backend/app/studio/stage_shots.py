@@ -15,7 +15,7 @@ from ..db import SessionLocal
 from ..models import StudioProject
 from .. import control
 from . import gemini, media
-from .runner import project_dir, stage
+from .runner import attempt_dir, project_dir, stage
 
 MAX_SHOTS = 220
 BATCH = 12          # frames per Gemini call
@@ -108,7 +108,8 @@ def shots(project_id: int) -> str:
         raise RuntimeError("No trailer file yet — run 'trailer' (or upload one) first")
 
     root = project_dir(project_id)
-    stills, thumbs = root / "stills", root / "thumbs"
+    attempt = attempt_dir(project_id)
+    stills, thumbs = attempt / "stills", attempt / "thumbs"
     stills.mkdir(exist_ok=True)
     thumbs.mkdir(exist_ok=True)
 
@@ -138,7 +139,7 @@ def shots(project_id: int) -> str:
             })
 
     sheet = media.cast_sheet(facts.get("cast", [])[:8], (facts.get("local") or {}).get("cast", {}),
-                             root / "assets" / "cast_sheet.jpg")
+                             attempt / "cast_sheet.jpg")
     # Near-identical neighbouring frames (same source, a few dHash bits apart)
     # are tagged once and share the answer — fewer images sent to Gemini.
     reps, dup_of, prev = [], {}, None

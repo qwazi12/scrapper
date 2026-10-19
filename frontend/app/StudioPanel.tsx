@@ -1,9 +1,13 @@
 "use client";
 
+import { useLocalDraft } from "../lib/localDraft";
+import { LocalDraftStatus } from "./LocalDraftStatus";
+import { ExportAcceptance } from "./ExportAcceptance";
+import { ExportHistory } from "./ExportHistory";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StopButton } from "./StopButton";
 import {
-  api,
+  api, apiBase,
   parseApiDate,
   StudioArchive,
   StudioMotion,
@@ -15,7 +19,7 @@ import {
 } from "../lib/api";
 import { UndoButton } from "./UndoButton";
 import { askConfirm, notify } from "../lib/dialogs";
-import { readHash, writeHash } from "../lib/hashnav";
+import { useProjectHash } from "../lib/hashnav";
 import { AutomationCard, deleteProject, RankedTrending, VideosList } from "./StudioAuto";
 import { MomentumBadge } from "./MomentumBadge";
 
@@ -27,7 +31,7 @@ const STAGES: { key: string; label: string; hint: string }[] = [
   { key: "gather", label: "1. Research", hint: "TMDB facts + web sources" },
   { key: "trailer", label: "2. Footage", hint: "Official trailer + clips" },
   { key: "shots", label: "3. Shots", hint: "Cut + tag every shot" },
-  { key: "script", label: "4. Script", hint: "Written from the storyboard, fact-checked" },
+  { key: "script", label: "4. Script", hint: "Checked against the storyboard; review source evidence" },
   { key: "plan", label: "5. Voice + shots", hint: "Narration and a shot for every ~4 s" },
   { key: "render", label: "6. Render", hint: "Final 1080p video" },
 ];
@@ -55,11 +59,7 @@ function fmtDate(iso: string): string {
 export function StudioPanel() {
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [projects, setProjects] = useState<StudioProject[]>([]);
-  const [openId, setOpenId] = useState<number | null>(() => {
-    const [tab, id] = readHash();
-    return tab === "longform" && /^\d+$/.test(id || "") ? Number(id) : null;        // refresh keeps the open breakdown
-  });
-  useEffect(() => { writeHash(["longform", openId]); }, [openId]);
+  const [openId, setOpenId] = useProjectHash("longform");
   const [err, setErr] = useState("");
 
   async function loadList() {
@@ -78,6 +78,7 @@ export function StudioPanel() {
   if (openId !== null) {
     return (
       <ProjectView
+        key={openId}
         id={openId}
         status={status}
         onBack={() => {
@@ -341,15 +342,16 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
     load();
   }, [id]);
 
-  // Poll while a stage runs so progress shows up without refreshing.
+  // A fast stage can finish between reads while an auto-chain is still running.
+  // Keep a slower visible-page refresh even at done/idle so the next stage and
+  // work started by another control cannot leave this view permanently stale.
   useEffect(() => {
-    if (p?.stage_status === "running" || p?.stage_status === "queued") {
-      timer.current = setInterval(() => { if (!document.hidden) load(); }, 3000);
-      return () => {
-        if (timer.current) clearInterval(timer.current);
-      };
-    }
-  }, [p?.stage_status]);
+    const active = p?.stage_status === "running" || p?.stage_status === "queued";
+    timer.current = setInterval(() => { if (!document.hidden) load(); }, active ? 3000 : 5000);
+    const onShow = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { if (timer.current) clearInterval(timer.current); document.removeEventListener("visibilitychange", onShow); };
+  }, [id, p?.stage_status]);
 
   const [undoV, setUndoV] = useState(0);
 
@@ -438,7 +440,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
       {/* Stage stepper */}
       <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
         {STAGES.map((s) => {
-          const done = p.has[s.key === "gather" ? "facts" : s.key === "trailer" ? "trailer" : s.key] ?? false;
+          const done = s.key === "script" ? p.script_ready === true : p.has[s.key === "gather" ? "facts" : s.key] ?? false;
           const active = p.stage === s.key;
           return (
             <div
@@ -455,7 +457,7 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
               <div style={{ fontSize: 12, fontWeight: 700 }}>{done ? "✓ " : ""}{s.label}</div>
               <div style={{ ...muted, minHeight: 28 }}>{s.hint}</div>
               <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
-                <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={running} onClick={() => run(s.key)}
+                <button style={{ fontSize: 10, padding: "2px 8px" }} disabled={running || (["plan", "render"].includes(s.key) && !p.script_ready)} onClick={() => run(s.key)}
                         title={done ? "Run just this step again" : "Run just this step"}>
                   {done ? "Re-run" : "Run"}
                 </button>
@@ -482,17 +484,17 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
             const hasKey = (k: string) => p.has[k === "gather" ? "facts" : k];
             const next = order.find((k) => !hasKey(k));
             return (
-              <button style={{ fontSize: 11 }} disabled={running || !next}
+              <button style={{ fontSize: 11 }} disabled={running || !next || (p.has.script && !p.script_ready)}
                       title={next ? `Runs ${order.slice(order.indexOf(next)).join(" → ")}, then stops before render` : "Steps 1–5 are done"}
                       onClick={() => next && run(next, true, "plan")}>
                 {next ? `▶ Continue to step 5 (from ${STAGES.find((x) => x.key === next)?.label})` : "✓ Steps 1–5 done"}
               </button>
             );
           })()}
-          <button style={{ fontSize: 11 }} disabled={running || !p.has.script} onClick={() => run("plan")}>
+          <button style={{ fontSize: 11 }} disabled={running || !p.script_ready} onClick={() => run("plan")}>
             Voice + shots
           </button>
-          <button style={{ fontSize: 11 }} disabled={running || !p.has.plan} onClick={() => run("render")}>
+          <button style={{ fontSize: 11 }} disabled={running || !p.has.plan || !p.script_ready} onClick={() => run("render")}>
             Render video
           </button>
           <span style={muted}>Research → script runs on its own; review the script before voicing and rendering.</span>
@@ -501,7 +503,8 @@ export function ProjectView({ id, status, onBack, backLabel = "← All videos" }
 
       {/* Owner (2026-10-05): the finished video first, above Research. */}
       <VideoSection p={p} onChange={load} />
-      <FactsSection p={p} />
+      <ExportHistory key={`studio-history-${p.id}`} kind="studio" projectId={p.id} revision={p.updated_at} currentScript={p.script} onRestored={load} />
+      <FactsSection p={p} onChange={setP} />
       <FootageSection p={p} onChange={setP} running={running} />
       <ScriptSection p={p} onChange={setP} running={running} />
       <PlanSection p={p} onChange={setP} running={running} />
@@ -518,7 +521,7 @@ function Section({ title, children, open = true }: { title: string; children: Re
   );
 }
 
-function FactsSection({ p }: { p: StudioProject }) {
+function FactsSection({ p, onChange }: { p: StudioProject; onChange: (p: StudioProject) => void }) {
   const f = p.facts;
   if (!f) return <Section title="Research">Run step 1 to gather facts and sources.</Section>;
   const r = p.research;
@@ -541,12 +544,14 @@ function FactsSection({ p }: { p: StudioProject }) {
           <a href={f.source} target="_blank" rel="noreferrer" style={{ fontSize: 11 }}>TMDB page ↗</a>
         </div>
         <div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>From the web (each line has its sources)</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Web suggestions — unresolved until independently retrieved and reviewed</div>
           {r?.claims?.length ? (
             <ul style={{ margin: 0, paddingLeft: 16 }}>
               {r.claims.map((c, i) => (
                 <li key={i} style={{ marginBottom: 4 }}>
                   {c.text}{" "}
+                  <div style={muted}>{c.evidence?.scope === "independently_retrieved_owner_reviewed" ? `Owner verdict: ${c.evidence.verdict} (freshness and context rechecked when scripting)` : "Unverified — excluded from narrated web facts"}</div>
+                  <SourceReview p={p} index={i} onChange={onChange} />
                   {c.sources.map((k) => r.sources[k] && (
                     <a key={k} href={r.sources[k].url} target="_blank" rel="noreferrer" style={{ fontSize: 10, marginLeft: 4 }}>
                       [{r.sources[k].title}]
@@ -764,19 +769,16 @@ function fromText(text: string) {
 
 function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (p: StudioProject) => void; running: boolean }) {
   const sc = p.script;
-  const [text, setText] = useState("");
-  const [title, setTitle] = useState("");
-  const [desc, setDesc] = useState("");
-  const [tags, setTags] = useState("");
+  const draft = useLocalDraft(`scrapper-draft:${apiBase()}:studio:${p.id}:${p.created_at}`, {
+    text: toText(sc?.sentences || []), title: sc?.youtube_title || "", desc: sc?.description || "", tags: (sc?.tags || []).join(", "),
+  });
+  const { text, title, desc, tags } = draft.value;
   const [msg, setMsg] = useState("");
-
-  useEffect(() => {
-    if (!sc) return;
-    setText(toText(sc.sentences));
-    setTitle(sc.youtube_title || "");
-    setDesc(sc.description || "");
-    setTags((sc.tags || []).join(", "));
-  }, [p.id, sc?.sentences?.length, sc?.youtube_title]);
+  const edit = (key: keyof typeof draft.value, value: string) => { setMsg(""); draft.change({ ...draft.value, [key]: value }); };
+  const setText = (value: string) => edit("text", value);
+  const setTitle = (value: string) => edit("title", value);
+  const setDesc = (value: string) => edit("desc", value);
+  const setTags = (value: string) => edit("tags", value);
 
   if (!sc) return <Section title="Script">Run steps 1–4 to write the script.</Section>;
   const words = text.split(/\s+/).filter(Boolean).length;
@@ -787,7 +789,10 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
       const sentences = fromText(text);
       const next = { ...sc, sentences, youtube_title: title, description: desc,
                      tags: tags.split(",").map((t) => t.trim()).filter(Boolean), word_count: words };
-      onChange(await api.studioPatch(p.id, { script: next }));
+      const result = await api.studioPatch(p.id, { script: next, expected_script_version: p.script_version });
+      const saved = result.script!;
+      draft.saved({ text: toText(saved.sentences), title: saved.youtube_title || "", desc: saved.description || "", tags: (saved.tags || []).join(", ") });
+      onChange(result);
       setMsg("✓ Saved. If the words changed, run Voice + shots again.");
     } catch (e: any) {
       setMsg(`✕ ${e.message || e}`);
@@ -796,6 +801,19 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
 
   return (
     <Section title={`Script — ${sc.sentences.length} sentences, ${words} words (~${fmtTime(words / 3)})`}>
+      <LocalDraftStatus draft={draft} />
+      {!p.script_ready && <div role="alert" data-testid="research-blocked" style={{ color: "var(--red)", marginBottom: 12 }}>
+        <b>Research blocked — review sources and check the saved script.</b>
+        <ul>{(p.research_issues || []).slice(0, 8).map((issue) => <li key={issue}>{issue}</li>)}</ul>
+      </div>}
+      <button disabled={running} onClick={async () => {
+        try {
+          await api.studioRun(p.id, "verify");
+          onChange(await api.studioProject(p.id));
+          setMsg("Check started; your saved words are preserved.");
+        }
+        catch (e: any) { setMsg(e.message); }
+      }}>Check saved script</button>
       {!!sc.changes?.length && (
         <div style={{ fontSize: 11, marginBottom: 10, padding: 8, background: "var(--row)", borderRadius: 6 }}>
           <b>Fact-check changed {sc.changes.length} sentence(s):</b>
@@ -810,7 +828,7 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
         </div>
       )}
       <div style={muted}>One sentence per line; a blank line starts a new paragraph. Paragraph 1 names the title, paragraph 2 gives the release date.</div>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={16} style={{ width: "100%", marginTop: 6, fontSize: 13, lineHeight: 1.5 }} disabled={running} />
+      <textarea data-testid="script-editor" aria-label="Narration script" value={text} onChange={(e) => setText(e.target.value)} rows={16} style={{ width: "100%", marginTop: 6, fontSize: 13, lineHeight: 1.5 }} disabled={running} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, marginTop: 10 }}>
         <label style={{ fontSize: 11 }}>YouTube title
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} style={{ width: "100%" }} disabled={running} />
@@ -823,7 +841,7 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
         </label>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
-        <button className="primary" onClick={save} disabled={running}>Save script</button>
+        <button className="primary" onClick={save} disabled={running || draft.conflict || !draft.dirty}>Save script</button>
         {msg && <span style={{ fontSize: 11, color: msg.startsWith("✓") ? "var(--accent)" : "var(--red)" }}>{msg}</span>}
       </div>
     </Section>
@@ -832,9 +850,8 @@ function ScriptSection({ p, onChange, running }: { p: StudioProject; onChange: (
 
 function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p: StudioProject) => void; running: boolean }) {
   const [pick, setPick] = useState<number | null>(null);
-  const plan = p.plan;
+  const plan = p.plan || [];
   const shots = useMemo(() => Object.fromEntries((p.shots || []).map((s) => [s.id, s])), [p.shots]);
-  if (!plan) return <Section title="Voice + shot plan">Run step 5 after you are happy with the script.</Section>;
 
   async function setSlot(idx: number, change: Partial<StudioPlanItem>) {
     const next = plan!.map((it, i) => (i === idx ? { ...it, ...change } : it));
@@ -864,6 +881,7 @@ function PlanSection({ p, onChange, running }: { p: StudioProject; onChange: (p:
     plan.forEach((it) => { if (it.shot) m[shots[it.shot]?.look || it.shot] = fmtTime(it.start); });
     return m;
   }, [plan, shots]);
+  if (!p.plan) return <Section title="Voice + shot plan">Run step 5 after you are happy with the script.</Section>;
   return (
     <Section title={`Voice + shot plan — ${plan.length} visuals, ${fmtTime(total)} of narration`}>
       <div style={{ ...muted, marginBottom: 6 }}>
@@ -1134,6 +1152,13 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
   const thumbBust = `${bust}-${parseApiDate(r.thumbnails_updated_at || "") || ""}`;
   return (
     <Section title={`Video — ${fmtTime(r.seconds)}, ${Math.round(r.size / 1e6)} MB`}>
+      <div data-testid="export-quality" style={{ fontSize: 12, marginBottom: 12 }}>
+        <b>Final export inspection: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}</b>
+        <div>Review facts, narration, captions, footage rights and title/thumbnail honesty before approval.</div>
+        {r.quality?.warnings?.map((w) => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
+        <ExportAcceptance kind="studio" id={p.id} label="Approve inspected export"
+          disabled={!p.script_ready || !r.quality || !!r.quality.errors.length} onApproved={onChange} />
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
         <div>
           {r.motion_mode === "compare" && r.motion?.file && <div style={{ fontSize: 11, marginBottom: 4 }}>Static look (current video)</div>}
@@ -1186,7 +1211,13 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
                 return (
                   <div
                     key={t.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Use ${t.label} thumbnail`}
+                    aria-disabled={thumbBusy}
+                    onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !thumbBusy) { e.preventDefault(); e.currentTarget.click(); } }}
                     onClick={async () => {
+                      if (thumbBusy) return;
                       setMsg("");
                       try {
                         await api.studioSelectThumbnail(p.id, t.id);
@@ -1255,6 +1286,7 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
             </a>
             <button
               className="primary"
+              disabled={!p.script_ready || !p.review?.export_approval}
               onClick={async () => {
                 setMsg("");
                 try {
@@ -1283,4 +1315,61 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
       </div>
     </Section>
   );
+}
+
+
+function SourceReview({ p, index, onChange }: { p: StudioProject; index: number; onChange: (p: StudioProject) => void }) {
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.studioSources>> | null>(null);
+  const [record, setRecord] = useState("");
+  const [excerpt, setExcerpt] = useState("");
+  const [rationale, setRationale] = useState("");
+  const [verdict, setVerdict] = useState("unresolved");
+  const [acknowledged, setAcknowledged] = useState<string | null>(null);
+  const [resolved, setResolved] = useState<string[]>([]);
+  const [resolution, setResolution] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const claim = p.research?.claims[index];
+  async function act(fn: () => Promise<void>) {
+    setBusy(true); setError("");
+    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  }
+  if (!claim) return null;
+  const previous = data?.reviews.filter(r => r.claim_key === data.claim_keys[index] &&
+    Object.entries(data.context).every(([key, value]) => r.context[key] === value) &&
+    (r.verdict !== "supported" || r.conflicts.length)) || [];
+  const allResolved = previous.every(r => resolved.includes(r.id));
+  const acknowledgement = JSON.stringify({ project: p.id, claim, facts: p.facts, version: data?.review_version,
+    record, sha: data?.records.find(r => r.id === record)?.sha256, excerpt, verdict, rationale,
+    resolved: [...resolved].sort(), resolution });
+  const confirmed = acknowledged === acknowledgement;
+  const cited = claim.sources.map(i => p.research?.sources[i]).filter(Boolean);
+  return <details style={{ margin: "6px 0" }}><summary onClick={() => { if (!data) void act(async () => setData(await api.studioSources(p.id))); }}>Review independent evidence</summary>
+    <p>Read the retrieved page in context. A matching phrase, quotation, rumor or denial does not establish support. Check contradictory sources and distinguish release territory, year and medium.</p>
+    {cited.map((s, i) => s && <button key={i} disabled={busy} onClick={() => void act(async () => { const r = await api.studioFetchSource(p.id, s.url); setData(await api.studioSources(p.id)); setRecord(r.id); })}>Retrieve {s.title}</button>)}
+    <label>Retrieved record <select aria-label="Retrieved source record" style={{ maxWidth: "100%" }} value={record} onChange={e => { setRecord(e.target.value); setAcknowledged(null); }}><option value="">Choose record</option>{data?.records.filter(r => cited.some(s => s?.url === r.requested_url)).map(r => <option key={r.id} value={r.id}>{r.url} · {r.retrieved_at}</option>)}</select></label>
+    {record && <pre style={{ maxHeight: 200, overflow: "auto", whiteSpace: "pre-wrap" }}>{data?.records.find(r => r.id === record)?.text}</pre>}
+    <label>Exact supporting or conflicting excerpt<textarea value={excerpt} onChange={e => setExcerpt(e.target.value)} /></label>
+    <label>Verdict<select aria-label="Verdict" value={verdict} onChange={e => setVerdict(e.target.value)}><option value="unresolved">Unresolved</option><option value="contradicted">Contradicted</option><option value="supported">Supported after review</option></select></label>
+    <label>Why the source supports or contradicts this claim<textarea value={rationale} onChange={e => setRationale(e.target.value)} /></label>
+    {previous.length > 0 && <fieldset><legend>Earlier conflicting or unresolved reviews</legend>
+      {previous.map(r => <article key={r.id} style={{ margin: "8px 0" }}>
+        <strong>{r.verdict}</strong><blockquote>{r.excerpt}</blockquote><p>{r.rationale}</p>
+        {r.conflicts.length > 0 && <p>{r.conflicts.join("; ")}</p>}
+        {verdict === "supported" && <label><input type="checkbox" checked={resolved.includes(r.id)}
+          onChange={e => setResolved(old => e.target.checked ? [...old, r.id] : old.filter(id => id !== r.id))} />I reviewed this earlier decision and addressed it in the resolution below.</label>}
+      </article>)}
+      {verdict === "supported" && <label>How the earlier evidence was resolved<textarea value={resolution} onChange={e => setResolution(e.target.value)} /></label>}
+    </fieldset>}
+    <label><input type="checkbox" checked={confirmed} onChange={e => setAcknowledged(e.target.checked ? acknowledgement : null)} />I checked the exact context: {JSON.stringify(data?.context)} and found no unresolved conflicting evidence for a supported verdict.</label>
+    <button disabled={busy || !record || !confirmed || rationale.trim().length < 20 || !excerpt.trim() ||
+      (verdict === "supported" && previous.length > 0 && (!allResolved || resolution.trim().length < 20))}
+      onClick={() => void act(async () => {
+        onChange(await api.studioReviewClaim(p.id, index, { expected_version: data?.review_version, expected_claim: claim.text, record_id: record, excerpt, context: data?.context,
+          verdict, rationale, conflicts: [], resolved_review_ids: verdict === "supported" ? resolved.filter(id => previous.some(r => r.id === id)) : [],
+          resolution_rationale: verdict === "supported" ? resolution : "" }));
+        setData(await api.studioSources(p.id)); setResolved([]); setResolution(""); setAcknowledged(null);
+      })}>Save evidence review</button>
+    {error && <div role="alert" style={{ color: "var(--red)" }}>{error}</div>}
+  </details>;
 }

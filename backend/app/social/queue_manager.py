@@ -497,7 +497,7 @@ def _is_due(item: QueueItem, now: datetime.datetime) -> bool:
 def has_video_source(item: QueueItem) -> bool:
     """Is there anything to upload? (Audit 2026-10-11: Countdown rows were Ready
     with no video, took Screen Central's slots and would have failed at post time.)"""
-    return bool(item.video_path or item.compilation_id or item.clip_id or item.drive_link or item.media_url)
+    return bool(item.video_path or item.media_files or item.compilation_id or item.clip_id or item.drive_link or item.media_url)
 
 
 def plan_schedule(s: Session, now: datetime.datetime) -> int:
@@ -621,6 +621,9 @@ async def submit_upload(
     scheduled_date: str | None = None,
     thumbnail: pathlib.Path | None = None,
     allow: dict[str, bool] | None = None,
+    on_intent=None,
+    on_result=None,
+    media_files: list[pathlib.Path] | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -642,17 +645,33 @@ async def submit_upload(
             entries.append({"skipped": skipped, "reason": "daily number for that platform reached", "at": now})
         if not accounts:
             return entries
-    for profile, platforms in upload_post.group_by_profile(accounts).items():
+    for account in dict.fromkeys(accounts):
+        profile, network = upload_post.split_account(account)
+        platforms = [network]
+        import uuid
+        request_key = uuid.uuid4().hex
+        intent = {"profile": profile, "platforms": platforms, "state": "intent", "submitted_at": scheduled_date or now,
+                  "client_request_id": request_key}
+        if on_intent:
+            on_intent(intent)
         try:
-            rid = await upload_post.upload_video(
-                video_path, profile=profile, platforms=platforms, title=title,
-                description=description, tags=tags, privacy=settings.publish_privacy,
-                scheduled_date=scheduled_date, thumbnail=thumbnail,
-            )
-            entries.append({"profile": profile, "platforms": platforms, "request_id": rid,
-                            "submitted_at": scheduled_date or now})  # timeout counts from go-live
+            if media_files:
+                rid = await upload_post.upload_images(media_files, profile=profile, platforms=platforms,
+                    title=title, description=description, idempotency_key=request_key)
+            else:
+                rid = await upload_post.upload_video(
+                    video_path, profile=profile, platforms=platforms, title=title,
+                    description=description, tags=tags, privacy=settings.publish_privacy,
+                    scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
+                )
+            result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
-            entries.append({"profile": profile, "platforms": platforms, "error": str(exc)[:300]})
+            # Even a lost response can mean accepted. Never turn uncertainty
+            # into a retry without provider reconciliation or owner resolution.
+            result = {**intent, "state": "unknown", "error": str(exc)[:300]}
+        entries.append(result)
+        if on_result:
+            on_result(result)
     return entries
 
 
@@ -777,13 +796,62 @@ def strip_blocked_accounts(s: Session) -> int:
 
 
 async def publish_queue_item(item_id: int, s: Session, regular: bool = False) -> QueueItem:
+    from ..worker_leases import scope,LeaseLost
+    try:
+        with scope(f'publication:{item_id}'):
+            try:
+                return await _publish_queue_item_owned(item_id,s,regular)
+            except BaseException:
+                s.rollback()  # Release failed writer transactions before lease cleanup.
+                raise
+    except LeaseLost as exc:
+        raise upload_post.UploadPostError(f"Submission unresolved or already in progress: {exc}",status_code=409) from exc
+
+
+def require_native_queue(s,item):
+    native_id = item.research["native_export_id"]
+    from ..editorial.campaigns import exact_export,require_native_acceptance
+    native, fingerprint = exact_export(s, native_id)
+    require_native_acceptance(native,fingerprint)
+    if native.format in ("community","poll"):raise upload_post.UploadPostError("Manual native exports cannot publish",status_code=409)
+    if item.research.get("approval_fingerprint") != fingerprint:
+        raise upload_post.UploadPostError("Native export approval changed; inspect it before posting", status_code=409)
+    from ..models import CreativeCampaign
+    campaign = s.get(CreativeCampaign, native.campaign_id)
+    expected_caption = campaign.brief[{"carousel":"carousel_caption","image":"image_caption","reel":"reel_caption"}.get(native.format,"short_caption")]
+    if (item.title != campaign.brief["title"] or item.description != expected_caption or item.tags
+            or item.media_kind != ("images" if native.format in ("carousel","image") else "video")
+            or item.thumb_path != native.manifest["cover"]["file"]
+            or item.media_files != ([c["file"] for c in native.manifest["cards"]] if native.format in ("carousel","image") else [])
+            or item.video_path != native.manifest.get("video", {}).get("file")):
+        raise upload_post.UploadPostError("Native queue media/copy differs from its approved export; create and inspect a revised treatment", status_code=409)
+
+
+async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = False) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
     item = s.get(QueueItem, item_id)
     if not item:
         raise ValueError(f"Queue item {item_id} not found")
+    from .. import publication_journal as journal
+    if journal.unresolved_late_receipt(s,item):
+        raise upload_post.UploadPostError("A late provider receipt needs explicit review before another submission",status_code=409)
+    if any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
+        raise upload_post.UploadPostError("An unresolved submission exists — reconcile before another attempt", status_code=409)
     if not item.accounts:
         raise upload_post.UploadPostError(
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
+    native_id = (item.research or {}).get("native_export_id")
+    if native_id:require_native_queue(s,item)
+    from .. import queue_sources
+    from fastapi import HTTPException
+    try:queue_sources.required(s,item)
+    except HTTPException as exc:raise upload_post.UploadPostError(str(exc.detail),status_code=409) from exc
+    images = [pathlib.Path(p) for p in (item.media_files or [])] if item.media_kind == "images" else []
+    if item.media_kind == "images":
+        if not native_id or not 1 <= len(images) <= 10 or any(not p.is_file() for p in images):
+            raise upload_post.UploadPostError("Inspect a native image export before submitting photos", status_code=409)
+        if any(a.split(":")[-1] not in ("facebook", "instagram") for a in item.accounts):
+            raise upload_post.UploadPostError("Choose explicit Instagram/Facebook photo destinations", status_code=400)
     if blocked_accounts(item.accounts):
         # Last line of defence: never send to a blocked profile, even if a row slipped through.
         item.accounts = [a for a in item.accounts if a not in blocked_accounts(item.accounts)]
@@ -797,7 +865,9 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
     video_path: pathlib.Path | None = None
     is_temp_download = False
 
-    if item.video_path and pathlib.Path(item.video_path).exists():
+    if images:
+        video_path = images[0]  # local transport handle; images go to /upload_photos
+    elif item.video_path and pathlib.Path(item.video_path).exists():
         video_path = pathlib.Path(item.video_path)
     elif item.compilation_id:
         comp = s.get(Compilation, item.compilation_id)
@@ -824,11 +894,76 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
         s.commit()
         raise FileNotFoundError(f"Video file not found for queue item {item_id}")
 
-    if needs_auto_seo(item) and auto_seo_enabled(s):
+    from ..file_use import pin
+    paths=[video_path,*images]
+    if item.thumb_path and not item.thumb_path.startswith('http'):paths.append(item.thumb_path)
+    if native_id:
+        from ..models import CreativeExport
+        native=s.get(CreativeExport,native_id)
+        paths.append(settings.data_path/'editorial'/'campaigns'/str(native.campaign_id)/native.id)
+        from ..editorial.campaigns import source_use_paths
+        paths.extend(source_use_paths(s,native))
+    try:
+        with pin(paths,session=s):
+            return await _submit_owned_media(item,s,video_path,images,regular)
+    finally:
+        if is_temp_download and video_path:
+            video_path.unlink(missing_ok=True)
+
+
+async def _submit_owned_media(item,s,video_path,images,regular):
+    if (item.research or {}).get("native_export_id"):
+        s.refresh(item)
+        s.expire_all()
+        require_native_queue(s,item)  # Recheck exact files/acceptance under the media claim.
+        current_images=[pathlib.Path(p) for p in (item.media_files or [])] if item.media_kind=='images' else []
+        current_video=current_images[0] if current_images else pathlib.Path(item.video_path)
+        if current_images!=images or current_video!=video_path:
+            raise upload_post.UploadPostError("Native transport changed while acquiring media; review it again",status_code=409)
+    item_id=item.id
+    from .. import publication_journal as journal
+    from .. import queue_sources
+    if not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
-    item.status = "posting"
+    import hashlib
+    import json
+    from ..studio.media_quality import file_hash
+    artifact_key = hashlib.sha256(json.dumps({"video": file_hash(video_path), "images": [file_hash(p) for p in images], "title": item.title,
+        "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
+        "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path},
+        sort_keys=True).encode()).hexdigest()
+    from fastapi import HTTPException
+    try:source_binding=queue_sources.verify(s,item)
+    except HTTPException as exc:raise upload_post.UploadPostError(str(exc.detail),status_code=409) from exc
+    import uuid
+    batch_key=uuid.uuid4().hex
+    publication_identity=journal.identity(item)
+    intent = [{"state": "intent", "client_request_id":batch_key, "accounts": list(item.accounts), "artifact_key": artifact_key,
+               "submitted_at": datetime.datetime.now(UTC).isoformat()}]
+    source_binding_id=source_binding.id if source_binding else None
+    if source_binding_id:intent[0]['source_binding_id']=source_binding_id
+    from sqlalchemy import String, cast, update
+    # Claim and intent are ONE transaction: no posting-without-intent crash gap.
+    # The version comparison also refuses metadata edited after it was hashed.
+    claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
+                        QueueItem.created_at == item.created_at, queue_sources.admission_clause(item,source_binding),
+                        QueueItem.status.in_(("ready", "retry", "review", "error")),
+                        QueueItem.title == item.title, QueueItem.description == item.description,
+                        QueueItem.tags == item.tags, cast(QueueItem.accounts, String) == json.dumps(item.accounts),
+                        QueueItem.video_path == item.video_path, QueueItem.thumb_path == item.thumb_path,
+                        QueueItem.media_kind == item.media_kind, cast(QueueItem.media_files, String) == json.dumps(item.media_files),
+                        QueueItem.drive_link == item.drive_link)
+                        .values(status="posting", publish_requests=intent),
+                        execution_options={"synchronize_session": False}).rowcount
+    from .. import publication_journal as journal
+    if claimed: journal.record(s,item,intent[0],'batch_intent')
     s.commit()
+    s.refresh(item)
+    if not claimed:
+        # The caller owns temporary-copy cleanup in its finally block. Retained
+        # media stays intact, and rejected admission must remain a controlled409.
+        raise upload_post.UploadPostError("Already submitted or changed; reconcile or reload before another attempt", status_code=409)
     logbus.log("info", "queue_posting", f"Posting item #{item.id} ('{item.title[:40]}')")
     from .. import costs
     _op = costs.operation("post", ref=f"queue:{item.id}")
@@ -846,19 +981,56 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
             hhmm = at.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M") if at else None
             allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
                      for net, lim in limits.items()}
+        def persist(entry, result=False):
+            from ..budget_reservations import lock
+            from .. import worker_leases as leases
+            entry = {**entry, "artifact_key": artifact_key}
+            if source_binding_id:entry['source_binding_id']=source_binding_id
+            if result:
+                # A receipt arriving after ownership loss must survive even when
+                # the old generation is forbidden from changing the queue row.
+                from ..file_use import suspend
+                with leases.bind(None), suspend(), SessionLocal() as receipt_session:
+                    journal.append(receipt_session,item_id,entry['client_request_id'],'transport_result',entry,queue_identity=publication_identity)
+                    receipt_session.commit()
+            lock(s);s.refresh(item)
+            leases.guard(s)
+            from ..file_use import assert_current
+            assert_current(s)
+            if item.status!='posting': raise upload_post.UploadPostError('Submission was stopped for review',status_code=409)
+            journal.record(s,item,entry)
+            saved = [e for e in (item.publish_requests or []) if e.get("profile")]
+            previous=next((e for e in saved if e.get('client_request_id')==entry.get('client_request_id')),None)
+            if previous and previous.get('state')=='confirmed_not_accepted' and entry.get('state')=='accepted':
+                entry={**entry,'state':'unknown','error':'Late provider receipt contradicts owner nonacceptance; review again'}
+                journal.record(s,item,entry,'evidence_conflict')
+            if result:
+                saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
+            item.publish_requests = [*saved, entry]
+            s.commit()
         entries = await submit_upload(
             video_path, list(item.accounts), title=item.title or item.video_name,
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
+            on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
+            **({"media_files": images} if images else {}),
         )
+        from ..budget_reservations import lock
+        lock(s);s.refresh(item)
+        # Persisted decisions/late-response conflicts take precedence over a stale
+        # transport-local list. Do not erase reviewed evidence on return.
+        saved_by_id={e.get('client_request_id'):e for e in item.publish_requests or [] if e.get('client_request_id')}
+        entries = [saved_by_id.get(e.get('client_request_id'),{**e,"artifact_key":artifact_key}) for e in entries]
+        journal.append(s,item.id,batch_key,'batch_returned',{'entries':entries})
         skipped = [a for e in entries for a in e.get("skipped", [])]
         if skipped and not any(e.get("request_id") or e.get("error") for e in entries):
             # Every platform already had today's number: nothing to send now.
             item.status = "ready"
+            item.publish_requests = entries
             item.notes = f"Waiting: {', '.join(skipped)} already had today's posts (per-platform limits)."
             s.commit()
             logbus.log("info", "queue_platform_limits", f"Item #{item.id}: all platforms at today's number — not sent")
             return item
-        if not any(e.get("request_id") for e in entries):
+        if not any(e.get("request_id") or e.get("state") == "unknown" for e in entries):
             raise upload_post.UploadPostError("; ".join(e.get("error", "") for e in entries if e.get("error")))
         # Accepted is not published: stay "posting" until reconcile_posting()
         # reads every platform's real result. Only then "posted" (4-day clock).
@@ -878,20 +1050,14 @@ async def publish_queue_item(item_id: int, s: Session, regular: bool = False) ->
 
     except Exception as exc:
         logger.exception("Failed to post queue item #%s: %s", item.id, exc)
-        item.status = "retry"
-        item.notes = f"Publish failed: {str(exc)[:300]}"
+        item.status = "posting"
+        item.notes = f"Submission outcome unknown — do not retry. Reconcile with provider before resolving: {str(exc)[:250]}"
         s.commit()
         logbus.log("error", "queue_post_error", f"Item #{item.id} failed: {exc}")
         raise
 
     finally:
         _op.__exit__(None, None, None)
-        if is_temp_download and video_path and video_path.exists():
-            try:
-                video_path.unlink(missing_ok=True)
-                logger.info("Cleaned up temporary Drive download file: %s", video_path)
-            except Exception:
-                pass
 
 
 PENDING_TIMEOUT = datetime.timedelta(hours=3)
@@ -906,6 +1072,8 @@ def resolve_results(
 
     Returns None while any request is still processing (and not timed out),
     else {"ok": [(acc, url)], "failed": {acc: reason}}."""
+    if any(e.get("state") in ("intent", "unknown") for e in entries):
+        return None
     accounts = [f"{e['profile']}:{net}" for e in entries for net in e.get("platforms", [])]
     outcome: dict[str, tuple[bool, str]] = {}
     for e in entries:
@@ -920,15 +1088,17 @@ def resolve_results(
             submitted = _aware(datetime.datetime.fromisoformat(e["submitted_at"].replace("Z", "+00:00")))
             if now - submitted < PENDING_TIMEOUT:
                 return None
-            for net in e.get("platforms", []):
-                outcome[f"{e['profile']}:{net}"] = (False, "Upload-Post still processing after 3h")
-            continue
+            return None  # elapsed time does not prove rejection; never blindly resubmit
+        expected={f"{e['profile']}:{net}" for net in e.get('platforms',[])}
+        seen=set()
         for r in st.get("results") or []:
+            if not isinstance(r,dict) or type(r.get('success')) is not bool: return None
             acc = f"{r.get('profile_username') or e['profile']}:{r.get('platform')}"
-            if r.get("success"):
-                outcome[acc] = (True, r.get("post_url") or "")
-            else:
-                outcome[acc] = (False, str(r.get("error_message") or "failed"))
+            if acc not in expected or acc in seen:return None
+            seen.add(acc)
+            if r['success']:outcome[acc]=(True,r.get('post_url') or '')
+            else:outcome[acc]=(False,str(r.get('error_message') or 'Provider confirmed failure'))
+        if seen!=expected:return None
     ok = [(a, outcome[a][1]) for a in accounts if a in outcome and outcome[a][0]]
     failed = {a: (outcome[a][1] if a in outcome else "no result returned") for a in accounts
               if not (a in outcome and outcome[a][0])}
@@ -940,15 +1110,19 @@ def _fetch_statuses(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     for e in entries:
         rid = e.get("request_id")
         if rid:
-            out[rid] = asyncio.run(upload_post.get_status(rid))
+            out[rid] = e.get("provider_status") or asyncio.run(upload_post.get_status(rid))
     return out
 
 
 def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -> None:
+    item.publish_requests = [{**e, "state": "completed"} if e.get("request_id") else e
+                             for e in item.publish_requests or []]
     # Platforms left out because this slot wasn't theirs still get the video (catch-up, owner 2026-10-14).
     skipped = [a for e in item.publish_requests or [] for a in e.get("skipped", [])]
     cu = dict(item.catchup or {})
-    done = [list(d) for d in cu.get("done") or []] + [[a, url] for a, url in res["ok"]]
+    done = [list(d) for d in cu.get("done") or []]
+    for a, url in res["ok"]:
+        if [a, url] not in done: done.append([a, url])
     parts = [f"✓ {a} {url}".strip() for a, url in done]
     parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
     if res["failed"]:
@@ -998,22 +1172,53 @@ def start_catchup_backfill(s: Session, now: datetime.datetime) -> int:
 def reconcile_posting(s: Session, now: datetime.datetime) -> int:
     """Settle submitted queue items and compilation posts from Upload-Post status."""
     settled = 0
+    from .. import publication_journal as journal, worker_leases as leases
+    from ..budget_reservations import lock
     for item in s.query(QueueItem).filter(QueueItem.status == "posting").all():
-        if not item.publish_requests:
-            continue  # pre-migration or mid-submit; nothing to poll
+        if not item.publish_requests or leases.live(f'publication:{item.id}') or journal.unresolved_late_receipt(s,item):
+            continue  # Do not settle a partially dispatched multi-platform batch.
+        qid, row_identity = item.id, journal.identity(item)
+        version = journal.digest(item.publish_requests)
+        entries = list(item.publish_requests)
+        s.rollback()  # Provider reads must not hold a database writer lock.
         try:
-            res = resolve_results(item.publish_requests, _fetch_statuses(item.publish_requests), now)
+            statuses = _fetch_statuses(entries)
+            lock(s)
+            item = s.get(QueueItem, qid, populate_existing=True)
+            if (not item or item.status != 'posting' or journal.identity(item) != row_identity
+                    or journal.digest(item.publish_requests) != version
+                    or leases.live(f'publication:{qid}')):
+                s.rollback()
+                continue  # An owner decision or new dispatch superseded this read.
+            saved = []
+            for entry in entries:
+                status = statuses.get(entry.get('request_id'))
+                if status:
+                    journal.record(s, item, {**entry, 'observed_status': status}, 'provider_observation')
+                # Cache only complete, strictly covered results. Malformed responses
+                # remain pollable rather than poisoning the receipt permanently.
+                if status and status.get('status') == 'completed' and resolve_results([entry], statuses, now) is not None:
+                    entry = {**entry, 'provider_status': status}
+                saved.append(entry)
+            item.publish_requests = saved
+            res = resolve_results(saved, statuses, now)
+            if res is not None:
+                apply_result(item, res, now)
+                if item.status == 'retry' and any(e.get('state') == 'confirmed_not_accepted' for e in saved):
+                    item.status = 'review'; item.scheduled_at = None
+                for entry in item.publish_requests or []: journal.record(s, item, entry, 'settled')
+            s.commit()  # Observation, outcome and append-only history are atomic.
         except Exception as exc:
-            logger.warning("Upload-Post status check failed for #%s: %s", item.id, exc)
+            s.rollback()
+            logger.warning("Upload-Post status check failed for #%s: %s", qid, exc)
             continue
         if res is None:
             continue
-        apply_result(item, res, now)
-        s.commit()
         settled += 1
         done = item.status in ("posted", "archived")
-        logbus.log("info" if done else "error",
-                   "queue_posted" if done else "queue_post_failed",
+        pending = item.status == "ready"
+        logbus.log("info" if done or pending else "error",
+                   "queue_posted" if done else "queue_catchup_pending" if pending else "queue_post_failed",
                    f"Item #{item.id}: {item.notes}")
 
     for post in s.query(SocialPost).filter(SocialPost.status == "submitted").all():
@@ -1036,55 +1241,33 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
 
 
 def sweep_archive(s: Session, now: datetime.datetime) -> int:
-    """Delete posted/archived items ARCHIVE_DELETE_DAYS after posting, moving
-    their Drive file to trash first (recoverable there for 30 days)."""
+    """Reclaim queue rows only after retaining their exact delivery history.
+
+    Keep remote copies: their older bytes may have no other retained backup.
+    """
     if settings.archive_delete_days <= 0:
         return 0
-    from ..drive_sync import trash_drive_file
-
+    from fastapi import HTTPException
+    from ..delivery_archive import retain
     cutoff = now - datetime.timedelta(days=settings.archive_delete_days)
-    expired = (
-        s.query(QueueItem)
-        .filter(QueueItem.status.in_(["posted", "archived"]))
-        .filter(QueueItem.published_at.isnot(None))
-        .filter(QueueItem.published_at < cutoff)
-        .order_by(QueueItem.published_at)
-        .limit(ARCHIVE_SWEEP_BATCH)
-        .all()
-    )
+    expired = (s.query(QueueItem).filter(QueueItem.status.in_(["posted", "archived"]))
+        .filter(QueueItem.published_at.isnot(None), QueueItem.published_at < cutoff)
+        .order_by(QueueItem.published_at).limit(ARCHIVE_SWEEP_BATCH).all())
     removed = 0
     for item in expired:
-        trashed = False
-        # LongForm breakdowns stay in Drive permanently ("LongForm Studio" folder).
-        if item.drive_link and item.pipeline != "LongForm":
-            try:
-                trashed = trash_drive_file(item.drive_link)
-            except Exception as exc:
-                # Owner rule (2026-10-07): the robot can't trash a file it doesn't own —
-                # retrying never helps, so drop the row, leave the file for the owner
-                # to delete, and say so once with its link.
-                if "insufficientFilePermissions" in str(exc):
-                    logbus.log(
-                        "warning", "archive_drive_kept",
-                        f"Item #{item.id} ('{(item.title or '')[:40]}') removed; the robot can't delete its "
-                        f"Drive file (not its owner) — delete it yourself: {item.drive_link}",
-                        drive_link=item.drive_link,
-                    )
-                else:
-                    # Keep the row; the next sweep retries. Never orphan a Drive file.
-                    logbus.log("error", "archive_trash_failed", f"Item #{item.id}: {exc}")
-                    continue
-        logbus.log(
-            "info", "archive_deleted",
-            f"Item #{item.id} ('{(item.title or '')[:40]}') removed {settings.archive_delete_days}d after posting"
-            + (" — Drive file moved to trash" if trashed else ""),
-            drive_link=item.drive_link, published_at=str(item.published_at),
-        )
-        if item.pipeline == "LongForm":   # the studio archive rule needs to know when it posted
-            from ..studio import archive as studio_archive
-            studio_archive.note_posted(s, item)
-        s.delete(item)
-        s.commit()
+        qid = item.id
+        try:
+            archive_id = retain(s, item)
+            if item.pipeline == "LongForm":
+                from ..studio import archive as studio_archive
+                studio_archive.note_posted(s, item)
+            s.delete(item); s.commit()
+        except HTTPException as exc:
+            s.rollback()
+            logbus.log("warning", "archive_retention_blocked", f"Item #{qid} kept: {exc.detail}")
+            continue
+        logbus.log("info", "archive_deleted", f"Item #{qid}: queue row removed after retaining its delivery history; remote copies kept",
+                   archive_id=archive_id)
         removed += 1
     return removed
 

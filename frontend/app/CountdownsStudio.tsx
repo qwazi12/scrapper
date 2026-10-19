@@ -1,8 +1,13 @@
 "use client";
 
+import { useLocalDraft } from "../lib/localDraft";
+import { LocalDraftStatus } from "./LocalDraftStatus";
+import { ExportAcceptance } from "./ExportAcceptance";
+import { ExportHistory } from "./ExportHistory";
+import { SavedCountdownUpgrade } from "./SavedCountdownUpgrade";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  api,
+  api, apiBase, parseApiDate,
   CountdownAuto,
   CountdownEntryRow,
   CountdownProject,
@@ -15,7 +20,7 @@ import {
   VidIQStatus,
 } from "../lib/api";
 import { askConfirm, notify } from "../lib/dialogs";
-import { readHash, writeHash } from "../lib/hashnav";
+import { useProjectHash } from "../lib/hashnav";
 import { ProjectView } from "./StudioPanel";
 import { UndoButton } from "./UndoButton";
 
@@ -109,11 +114,7 @@ function Chips({ checks }: { checks: Record<string, { status: string; why: strin
 // --- the page ---------------------------------------------------------------------------------
 export function CountdownsStudio() {
   const [list, setList] = useState<CountdownProject[]>([]);
-  const [openId, setOpenId] = useState<number | null>(() => {
-    const [tab, id] = readHash();
-    return tab === "countdowns" && /^\d+$/.test(id || "") ? Number(id) : null;      // refresh keeps the open countdown
-  });
-  useEffect(() => { writeHash(["countdowns", openId]); }, [openId]);
+  const [openId, setOpenId] = useProjectHash("countdowns");
   const [status, setStatus] = useState<StudioStatus | null>(null);
   const [vq, setVq] = useState<VidIQStatus | null>(null);
   const [err, setErr] = useState("");
@@ -133,7 +134,7 @@ export function CountdownsStudio() {
     return () => clearInterval(t);
   }, [list, openId]);
 
-  if (openId !== null) return <CountdownView id={openId} status={status} onBack={() => { setOpenId(null); load(); }} />;
+  if (openId !== null) return <CountdownView key={openId} id={openId} status={status} onBack={() => { setOpenId(null); load(); }} />;
   const chip = (ok: boolean | undefined, label: string, why: string) => (
     <span title={why} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: ok ? "#064e3b" : "#450a0a", color: ok ? "#34d399" : "#fca5a5" }}>
       {ok ? "●" : "○"} {label}
@@ -434,7 +435,7 @@ function CountdownsList({ list, onOpen, onReload }: { list: CountdownProject[]; 
 
 async function deleteCountdown(c: CountdownProject): Promise<boolean> {
   if (!(await askConfirm(`Delete "${c.title}" now?\n\nRemoves the countdown, its video, and the segments made only for it. ` +
-    `Breakdowns from LongForm Studio that it reused are kept. If it's waiting to post, it leaves the queue too. Can't be undone — 🗄 Archive gives 5 days.`))) return false;
+    `Retained export history and reused LongForm breakdowns stay. If it's waiting to post, it leaves the queue too. Project deletion can't be undone — 🗄 Archive gives 5 days.`))) return false;
   try { await api.countdownDelete(c.id); return true; } catch (e: any) { notify(`Could not delete: ${errText(e)}`); return false; }
 }
 
@@ -731,19 +732,23 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
   const [segment, setSegment] = useState<number | null>(null);
   const [undoV, setUndoV] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const shownId = useRef(id); shownId.current = id;
 
-  async function load() { try { setC(await api.countdown(id)); } catch (e: any) { setErr(errText(e)); } }
+  async function load() { try { const value = await api.countdown(id); if (shownId.current === id) setC(value); } catch (e: any) { if (shownId.current === id) setErr(errText(e)); } }
   useEffect(() => { load(); }, [id]);
   useEffect(() => {
-    if (c && (busyStatus(c) || c.render?.drive?.status === "uploading")) {
-      timer.current = setInterval(() => { if (!document.hidden) load(); }, 4000);
-      return () => { if (timer.current) clearInterval(timer.current); };
-    }
-  }, [c?.stage_status, c?.stage, c?.render?.drive?.status]);
+    // A render can start after the immediate refresh read the previous done
+    // state. Keep an idle refresh so that read cannot freeze the finished view.
+    const active = c && (busyStatus(c) || c.render?.drive?.status === "uploading");
+    timer.current = setInterval(() => { if (!document.hidden) load(); }, active ? 4000 : 5000);
+    const onShow = () => { if (!document.hidden) load(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { if (timer.current) clearInterval(timer.current); document.removeEventListener("visibilitychange", onShow); };
+  }, [id, c?.stage_status, c?.render?.drive?.status]);
 
   async function act(fn: () => Promise<any>, ok?: string) {
     setErr(""); setWorking(true);
-    try { const r = await fn(); if (r && typeof r === "object" && "id" in r && "stage" in r) setC(r); else await load(); if (ok) notify(ok); }
+    try { const r = await fn(); if (shownId.current !== id) return; if (r && typeof r === "object" && "id" in r && "stage" in r) setC(r); else await load(); if (ok) notify(ok); }
     catch (e: any) { setErr(errText(e)); }
     finally { setWorking(false); }
   }
@@ -751,7 +756,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
   if (segment !== null) {
     return <ProjectView id={segment} status={status} backLabel="← Back to the countdown" onBack={() => { setSegment(null); load(); }} />;
   }
-  if (!c) return <div style={card}>{err || "Loading…"}</div>;
+  if (!c || c.id !== id) return <div style={card}>{err || "Loading…"}</div>;
   const running = c.stage_status === "running";
   const confirmed = c.has.titles;
   const done: Record<string, boolean> = { research: c.has.ranking, titles: confirmed, segments: c.has.segments, script: c.has.segments && !!c.script, render: c.has.render };
@@ -787,12 +792,14 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {busyStatus(c) && <button className="danger" style={{ fontSize: 12 }} disabled={working} onClick={() => act(() => api.countdownStop(c.id), "Stopped. Finished parts are kept.")}>■ Stop</button>}
           {["stopped", "error", "paused"].includes(c.stage_status) && c.stage !== "new" && (
-            <button className="primary" style={{ fontSize: 12 }} disabled={working} onClick={() => act(() => api.countdownResume(c.id), "Resumed.")}>▶ Resume</button>
+            <button className="primary" style={{ fontSize: 12 }} disabled={working || c.saved_contract === "legacy" || c.saved_contract === "unsupported"} onClick={() => act(() => api.countdownResume(c.id), "Resumed.")}>▶ Resume</button>
           )}
           <UndoButton scope={`countdown:${c.id}`} version={`${undoV}-${c.updated_at}`} onUndone={() => { setUndoV((v) => v + 1); load(); }} />
           <button className="danger" style={{ fontSize: 11 }} disabled={working} onClick={async () => { if (await deleteCountdown(c)) onBack(); }}>Delete</button>
         </div>
       </div>
+
+      <SavedCountdownUpgrade key={`${c.id}:${c.contract_upgrade_version || c.saved_contract}`} project={c} onChanged={setC} />
 
       {/* Step stepper, like LongForm */}
       <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -811,18 +818,18 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
                 </button>
               )}
               {s.key === "titles" && (
-                <button style={tiny} disabled={working || running || !c.has.ranking || confirmed || c.unmatched > 0}
+                <button style={tiny} disabled={working || running || !c.has.ranking || c.unmatched > 0 || c.saved_contract !== "current"}
                         title={c.unmatched ? "Swap or remove the unmatched titles first" : "Make a segment for each title"}
                         onClick={() => act(() => api.countdownConfirm(c.id), "Titles confirmed — segments are made one at a time.")}>
-                  {confirmed ? "✓ Confirmed" : "Confirm titles"}
+                  {confirmed ? "Recheck title eligibility" : "Confirm titles"}
                 </button>
               )}
               {s.key === "segments" && (
-                <button style={tiny} disabled={working || !confirmed || c.has.segments || busyStatus(c)} title="Make the segments (also retries a failed one)"
+                <button style={tiny} disabled={working || !confirmed || c.has.segments || c.stage_status === "running" || c.saved_contract !== "current"} title="Make the segments (also retries a failed or waiting one)"
                         onClick={() => act(() => api.countdownMake(c.id))}>▶ Make segments</button>
               )}
               {s.key === "render" && (
-                <button style={tiny} disabled={working || running || !c.has.segments}
+                <button style={tiny} disabled={working || running || !c.has.segments || !c.bookend_reviewed}
                         onClick={async () => { if (await askConfirm(c.has.render ? "Render the video again with the current script?" : "Render the countdown video now?")) act(() => api.countdownRender(c.id), "Rendering — it shows in the jobs bar."); }}>
                   {c.has.render ? "Re-render" : "Render video"}
                 </button>
@@ -832,7 +839,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
         ))}
         <div style={{ flex: "1 1 100%", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {nextStep && nextStep !== "render" && (
-            <button className="primary" style={{ fontSize: 11 }} disabled={working || busyStatus(c) || (nextStep === "titles" && c.unmatched > 0)}
+            <button className="primary" style={{ fontSize: 11 }} disabled={working || busyStatus(c) || (nextStep === "titles" && c.unmatched > 0) || (nextStep !== "research" && c.saved_contract !== "current")}
                     onClick={() => act(() => nextStep === "research" ? api.countdownResearch(c.id) : nextStep === "titles" ? api.countdownConfirm(c.id) : api.countdownMake(c.id))}>
               ▶ Continue to review (from {STEPS.find((x) => x.key === nextStep)?.label})
             </button>
@@ -842,6 +849,7 @@ function CountdownView({ id, status, onBack }: { id: number; status: StudioStatu
       </div>
 
       {c.has.render && <VideoPart c={c} onChange={setC} reload={load} />}
+      <ExportHistory key={`countdown-history-${c.id}`} kind="countdown" projectId={c.id} revision={c.updated_at} currentScript={c.script} onRestored={load} />
       <TitlesPart c={c} onChange={setC} locked={confirmed} />
       {confirmed && <SegmentsPart c={c} onOpen={setSegment} />}
       {confirmed && <ScriptPart c={c} onChange={setC} />}
@@ -865,6 +873,13 @@ function VideoPart({ c, onChange, reload }: { c: CountdownProject; onChange: (c:
   const drive = r.drive || {};
   return (
     <Part title={`🎬 Video (${r.minutes} min)`}>
+      <div data-testid="countdown-export-quality" style={{ fontSize: 12, marginBottom: 8 }}>
+        Final export: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}.
+        Review every segment, intro/outro, source claims and rights before approval.
+        {r.quality?.warnings.map(w => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
+        <ExportAcceptance kind="countdown" id={c.id} label="Approve inspected countdown"
+          disabled={busy || !r.quality || !!r.quality.errors.length} onApproved={reload} />
+      </div>
       {r.archived_at ? (
         <div style={muted}>📦 Archived {new Date(r.archived_at).toLocaleDateString()} — the video is in Drive{drive.link ? <>: <a href={drive.link} target="_blank" rel="noreferrer">open ↗</a></> : ""}.</div>
       ) : (
@@ -887,7 +902,7 @@ function VideoPart({ c, onChange, reload }: { c: CountdownProject; onChange: (c:
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>
-        <button className="primary" style={{ fontSize: 12 }} disabled={busy || !!c.queue_item_id}
+        <button className="primary" style={{ fontSize: 12 }} disabled={busy || !!c.queue_item_id || c.saved_contract !== "current" || !c.bookend_reviewed || c.review.export_approval?.countdown_format !== c.fmt}
                 onClick={async () => {
                   if (!(await askConfirm("Send to the Countdowns queue as Ready to Post on Screen Central? It takes the next Countdowns post time (12:00 by default) and a copy is saved to Drive."))) return;
                   setBusy(true);
@@ -919,8 +934,8 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
   const [results, setResults] = useState<StudioTitle[] | null>(null);
   if (!c.has.ranking) return <Part title="2. Titles"><div style={muted}>{c.stage_status === "running" ? "Researching…" : "Run research first."}</div></Part>;
   async function save(next: CountdownEntryRow[]) {
-    if (locked && !(await askConfirm("The titles are confirmed. Changing them resets the segments step — continue?"))) return;
-    try { onChange(await api.countdownEntries(c.id, next)); } catch (e: any) { notify(errText(e)); }
+    if (locked && !(await askConfirm("The titles are confirmed. Changing them resets the segments step — continue?"))) return false;
+    try { onChange(await api.countdownEntries(c.id, next, c.ranking_version)); return true; } catch (e: any) { notify(errText(e)); return false; }
   }
   const move = (i: number, d: number) => { const n = [...entries]; const j = i + d; if (j < 0 || j >= n.length) return; [n[i], n[j]] = [n[j], n[i]]; save(n); };
   async function search(e: React.FormEvent) { e.preventDefault(); if (!q.trim()) return; try { setResults(await api.studioSearch(q)); } catch (er: any) { notify(errText(er)); } }
@@ -933,6 +948,18 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
   return (
     <Part title={`2. Titles (${entries.length})${c.unmatched ? ` — ${c.unmatched} to fix` : ""}`} open={!c.has.render}>
       {c.ranking?.why_now && <div style={{ ...muted, marginBottom: 8 }}>Why now: {c.ranking.why_now}</div>}
+      {c.eligibility_criteria && <details style={{ ...muted, marginBottom: 8 }}><summary>Eligibility checked before segments</summary>
+        <p>{c.eligibility_criteria.interpretation}</p>
+        <dl>
+          <dt>Territory and medium</dt><dd>{c.eligibility_criteria.territory} · {c.eligibility_criteria.medium || "movie or TV"}</dd>
+          <dt>Genres</dt><dd>{c.eligibility_criteria.genres.join(c.eligibility_criteria.genre_mode === "any" ? " or " : " and ") || "No genre constraint"}</dd>
+          <dt>Production country / original language</dt><dd>{c.eligibility_criteria.production_countries.join(c.eligibility_criteria.country_mode === "any" ? " or " : " and ") || "Any country"} / {c.eligibility_criteria.original_languages.join(" or ") || "Any language"}</dd>
+          <dt>Release years / territory date window</dt><dd>{c.eligibility_criteria.year_min || "Any"}–{c.eligibility_criteria.year_max || "Any"} / {c.eligibility_criteria.date_from || "Any"}–{c.eligibility_criteria.date_to || "Any"}</dd>
+          <dt>Subscription provider</dt><dd>{c.eligibility_criteria.providers.join(c.eligibility_criteria.provider_mode === "any" ? " or " : " and ") || "Any provider"}</dd>
+        </dl>
+        {c.eligibility_criteria.requires_independent_review.length > 0 && <p role="alert">Independent review is required for: {c.eligibility_criteria.requires_independent_review.join("; ")}. These qualifications cannot pass on TMDB identity alone.</p>}
+        {c.ranking?.eligibility && <p>Last checked {new Date(parseApiDate(c.ranking.eligibility.checked_at)).toLocaleString()}. {c.ranking.eligibility.scope}</p>}
+      </details>}
       {c.ranking?.market && (c.ranking.market.related?.length || c.ranking.market.competitors?.length) ? (
         <details style={{ ...muted, marginBottom: 8 }}>
           <summary style={{ cursor: "pointer" }}>
@@ -957,7 +984,8 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
               {!e.tmdb_id && <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700 }}>⚠ Not a movie or show on TMDB — no trailer to use. Swap or remove it.</div>}
               {e.reused && <div style={{ ...muted, color: "#93c5fd" }}>Uses your LongForm breakdown as it is</div>}
               {e.why_it_ranks && <div style={{ ...muted, overflowWrap: "anywhere" }}>{e.why_it_ranks}</div>}
-              {(e.key_stat || e.where_to_watch) && <div style={{ ...muted, overflowWrap: "anywhere" }}>{[e.key_stat, e.where_to_watch && `Watch: ${e.where_to_watch}`].filter(Boolean).join(" · ")}</div>}
+              <RankingRationale c={c} entry={e} onSave={value => save(entries.map((row, index) => index === i ? { ...row, why_it_ranks: value } : row))} />
+              {(e.key_stat || e.where_to_watch) && <div style={{ ...muted, overflowWrap: "anywhere" }}>Draft suggestions (unverified): {[e.key_stat, e.where_to_watch && `Availability: ${e.where_to_watch}`].filter(Boolean).join(" · ")}</div>}
               <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
                 <button style={{ fontSize: 10, padding: "1px 6px" }} disabled={i === 0} onClick={() => move(i, -1)} title="Higher rank">↑</button>
                 <button style={{ fontSize: 10, padding: "1px 6px" }} disabled={i === entries.length - 1} onClick={() => move(i, 1)} title="Lower rank">↓</button>
@@ -995,6 +1023,19 @@ function TitlesPart({ c, onChange, locked }: { c: CountdownProject; onChange: (c
   );
 }
 
+function RankingRationale({ c, entry, onSave }: { c: CountdownProject; entry: CountdownEntryRow; onSave: (value: string) => Promise<boolean> }) {
+  const draft = useLocalDraft(`scrapper-draft:${apiBase()}:countdown-rationale:${c.id}:${c.created_at}:${entry.media_type}:${entry.tmdb_id}:${entry.title}`, { rationale: entry.why_it_ranks || "" });
+  const [saving, setSaving] = useState(false);
+  return <details><summary>Edit editorial ranking rationale</summary>
+    <LocalDraftStatus draft={draft} />
+    <label>Ranking rationale for {entry.title}<textarea aria-label={`Ranking rationale for ${entry.title}`} value={draft.value.rationale} onChange={e => draft.change({ rationale: e.target.value })} /></label>
+    <p style={muted}>Explain this editorial preference. Factual trivia, awards or measured comparisons still need independent source review before narration.</p>
+    <button disabled={!draft.dirty || draft.conflict || saving || draft.value.rationale.trim().length < 20} onClick={async () => {
+      setSaving(true); try { if (await onSave(draft.value.rationale)) draft.saved(draft.value); } finally { setSaving(false); }
+    }}>Save ranking rationale</button>
+  </details>;
+}
+
 function SegmentsPart({ c, onOpen }: { c: CountdownProject; onOpen: (id: number) => void }) {
   const segs = [...(c.segments || [])].reverse();          // #1 first, like the titles list
   return (
@@ -1022,13 +1063,16 @@ function SegmentsPart({ c, onOpen }: { c: CountdownProject; onOpen: (id: number)
 
 function ScriptPart({ c, onChange }: { c: CountdownProject; onChange: (c: CountdownProject) => void }) {
   const sc = c.script || {};
-  const [title, setTitle] = useState(sc.title || "");
-  const [intro, setIntro] = useState(sc.intro || "");
-  const [outro, setOutro] = useState(sc.outro || "");
+  const draft = useLocalDraft(`scrapper-draft:${apiBase()}:countdown:${c.id}:${c.created_at}`, { title: sc.title || "", intro: sc.intro || "", outro: sc.outro || "" });
+  const { title, intro, outro } = draft.value;
+  const setTitle = (value: string) => draft.change({ ...draft.value, title: value });
+  const setIntro = (value: string) => draft.change({ ...draft.value, intro: value });
+  const setOutro = (value: string) => draft.change({ ...draft.value, outro: value });
   const [saving, setSaving] = useState(false);
+  const [reviewed, setReviewed] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const [vq, setVq] = useState(false);
-  useEffect(() => { setTitle(sc.title || ""); setIntro(sc.intro || ""); setOutro(sc.outro || ""); }, [c.id, c.updated_at]);
-  const dirty = title !== (sc.title || "") || intro !== (sc.intro || "") || outro !== (sc.outro || "");
+  const dirty = draft.dirty;
   const scoreOf = (t: string) => {
     const s = (sc.title_scores || {})[t];
     const n = s && (s.score ?? s.overallScore ?? s.ctrScore);
@@ -1040,6 +1084,7 @@ function ScriptPart({ c, onChange }: { c: CountdownProject; onChange: (c: Countd
   }
   return (
     <Part title="4. Script" open={c.has.segments && !c.has.render}>
+      <LocalDraftStatus draft={draft} />
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <label style={{ fontSize: 12 }}>YouTube title
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} style={{ width: "100%" }} />
@@ -1059,12 +1104,22 @@ function ScriptPart({ c, onChange }: { c: CountdownProject; onChange: (c: Countd
         <label style={{ fontSize: 12 }}>Closing question (voiced in the outro, to start the comments)
           <textarea value={outro} onChange={(e) => setOutro(e.target.value)} rows={2} style={{ width: "100%" }} />
         </label>
+        {c.ranking?.contract_version === 1 && <fieldset><legend>Review saved intro and outro</legend>
+          <p style={muted}>{c.bookend_reviewed ? "These exact saved words and the current segment research were reviewed by you." : "Review every claim against title eligibility and the segment sources. This records your review; it does not independently establish factual truth."}</p>
+          {c.bookend_issue && <p role="status" style={muted}>{c.bookend_issue}</p>}
+          <label><input type="checkbox" checked={!!reviewed && reviewed === c.bookend_version} onChange={e => setReviewed(e.target.checked ? c.bookend_version || null : null)} />I checked the saved intro and outro against the confirmed titles and current segment research.</label>
+          <button disabled={dirty || draft.conflict || !reviewed || reviewed !== c.bookend_version || reviewing || !c.has.segments || ["running", "queued", "waiting"].includes(c.stage_status)} onClick={async () => {
+            setReviewing(true); try { onChange(await api.countdownReviewBookends(c.id, c.bookend_version!)); setReviewed(null); }
+            catch (e: any) { notify(errText(e)); } finally { setReviewing(false); }
+          }}>Mark intro/outro reviewed</button>
+        </fieldset>}
         {(c.review?.keywords || []).length > 0 && (
           <div style={{ ...muted, overflowWrap: "anywhere" }}>vidIQ tags used when sent: {(c.review!.keywords || []).slice(0, 12).join(", ")}</div>
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="primary" style={{ fontSize: 12 }} disabled={!dirty || saving}
-                  onClick={async () => { setSaving(true); try { onChange(await api.countdownScript(c.id, { title, intro, outro })); } catch (e: any) { notify(errText(e)); } finally { setSaving(false); } }}>
+          <button className="primary" style={{ fontSize: 12 }} disabled={!dirty || saving || draft.conflict}
+                  onClick={async () => { setSaving(true); try { const result = await api.countdownScript(c.id, { title, intro, outro, expected_script_version: c.script_version });
+                    draft.saved({ title: result.script?.title || "", intro: result.script?.intro || "", outro: result.script?.outro || "" }); onChange(result); } catch (e: any) { notify(errText(e)); } finally { setSaving(false); } }}>
             {saving ? "Saving…" : "Save script"}
           </button>
           {c.has.render && dirty && <span style={muted}>Re-render to use the new intro/outro.</span>}

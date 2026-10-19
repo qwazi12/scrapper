@@ -1,5 +1,11 @@
 # scrapper
 
+Revival branch status (2026-10-18): local safety improvements, an editorial/native/
+learning prototype and an isolated browser/media harness are under review. Start with the
+[implementation report](docs/implementation/SCRAPPER_COMPLETION_REPORT.md) and
+[safe local runbook](docs/implementation/SAFE_LOCAL_TESTING.md). The Screen Central
+OS roadmap is unfinished; these changes have not been deployed.
+
 Personal watch-later video downloader + a storyboard web app that scrapes many
 links and stitches the ones you pick into a single downloadable compilation.
 Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), so it works for X/Twitter,

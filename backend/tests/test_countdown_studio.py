@@ -10,15 +10,16 @@ from backend.app.models import AppSetting, CountdownProject, QueueItem, StudioPr
 from backend.app.studio import countdown, membership
 
 RANKING = {
-    "topic": "Top 3 horror", "format": "top5", "title_options": ["Top 3 Horror Movies"], "hook_script": "Hook!",
+    "topic": "Top 5 horror", "format": "top5", "title_options": ["Top 5 Horror Movies"], "hook_script": "Hook!",
     "closing_question": "Which scared you most?",
     "entries": [
-        {"rank": 1, "title": "The Shining", "year": 1980, "why_it_ranks": "Iconic."},
-        {"rank": 2, "title": "Alien", "year": 1979, "why_it_ranks": "Space terror."},
-        {"rank": 3, "title": "Not A Movie Theory", "year": 2026},
+        {"rank": 1, "title": "The Shining", "year": 1980, "why_it_ranks": "An editorial preference for this synthetic fixture's visual pacing."},
+        {"rank": 2, "title": "Alien", "year": 1979, "why_it_ranks": "An editorial preference for this synthetic fixture's visual pacing."},
+        *[{"rank":i,"title":f"Synthetic Fixture {i}","year":2026,"why_it_ranks":"Our editorial preference for the visual structure of this synthetic fixture."} for i in range(3,6)],
+        {"rank": 6, "title": "Not A Movie Theory", "year": 2026},
     ],
 }
-IDS = {"The Shining": 694, "Alien": 348}
+IDS = {"The Shining": 694, "Alien": 348,**{f"Synthetic Fixture {i}":990000+i for i in range(3,6)}}
 
 
 @pytest.fixture(autouse=True)
@@ -34,8 +35,15 @@ def _fresh():
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
     from backend.app.main import app
+    from backend.app.studio import tmdb
+    # Canonical category data is synthetic here; no real movie-fact proof or
+    # provider call is claimed by this orchestration/module lane.
+    def facts(kind,ident,**kwargs):
+        entry=next(e for e in RANKING['entries'] if IDS.get(e['title'])==ident)
+        return {'tmdb_id':ident,'media_type':kind,'title':entry['title'],'primary_date':f"{entry['year']}-01-01",'genres':['Horror'],'source':'synthetic://category-fixture'}
+    monkeypatch.setattr(tmdb,'fact_sheet',facts)
     return TestClient(app, headers={"x-access-token": "test-token"})
 
 
@@ -44,7 +52,7 @@ def _researched(client) -> int:
     with patch("backend.app.studio.compilations.engine.generate_countdown", return_value=dict(RANKING, entries=[dict(e) for e in RANKING["entries"]])), \
          patch("backend.app.studio.compilations.engine._resolve_title", side_effect=resolve), \
          patch.object(countdown, "start_research", side_effect=lambda cid: countdown.research_job(cid)):
-        r = client.post("/api/countdowns", json={"topic": "Top 3 horror", "fmt": "top5"})
+        r = client.post("/api/countdowns", json={"topic": "Top 5 horror", "fmt": "top5"})
     assert r.status_code == 200, r.text
     return r.json()["id"]
 
@@ -54,23 +62,23 @@ def test_research_flags_non_titles_and_confirm_refuses_them(client):
     c = client.get(f"/api/countdowns/{cid}").json()
     assert c["stage"] == "research" and c["stage_status"] == "done" and c["unmatched"] == 1
     r = client.post(f"/api/countdowns/{cid}/confirm")
-    assert r.status_code == 400 and "Not A Movie Theory" in r.json()["detail"]
+    assert r.status_code == 409 and "exactly 5" in r.json()["detail"]  # six entries cannot silently become Top5
     # Owner removes the non-title (list order = rank, #1 first)
     entries = [e for e in c["ranking"]["entries"] if e.get("tmdb_id")]
     c = client.put(f"/api/countdowns/{cid}/entries", json={"entries": entries}).json()
-    assert c["unmatched"] == 0 and c["entry_count"] == 2
+    assert c["unmatched"] == 0 and c["entry_count"] == 5
     c = client.post(f"/api/countdowns/{cid}/confirm").json()
-    assert c["stage"] == "segments" and c["segments_total"] == 2 and c["script"]["intro"] == "Hook!"
+    assert c["stage"] == "segments" and c["segments_total"] == 5 and c["script"]["intro"] == "Hook!"
     with SessionLocal() as s:
         cp = s.get(CountdownProject, cid)
         segs = [s.get(StudioProject, pid) for pid in cp.segment_ids]
-        assert [p.title for p in segs] == ["Alien", "The Shining"]               # lowest rank plays first
-        assert segs[1].facts["countdown"]["rank"] == 1 and segs[0].target_minutes == 1.6
+        assert [p.title for p in segs][-2:] == ["Alien", "The Shining"]               # lowest rank plays first
+        assert segs[-1].facts["countdown"]["rank"] == 1 and segs[0].target_minutes == 1.6
         ids = membership.countdown_ids(s)
         assert all(membership.is_countdown(p, ids) for p in segs)                # never in LongForm Studio
 
 
-def test_real_longform_breakdown_is_reused_untouched(client):
+def test_countdown_creates_own_segment_and_preserves_longform(client):
     with SessionLocal() as s:
         lf = StudioProject(tmdb_id=IDS["Alien"], media_type="movie", title="Alien", queue_item_id=999,
                            facts={"primary_date": "1979-05-25"})
@@ -81,12 +89,24 @@ def test_real_longform_breakdown_is_reused_untouched(client):
     c = client.get(f"/api/countdowns/{cid}").json()
     client.put(f"/api/countdowns/{cid}/entries", json={"entries": [e for e in c["ranking"]["entries"] if e.get("tmdb_id")]})
     c = client.post(f"/api/countdowns/{cid}/confirm").json()
-    assert lf_id in [x["id"] for x in c["segments"]]
+    assert lf_id not in [x["id"] for x in c["segments"]]
     with SessionLocal() as s:
         assert "countdown" not in (s.get(StudioProject, lf_id).facts or {})      # LongForm project not changed
 
 
-def test_tick_makes_one_segment_when_idle_then_render_and_publish(client):
+def test_tick_makes_one_segment_when_idle_then_render_and_publish(client, monkeypatch):
+    from backend.app import queue_sources
+    bindings = []
+    # This routing-only fixture has no physical final file or review evidence.
+    # Real source retention/admission is covered separately, including UI E2E.
+    monkeypatch.setattr(queue_sources, "prepare_send", lambda s, p, item: item)
+    monkeypatch.setattr(queue_sources, "bind", lambda s, item, p: bindings.append((item.id, p.id)))
+    # Orchestration unit lane: its stitch stub returns nonexistent files.
+    # Physical final-file/approval contracts are tested in quality and real UI E2E.
+    monkeypatch.setattr(countdown, "segment_fingerprints", lambda s, c: {"unit": "fixture"})
+    monkeypatch.setattr(countdown, "inspect_countdown", lambda res: {"decode": "passed", "errors": []})
+    monkeypatch.setattr(countdown, "require_release", lambda s, c: None)
+    monkeypatch.setattr(countdown, "require_bookends", lambda s, c: None)  # same explicit routing-only stub boundary
     cid = _researched(client)
     c = client.get(f"/api/countdowns/{cid}").json()
     client.put(f"/api/countdowns/{cid}/entries", json={"entries": [e for e in c["ranking"]["entries"] if e.get("tmdb_id")]})
@@ -117,6 +137,7 @@ def test_tick_makes_one_segment_when_idle_then_render_and_publish(client):
         q = s.get(QueueItem, r["queue_item_id"])
         assert q.pipeline == "Countdowns" and q.status == "ready" and q.video_path == "/v/final.mp4"
         assert q.accounts == ["default:*"] and "0:00 Intro" in q.description
+    assert bindings == [(r["queue_item_id"], cid)]
 
 
 def test_segment_failure_stops_the_countdown_with_the_reason(client):

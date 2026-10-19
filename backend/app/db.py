@@ -26,17 +26,29 @@ if _url.startswith("sqlite"):
     engine = create_engine(_url, connect_args={"check_same_thread": False, "timeout": 30}, poolclass=NullPool)
 else:
     engine = create_engine(_url, pool_pre_ping=True, pool_size=10, max_overflow=20, pool_timeout=15)
+from .publisher_compatibility import mark_connections
+mark_connections(engine)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+_runtime_locks = {}
 
 
 def init_db() -> None:
     from . import models  # noqa: F401  (register tables)
+    from . import export_versions  # noqa: F401 (retain immutable exports on mutation)
+    from . import delivery_archive  # noqa: F401 (retain settled delivery evidence on deletion)
     from . import backup
 
-    Base.metadata.create_all(engine)
-    # Automatically take a pre-migration snapshot before running additive migrations
+    if engine.dialect.name=='sqlite':
+        from pathlib import Path
+        from .sqlite_snapshots import lock_handle
+        path=str(Path(engine.url.database).resolve())
+        if path not in _runtime_locks:_runtime_locks[path]=lock_handle(path)
+    # The snapshot must precede create_all, which can itself mutate the schema.
     backup.create_pre_migration_backup()
+    Base.metadata.create_all(engine)
     _migrate()
+    from .publisher_compatibility import install_fence
+    install_fence(engine)
 
 
 def _migrate() -> None:
@@ -48,6 +60,44 @@ def _migrate() -> None:
 
     insp = inspect(engine)
     tables = insp.get_table_names()
+    # Legacy evidence stays readable, but unknown project identity is never
+    # invented by a migration. Re-fetch/re-review before using it as support.
+    evidence_columns = {
+        "research_source_records": {"project_identity": "VARCHAR(64)"},
+        "research_claim_reviews": {"project_identity": "VARCHAR(64)",
+            "resolved_review_ids": "JSON", "resolution_rationale": "TEXT"},
+    }
+    for table, additions in evidence_columns.items():
+        if table not in tables:
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        with engine.begin() as conn:
+            for column, sql_type in additions.items():
+                if column not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+            if engine.dialect.name == "sqlite":
+                for action in ("UPDATE", "DELETE"):
+                    conn.execute(text(f"CREATE TRIGGER IF NOT EXISTS {table}_no_{action.lower()} "
+                        f"BEFORE {action} ON {table} BEGIN SELECT RAISE(ABORT, "
+                        "'Evidence journal is append-only'); END"))
+            elif engine.dialect.name == "postgresql":
+                conn.execute(text("CREATE OR REPLACE FUNCTION scrapper_journal_immutable() "
+                    "RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION "
+                    "'Evidence journal is append-only' USING ERRCODE = '23514'; END; $$"))
+                exists = conn.execute(text("SELECT 1 FROM pg_trigger WHERE tgname=:name "
+                    "AND tgrelid=to_regclass(:table)"),
+                    {"name": f"{table}_immutable", "table": table}).first()
+                if not exists:
+                    conn.execute(text(f"CREATE TRIGGER {table}_immutable BEFORE UPDATE OR DELETE "
+                        f"ON {table} FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()"))
+    if 'usage_events' in tables:
+        columns={c['name'] for c in insp.get_columns('usage_events')}
+        with engine.begin() as conn:
+            for name,sql_type in [('cost_basis','VARCHAR(32)'),('reservation_id','VARCHAR(36)')]:
+                if name not in columns:conn.execute(text(f'ALTER TABLE usage_events ADD COLUMN {name} {sql_type}'))
+    if "compilations" in tables and "queue_item_id" not in {c["name"] for c in insp.get_columns("compilations")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE compilations ADD COLUMN queue_item_id INTEGER"))
     if "social_posts" in tables:
         sp_cols = {c["name"] for c in insp.get_columns("social_posts")}
         if "publish_requests" not in sp_cols:
@@ -73,6 +123,10 @@ def _migrate() -> None:
         return
     cols = {c["name"] for c in insp.get_columns("queue_items")}
     with engine.begin() as conn:  # one transaction: all or nothing
+        if "media_kind" not in cols:
+            conn.execute(text("ALTER TABLE queue_items ADD COLUMN media_kind VARCHAR(16) NOT NULL DEFAULT 'video'"))
+        if "media_files" not in cols:
+            conn.execute(text("ALTER TABLE queue_items ADD COLUMN media_files JSON NOT NULL DEFAULT '[]'"))
         if "publish_requests" not in cols:
             conn.execute(text("ALTER TABLE queue_items ADD COLUMN publish_requests JSON"))
         if "research" not in cols:

@@ -35,6 +35,10 @@ class Cancelled(Exception):
     """Raised inside a job when someone pressed Stop."""
 
 
+class AwaitingDependency(Exception):
+    """Work is safely suspended until an external prerequisite arrives."""
+
+
 @dataclass
 class Job:
     id: str
@@ -76,6 +80,10 @@ def adopt(j: Job | None) -> None:
 
 def check() -> None:
     """Between steps: stop here if Stop was pressed."""
+    from . import file_use
+    file_use.assert_current()
+    from .worker_leases import guard
+    guard()
     j = current()
     if j is not None:
         j.heartbeat = time.time()
@@ -108,6 +116,9 @@ def job(kind: str, label: str, scope: str, ref: Any = None) -> Iterator[Job]:
             j.status, j.message = "cancelled", "stopped by user"
             raise Cancelled(f"{label} stopped")
         j.status = "done"
+    except AwaitingDependency as exc:
+        j.status, j.message = "waiting", str(exc)[:300]
+        raise
     except Cancelled:
         j.status, j.message = "cancelled", "stopped by user"
         raise
@@ -135,6 +146,7 @@ def _prune() -> None:
 def run(cmd: list[str], timeout: int = 3600, text: bool = True) -> subprocess.CompletedProcess:
     """subprocess.run that Stop can kill. Output goes through temp files so a
     long ffmpeg log can never fill a pipe and hang the process."""
+    check()
     j = current()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(cmd, stdout=out, stderr=err)
@@ -147,6 +159,9 @@ def run(cmd: list[str], timeout: int = 3600, text: bool = True) -> subprocess.Co
                     proc.wait(timeout=0.5)
                     break
                 except subprocess.TimeoutExpired:
+                    try: check()
+                    except BaseException:
+                        proc.kill();proc.wait();raise
                     if j is not None and j.stop.is_set():
                         proc.kill()
                         proc.wait()

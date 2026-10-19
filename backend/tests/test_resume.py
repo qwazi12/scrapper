@@ -3,7 +3,7 @@ import time
 
 from backend.app import control, resume
 from backend.app.db import SessionLocal
-from backend.app.models import ResumableJob
+from backend.app.models import ResumableJob, WorkerLease
 
 
 def _status(rid):
@@ -17,6 +17,8 @@ def _cut_off(rid):
     import datetime as dt
     with SessionLocal() as s:
         r = s.get(ResumableJob, rid)
+        lease=s.get(WorkerLease, resume.leases.resource(r.kind,r.params))
+        lease.expires_at=dt.datetime.now(dt.timezone.utc)-dt.timedelta(seconds=1)
         r.owner = "old-server"
         r.updated_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
         s.commit()

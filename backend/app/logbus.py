@@ -12,8 +12,10 @@ import collections
 import datetime
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import queue
 import threading
+import time
 
 import httpx
 
@@ -26,7 +28,7 @@ _LOG_FILE = settings.data_path / "scrapper.log"
 _file_logger = logging.getLogger("scrapper")
 if not _file_logger.handlers:
     _file_logger.setLevel(logging.DEBUG)
-    _fh = logging.FileHandler(_LOG_FILE)
+    _fh = RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8")
     _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     _file_logger.addHandler(_fh)
     _sh = logging.StreamHandler()
@@ -66,6 +68,28 @@ def _fanout(payload: dict) -> None:
             _subscribers.discard(q)
 
 
+_last_prune=0.0
+
+
+def prune(s=None):
+    """Bound operational logs only; financial/publication evidence is separate."""
+    from sqlalchemy import delete,desc
+    own=s is None
+    s=s or SessionLocal()
+    removed=0
+    try:
+        if settings.log_retention_days:
+            cutoff=datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(days=settings.log_retention_days)
+            removed+=s.execute(delete(LogEntry).where(LogEntry.created_at<cutoff)).rowcount
+        if settings.log_max_rows:
+            boundary=s.query(LogEntry.id).order_by(desc(LogEntry.id)).offset(settings.log_max_rows).limit(1).scalar()
+            if boundary is not None:removed+=s.execute(delete(LogEntry).where(LogEntry.id<=boundary)).rowcount
+        if own:s.commit()
+        return removed
+    finally:
+        if own:s.close()
+
+
 def log(level: str, event: str, message: str, **context) -> None:
     """Emit a log line to file + DB + live subscribers."""
     getattr(_file_logger, level if level in ("debug", "info", "warning", "error") else "info")(
@@ -76,6 +100,10 @@ def log(level: str, event: str, message: str, **context) -> None:
         with SessionLocal() as s:
             s.add(LogEntry(level=level, event=event, message=message, context=context or None))
             s.commit()
+            global _last_prune
+            if time.monotonic()-_last_prune>3600:
+                _last_prune=time.monotonic()
+                prune(s);s.commit()
     except Exception as exc:  # never let logging crash a job
         _file_logger.error("logbus DB write failed: %s", exc)
     _fanout({

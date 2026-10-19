@@ -96,3 +96,29 @@ def test_longform_tags_put_vidiq_searches_first_and_cap_at_15(monkeypatch):
     tags = routes.longform_tags("Wildwood", [f"tag {i}" for i in range(20)] + ["Wildwood Movie"])
     parts = tags.split()
     assert parts[:2] == ["#wildwoodtrailer2026", "#wildwoodmovie"] and len(parts) == 15
+
+
+def test_concurrent_credit_calls_reserve_before_dispatch_and_timeout_is_not_retried(fake, monkeypatch):
+    import concurrent.futures
+    import time
+    with SessionLocal() as s:
+        s.add(AppSetting(key='vidiq_settings',value={**vidiq.DEFAULTS,'daily_credits':7})); s.commit()
+    dispatched=[]
+    def provider(*a,**k):
+        dispatched.append(1); time.sleep(.03)
+        raise httpx.ReadTimeout('Synthetic receipt lost')
+    monkeypatch.setattr(vidiq,'_call',provider)
+    def invoke(i):
+        try: vidiq.call('vidiq_keyword_research',{'q':str(i)},cache_hours=0)
+        except (vidiq.CreditCapReached,httpx.HTTPError): return
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool: list(pool.map(invoke,range(5)))
+    assert len(dispatched)==1 and vidiq.usage()['held']==5 and vidiq.usage()['today']==0
+    assert vidiq.safe('vidiq_keyword_research',{'q':'later'},cache_hours=0) is None
+
+
+def test_missing_credentials_never_reserve_an_impossible_paid_attempt(monkeypatch):
+    from backend.app.models import CreditReservation
+    monkeypatch.setattr(settings,'vidiq_api_key','')
+    with pytest.raises(vidiq.VidIQError,match='not configured'):
+        vidiq.call('vidiq_keyword_research',{'q':'synthetic'},cache_hours=0)
+    with SessionLocal() as s:assert s.query(CreditReservation).count()==0

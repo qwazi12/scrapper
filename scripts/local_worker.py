@@ -20,6 +20,9 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import contextlib
+import hashlib
+import threading
 import pathlib
 import subprocess
 import sys
@@ -32,6 +35,7 @@ import uuid
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / "data" / "deploy.env"
 VERBOSE = False
+WORKER_ID = uuid.uuid4().hex
 
 
 def log_msg(msg: str) -> None:
@@ -67,6 +71,29 @@ def api_get(server: str, token: str, path: str):
         return json.loads(r.read().decode())
 
 
+def api_post(server,token,path,data):
+    req=urllib.request.Request(f"{server.rstrip('/')}{path}",data=json.dumps(data).encode(),method='POST',
+        headers={'x-access-token':token,'Content-Type':'application/json'})
+    with urllib.request.urlopen(req,timeout=60,context=_ssl_ctx()) as response:
+        return json.load(response)
+
+
+@contextlib.contextmanager
+def claimed(server,token,claim):
+    stopped,lost=threading.Event(),threading.Event()
+    def beat():
+        while not stopped.wait(claim['renew_after_seconds']):
+            try:
+                api_post(server,token,f"/api/worker-transfers/{claim['token']}/renew",
+                         {'worker_id':WORKER_ID,'generation':claim['generation']})
+            except Exception:
+                lost.set();return
+    thread=threading.Thread(target=beat,daemon=True,name='residential-lease-renew')
+    thread.start()
+    try: yield lost
+    finally: stopped.set();thread.join(timeout=1)
+
+
 def js_runtime_args() -> list[str]:
     """Enable a JavaScript runtime for YouTube signature deciphering.
 
@@ -94,7 +121,7 @@ def pacing_args(url: str) -> list[str]:
     return ["-t", "sleep"]
 
 
-def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[pathlib.Path, dict]:
+def download(url: str, workdir: pathlib.Path, browser: str | None, cancelled=None) -> tuple[pathlib.Path, dict]:
     """Fetch one URL locally. Returns (video_path, info_dict)."""
     out_tpl = str(workdir / "%(uploader_id)s_%(id)s_%(title).60B.%(ext)s")
     cmd = [
@@ -117,7 +144,15 @@ def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[path
 
     if VERBOSE:
         print("     $ " + " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    child=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    deadline=time.monotonic()+3600
+    while True:
+        try:
+            stdout,stderr=child.communicate(timeout=.5);break
+        except subprocess.TimeoutExpired:
+            if (cancelled and cancelled.is_set()) or time.monotonic()>deadline:
+                child.kill();child.communicate();raise RuntimeError('Download stopped: worker lease lost or one-hour timeout')
+    proc=subprocess.CompletedProcess(cmd,child.returncode,stdout,stderr)
     videos = sorted(workdir.glob("*.mp4"))
     if proc.returncode != 0 or not videos:
         out = (proc.stderr or proc.stdout).strip()
@@ -134,42 +169,44 @@ def download(url: str, workdir: pathlib.Path, browser: str | None) -> tuple[path
     return video, info
 
 
-def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dict) -> dict:
+def upload(server: str, token: str, clip_id: int, video: pathlib.Path, info: dict, claim: dict) -> dict:
     """Multipart-upload the video (+thumb, +metadata) back to the server."""
-    boundary = f"----scrapperLocalWorker{uuid.uuid4().hex}"
     thumb = video.with_suffix(".jpg")
-    parts: list[bytes] = []
+    keep=("id","title","uploader","uploader_id","duration","width","height","extractor","webpage_url","original_url")
+    fields={'meta':json.dumps({k:info[k] for k in keep if k in info}), 'worker_token':claim['token'],
+            'worker_id':WORKER_ID,'worker_generation':str(claim['generation'])}
+    return multipart_video(server,token,f"/api/clips/{clip_id}/upload",video,fields,thumbnail=thumb)
 
-    def add_file(field: str, path: pathlib.Path, ctype: str) -> None:
-        parts.append(
-            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; "
-            f"filename=\"{path.name}\"\r\nContent-Type: {ctype}\r\n\r\n".encode()
-            + path.read_bytes() + b"\r\n"
-        )
 
-    add_file("file", video, "video/mp4")
-    if thumb.exists():
-        add_file("thumb", thumb, "image/jpeg")
-    # Only the fields the server reads — a full YouTube info.json is >1 MB and
-    # Starlette rejects form fields over 1 MB with a 400.
-    keep = ("id", "title", "uploader", "uploader_id", "duration", "width", "height",
-            "extractor", "webpage_url", "original_url")
-    meta = {k: info[k] for k in keep if k in info}
-    parts.append(
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"meta\"\r\n\r\n".encode()
-        + json.dumps(meta).encode() + b"\r\n"
-    )
-    parts.append(f"--{boundary}--\r\n".encode())
-    body = b"".join(parts)
+def multipart_video(server,token,endpoint,video,fields,*,max_bytes=500*1024*1024,thumbnail=None):
+    """Bounded streaming transport shared by clip recovery and channel archives."""
+    boundary=f"----scrapperLocalWorker{uuid.uuid4().hex}"
+    pieces=[]
+    for field,path,ctype in [('file',video,'video/mp4'),*([('thumb',thumbnail,'image/jpeg')] if thumbnail and thumbnail.exists() else [])]:
+        if path.stat().st_size > (max_bytes if field=='file' else 5*1024*1024):
+            raise RuntimeError('Local media exceeds the bounded worker upload limit')
+        # The generated local filename is not a transport header supplied by a website.
+        header=f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{field}.bin"\r\nContent-Type: {ctype}\r\n\r\n'.encode()
+        pieces.extend([header,path,b'\r\n'])
+    for name,value in fields.items():
+        pieces.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+    pieces.append(f'--{boundary}--\r\n'.encode())
+    length=sum(x.stat().st_size if isinstance(x,pathlib.Path) else len(x) for x in pieces)
+    def body():
+        for piece in pieces:
+            if isinstance(piece,pathlib.Path):
+                with piece.open('rb') as stream:
+                    while chunk:=stream.read(1024*1024):yield chunk
+            else:yield piece
 
     req = urllib.request.Request(
-        f"{server.rstrip('/')}/api/clips/{clip_id}/upload",
-        data=body,
+        f"{server.rstrip('/')}{endpoint}",
+        data=body(),
         method="POST",
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             "x-access-token": token,
-            "Content-Length": str(len(body)),
+            "Content-Length": str(length),
         },
     )
     with urllib.request.urlopen(req, timeout=1800, context=_ssl_ctx()) as r:
@@ -198,28 +235,45 @@ def drain(server: str, token: str, browser: str | None) -> int:
     for item in blocked:
         url, cid = item["source_url"], item["id"]
         log_msg(f"→ [{cid}] {url}")
-        with tempfile.TemporaryDirectory() as tmp:
-            try:
-                video, info = download(url, pathlib.Path(tmp), browser)
-                mb = video.stat().st_size / 1e6
-                log_msg(f"   downloaded {mb:.0f} MB — uploading…")
-                # Retry upload up to 3 times in case of Railway restart / network blip
-                max_upload_tries = 3
-                for up_try in range(1, max_upload_tries + 1):
+        claim=None
+        try:
+            claim=api_post(server,token,f'/api/clips/{cid}/worker-claim',{'worker_id':WORKER_ID})
+            if claim.get('protocol')!=2: raise RuntimeError('Server does not support the safe worker protocol')
+            with claimed(server,token,claim) as lost, tempfile.TemporaryDirectory() as tmp:
+                video,info=download(url,pathlib.Path(tmp),browser,lost)
+                if lost.is_set(): raise RuntimeError('Worker lease was lost; media was not uploaded')
+                with video.open('rb') as stream: sha=hashlib.file_digest(stream,'sha256').hexdigest()
+                for attempt in range(3):
                     try:
-                        upload(server, token, cid, video, info)
-                        break
-                    except Exception as up_exc:
-                        if up_try < max_upload_tries:
-                            wait_s = 5 * up_try
-                            log_msg(f"   upload attempt {up_try} failed ({up_exc}); retrying in {wait_s}s…")
-                            time.sleep(wait_s)
-                        else:
-                            raise
-                log_msg(f"   ✓ {info.get('title', url)[:60]}")
-                done += 1
-            except Exception as exc:
-                log_msg(f"   ✗ {exc}")
+                        result=upload(server,token,cid,video,info,claim)
+                    except Exception:
+                        # Never retry an ambiguous upload before asking for its receipt.
+                        status=api_get(server,token,f"/api/worker-transfers/{claim['token']}")
+                        if status['status']=='done': result=status['receipt']
+                        elif status['status']=='claimed' and not lost.is_set() and attempt<2: continue
+                        else: raise RuntimeError('Upload unresolved or claim expired; no blind retry')
+                    if result.get('sha256')!=sha: raise RuntimeError('Server receipt does not match the uploaded file')
+                    done+=1;log_msg(f"   ✓ {info.get('title',url)[:60]} (verified receipt)");break
+        except Exception as exc:
+            log_msg(f"   ✗ {exc}")
+        finally:
+            if claim:
+                with contextlib.suppress(Exception):
+                    api_post(server,token,f"/api/worker-transfers/{claim['token']}/release",
+                             {'worker_id':WORKER_ID,'generation':claim['generation']})
+    return done
+
+
+def drain_archives(server,token):
+    """Only explicit owner handoffs; challenge failures do not auto-loop."""
+    if str(REPO) not in sys.path:sys.path.insert(0,str(REPO))
+    from scripts import archive_worker
+    done=0
+    channels=api_get(server,token,'/api/channel-archives')['channels']
+    for channel in channels:
+        if channel['status']!='awaiting_worker' or channel['active_lease']:continue
+        try:done+=archive_worker.drain(server,token,channel['channel_id'],REPO/'data'/'archive-worker')
+        except Exception as exc:log_msg(f"Archive {channel['channel_id']} stopped: {exc}")
     return done
 
 
@@ -243,6 +297,8 @@ def main() -> int:
     browser = args.browser or None
     if not args.watch:
         n = drain(args.server, args.token, browser)
+        archived = drain_archives(args.server,args.token)
+        log_msg(f"verified archive files: {archived}")
         log_msg(f"done — {n} clip(s) recovered")
         return 0
 
@@ -250,6 +306,7 @@ def main() -> int:
     while True:
         try:
             drain(args.server, args.token, browser)
+            drain_archives(args.server,args.token)
         except KeyboardInterrupt:
             return 0
         except Exception as exc:

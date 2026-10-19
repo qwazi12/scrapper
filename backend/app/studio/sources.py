@@ -54,17 +54,9 @@ def tier(url_or_title: str) -> str:
 
 def resolve(url: str, timeout: float = 8.0) -> str:
     """Follow Google's grounding redirect to the real page (best effort)."""
-    if "grounding-api-redirect" not in url:
-        return url
-    try:
-        r = httpx.head(url, follow_redirects=False, timeout=timeout)
-        loc = r.headers.get("location")
-        if loc:
-            return loc
-        r = httpx.get(url, follow_redirects=True, timeout=timeout)
-        return str(r.url)
-    except Exception:
-        return url
+    # Grounding links are suggestions. Redirects are followed only by the
+    # bounded, pinned HTTPS retriever when the owner requests a source record.
+    return url
 
 
 def annotate(research: dict) -> dict:
@@ -77,6 +69,12 @@ def annotate(research: dict) -> dict:
     return research
 
 
-def usable(claim: dict, sources: list[dict]) -> bool:
-    """A finding counts as a fact only if an official or trusted source backs it."""
-    return any(i < len(sources) and sources[i].get("tier") in ("official", "trusted") for i in claim.get("sources", []))
+def usable(claim: dict, sources: list[dict], *, facts: dict | None = None,
+           project_id: int | None = None) -> bool:
+    """Only durable retrieved records with a matching explicit review are usable.
+
+    A quote match proves provenance, not entailment. Semantic support is an
+    accountable owner decision, never a substring or the generating model's vote.
+    """
+    from .fact_verification import supported
+    return supported(claim, sources, facts or {}, project_id)

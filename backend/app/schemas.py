@@ -6,7 +6,7 @@ import datetime
 
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 
 def _as_utc(v: datetime.datetime | None) -> datetime.datetime | None:
@@ -51,8 +51,7 @@ class ClipOut(BaseModel):
     has_thumb: bool
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompilationOut(BaseModel):
@@ -67,8 +66,7 @@ class CompilationOut(BaseModel):
     created_at: UTCDateTime
     finished_at: UTCDateTime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LogOut(BaseModel):
@@ -79,8 +77,7 @@ class LogOut(BaseModel):
     context: dict | None
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MetadataGenerateRequest(BaseModel):
@@ -114,8 +111,7 @@ class SocialPostOut(BaseModel):
     error: str | None
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueItemCreate(BaseModel):
@@ -154,6 +150,8 @@ class QueueItemOut(BaseModel):
     pipeline: str
     video_name: str
     video_path: str | None
+    media_kind: str = "video"
+    media_files: list[str] = []
     thumb_path: str | None
     thumb_version: float | None = None      # file mtime: changes when the thumbnail does (cache-buster)
     drive_link: str | None
@@ -174,8 +172,7 @@ class QueueItemOut(BaseModel):
     media_url: str | None = None
     created_at: UTCDateTime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueBulkAction(BaseModel):
@@ -224,7 +221,7 @@ class ChannelIngestRequest(BaseModel):
     parent_folder_id: str = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo"  # Movie Clips
     parent_folder_name: str = "Movie Clips"
     channel_name: str | None = None
-    max_videos: int = 25
+    max_videos: int = Field(default=0, ge=0)  # deprecated: full archive has no video-count cap
     auto_approve: bool = False
     upload_to_drive: bool = True
 

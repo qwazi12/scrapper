@@ -10,10 +10,9 @@ the countdown's own posters (~9.4 s):
   D 7.4–9.4  lock-up — red bar logo + "TOP N · topic", with a shine sweep
 Frames are drawn with PIL and encoded with ffmpeg (motion blur, sound mix); no AI cost.
 
-Sound: `assets/intro/page_flips.wav` is lifted from the owner's reference clip (Marvel's
-official intro — copyrighted; Content ID can claim it). It is the only borrowed sound and a
-single file: replace it with any royalty-free page-flip sound to remove that risk. The
-flash whoosh and the logo impact are synthesised here.
+Sound: the flash whoosh and logo impact are synthesized here. No borrowed
+reference audio is included. An optional owner-cleared page-flip recording may
+be supplied as assets/intro/cleared_page_flips.wav after rights review.
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ from .. import media
 W, H, FPS = 1920, 1080, 30
 ASSETS = pathlib.Path(__file__).resolve().parents[3] / "assets" / "intro"
 FONT = ASSETS / "Anton-Regular.ttf"
-FLIPS = ASSETS / "page_flips.wav"
+FLIPS = ASSETS / "cleared_page_flips.wav"
 WASHES = [(229, 9, 20), (255, 120, 0), (30, 90, 255), (140, 40, 220), (0, 170, 120), (255, 40, 120)]
 RED = (196, 12, 22)
 A_END, B_END, C_END, D_END = 3.6, 4.4, 7.4, 9.4
@@ -283,7 +282,11 @@ def _lockup_frames(last: Image.Image, subtitle: str) -> Iterable[Image.Image]:
 # --- sound ----------------------------------------------------------------------------------------
 def _sound(dest: pathlib.Path) -> pathlib.Path:
     """Page flips (A) + synthesised whoosh (B) and impact (D), 48 kHz stereo."""
-    flips = ["-i", str(FLIPS)] if FLIPS.exists() else ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo:d=4"]
+    # Original noise bursts replace the removed borrowed reference recording.
+    # Fixed seed makes the replacement reproducible and uses no external media file.
+    flips = ["-i", str(FLIPS)] if FLIPS.exists() else ["-f", "lavfi", "-i",
+        "anoisesrc=r=48000:c=pink:a=0.35:d=4.2:s=17018,highpass=f=1500,lowpass=f=7000,"
+        "volume='if(lt(mod(t,0.18),0.08),1,0.02)':eval=frame"]
     graph = (
         "[0:a]atrim=0:4.2,adelay=150|150,volume=1.0[fl];"
         "anoisesrc=d=1.2:c=pink:r=48000:a=0.5,bandpass=f=1200:w=900,afade=t=in:d=0.5,afade=t=out:st=0.6:d=0.6,"

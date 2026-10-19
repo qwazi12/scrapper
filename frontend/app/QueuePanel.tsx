@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { PublicationEvidence } from "./PublicationEvidence";
+import { QueuedSourceEvidence } from "./QueuedSourceEvidence";
 import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, QueueThumbOptions, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
@@ -72,6 +74,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
   const [refreshing, setRefreshing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("review");
   const [pipelineFilter, setPipelineFilter] = useState<string>(section ?? "all");
+  const [loadError, setLoadError] = useState("");
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const loadGeneration = useRef(0);
+  const currentPipeline = useRef(pipelineFilter); currentPipeline.current = pipelineFilter;
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("position");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -199,6 +205,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
   const lastSig = useRef("");
 
   async function loadQueue(isBackground = false) {
+    const generation = ++loadGeneration.current; const requestedPipeline = pipelineFilter;
     if (!isBackground) {
       setLoading(true);
       setUndoVersion((v) => v + 1); // a user action just happened: refresh the Undo label
@@ -206,20 +213,24 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
     try {
       // Always load all items for the selected pipeline/channel so badge counts are 100% accurate across all tabs
       const data = await api.queue(pipelineFilter, "all");
+      if (generation !== loadGeneration.current || requestedPipeline !== currentPipeline.current) return;
       const rows = longform ? data : data.filter((i) => !OWN_SECTIONS.includes(i.pipeline || ""));
       const sig = JSON.stringify(rows);
       if (sig !== lastSig.current) {
         lastSig.current = sig;
         setAllItems(rows);
       }
-    } catch {
-      // silent
+      setHasLoaded(true); setLoadError("");
+    } catch (error: unknown) {
+      if (generation === loadGeneration.current && requestedPipeline === currentPipeline.current)
+        setLoadError(error instanceof Error ? error.message : "Queue refresh could not be confirmed");
     } finally {
-      if (!isBackground) setLoading(false);
+      if (generation === loadGeneration.current && requestedPipeline === currentPipeline.current) setLoading(false);
     }
   }
 
   useEffect(() => {
+    lastSig.current = ""; setAllItems([]); setHasLoaded(false); setLoadError("");
     loadQueue();
     api.socialAccounts()
       .then((r) => {
@@ -340,9 +351,10 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   async function handleDelete(id: number) {
     if (!await askConfirm("Delete this queue item?")) return;
-    await api.deleteQueueItem(id).catch(() => {});
-    loadQueue();
-    onChange();
+    try {
+      await api.deleteQueueItem(id);
+      loadQueue(); onChange();
+    } catch (e) { notify(`Queue item kept: ${e instanceof Error ? e.message : String(e)}`); }
   }
 
   async function handleBulkStatusChange(targetStatus: string) {
@@ -516,6 +528,17 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
   const postedCount = allItems.filter((i) => DONE.includes(i.status)).length;
   const errorCount = allItems.filter((i) => i.status === "error" || i.status === "retry").length;
 
+  // A failed read is neither an empty queue nor permission to act on an old view.
+  // Keep edit state in this component while presenting a read-only last snapshot.
+  if (loadError) return <section data-testid="queue-unavailable" style={{ border: "1px solid var(--border)", padding: 18, borderRadius: 10, background: "var(--panel)" }}>
+    <h3>{section || "Posting"} queue unavailable</h3><p role="alert">{loadError}</p>
+    <p>{hasLoaded ? `Last loaded snapshot retained: ${allItems.length} items. Refresh before editing or publishing.` : "Current queue contents could not be confirmed. Refresh to load this section."}</p>
+    {hasLoaded && <ul style={{ maxHeight: 240, overflow: "auto" }}>{allItems.slice(0, 20).map(item => <li key={item.id}>{item.title || `Queue item #${item.id}`} · {item.status}</li>)}</ul>}
+    {hasLoaded && allItems.length > 20 && <p>Showing the first 20 retained snapshot entries.</p>}
+    <button aria-label="Refresh queue" disabled={loading} onClick={() => void loadQueue(false)}>{loading ? "Refreshing queue…" : "Retry queue read"}</button>
+    {autopostPaused === false && <button onClick={toggleAutopost}>Pause auto-posting</button>}
+  </section>;
+
   return (
     <section
       style={{
@@ -560,7 +583,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
           </span>
           <button
             onClick={() => loadQueue(false)}
-            title="Click to refresh queue data from database"
+            aria-label="Refresh queue" title="Click to refresh queue data from database"
             style={{
               background: "rgba(255, 255, 255, 0.05)",
               border: "1px solid var(--border)",
@@ -588,6 +611,12 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               onChange();
             }}
           />
+          <button style={{ fontSize: 11 }} onClick={async () => {
+            try { const r = await api.reconcileQueue(); notify(`Reconciliation checked; ${r.settled} settled. Unknown submissions stay blocked.`); await loadQueue(); onChange(); }
+            catch (e: any) { notify(`Reconciliation failed: ${e.message}`); }
+          }}>Reconcile submitted posts</button>
+          <PublicationEvidence items={allItems} onChanged={() => { void loadQueue(); onChange(); }} />
+          <QueuedSourceEvidence items={allItems} />
           {autopostPaused !== null && (
             <button
               onClick={toggleAutopost}
@@ -1135,7 +1164,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>
                         {item.title || "Untitled Video"}
                       </div>
-                      {item.research && (
+                      {item.research && !item.research.native_export_id && (
                         item.research.matched ? (
                           <a href={item.research.source} target="_blank" rel="noreferrer"
                              title={`AI matched this clip on TMDB (${Math.round((item.research.confidence || 0) * 100)}% sure): ${item.research.reason || ""}`}
@@ -1298,8 +1327,8 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                       {item.published_at && archiveDays !== null && archiveDays > 0 &&
                         (item.status === "posted" || item.status === "archived") && (
                         <div style={{ fontSize: 10, color: "var(--yellow)", marginTop: 2 }}
-                          title="Row is removed and the Drive file moved to trash">
-                          🗑 deletes {fmtET(new Date(parseApiDate(item.published_at) + archiveDays * 86400000).toISOString())}
+                          title="Queue row is removed after retaining delivery history; remote files stay in place">
+                          📚 retains history {fmtET(new Date(parseApiDate(item.published_at) + archiveDays * 86400000).toISOString())}
                         </div>
                       )}
                     </td>
@@ -1351,6 +1380,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           style={{ fontSize: 10, padding: "3px 7px", background: "#7c3aed", borderColor: "#6d28d9", color: "#fff" }}
                           onClick={() => handlePublishNow(item)}
                           title="Post to social media now"
+                          disabled={["posting", "posted", "archived"].includes(item.status)}
                         >
                           🚀 Post Now
                         </button>
@@ -1513,7 +1543,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
       {/* Edit Item Modal */}
       {editItem && (
-        <div
+        <div role="dialog" aria-modal="true" aria-label="Edit queue item"
           style={{
             position: "fixed",
             inset: 0,
@@ -1544,7 +1574,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               <label style={{ fontSize: 11, fontWeight: 600, display: "block", marginBottom: 4 }}>Title</label>
               <input
                 type="text"
-                value={editItem.title}
+                aria-label="Queue item title" value={editItem.title}
                 onChange={(e) => setEditItem({ ...editItem, title: e.target.value })}
                 style={{ width: "100%" }}
               />

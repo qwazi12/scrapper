@@ -5,7 +5,7 @@ scrape.py — personal watch-later video downloader built on yt-dlp.
 Usage:
     python3 scrape.py <url> [<url> ...]     # download specific URLs
     python3 scrape.py                       # download everything in urls.txt
-    python3 scrape.py --no-push             # skip the git commit/push step
+    python3 scrape.py --no-push             # legacy flag; all runs now stay local
 
 Everything is logged to logs/scraper.log and each run is summarized in
 MEMORY.md. Downloaded video files live in downloads/ (gitignored — only
@@ -124,30 +124,10 @@ def append_memory(results: list[dict]) -> None:
         f.write("\n".join(lines) + "\n")
 
 
-def git_commit_push(log: logging.Logger, push: bool = True) -> None:
-    subprocess.run(["git", "add", "-A"], cwd=ROOT, capture_output=True)
-    n = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    commit = subprocess.run(
-        ["git", "commit", "-m", f"scrape run {n}: update logs and memory"],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    if commit.returncode != 0:
-        log.info("git: nothing new to commit")
-        return
-    log.info("git: committed run %s", n)
-    if push:
-        p = subprocess.run(["git", "push", "origin", "main"],
-                           cwd=ROOT, capture_output=True, text=True)
-        if p.returncode == 0:
-            log.info("git: pushed to origin/main")
-        else:
-            log.warning("git: push failed (will retry next run): %s", p.stderr.strip())
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download videos for later watching.")
     parser.add_argument("urls", nargs="*", help="video URLs (default: read urls.txt)")
-    parser.add_argument("--no-push", action="store_true", help="commit locally but don't push")
+    parser.add_argument("--no-push", action="store_true", help="deprecated; runs never commit or push automatically")
     args = parser.parse_args()
 
     log = setup_logging()
@@ -167,7 +147,7 @@ def main() -> int:
     failed = sum(1 for r in results if r["status"] == "failed")
     log.info("=== Run finished: %d downloaded, %d skipped, %d failed ===", ok, skipped, failed)
 
-    git_commit_push(log, push=not args.no_push)
+    log.info("Run saved locally. Review and commit any intended changes explicitly.")
     return 0 if failed == 0 else 2
 
 

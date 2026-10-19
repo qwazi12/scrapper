@@ -99,7 +99,26 @@ def test_env_name_from_railway_is_read(monkeypatch):
     assert Settings().tmdb_read_token == "eyJfromrailway"
 
 
+def _fixture_script(sc):
+    """Trusted synthetic input for tests of stages downstream of research."""
+    sc = dict(sc)
+    sentences = sc.get("sentences") or [{"paragraph": 1, "text": "Synthetic narration."}]
+    sc["sentences"] = [{**x, "check": "ok", "refs": ["F1"]} for x in sentences]
+    return sc
+
+
+def _evidence(text, url):
+    import hashlib
+    from datetime import datetime, timezone
+    return {"url": url, "retrieved_text": text, "excerpt": text,
+            "record_sha256": hashlib.sha256(text.encode()).hexdigest(),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(), "entity": "Send Help",
+            "verdict": "supported", "confidence": "high", "conflicts": []}
+
+
 def _new_project(**kw) -> int:
+    if kw.get("script"):
+        kw["script"] = _fixture_script(kw["script"])
     with SessionLocal() as s:
         p = StudioProject(tmdb_id=1, media_type="movie", title="Send Help", **kw)
         s.add(p)
@@ -134,7 +153,7 @@ def test_failed_stage_is_recorded_not_silent(monkeypatch):
 
 
 def test_project_api_create_patch_delete(client):
-    r = client.post("/api/studio/projects", json={"tmdb_id": 5, "media_type": "movie", "title": "X"})
+    r = client.post("/api/studio/projects", json={"tmdb_id": 5, "media_type": "movie", "title": "X", "force": True})
     assert r.status_code == 200
     pid = r.json()["id"]
     assert client.patch(f"/api/studio/projects/{pid}", json={"target_minutes": 2.5}).json()["target_minutes"] == 2.5
@@ -145,7 +164,7 @@ def test_project_api_create_patch_delete(client):
 
 def test_bad_media_type_and_unknown_stage(client):
     assert client.post("/api/studio/projects", json={"tmdb_id": 5, "media_type": "game"}).status_code == 400
-    pid = client.post("/api/studio/projects", json={"tmdb_id": 5}).json()["id"]
+    pid = client.post("/api/studio/projects", json={"tmdb_id": 5, "force": True}).json()["id"]
     assert client.post(f"/api/studio/projects/{pid}/run", json={"stage": "nope"}).status_code == 400
 
 
@@ -208,10 +227,12 @@ def test_trailer_stage_downloads_from_imdb(monkeypatch, three_scene_video):
 def test_trailer_stage_falls_back_to_home_worker(monkeypatch):
     pid = _new_project(facts={"imdb_id": None, "videos": [
         {"site": "YouTube", "type": "Trailer", "url": "https://www.youtube.com/watch?v=k1"}]})
-    msg = runner.run_one(pid, "trailer")
-    assert "home Mac worker" in msg
+    with pytest.raises(runner.AwaitingWorker, match="home Mac worker"):
+        runner.run_one(pid, "trailer")
     with SessionLocal() as s:
-        t = s.get(StudioProject, pid).trailer
+        p = s.get(StudioProject, pid)
+        assert p.stage_status == "awaiting_worker"
+        t = p.trailer
         clip = s.get(Clip, t["pending_clip_id"])
         assert clip.file_path is None and clip.source_url.endswith("k1")  # what the worker polls for
 
@@ -253,6 +274,9 @@ def test_script_drops_unsupported_claims_and_credits_sources(monkeypatch):
 
     def fake(prompt, **kw):
         calls.append(prompt)
+        if "fact-checker" in prompt and "2. It opens January 30, 2026." in prompt:
+            return [{"i": 1, "verdict": "ok", "refs": ["F1"]},
+                    {"i": 2, "verdict": "ok", "refs": ["F5"]}]
         if "fact-checker" in prompt:
             return [{"i": 1, "verdict": "ok"},
                     {"i": 2, "verdict": "unsupported", "reason": "storyboard says island, not city", "fix": ""},
@@ -263,8 +287,8 @@ def test_script_drops_unsupported_claims_and_credits_sources(monkeypatch):
                 "youtube_title": "Send Help Trailer Breakdown", "tags": ["send help"]}
 
     monkeypatch.setattr(gemini, "ask_json", fake)
-    pid = _new_project(facts=_facts(), research={"sources": [{"title": "deadline.com", "url": "https://d"}],
-                                                 "claims": [{"text": "Opens Jan 30.", "sources": [0]}]})
+    pid = _new_project(facts=_facts(), research={"sources": [{"title": "deadline.com", "url": "https://deadline.com/synthetic-fixture"}],
+                                                 "claims": [{"text": "Opens Jan 30.", "sources": [0], "evidence": _evidence("Opens Jan 30.", "https://deadline.com/synthetic-fixture")}]})
     summary = runner.run_one(pid, "script")
     with SessionLocal() as s:
         sc = s.get(StudioProject, pid).script
@@ -273,7 +297,7 @@ def test_script_drops_unsupported_claims_and_credits_sources(monkeypatch):
     assert sc["sentences"][1]["original"] == "It opens in March."
     assert "dropped 1" in summary and "fixed 1" in summary
     assert tmdb.ATTRIBUTION in sc["description"] and "https://d" in sc["description"]
-    assert "Only the storyboard" not in calls[0] and "[R1] Opens Jan 30." in calls[0]  # research is in the board
+    assert "Only the storyboard" not in calls[0] and "[R1] Opens Jan 30." not in calls[0]  # research is in the board
 
 
 def _tone(dest, seconds=1.2):
@@ -337,7 +361,7 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         p.shots, p.plan = shots, plan
-        p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
+        p.script = _fixture_script({"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]})
         s.commit()
     monkeypatch.setattr(stage_render, "END_CARD", 1.0)
     monkeypatch.setattr(stage_render, "motion_mode", lambda: "off")
@@ -355,6 +379,15 @@ def test_render_produces_1080p_video_with_narration(monkeypatch, three_scene_vid
 
 
 def test_publish_sends_render_to_queue_once(client, monkeypatch):
+    from backend.app import queue_sources
+    # Routing-only lane uses opaque media. Real retained-source acceptance is
+    # exercised in test_queue_source_binding and the actual Studio UI flows.
+    bindings = []
+    monkeypatch.setattr(queue_sources, "prepare_send", lambda s, p, item: item)
+    monkeypatch.setattr(queue_sources, "bind", lambda s, item, p: bindings.append((item.id, p.id)))
+    from backend.app.studio import media_quality
+    monkeypatch.setattr(media_quality, "require_export_approval", lambda p, root: None)  # queue routing unit only; real approval in safety/E2E tests
+
     from backend.app.models import QueueItem
     from backend.app.studio import drive_store
     started = []
@@ -375,6 +408,7 @@ def test_publish_sends_render_to_queue_once(client, monkeypatch):
         assert it.pipeline == "LongForm" and it.tags == "#sendhelp #samraimi"
         assert it.accounts == ["default:*"]                                    # Screen Central, never "mk"
     assert a["drive_job_id"] == "job1" and started == [pid, pid]  # not saved yet, so each publish retries Drive
+    assert bindings == [(a["queue_item_id"], pid)] * 2
 
 
 def test_publish_requires_a_render(client):
@@ -406,9 +440,9 @@ def test_storyboard_keeps_only_findings_backed_by_trusted_sources():
     research = {"sources": [{"title": "reddit.com", "url": "https://reddit.com/x", "tier": "low"},
                             {"title": "variety.com", "url": "https://variety.com/y", "tier": "trusted"}],
                 "claims": [{"text": "Rumour: a sequel is planned.", "sources": [0]},
-                           {"text": "It opens January 30.", "sources": [0, 1]}]}
+                           {"text": "It opens January 30.", "sources": [0, 1], "evidence": _evidence("It opens January 30.", "https://variety.com/y")}]}
     b = stage_script.storyboard(_facts(), research, [])
-    assert [r["text"] for r in b["R"]] == ["It opens January 30."] and b["skipped_findings"] == 1
+    assert b["R"] == [] and b["skipped_findings"] == 2  # embedded model records never count
     assert [s["title"] for s in b["sources"]] == ["variety.com"]  # only good sources go in the description
 
 
@@ -419,7 +453,7 @@ def test_redirect_links_are_resolved(monkeypatch):
     out = srcq.annotate({"sources": [{"title": "variety.com",
                                       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc"}]})
     s = out["sources"][0]
-    assert s["url"] == "https://variety.com/real" and s["tier"] == "trusted" and s["domain"] == "variety.com"
+    assert "grounding-api-redirect" in s["url"] and s["tier"] == "other"  # only explicit safe retrieval follows redirects
 
 
 # --- LongForm → Drive -----------------------------------------------------------
@@ -433,6 +467,13 @@ class _SharedDriveSvc:
                         return {"name": "LongForm Studio", "driveId": "D"}
                 return R()
         return F()
+
+
+def _copy_proof(path,fid='fixture-copy'):
+    import hashlib
+    return {'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+            'remote_md5':hashlib.md5(path.read_bytes()).hexdigest(),
+            'bytes':path.stat().st_size,'remote_file_id':fid,'checked_at':'2026-10-18T00:00:00Z'}
 
 
 def test_drive_quota_error_is_explained():
@@ -449,7 +490,7 @@ def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path)
     monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
     (tmp_path / "final.mp4").write_bytes(b"x" * 10)
     (tmp_path / "thumb.jpg").write_bytes(b"y")
-    item = QueueItem(title="t", status="review", pipeline="LongForm", accounts=[])
+    item = QueueItem(title="t", status="review", pipeline="LongForm", accounts=[],video_path=str(tmp_path/"final.mp4"))
     session.add(item)
     session.flush()
     p = StudioProject(tmdb_id=1, title="Send Help", render={"file": "final.mp4", "thumbnail": "thumb.jpg",
@@ -460,7 +501,7 @@ def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path)
     monkeypatch.setattr(drive_sync, "get_drive_service", lambda: _SharedDriveSvc())
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "FOLDER")
     monkeypatch.setattr(drive_store, "_upload", lambda svc, path, parent, name: (
-        uploaded.append((parent, name)) or {"id": f"id{len(uploaded)}", "webViewLink": f"https://drive/{len(uploaded)}"}))
+        uploaded.append((parent, name)) or {"id": f"id{len(uploaded)}", "webViewLink": f"https://drive/{len(uploaded)}", "verification":_copy_proof(path,f"id{len(uploaded)}")}))
     info = drive_store.save(p.id)
     session.expire_all()
     assert info["status"] == "saved" and info["rendered_at"] == "r1" and len(uploaded) == 2
@@ -554,7 +595,7 @@ def _render_project(three_scene_video):
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         p.shots, p.plan = shots, plan
-        p.script = {"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]}
+        p.script = _fixture_script({"timeline": [{"sentence": 1, "audio": "tts/a.mp3", "start": 0.0, "end": 3.0}]})
         s.commit()
     return pid, root
 
@@ -565,7 +606,7 @@ def test_compare_mode_makes_both_versions_and_survives_motion_failure(monkeypatc
     monkeypatch.setattr(stage_render, "END_CARD", 1.0)
     monkeypatch.setattr(stage_render, "motion_mode", lambda: "compare")
 
-    def boom(kind, values, assets=None):
+    def boom(kind, values, assets=None, *, destination=None):
         raise motion.MotionError(f"{kind}: HyperFrames render failed — no chrome")
 
     monkeypatch.setattr(motion, "render_piece", boom)
@@ -586,9 +627,10 @@ def test_motion_overlays_are_composited(monkeypatch, three_scene_video, tmp_path
     monkeypatch.setattr(stage_render, "motion_mode", lambda: "on")
     used = []
 
-    def fake(kind, values, assets=None):
+    def fake(kind, values, assets=None, *, destination=None):
         used.append(kind)
-        dest = tmp_path / f"{kind}.{'mp4' if kind == 'endscreen' else 'mov'}"
+        dest = destination or tmp_path / f"{kind}.{'mp4' if kind == 'endscreen' else 'mov'}"
+        dest.parent.mkdir(parents=True,exist_ok=True)
         if kind == "endscreen":
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:s=1920x1080:d=1:r=30",
                             "-pix_fmt", "yuv420p", str(dest)], check=True)
@@ -690,7 +732,8 @@ def test_drive_uploads_to_shared_drive_folder(session, monkeypatch, tmp_path):
         def files(self):
             class F:
                 def get(self, **kw):
-                    return type("R", (), {"execute": lambda self: {"name": "LongForm Studio", "driveId": "SD1"}})()
+                    result={'name':'LongForm Studio','driveId':'SD1'} if kw['fileId']=='F' else {'id':'uploaded_123','size':'1','md5Checksum':'9dd4e461268c8034f5c8564e155c67a6'}
+                    return type('R',(),{'execute':lambda self:result})()
 
                 def create(self, **kw):
                     done = (None, {"id": "uploaded_123", "webViewLink": "https://drive.google.com/file/d/uploaded_123"})
@@ -721,12 +764,15 @@ def test_select_and_generate_three_thumbnails(session, tmp_path, monkeypatch):
     # Select poster
     res = stage_render.select_project_thumbnail(p.id, "poster")
     assert res["selected_thumbnail"] == "poster"
-    assert (rdir / "thumbnail.jpg").read_bytes() == b"poster_data"
+    assert (tmp_path / res['thumbnail']).read_bytes() == b"poster_data"
 
     # Select shot2
     res2 = stage_render.select_project_thumbnail(p.id, "shot2")
     assert res2["selected_thumbnail"] == "shot2"
-    assert (rdir / "thumbnail.jpg").read_bytes() == b"shot2_data"
+    assert (tmp_path / res2['thumbnail']).read_bytes() == b"shot2_data"
+    # Choosing another option changes the pointer, preserving the prior option
+    # for queued/export-history readers instead of overwriting thumbnail.jpg.
+    assert (tmp_path / res['thumbnail']).read_bytes() == b"poster_data"
 
 
 def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_video):
@@ -737,13 +783,13 @@ def test_stopped_rerender_keeps_the_previous_video(monkeypatch, three_scene_vide
     runner.run_one(pid, "render")
     with SessionLocal() as s:
         first = s.get(StudioProject, pid).render
-    assert (root / first["file"]).exists() and first["file"] == "render/final.mp4"
+    assert (root / first["file"]).exists() and first["file"].endswith("/render/final.mp4")
 
     def stop_midway(*a, **kw):
         raise control.Cancelled()
 
     import shutil as _sh
-    _sh.rmtree(root / "segcache")                                  # force real work (no cache hits)
+    _sh.rmtree((root / first["file"]).parent.parent / "segcache")                                  # force real work (no cache hits)
     monkeypatch.setattr(stage_render, "seg_clip", stop_midway)   # the re-render is stopped partway
     with pytest.raises(control.Cancelled):
         runner.run_one(pid, "render")
@@ -852,11 +898,12 @@ def _archivable(posted_days_ago: float, drive_ok: bool = True, origin: str = "im
         (root / d).mkdir(exist_ok=True)
         (root / d / "x.bin").write_bytes(b"0" * 300_000)
     (root / "render" / "thumbnail.jpg").write_bytes(b"jpg")
+    (root / "render" / "final.mp4").write_bytes(b"original archive fixture")
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
         p.queue_item_id = qid
         p.render = {"file": "render/final.mp4", "thumbnail": "render/thumbnail.jpg", "rendered_at": "r1"}
-        p.drive = {"status": "saved", "rendered_at": "r1" if drive_ok else "r0", "link": "https://drive/x"}
+        p.drive = {"status": "saved", "rendered_at": "r1" if drive_ok else "r0", "link": "https://drive/x", "file_id":"fixture-copy", "verification":_copy_proof(root/"render"/"final.mp4")}
         p.trailer = {"origin": origin, "sources": [{"id": "vi1", "origin": origin, "file": str(root / "footage" / "x.bin")}]}
         p.plan = [{"slot": 1}]
         s.commit()
@@ -913,7 +960,7 @@ def test_restore_rebuilds_stills_without_ai(monkeypatch, three_scene_video):
     dest = root / "footage" / "vi9.mp4"
     with SessionLocal() as s:
         p = s.get(StudioProject, pid)
-        p.trailer = {"origin": "imdb", "sources": [{"id": "vi9", "origin": "imdb", "file": str(dest)}]}
+        p.trailer = {"origin": "imdb", "sources": [{"id": "vi9", "origin": "imdb", "file": str(dest), "sha256":__import__("hashlib").sha256(three_scene_video.read_bytes()).hexdigest(), "bytes":three_scene_video.stat().st_size}]}
         p.shots = [{**sh, "file": str(dest)} for sh in p.shots]
         p.archive = {"archived_at": "2026-10-01T00:00:00+00:00"}
         s.commit()
@@ -1189,7 +1236,7 @@ def test_free_footage_only_after_drive_has_the_current_render(session, tmp_path,
     session.add(p)
     session.commit()
     assert archive.free_footage(p.id) is None                     # Drive has an OLDER render: keep everything
-    p.drive = {"status": "saved", "rendered_at": "r2"}
+    p.drive = {"status": "saved", "rendered_at": "r2", "file_id":"fixture-copy", "verification":_copy_proof(tmp_path/"render"/"final.mp4")}
     session.commit()
     out = archive.free_footage(p.id)
     assert out and not (tmp_path / "footage").exists() and not (tmp_path / "segcache").exists()

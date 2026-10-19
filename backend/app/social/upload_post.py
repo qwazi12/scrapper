@@ -206,11 +206,14 @@ async def upload_video(
     privacy: str = "public",
     scheduled_date: str | None = None,
     thumbnail: pathlib.Path | None = None,
+    idempotency_key: str | None = None,
 ) -> str:
     """Submit one async upload for ONE profile. Returns the request_id.
 
     Acceptance is not publication: poll get_status(request_id) for the real
     per-platform result."""
+    from ..e2e_safety import deny_live
+    deny_live("social upload")
     if not platforms:
         raise UploadPostError("No platforms selected", status_code=400)
     if not video_path.exists() or video_path.stat().st_size == 0:
@@ -223,6 +226,10 @@ async def upload_video(
         "async_upload": "true",
         "platform[]": platforms,
     }
+    headers = _headers()
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
+        data["request_id"] = idempotency_key
     if description:
         # The shared description is what Instagram uses; YouTube and Facebook get their own full copies.
         data["description"] = fit_instagram(description) if "instagram" in platforms else description
@@ -254,7 +261,7 @@ async def upload_video(
             files["thumbnail"] = (thumbnail.name, thumb_fh, "image/jpeg")
         try:
             async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as client:
-                res = await client.post(f"{API_BASE}/upload", headers=_headers(), data=data, files=files)
+                res = await client.post(f"{API_BASE}/upload", headers=headers, data=data, files=files)
         finally:
             if thumb_fh:
                 thumb_fh.close()
@@ -267,6 +274,41 @@ async def upload_video(
         raise UploadPostError(f"Upload-Post returned no request_id: {str(body)[:300]}")
     logger.info("Upload-Post accepted %s -> %s (%s)", video_path.name, profile, ",".join(platforms))
     return str(request_id)
+
+
+async def upload_images(paths: list[pathlib.Path], *, profile: str, platforms: list[str], title: str,
+                        description: str = "", idempotency_key: str | None = None) -> str:
+    """Documented async photo endpoint; only explicit Instagram/Facebook here.
+
+    Contract: https://docs.upload-post.com/api/upload-photo/ (2026-10-18).
+    No live request is needed to verify the multipart transport in unit tests.
+    """
+    from ..e2e_safety import deny_live
+    deny_live("social photo upload")
+    if not platforms or not set(platforms).issubset({"instagram", "facebook"}) or not 1 <= len(paths) <= 10:
+        raise UploadPostError("Photos require 1–10 images and explicit Instagram/Facebook destinations", status_code=400)
+    from contextlib import ExitStack
+    data = {"user": profile, "platform[]": platforms, "title": fit_instagram(description or title),
+            "description": description, "async_upload": "true"}
+    headers = _headers()
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
+        data["request_id"] = idempotency_key
+    with ExitStack() as stack:
+        files = []
+        for path in paths:
+            if not path.is_file() or not 0 < path.stat().st_size <= 20 * 1024 * 1024:
+                raise UploadPostError("Image missing, empty or oversized", status_code=400)
+            files.append(("photos[]", (path.name, stack.enter_context(path.open("rb")), "image/png")))
+        async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as client:
+            res = await client.post(f"{API_BASE}/upload_photos", headers=headers, data=data, files=files)
+    _raise_for(res, f"Upload-Post photos to profile '{profile}'")
+    body = res.json()
+    rid = body.get("request_id")
+    if not rid: raise UploadPostError("Photo submission has no request ID; reconcile before retry")
+    from .. import costs
+    costs.record_free("upload-post", requests=len(platforms))
+    return str(rid)
 
 
 async def get_status(request_id: str) -> dict[str, Any]:

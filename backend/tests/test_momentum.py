@@ -104,7 +104,7 @@ def test_default_thumbnail_selection_defaults_to_poster(session, tmp_path, monke
     # When no explicit selection is saved, it defaults to poster
     res = stage_render.select_project_thumbnail(p.id, "poster")
     assert res["selected_thumbnail"] == "poster"
-    assert (rdir / "thumbnail.jpg").read_bytes() == b"poster_data"
+    assert (tmp_path / res['thumbnail']).read_bytes() == b"poster_data"
 
 
 def test_queue_scheduler_prioritizes_upcoming_releases_before_release(session):

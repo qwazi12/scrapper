@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import enum
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import UniqueConstraint, BigInteger, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -25,6 +25,9 @@ class Status(str, enum.Enum):
 
 class IngestJob(Base):
     __tablename__ = "ingest_jobs"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     urls: Mapped[list] = mapped_column(JSON, default=list)
@@ -41,6 +44,9 @@ class IngestJob(Base):
 
 class Clip(Base):
     __tablename__ = "clips"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("ingest_jobs.id"), nullable=True)
@@ -66,6 +72,9 @@ class Clip(Base):
 
 class Compilation(Base):
     __tablename__ = "compilations"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     clip_ids: Mapped[list] = mapped_column(JSON, default=list)
@@ -78,6 +87,7 @@ class Compilation(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class LogEntry(Base):
@@ -115,6 +125,9 @@ class QueueItem(Base):
     Plus Upload-Post publishing, compilations, and the automated scheduler.
     """
     __tablename__ = "queue_items"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     compilation_id: Mapped[int | None] = mapped_column(ForeignKey("compilations.id"), nullable=True)
@@ -122,6 +135,8 @@ class QueueItem(Base):
     pipeline: Mapped[str] = mapped_column(String(64), default="default", index=True)
     video_name: Mapped[str] = mapped_column(String(255), default="")
     video_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_kind: Mapped[str] = mapped_column(String(16), default="video", server_default="video")
+    media_files: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
     thumb_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     drive_link: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -164,6 +179,78 @@ class AppSetting(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class EditorialRecord(Base):
+    """Private opportunities, experiments and deidentified audience drafts."""
+    __tablename__ = "editorial_records"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class PerformanceObservation(Base):
+    """Owner-imported cumulative measurements; missing metrics remain NULL."""
+    __tablename__ = "performance_observations"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(24), index=True)
+    content_id: Mapped[str] = mapped_column(String(255), index=True)
+    format: Mapped[str] = mapped_column(String(24), index=True)
+    published_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class CreativeCampaign(Base):
+    """Approved research package, selected native treatments and immutable renders."""
+    __tablename__ = "creative_campaigns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    opportunity_id: Mapped[int] = mapped_column(ForeignKey("editorial_records.id"))
+    brief: Mapped[dict] = mapped_column(JSON, default=dict)
+    renders: Mapped[dict] = mapped_column(JSON, default=dict)
+    review: Mapped[dict] = mapped_column(JSON, default=dict)
+    stage_status: Mapped[str] = mapped_column(String(24), default="draft")
+    stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    work_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class MediaAsset(Base):
+    __tablename__ = "media_assets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    file_path: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(24))
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AssetAnnotation(Base):
+    """Owner metadata/use decisions; original catalog bytes/provenance are preserved."""
+    __tablename__ = "asset_annotations"
+    __table_args__ = (UniqueConstraint("asset_identity", "revision"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    asset_id: Mapped[int] = mapped_column(Integer, index=True)
+    asset_identity: Mapped[str] = mapped_column(String(64), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CreativeExport(Base):
+    __tablename__ = "creative_exports"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("creative_campaigns.id"), index=True)
+    format: Mapped[str] = mapped_column(String(24))
+    manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    approval: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    queue_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class StudioProject(Base):
     """One LongForm Studio video (a trailer breakdown) and every stage's output.
 
@@ -171,6 +258,9 @@ class StudioProject(Base):
     data/studio/<id>/), so any stage can be re-run without redoing the others.
     """
     __tablename__ = "studio_projects"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tmdb_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -204,6 +294,9 @@ class CountdownProject(Base):
     breakdown (owner, 2026-10-12): research → titles → segments → script → render
     → the Countdowns queue. Each title's segment is a StudioProject (segment_ids)."""
     __tablename__ = "countdown_projects"
+    # New SQLite databases keep identities monotonic after deletion. Existing
+    # SQLite tables require an explicit rebuild migration before relying on this.
+    __table_args__ = {"sqlite_autoincrement": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     topic: Mapped[str] = mapped_column(String(255), default="")
@@ -268,3 +361,309 @@ class UsageEvent(Base):
     chars: Mapped[int] = mapped_column(Integer, default=0)
     requests: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_basis: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reservation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class ResearchSourceRecord(Base):
+    """Immutable independently fetched text; model output never creates these rows."""
+    __tablename__ = "research_source_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[int] = mapped_column(Integer, index=True)
+    project_identity: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    url: Mapped[str] = mapped_column(Text)
+    requested_url: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    retrieved_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ResearchClaimReview(Base):
+    __tablename__ = "research_claim_reviews"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[int] = mapped_column(Integer, index=True)
+    project_identity: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    record_id: Mapped[str] = mapped_column(String(36))
+    claim: Mapped[str] = mapped_column(Text)
+    excerpt: Mapped[str] = mapped_column(Text)
+    context: Mapped[dict] = mapped_column(JSON)
+    verdict: Mapped[str] = mapped_column(String(16))
+    rationale: Mapped[str] = mapped_column(Text)
+    conflicts: Mapped[list] = mapped_column(JSON, default=list)
+    resolved_review_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    resolution_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BudgetMutex(Base):
+    __tablename__ = "budget_mutex"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class BudgetReservation(Base):
+    __tablename__ = "budget_reservations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service: Mapped[str] = mapped_column(String(64))
+    operation: Mapped[str] = mapped_column(String(64))
+    ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reserved_micros: Mapped[int] = mapped_column(BigInteger)
+    actual_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    state: Mapped[str] = mapped_column(String(16), index=True)  # reserved/dispatched/unknown/settled/released
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class WorkerLease(Base):
+    __tablename__ = "worker_leases"
+    resource: Mapped[str] = mapped_column(String(160), primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CreditReservation(Base):
+    __tablename__ = "credit_reservations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tool: Mapped[str] = mapped_column(String(100))
+    credits: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16), index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BudgetResolution(Base):
+    __tablename__ = "budget_resolutions"
+    reservation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actual_micros: Mapped[int] = mapped_column(BigInteger)
+    receipt: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WorkerTransfer(Base):
+    """Residential handoff protocol v2; immutable completion receipt per claim."""
+    __tablename__ = "worker_transfers"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    clip_id: Mapped[int] = mapped_column(Integer, index=True)
+    worker_id: Mapped[str] = mapped_column(String(80))
+    generation: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="claimed", index=True)
+    receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PublicationEvent(Base):
+    __tablename__ = "publication_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(64), unique=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), index=True)
+    attempt_id: Mapped[str] = mapped_column(String(80), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PublicationDecision(Base):
+    __tablename__ = "publication_decisions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(36), unique=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), index=True)
+    attempt_id: Mapped[str] = mapped_column(String(80), index=True)
+    evidence: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class FinancialResolution(Base):
+    __tablename__ = "financial_resolutions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    reservation_id: Mapped[str] = mapped_column(String(36), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    receipt: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BudgetReceipt(Base):
+    __tablename__ = "budget_receipts"
+    reservation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    amount_micros: Mapped[int] = mapped_column(BigInteger)
+    usage: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class FileUse(Base):
+    __tablename__ = "file_uses"
+    resource: Mapped[str] = mapped_column(String(160), primary_key=True)
+    paths: Mapped[list] = mapped_column(JSON)
+    exclusive: Mapped[bool] = mapped_column(default=False)
+
+
+class QueueSourceBinding(Base):
+    """Original Studio source/transport proof survives queue/project identity reuse."""
+    __tablename__ = 'queue_source_bindings'
+    __table_args__ = (UniqueConstraint('queue_identity','revision'),)
+    id: Mapped[str] = mapped_column(String(64),primary_key=True)
+    queue_id: Mapped[int] = mapped_column(Integer,index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64),index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True),default=_now)
+
+
+class ExportVersion(Base):
+    """Retained export evidence survives edits, project deletion and ID reuse."""
+    __tablename__ = 'export_versions'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    project_id: Mapped[int] = mapped_column(Integer, index=True)
+    project_identity: Mapped[str] = mapped_column(String(64), index=True)
+    manifest: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class DeliveryArchive(Base):
+    """Exact content and delivery evidence outlives mutable queue rows."""
+    __tablename__ = "delivery_archives"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), index=True)
+    manifest: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class RemoteCopyEvidence(Base):
+    """Append-only retention decisions; a remote link alone is not a backup proof."""
+    __tablename__ = "remote_copy_evidence"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(24), default="drive")
+    file_id: Mapped[str] = mapped_column(String(128), index=True)
+    resource: Mapped[str] = mapped_column(String(96), index=True)
+    action: Mapped[str] = mapped_column(String(32))
+    evidence: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class LearningDecision(Base):
+    __tablename__='learning_decisions'
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    diagnostic_key: Mapped[str]=mapped_column(String(64),index=True)
+    version: Mapped[str]=mapped_column(String(64),index=True)
+    action: Mapped[str]=mapped_column(String(32))
+    data: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
+class CommentEvidence(Base):
+    """Redacted provider comment versions; author identifiers are never stored."""
+    __tablename__='comment_evidence'
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    comment_key: Mapped[str]=mapped_column(String(64),index=True)
+    thread_key: Mapped[str]=mapped_column(String(64),index=True)
+    parent_key: Mapped[str | None]=mapped_column(String(64),nullable=True,index=True)
+    lineage_id: Mapped[str]=mapped_column(String(64),index=True)
+    remote_id: Mapped[str]=mapped_column(String(255))
+    data: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
+class CommentCursor(Base):
+    __tablename__='comment_cursors'
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    lineage_id: Mapped[str]=mapped_column(String(64),index=True)
+    parent_key: Mapped[str | None]=mapped_column(String(64),nullable=True)
+    data: Mapped[dict]=mapped_column(JSON)
+    updated_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
+class FeedbackDecision(Base):
+    __tablename__='feedback_decisions'
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    feedback_id: Mapped[int]=mapped_column(Integer,index=True)
+    feedback_identity: Mapped[str]=mapped_column(String(64),index=True)
+    action: Mapped[str]=mapped_column(String(40),index=True)
+    data: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
+class ContentLineage(Base):
+    """Versioned owner mappings from public content to exact retained local inputs."""
+    __tablename__='content_lineages'
+    __table_args__=(UniqueConstraint('binding_key','revision',name='ux_content_lineage_revision'),)
+    id: Mapped[str]=mapped_column(String(64),primary_key=True)
+    binding_key: Mapped[str]=mapped_column(String(64),index=True)
+    revision: Mapped[int]=mapped_column(Integer)
+    platform: Mapped[str]=mapped_column(String(24),index=True)
+    account_id: Mapped[str]=mapped_column(String(128))
+    content_id: Mapped[str]=mapped_column(String(255),index=True)
+    data: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
+
+
+# Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
+# Both dialects reject raw UPDATE/DELETE as an integrity violation.
+from sqlalchemy import DDL, event as _schema_event
+for _table in (PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__, LearningDecision.__table__, AssetAnnotation.__table__, QueueSourceBinding.__table__):
+    for _action in ("UPDATE", "DELETE"):
+        _schema_event.listen(_table,"after_create",DDL(
+            f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "
+            "BEGIN SELECT RAISE(ABORT, 'Evidence journal is append-only'); END").execute_if(dialect="sqlite"))
+    _schema_event.listen(_table,"after_create",DDL("""CREATE OR REPLACE FUNCTION scrapper_journal_immutable()
+        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Evidence journal is append-only' USING ERRCODE = '23514'; END; $$""").execute_if(dialect="postgresql"))
+    _schema_event.listen(_table,"after_create",DDL(
+        f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE OR DELETE ON {_table.name} "
+        "FOR EACH ROW EXECUTE FUNCTION scrapper_journal_immutable()").execute_if(dialect="postgresql"))
+
+
+class ArchiveChannel(Base):
+    """An archive is independent from publication queues and their lifecycle."""
+    __tablename__ = 'archive_channels'
+    channel_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_url: Mapped[str] = mapped_column(String(1024))
+    title: Mapped[str] = mapped_column(Text)
+    handle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_folder_id: Mapped[str] = mapped_column(String(128))
+    drive_folder_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    formats: Mapped[list] = mapped_column(JSON, default=lambda: ['shorts'])
+    status: Mapped[str] = mapped_column(String(32), default='inventoried')
+    inventory: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manifest_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ArchiveVideo(Base):
+    __tablename__ = 'archive_videos'
+    channel_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    video_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    original_url: Mapped[str] = mapped_column(String(1024))
+    title: Mapped[str] = mapped_column(Text)
+    media_kind: Mapped[str] = mapped_column(String(16))
+    upload_date: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default='discovered', index=True)
+    local_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    file_format: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    drive_file_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    verified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    seen_inventory: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class ArchiveWorkerClaim(Base):
+    __tablename__ = 'archive_worker_claims'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String(32), index=True)
+    worker_id: Mapped[str] = mapped_column(String(80))
+    generation: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default='claimed')
+    receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)

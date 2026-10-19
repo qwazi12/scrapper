@@ -201,7 +201,7 @@ def test_render_batch_runs_one_by_one_and_skips_unready(monkeypatch):
     monkeypatch.setattr(runner, "start_or_queue", fake_start)
     batch.start(ids)
     for _ in range(300):
-        if not batch.status["running"]:
+        if not batch.public()["running"]:
             break
         time.sleep(0.02)
     assert order == [(ids[0], "render", "render"), (ids[1], "plan", "render")]
@@ -213,12 +213,21 @@ def test_render_batch_runs_one_by_one_and_skips_unready(monkeypatch):
 
 
 def test_publish_batch_reports_each(client, tmp_path, monkeypatch):
+    from backend.app import queue_sources
+    # Batch-result routing uses an opaque stub. Actual reviewed source bytes
+    # and admission are exercised in test_queue_source_binding and UI E2E.
+    bindings = []
+    monkeypatch.setattr(queue_sources, "prepare_send", lambda s, p, item: item)
+    monkeypatch.setattr(queue_sources, "bind", lambda s, item, p: bindings.append((item.id, p.id)))
+    from backend.app.studio import media_quality
+    monkeypatch.setattr(media_quality, "require_export_approval", lambda p, root: None)  # batching unit only
+
     monkeypatch.setattr(runner, "project_dir", lambda pid: tmp_path)
     (tmp_path / "final.mp4").write_bytes(b"x")
     from backend.app.studio import routes
     monkeypatch.setattr(routes, "_start_drive", lambda p: None)
     with SessionLocal() as s:
-        a = StudioProject(tmdb_id=30, title="Rendered", render={"file": "final.mp4", "rendered_at": "t"}, script={})
+        a = StudioProject(tmdb_id=30, title="Rendered", render={"file": "final.mp4", "rendered_at": "t"}, script={"sentences": [{"paragraph": 1, "text": "Synthetic.", "check": "ok", "refs": ["F1"]}]})
         b = StudioProject(tmdb_id=31, title="Not rendered")
         s.add_all([a, b])
         s.commit()
@@ -226,6 +235,7 @@ def test_publish_batch_reports_each(client, tmp_path, monkeypatch):
     d = client.post("/api/studio/publish-batch", json={"ids": ids}).json()
     assert d["sent"] == 1
     assert [r["ok"] for r in d["results"]] == [True, False]
+    assert bindings == [(d["results"][0]["queue_item_id"], ids[0])]
     with SessionLocal() as s:
         s.query(QueueItem).filter(QueueItem.id == d["results"][0]["queue_item_id"]).delete()
         s.commit()
@@ -329,6 +339,8 @@ def test_cut_off_job_waits_in_line_when_studio_is_busy(monkeypatch):
     resume.checkpoint(rid, stage="shots")
     with SessionLocal() as s:
         r = s.get(ResumableJob, rid)
+        from backend.app.models import WorkerLease
+        s.get(WorkerLease, resume.leases.resource(r.kind,r.params)).expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)
         r.owner = "dead-server"
         r.updated_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
         s.commit()
@@ -387,3 +399,28 @@ def test_plus_two_today_only(client):
     tomorrow = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)
     assert costs.effective_cap(costs.settings_dict(), tomorrow) == 6.0              # gone tomorrow
     assert client.post("/api/costs/today-extra", json={"usd": 0}).status_code == 400
+
+
+def test_render_batch_keeps_polling_until_durable_completion_is_saved(monkeypatch):
+    import threading
+    from backend.app.studio import batch
+    entered, release = threading.Event(), threading.Event()
+    original = resume.finish
+    def finish(rid, state, error=None):
+        if state == 'done':
+            entered.set(); release.wait(5)
+        return original(rid, state, error)
+    monkeypatch.setattr(resume, 'finish', finish)
+    monkeypatch.setattr(batch, '_run', lambda ids, rid: [resume.add_done(rid, pid) for pid in ids])
+    batch.start([998877])
+    try:
+        assert entered.wait(5)
+        pending = batch.public()
+        assert pending['running'] and pending['finishing'] and pending['job_status'] == 'running'
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while batch.public()['running'] and time.monotonic() < deadline:
+        time.sleep(.02)
+    completed = batch.public()
+    assert not completed['running'] and not completed['finishing'] and completed['job_status'] == 'done'

@@ -19,12 +19,15 @@ from __future__ import annotations
 import datetime
 import logging
 import shutil
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from ..file_response import FileResponse
+from pydantic import BaseModel, Field, StrictBool
 
+from ..publication_journal import digest
 from .. import control, costs, logbus
 from ..auth import require_token
 from ..db import SessionLocal
@@ -116,6 +119,7 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         "stage": c.stage, "stage_status": c.stage_status, "stage_message": c.stage_message,
         "title": (c.script or {}).get("title") or ((c.ranking or {}).get("title_options") or [c.topic])[0],
         "queue_item_id": c.queue_item_id, "review": c.review or {}, "created_at": c.created_at, "updated_at": c.updated_at,
+        "script_version": digest(c.script),
         "posters": posters, "entry_count": len(entries), "unmatched": len(unmatched),
         "segments_made": made, "segments_total": len(segs),
         "est_minutes": round((est + 40) / 60, 1),                     # + intro/outro and the #N cards
@@ -131,6 +135,21 @@ def out(s, c: CountdownProject, full: bool = True) -> dict[str, Any]:
         d["queue_status"] = q.status if q else None
     if full:
         d.update(ranking=c.ranking, notes=c.notes, script=c.script, segments=segs)
+        from .countdown_eligibility import criteria
+        from ..config import settings
+        from ..worker_leases import clock
+        d["eligibility_criteria"] = criteria(c.topic, settings.studio_region, today=clock(s).date())
+        d["ranking_version"] = digest(c.ranking)
+        saved=bool(c.ranking or c.script or c.segment_ids or c.render)
+        d['saved_contract']='unsupported' if c.fmt not in COUNTS else 'current' if current_contract(c) else 'new' if not saved else 'legacy' if legacy_contract(c) else 'unsupported'
+        d['contract_upgrade_version']=contract_upgrade_version(c) if saved and not current_contract(c) else None
+        d["bookend_version"] = bookend_version(s, c)
+        d["bookend_reviewed"] = (c.review or {}).get("bookend_review", {}).get("version") == d["bookend_version"]
+        try:
+            require_bookends(s, c)
+        except HTTPException as exc:
+            d["bookend_reviewed"] = False
+            d["bookend_issue"] = exc.detail
     return d
 
 
@@ -138,11 +157,45 @@ def _running(c: CountdownProject) -> bool:
     return c.stage_status == "running"
 
 
+def current_contract(c) -> bool:
+    value=(c.ranking or {}).get('contract_version')
+    return type(value) is int and value==1
+
+
+def legacy_contract(c) -> bool:
+    value=(c.ranking or {}).get('contract_version')
+    return value is None or (type(value) is int and value==0)
+
+
+def contract_upgrade_version(c):
+    from ..publication_journal import identity
+    return digest([identity(c),c.topic,c.fmt,c.ranking,c.script,c.segment_ids,c.render,c.review,c.queue_item_id])
+
+
+def require_contract(c):
+    if hasattr(c,'fmt') and c.fmt not in COUNTS:
+        raise HTTPException(409,'Unsupported saved Countdown format. Keep its words/history and create a separate Top5, Top10 or Top15 review draft; no old list was converted.')
+    if not current_contract(c):
+        raise HTTPException(409,'This saved Countdown contract is unconfirmed. Review and upgrade its saved list before confirming, voicing or rendering; original words and history are retained.')
+
+
+def stop_unconfirmed(c):
+    if current_contract(c) and c.fmt in COUNTS:return False
+    c.stage_status='stopped'
+    c.stage_message='Saved Countdown needs explicit review and upgrade before more segment or render work. Original words are retained.'
+    return True
+
+
+def has_saved_inputs(c):
+    return bool(c.ranking or c.script or c.segment_ids or c.render)
+
+
 # --- 1. research -------------------------------------------------------------------
 def research_job(cid: int) -> str:
     from .compilations import engine
     with SessionLocal() as s:
         c = s.get(CountdownProject, cid)
+        if has_saved_inputs(c):require_contract(c)
         topic, fmt, notes = c.topic, c.fmt, c.notes or ""
     _set(cid, stage="research", stage_status="running", stage_message="Researching and ranking titles…")
     try:
@@ -154,11 +207,11 @@ def research_job(cid: int) -> str:
             data = engine.generate_countdown(topic=topic, format_type=fmt, custom_instructions=notes,
                                              market=market_text(mk))
         data["market"] = mk
+        data["contract_version"] = 1
         control.check()
         entries = []
         for e in data.get("entries") or []:
-            r = engine._resolve_title(e) if not e.get("tmdb_id") else \
-                {"tmdb_id": e["tmdb_id"], "media_type": e.get("media_type") or "movie"}
+            r = engine._resolve_title(e)
             e["tmdb_id"] = (r or {}).get("tmdb_id")
             e["media_type"] = (r or {}).get("media_type") or e.get("media_type") or "movie"
             entries.append(e)
@@ -220,8 +273,17 @@ def market_text(mk: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _leased_job(fn, cid):
+    from ..worker_leases import scope
+    with scope(f"countdown:{cid}"):
+        return fn(cid)
+
+
 def start_research(cid: int) -> str:
-    return control.start_thread("countdown", f"Countdown #{cid}: research", "countdown", research_job, cid, ref=cid)
+    with SessionLocal() as s:
+        c=_get(s,cid)
+        if has_saved_inputs(c):require_contract(c)
+    return control.start_thread("countdown", f"Countdown #{cid}: research", "countdown", _leased_job, research_job, cid, ref=cid)
 
 
 # --- 2. titles ---------------------------------------------------------------------
@@ -236,11 +298,14 @@ def save_entries(c: CountdownProject, entries: list[dict[str, Any]]) -> None:
         e["rank"] = i + 1
         clean.append(e)
     r = dict(c.ranking or {})
-    old_ids = [(e.get("tmdb_id"), e.get("media_type")) for e in _ordered(entries_of(c))]
+    material = ("tmdb_id", "media_type", "title", "year", "why_it_ranks", "fun_fact", "key_stat", "where_to_watch")
+    old_inputs = [{k: e.get(k) for k in material} for e in _ordered(entries_of(c))]
     r["entries"] = clean
     c.ranking = r
-    new_ids = [(e.get("tmdb_id"), e.get("media_type")) for e in _ordered(clean)]
-    if c.segment_ids and old_ids != new_ids:
+    new_inputs = [{k: e.get(k) for k in material} for e in _ordered(clean)]
+    if old_inputs != new_inputs:
+        c.ranking = {k: v for k, v in c.ranking.items() if k != "eligibility"}
+    if c.segment_ids and old_inputs != new_inputs:
         c.segment_ids = None                   # titles changed: confirm them again
         c.render = None
         c.stage, c.stage_status = "research", "done"
@@ -249,28 +314,57 @@ def save_entries(c: CountdownProject, entries: list[dict[str, Any]]) -> None:
 
 def confirm_titles(s, c: CountdownProject) -> None:
     """Create or reuse one Studio segment per title (lowest rank first)."""
-    entries = entries_of(c)
+    import copy
+    require_contract(c)
+    # Segment creation flushes the session. Never mutate a nested JSON object
+    # already stored by an earlier flush; the final segment bindings must be a
+    # real new JSON value, including on repeated eligibility checks.
+    entries = copy.deepcopy(entries_of(c))
+    if (c.ranking or {}).get("contract_version") == 1:
+        expected = COUNTS.get(c.fmt)
+        if expected and len(entries) != expected:
+            raise HTTPException(409, f"{FMT_NAME(c.fmt)} requires exactly {expected} entries; review and repair the ranking")
+    identities = [(e.get("media_type") or "movie", e.get("tmdb_id")) for e in entries if e.get("tmdb_id")]
+    if len(set(identities)) != len(identities):
+        raise HTTPException(409, "Duplicate film/show identities in this ranking; replace duplicates before confirming")
+    if (c.ranking or {}).get("contract_version") == 1 and (
+            any(type(e.get("rank")) is not int for e in entries) or
+            sorted(e["rank"] for e in entries) != list(range(1, len(entries) + 1))):
+        raise HTTPException(409, "Each ranking position must appear exactly once from 1 through the entry count")
     bad = [f"#{e.get('rank')} {e.get('title')}" for e in entries if not e.get("tmdb_id")]
     if bad:
         raise HTTPException(400, "These aren't matched to a movie or show (no trailer to use): "
                                  + ", ".join(bad) + ". Swap or remove them first.")
     if len(entries) < 2:
         raise HTTPException(400, "A countdown needs at least 2 titles")
+    if (c.ranking or {}).get("contract_version") == 1:
+        from . import countdown_eligibility, tmdb
+        from ..config import settings
+        try:
+            from ..worker_leases import clock
+            eligibility = countdown_eligibility.verify(entries, c.topic, settings.studio_region, checked_at=clock(s))
+        except (ValueError, tmdb.TMDBError, OSError) as exc:
+            raise HTTPException(409, f"Countdown eligibility needs review: {exc}") from exc
+        c.ranking = {**c.ranking, "eligibility": eligibility}
     minutes = float((c.review or {}).get("segment_minutes") or SEGMENT_MINUTES.get(c.fmt, 1.0))
     total = len(entries)
     ids = []
     for e in _ordered(entries):
-        ctx = {"rank": e.get("rank"), "total": total, "topic": c.topic, "why_it_ranks": e.get("why_it_ranks"),
-               "fun_fact": e.get("fun_fact"), "key_stat": e.get("key_stat"), "where_to_watch": e.get("where_to_watch")}
+        ctx = segment_context(c,e,total)
         p = (s.query(StudioProject)
              .filter(StudioProject.tmdb_id == int(e["tmdb_id"]), StudioProject.media_type == e.get("media_type", "movie"))
              .order_by(StudioProject.id.desc()).first())
-        if p is not None and (p.queue_item_id or (p.review or {}).get("auto")):
-            e["reused"] = True                 # a real LongForm breakdown: used as-is, never changed
-        elif p is not None:
+        # Rank, editorial angle and CTA belong to this campaign. A LongForm or
+        # another countdown's render must never stand in for this segment.
+        if p is not None and ((p.facts or {}).get("countdown") or {}).get("countdown_identity") != ctx['countdown_identity']:
+            p = None
+        if p is not None:
             f = dict(p.facts or {})
+            changed = f.get("countdown") != ctx or p.target_minutes != minutes
             f.update(origin="countdown", is_countdown=True, countdown=ctx)
             p.facts = f
+            if changed:
+                p.script, p.plan, p.render = None, None, None
         else:
             p = StudioProject(tmdb_id=int(e["tmdb_id"]), media_type=e.get("media_type", "movie"),
                               title=e.get("title") or "", target_minutes=minutes,
@@ -348,6 +442,7 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
     and the following one chains straight after. Outside the midday turn it waits
     while LongForm's automation still has breakdowns to start today."""
     from . import runner
+    from ..worker_leases import live
     did = None
     if not from_runner:
         try:
@@ -359,12 +454,18 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
         # Research/render the daily cap paused: carry on once there's budget again.
         for c in s.query(CountdownProject).filter(CountdownProject.stage.in_(["research", "render"]),
                                                   CountdownProject.stage_status == "paused").all():
+            if (not current_contract(c) or c.fmt not in COUNTS) and live(f'countdown:{c.id}'):continue
+            if (c.stage=='render' or has_saved_inputs(c)) and stop_unconfirmed(c):
+                s.commit();continue
             if _budget_ok() and not control.running("countdown", c.id):
                 (start_research if c.stage == "research" else start_render)(c.id)
         active_taken = False
         for c in s.query(CountdownProject).filter(CountdownProject.stage == "segments",
                                                   CountdownProject.stage_status.in_(["waiting", "running", "paused"])) \
                 .order_by(CountdownProject.id).all():
+            if (not current_contract(c) or c.fmt not in COUNTS) and live(f'countdown:{c.id}'):continue
+            if stop_unconfirmed(c):
+                s.commit();continue
             if fix_lengths(s, c):
                 s.commit()
             segs = _segments(s, c)
@@ -394,6 +495,17 @@ def tick(from_runner: bool = False) -> dict[str, Any] | None:
                 logbus.log("info", "countdown_segments_done", f"Countdown #{c.id}: all {made} segments made — ready for review")
                 continue
             prefix = f"Making segments: {made} of {len(segs)} done"
+            waiting = next((x for x in segs if x["stage_status"] == "awaiting_worker"), None)
+            if waiting:
+                import pathlib
+                from ..models import Clip
+                p = s.get(StudioProject, waiting["id"])
+                clip = s.get(Clip, (p.trailer or {}).get("pending_clip_id")) if p.trailer else None
+                if not clip or not clip.file_path or not pathlib.Path(clip.file_path).is_file():
+                    c.stage_status = "waiting"
+                    c.stage_message = f"{prefix} — “{p.title}” is awaiting footage from the home worker"
+                    s.commit()
+                    continue
             paused = next((x for x in segs if x["stage_status"] == "paused"), None)
             if paused:
                 c.stage_status = "paused"
@@ -461,7 +573,13 @@ def recover() -> None:
     with SessionLocal() as s:
         cut = [(c.id, c.stage) for c in s.query(CountdownProject).filter(
             CountdownProject.stage.in_(["research", "render"]), CountdownProject.stage_status == "running").all()]
+    from ..worker_leases import live
     for cid, stage in cut:
+        if live(f"countdown:{cid}"): continue
+        with SessionLocal() as s:
+            c=s.get(CountdownProject,cid)
+            if not c:continue
+            if (stage=='render' or has_saved_inputs(c)) and stop_unconfirmed(c):s.commit();continue
         logbus.log("info", "countdown_resumed", f"Countdown #{cid}: {stage} was cut off by a restart — starting it again")
         (start_research if stage == "research" else start_render)(cid)
 
@@ -470,22 +588,146 @@ def recover() -> None:
 def default_script(c: CountdownProject) -> dict[str, Any]:
     r = c.ranking or {}
     titles = r.get("title_options") or [c.topic]
-    return {"title": titles[0][:100], "title_options": titles, "intro": r.get("hook_script") or "",
-            "outro": r.get("closing_question") or "", "thumbnail_text": r.get("thumbnail_text") or ""}
+    return {"title": titles[0][:100], "title_options": titles,
+            "intro": r.get("hook_script") or f"Here are {len(entries_of(c))} picks in our editorial countdown. Which would you put first?",
+            "outro": r.get("closing_question") or "Which entry would you put first, and why?",
+            "thumbnail_text": r.get("thumbnail_text") or ""}
+
+
+def bookend_version(s, c) -> str:
+    from ..publication_journal import identity
+    inputs = []
+    for pid in c.segment_ids or []:
+        p = s.get(StudioProject, int(pid))
+        inputs.append([identity(p), p.facts, p.research, p.script] if p else [pid, "missing"])
+    sc = c.script or default_script(c)
+    return digest([identity(c), c.topic, c.ranking,
+                   {k: sc.get(k) for k in ("title", "intro", "outro")}, inputs])
+
+
+def require_bookends(s, c):
+    require_contract(c)
+    require_current_eligibility(s, c)
+    sc = c.script or default_script(c)
+    if not all(str(sc.get(k) or "").strip() for k in ("intro", "outro")):
+        raise HTTPException(409, "Save explicit intro and outro words before reviewing or voicing them")
+    if (c.review or {}).get("bookend_review", {}).get("version") != bookend_version(s, c):
+        raise HTTPException(409, "Review the exact saved intro/outro against current title eligibility and segment research before voicing")
+
+
+def require_current_eligibility(s, c, *, stored_only=False, current_segment_id=None):
+    from . import countdown_eligibility as eligibility
+    from ..config import settings
+    require_contract(c)
+    if len(entries_of(c))!=COUNTS[c.fmt]:
+        raise HTTPException(409,f'{FMT_NAME(c.fmt)} requires exactly {COUNTS[c.fmt]} entries; review and repair the ranking')
+    proof = (c.ranking or {}).get("eligibility") or {}
+    from ..worker_leases import clock
+    now=clock(s)
+    rule = eligibility.criteria(c.topic, settings.studio_region, today=now.date())
+    try:
+        checked = datetime.datetime.fromisoformat(proof.get("checked_at", ""))
+        if checked.tzinfo is None:raise ValueError('Unknown proof timezone')
+        age = (now - checked.astimezone(UTC)).total_seconds()
+    except (ValueError, TypeError):
+        age = -1
+    if proof.get("criteria") != rule or not 0 <= age <= (86400 if rule["providers"] else 7 * 86400):
+        raise HTTPException(409, "Recheck title eligibility: the category evidence is missing, expired or outside the current date window")
+    records = {(r.get("media_type"), r.get("tmdb_id")): r for r in proof.get("records", [])}
+    for entry in entries_of(c):
+        record = records.get((entry.get("media_type") or "movie", entry.get("tmdb_id")))
+        p = s.get(StudioProject, int(entry.get("segment_id") or 0))
+        use_record=stored_only or (current_segment_id is not None and p and p.id!=current_segment_id)
+        issues = (["missing confirmed category record or segment"] if not record or not p else
+                  eligibility.evaluate(entry, (record.get('facts') or {}) if use_record else p.facts or {}, rule, record.get("providers")))
+        if issues:
+            raise HTTPException(409, f"Recheck title eligibility and segment research for {entry.get('title')}: {'; '.join(issues)}")
+
+
+def segment_context(c,entry,total):
+    from ..publication_journal import identity
+    return {'countdown_id':c.id,'countdown_identity':identity(c),'rank':entry.get('rank'),'total':total,'topic':c.topic,
+        **{key:entry.get(key) for key in ('why_it_ranks','fun_fact','key_stat','where_to_watch')}}
+
+
+def segment_use_paths(project_id):
+    from ..config import settings
+    with SessionLocal() as s:
+        p=s.get(StudioProject,project_id);context=((p.facts or {}).get('countdown') or {}) if p else {}
+        cid=context.get('countdown_id')
+        return [settings.data_path/'countdowns'/str(cid)] if type(cid) is int and cid>0 else []
+
+
+def require_segment_context(s,p,stage):
+    """Direct Studio/residential entry points cannot bypass their parent list."""
+    from . import membership
+    if not p:return
+    tagged=bool((p.facts or {}).get('is_countdown') or (p.facts or {}).get('origin')=='countdown')
+    if not tagged and not membership.is_countdown(p,membership.countdown_ids(s)):return
+    context=(p.facts or {}).get('countdown') or {};cid=context.get('countdown_id')
+    c=s.get(CountdownProject,cid) if type(cid) is int and cid>0 else None
+    if not c:raise HTTPException(409,'Saved segment parent identity is unconfirmed; return to its Countdown and recheck titles')
+    require_contract(c)
+    entries=[e for e in entries_of(c) if e.get('segment_id')==p.id]
+    if p.id not in (c.segment_ids or []) or len(entries)!=1 or context!=segment_context(c,entries[0],len(entries_of(c))):
+        raise HTTPException(409,'Saved segment context changed; recheck its Countdown titles before more work')
+    if entries[0].get('tmdb_id')!=p.tmdb_id or entries[0].get('media_type','movie')!=p.media_type:
+        raise HTTPException(409,'Segment canonical identity differs from its Countdown entry')
+    require_current_eligibility(s,c,stored_only=stage=='gather',current_segment_id=p.id)
 
 
 # --- 5. render ----------------------------------------------------------------------
+def segment_fingerprints(s, c) -> dict:
+    from .research_gate import require_checked
+    from .media_quality import export_fingerprint
+    from .runner import project_dir
+    fingerprints = {}
+    for pid in c.segment_ids or []:
+        p = s.get(StudioProject, pid)
+        if p is None:
+            raise RuntimeError(f"Missing countdown segment {pid}")
+        require_checked(p.script,p.facts)
+        fingerprints[str(pid)] = export_fingerprint(p, project_dir(pid))
+    if not fingerprints:
+        raise RuntimeError("No checked segments")
+    return fingerprints
+
+
+def inspect_countdown(res) -> dict:
+    from pathlib import Path
+    from .media_quality import inspect_export
+    quality = inspect_export(Path(res["video_path"]), expected_seconds=float(res["total_seconds"]))
+    if quality["errors"]:
+        raise RuntimeError("Final countdown quality blocked: " + "; ".join(quality["errors"]))
+    return quality
+
+
 def render_job(cid: int) -> dict[str, Any]:
+    # Freeze source files while fingerprinting and stitching. New output folders
+    # are unique per attempt; the old export remains unchanged.
+    from ..config import settings
+    from ..file_use import pin
+    with media_use(cid, exclusive=True, segments=True), pin([
+            settings.data_path/'audio']):
+        return _render_job(cid)
+
+
+def _render_job(cid: int) -> dict[str, Any]:
     from .compilations import stitch
     with SessionLocal() as s:
         c = s.get(CountdownProject, cid)
         ids, sc = list(c.segment_ids or []), dict(c.script or default_script(c))
     _set(cid, stage="render", stage_status="running", stage_message="Stitching the countdown video…")
     try:
+        with SessionLocal() as s:
+            current = s.get(CountdownProject, cid)
+            require_bookends(s, current)
+            fingerprints = segment_fingerprints(s, current)
         with costs.operation("countdown_render", ref=f"countdown:{cid}"):      # intro/outro voice-over
             res = stitch.stitch_countdown_compilation(project_ids=ids, title=sc.get("title") or "",
                                                       custom_intro=sc.get("intro") or "", custom_outro=sc.get("outro") or "",
                                                       send_to_queue=False)
+        quality = inspect_countdown(res)
     except control.Cancelled:
         _set(cid, stage_status="stopped", stage_message="Render stopped")
         raise
@@ -501,6 +743,7 @@ def render_job(cid: int) -> dict[str, Any]:
         pass
     thumbs = {"poster": "thumb_option_1_poster.jpg", "action": "thumb_option_2_action.jpg", "split": "thumb_option_3_split.jpg"}
     render = {"compilation_id": res["compilation_id"], "file": res["video_path"], "thumbnail": res["primary_thumb"],
+              "quality": quality, "segment_fingerprints": fingerprints,
               "thumbnails": thumbs, "selected_thumbnail": "poster", "chapters": res["chapters"],
               "seconds": res["total_seconds"], "minutes": res["total_minutes"], "rendered_at": _now().isoformat()}
     _set(cid, render=render, stage="render", stage_status="done",
@@ -510,7 +753,8 @@ def render_job(cid: int) -> dict[str, Any]:
 
 
 def start_render(cid: int) -> str:
-    return control.start_thread("countdown", f"Countdown #{cid}: render", "countdown", render_job, cid, ref=cid)
+    with SessionLocal() as s:require_bookends(s,_get(s,cid))
+    return control.start_thread("countdown", f"Countdown #{cid}: render", "countdown", _leased_job, render_job, cid, ref=cid)
 
 
 def comp_dir(c: CountdownProject):
@@ -518,13 +762,99 @@ def comp_dir(c: CountdownProject):
     return stitch.compilations_dir() / str((c.render or {}).get("compilation_id"))
 
 
+@contextmanager
+def media_use(cid: int, *, exclusive=False, segments=False, session=None):
+    """A stable campaign pin precedes the current export's physical paths."""
+    from ..config import settings
+    from ..file_use import pin
+    from .runner import project_dir
+    with pin([settings.data_path / 'countdowns' / str(cid)], exclusive=exclusive, session=session):
+        with SessionLocal() as read:
+            c = _get(read, cid)
+            paths = [comp_dir(c)] if c.render else []
+            sources = [project_dir(int(pid)) for pid in c.segment_ids or []] if segments else []
+        with pin(paths, exclusive=exclusive, session=session), pin(sources, session=session):
+            yield
+
+
+def render_version(c):
+    return digest({k:v for k,v in (c.render or {}).items() if k != 'drive'})
+
+
+def verified_copy(c):
+    from types import SimpleNamespace
+    from . import archive
+    r = c.render or {}
+    d = r.get('drive') or {}
+    return (d.get('status') == 'saved' and d.get('rendered_at') == r.get('rendered_at')
+            and archive.verified_copy(SimpleNamespace(render=r, drive=d), comp_dir(c)))
+
+
+def _require_thumbnail_editable(s, c):
+    from ..file_refs import protected
+    if _running(c) or protected(s, comp_dir(c) / 'thumbnails', ignore=(CountdownProject,c.id)):
+        raise HTTPException(409, 'This thumbnail is used by a queue item or another export; create a revised export before replacing it')
+
+
+def require_release(s, c: CountdownProject, approved: bool = True) -> str:
+    from .media_quality import export_fingerprint, require_export_approval
+    try:
+        require_bookends(s, c)
+        if segment_fingerprints(s, c) != (c.render or {}).get("segment_fingerprints"):
+            raise RuntimeError("Segments changed since the final countdown render; render again")
+        fingerprint = export_fingerprint(c, comp_dir(c))
+        if approved:
+            require_export_approval(c, comp_dir(c))
+        return fingerprint
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+
+
+from .export_acceptance import AcceptanceIn
+
+
+@router.get('/{cid}/export-review')
+def countdown_export_review(cid:int):
+    from .export_acceptance import view
+    with media_use(cid,segments=True):
+        with SessionLocal() as s:
+            c=_get(s,cid)
+            require_release(s,c,approved=False)
+            return view(c,comp_dir(c))
+
+
+@router.post("/{cid}/approve-export")
+def approve_countdown_export(cid: int,req:AcceptanceIn) -> dict[str, Any]:
+    with media_use(cid, segments=True):
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            if c.stage_status in ("running", "waiting", "queued"):
+                raise HTTPException(409, "Wait for the countdown to finish before approval")
+            fingerprint = require_release(s, c, approved=False)
+            from .export_acceptance import accept
+            from ..worker_leases import clock
+            try:approval=accept(c,comp_dir(c),req,clock(s))
+            except RuntimeError as exc:raise HTTPException(409,str(exc))
+            approval['countdown_format']=c.fmt
+            c.review = {**(c.review or {}), "export_approval": approval}
+            s.commit()
+            return out(s, c)
+
+
 def publish(s, c: CountdownProject) -> QueueItem:
+    with media_use(c.id, segments=True, session=s):
+        s.refresh(c)
+        return _publish(s, c)
+
+
+def _publish(s, c: CountdownProject) -> QueueItem:
     """Send to the Countdowns queue as Ready to Post on Screen Central (like LongForm)."""
     from sqlalchemy import func
     from .. import undo
     from .compilations import engine
     if not c.render:
         raise HTTPException(400, "Render the video first")
+    require_release(s, c)
     sc = c.script or default_script(c)
     entries = _ordered(entries_of(c))
     lines = [f"{ch['time_formatted']} {ch['title']}" for ch in (c.render or {}).get("chapters", [])]
@@ -536,6 +866,9 @@ def publish(s, c: CountdownProject) -> QueueItem:
                   research={"countdown_id": c.id, "chapters": c.render.get("chapters")})
     from ..social import queue_manager
     item = s.get(QueueItem, c.queue_item_id) if c.queue_item_id else None
+    from ..social import enqueue
+    from .. import queue_sources
+    item=queue_sources.prepare_send(s,c,item)
     if item and item.status in ("review", "ready", "retry", "error"):
         undo.record(s, "queue", f"Update countdown '{c.topic[:40]}'", rows=[item])
         for k, v in fields.items():
@@ -546,10 +879,10 @@ def publish(s, c: CountdownProject) -> QueueItem:
     else:
         item = QueueItem(**fields, status="ready", accounts=queue_manager.default_destination(DESTINATION),
                          position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1)
-        s.add(item)
-        s.flush()
-        undo.add_created(s, "queue", f"Add countdown '{c.topic[:40]}'", [item.id])
-        c.queue_item_id = item.id
+        item, created = enqueue.claim(s, c, item)
+        if created:
+            undo.add_created(s, "queue", f"Add countdown '{c.topic[:40]}'", [item.id])
+    queue_sources.bind(s,item,c)
     s.commit()
     from ..social import queue_manager
     queue_manager.wake()
@@ -588,6 +921,12 @@ def seo_tags(c: CountdownProject, entries: list[dict[str, Any]]) -> str:
 
 # --- ☁️ Drive copy (like LongForm: a "Countdowns" folder inside the LongForm Studio folder) ---------
 def drive_job(cid: int) -> dict[str, Any]:
+    from ..worker_leases import scope
+    with scope(f'countdown_drive:{cid}'), media_use(cid):
+        return _drive_job(cid)
+
+
+def _drive_job(cid: int) -> dict[str, Any]:
     from ..drive_sync import get_drive_service
     from . import archive, drive_store
     with SessionLocal() as s:
@@ -599,7 +938,11 @@ def drive_job(cid: int) -> dict[str, Any]:
         title = drive_store._safe_name((c.script or {}).get("title") or c.topic)
         segs = list(c.segment_ids or [])
         reused = {int(e["segment_id"]) for e in entries_of(c) if e.get("reused") and e.get("segment_id")}
-    _set_drive(cid, {"status": "uploading", "error": None})
+        version = render_version(c)
+        old_copy = dict((c.render or {}).get("drive") or {})
+        from ..publication_journal import identity
+        receipt_resource = f"CountdownProject:{identity(c)}"
+    _set_drive(cid, {"status": "uploading", "error": None}, version)
     try:
         service = get_drive_service()
         parent = drive_store.folder_id(service)
@@ -611,24 +954,42 @@ def drive_job(cid: int) -> dict[str, Any]:
             body={"name": "Countdowns", "mimeType": "application/vnd.google-apps.folder", "parents": [parent]},
             fields="id", **drive_store.ALL).execute()["id"]
         stamp = _now().strftime("%Y-%m-%d")
-        v = drive_store._upload(service, video, folder, f"{title} ({stamp}).mp4")
-        t = drive_store._upload(service, thumb, folder, f"{title} — Thumbnail ({stamp}).jpg") if thumb.exists() else None
+        from ..delivery_archive import record_transfer, transfer_scope
+        with transfer_scope(receipt_resource, cid):
+            v = drive_store._upload(service, video, folder, f"{title} ({stamp}).mp4")
+            record_transfer(receipt_resource, cid, v, "video")
+            t = drive_store._upload(service, thumb, folder, f"{title} — Thumbnail ({stamp}).jpg") if thumb.exists() else None
+            if t: record_transfer(receipt_resource, cid, t, "thumbnail")
     except control.Cancelled:
-        _set_drive(cid, {"status": "stopped", "error": "stopped"})
+        _set_drive(cid, {"status": "stopped", "error": "stopped"}, version)
         raise
     except Exception as exc:  # noqa: BLE001
         why = drive_store._explain(exc) if not isinstance(exc, drive_store.DriveStoreError) else str(exc)
-        _set_drive(cid, {"status": "error", "error": why})
+        _set_drive(cid, {"status": "error", "error": why}, version)
         logbus.log("error", "countdown_drive_failed", f"Countdown #{cid}: {why}")
         raise
     info = {"status": "saved", "error": None, "link": v.get("webViewLink"), "file_id": v["id"],
-            "thumb_link": t.get("webViewLink") if t else None, "rendered_at": rendered_at, "saved_at": _now().isoformat()}
-    _set_drive(cid, info)
+            "thumb_id": t['id'] if t else None, "thumb_link": t.get("webViewLink") if t else None,
+            "verification": v['verification'], "thumb_verification": t['verification'] if t else None,
+            "rendered_at": rendered_at, "saved_at": _now().isoformat()}
+    _set_drive(cid, info, version)
     with SessionLocal() as s:
+        from ..budget_reservations import lock
+        from .. import worker_leases, publication_journal
+        lock(s)
         c = s.get(CountdownProject, cid)
-        if c.queue_item_id and (item := s.get(QueueItem, c.queue_item_id)) and item.status not in ("posted", "archived"):
+        if c:
+            from ..delivery_archive import retain_remote_versions
+            retain_remote_versions(s, c, old_copy, "retained_superseded_version")
+            retain_remote_versions(s, c, info, "retained_current_version")
+        if (c and render_version(c) == version and c.queue_item_id
+                and (item := s.get(QueueItem, c.queue_item_id)) and item.status in ('review','ready','retry','error')
+                and item.video_path and Path(item.video_path).resolve() == video.resolve()
+                and not worker_leases.live(f'publication:{item.id}')
+                and not publication_journal.unresolved_late_receipt(s,item)
+                and not any(r.get('state') in ('intent','unknown','accepted') for r in item.publish_requests or [])):
             item.drive_link = info["link"]
-            s.commit()
+        s.commit()
     for pid in segs:                      # the video is safe in Drive: free each segment's trailer footage
         if int(pid) not in reused:
             try:
@@ -639,14 +1000,18 @@ def drive_job(cid: int) -> dict[str, Any]:
     return info
 
 
-def _set_drive(cid: int, info: dict[str, Any]) -> None:
+def _set_drive(cid: int, info: dict[str, Any], version: str) -> None:
     with SessionLocal() as s:
+        from ..budget_reservations import lock
+        from .drive_store import DriveStoreError
+        lock(s)
         c = s.get(CountdownProject, cid)
-        if c and c.render:
-            r = dict(c.render)
-            r["drive"] = {**(r.get("drive") or {}), **info}
-            c.render = r
-            s.commit()
+        if not c or not c.render or render_version(c) != version:
+            raise DriveStoreError('Countdown export changed during transfer; this copy cannot replace its current backup record')
+        r = dict(c.render)
+        r["drive"] = {**(r.get("drive") or {}), **info}
+        c.render = r
+        s.commit()
 
 
 def start_drive(cid: int) -> str | None:
@@ -659,54 +1024,97 @@ def start_drive(cid: int) -> str | None:
 def delete_now(s, c: CountdownProject, reason: str) -> None:
     """Remove the countdown, its video and the segments made only for it
     (a real LongForm breakdown that was reused is never touched)."""
+    from ..budget_reservations import lock
+    from ..file_refs import protected
+    from ..worker_leases import live
+    from ..social import enqueue
     from . import membership
     from .routes import delete_project_now
-    item = s.get(QueueItem, c.queue_item_id) if c.queue_item_id else None
-    if item and item.status in ("review", "ready", "retry", "error"):
-        s.delete(item)
-    if c.render and c.render.get("compilation_id"):
-        shutil.rmtree(comp_dir(c), ignore_errors=True)
-    segs = list(c.segment_ids or [])
-    reused = {int(e["segment_id"]) for e in entries_of(c) if e.get("reused") and e.get("segment_id")}
     cid = c.id
-    s.delete(c)
-    s.commit()
+    with media_use(cid, exclusive=True, session=s):
+        from ..export_versions import retain
+        retain(s,c);s.commit()
+        lock(s); s.refresh(c)
+        from ..file_use import assert_current
+        assert_current(s)
+        if _running(c) or live(f'countdown:{cid}') or live(f'countdown_drive:{cid}'):
+            raise HTTPException(409, 'This countdown is busy; stop its job before deleting')
+        item = s.get(QueueItem, c.queue_item_id) if c.queue_item_id else None
+        ignored = [(CountdownProject,cid)]
+        if item and item.status in ('review','ready','retry','error'):
+            enqueue.rewrite_version(s,item)
+            ignored.append((QueueItem,item.id))
+        elif item and (item.status not in ('posted','archived') or item.publish_requests):
+            raise HTTPException(409, 'Submission evidence must be reconciled before deleting this countdown')
+        if c.render and protected(s,comp_dir(c),ignore_rows=ignored):
+            raise HTTPException(409, 'Another queue item or export still references this countdown media')
+        if item and (QueueItem,item.id) in ignored:
+            s.delete(item)
+        if c.render and c.render.get('compilation_id'):
+            shutil.rmtree(comp_dir(c), ignore_errors=True)
+        segs = list(c.segment_ids or [])
+        reused = {int(e['segment_id']) for e in entries_of(c) if e.get('reused') and e.get('segment_id')}
+        s.delete(c)
+        s.commit()
     still_used = membership.countdown_ids(s)
     for pid in segs:
         p = s.get(StudioProject, int(pid))
         if p is None or int(pid) in reused or int(pid) in still_used or p.stage_status == "running":
             continue
-        if (p.facts or {}).get("origin") == "countdown" and not p.queue_item_id:
+        from .runner import project_dir
+        if ((p.facts or {}).get("origin") == "countdown" and not p.queue_item_id
+                and not protected(s,project_dir(p.id),ignore=(StudioProject,p.id))):
             delete_project_now(s, p, f"segment of deleted countdown #{cid}")
     logbus.log("info", "countdown_deleted", f"Countdown #{cid} deleted ({reason})")
 
 
 def sweep_posted(s) -> None:
-    """Like LongForm: note when a countdown posts; N days later (studio archive setting), once
-    its Drive copy is confirmed, delete the local video (thumbnails, titles and script stay)."""
+    """Only a checksum-verified current copy permits local video reclamation."""
+    from ..budget_reservations import lock
+    from ..file_refs import protected
+    from ..worker_leases import live
     from . import archive
     cfg = archive.settings_dict(s)
     now = _now()
-    for c in s.query(CountdownProject).filter(CountdownProject.queue_item_id.isnot(None)).all():
-        rv = dict(c.review or {})
-        if not rv.get("posted_at"):
-            q = s.get(QueueItem, c.queue_item_id)
-            if q is not None and q.status in ("posted", "archived"):
-                rv["posted_at"] = (q.published_at or now).isoformat()
-                c.review = rv
+    ids = [c.id for c in s.query(CountdownProject).filter(CountdownProject.queue_item_id.isnot(None))]
+    for cid in ids:
+        try:
+            with media_use(cid, exclusive=True, session=s):
+                lock(s)
+                from ..file_use import assert_current
+                assert_current(s)
+                c = s.get(CountdownProject,cid,populate_existing=True)
+                if not c or _running(c) or live(f'countdown:{cid}') or live(f'countdown_drive:{cid}'):
+                    s.rollback(); continue
+                rv = dict(c.review or {})
+                q = s.get(QueueItem,c.queue_item_id)
+                if not rv.get('posted_at'):
+                    if q and q.status in ('posted','archived'):
+                        c.review = {**rv,'posted_at':(q.published_at or now).isoformat()}
+                        s.commit()
+                    else: s.rollback()
+                    continue
+                r = c.render or {}
+                posted = datetime.datetime.fromisoformat(rv['posted_at'])
+                posted = posted if posted.tzinfo else posted.replace(tzinfo=UTC)
+                if (not cfg.get('enabled') or r.get('archived_at') or not verified_copy(c)
+                        or now-posted < datetime.timedelta(days=int(cfg.get('days') or 14))):
+                    s.rollback(); continue
+                ignored = [(CountdownProject,cid)]
+                proof = (r.get('drive') or {}).get('verification') or {}
+                if (q and q.status in ('posted','archived') and proof.get('remote_file_id')
+                        and q.drive_link == (r.get('drive') or {}).get('link') and q.drive_link):
+                    ignored.append((QueueItem,q.id))
+                video = comp_dir(c)/'final_compilation.mp4'
+                if protected(s,video,ignore_rows=ignored):
+                    s.rollback(); continue
+                video.unlink(missing_ok=True)
+                c.render = {**r,'archived_at':now.isoformat()}
                 s.commit()
-            continue
-        r = c.render or {}
-        if not cfg.get("enabled") or r.get("archived_at") or (r.get("drive") or {}).get("status") != "saved":
-            continue
-        posted = datetime.datetime.fromisoformat(rv["posted_at"])
-        posted = posted if posted.tzinfo else posted.replace(tzinfo=UTC)
-        if now - posted >= datetime.timedelta(days=int(cfg.get("days") or 14)):
-            (comp_dir(c) / "final_compilation.mp4").unlink(missing_ok=True)
-            c.render = {**r, "archived_at": now.isoformat()}
-            s.commit()
-            logbus.log("info", "countdown_archived", f"Countdown #{c.id}: local video removed {cfg.get('days')} days after "
-                                                     f"posting (the copy is in Drive)")
+                logbus.log('info','countdown_archived',f'Countdown #{cid}: local video removed after checksum-verified Drive copy')
+        except HTTPException as exc:
+            s.rollback()
+            if exc.status_code not in (404,409): raise
 
 
 def sweep_archived(s) -> None:
@@ -714,7 +1122,11 @@ def sweep_archived(s) -> None:
     for c in s.query(CountdownProject).all():
         after = (c.review or {}).get("delete_after")
         if after and datetime.datetime.fromisoformat(after) <= now and c.stage_status != "running":
-            delete_now(s, c, "archived 5 days ago")
+            try:
+                delete_now(s, c, "archived 5 days ago")
+            except HTTPException as exc:
+                s.rollback()
+                if exc.status_code not in (404,409): raise
 
 
 # --- migration of the old countdown data (once) -----------------------------------------
@@ -965,43 +1377,32 @@ def auto_tick() -> dict[str, Any] | None:
 
 
 def auto_titles(cid: int) -> None:
-    """After research on an automatic countdown: keep real titles, fill gaps from the topic's
-    checked titles, then confirm — or stop at step 2 for the owner if it can't be filled."""
-    from . import countdown_topics
+    """Advance a complete supported ranking, or preserve it for owner review.
+
+    Topic candidates are not a license to fill gaps, invent ranking reasons,
+    drop unmatched entries or silently change the requested format.
+    """
     with SessionLocal() as s:
-        c = s.get(CountdownProject, cid)
-        need = COUNTS.get(c.fmt, 10)
-        ents = [e for e in sorted(entries_of(c), key=lambda e: int(e.get("rank") or 99)) if e.get("tmdb_id")]
-        have = {(e.get("tmdb_id"), e.get("media_type")) for e in ents}
-        topic = countdown_topics.find((c.review or {}).get("topic_sig") or "") or {}
-        for t in topic.get("titles") or []:
-            if len(ents) >= need:
-                break
-            if (t["tmdb_id"], t.get("media_type")) not in have:
-                ents.append({"title": t["title"], "year": t.get("year"), "tmdb_id": t["tmdb_id"],
-                             "media_type": t.get("media_type", "movie"), "poster": t.get("poster"),
-                             "why_it_ranks": "", "added_by": "automation"})
-                have.add((t["tmdb_id"], t.get("media_type")))
-        if len(ents) < need:
-            smaller = max([n for n in (5, 10, 15) if n <= len(ents)] or [0])
-            if not smaller:
-                c.stage_status, c.stage_message = "done", (f"👀 Only {len(ents)} real titles found — add or swap titles "
-                                                           f"in step 2, then Confirm titles.")
-                s.commit()
-                return
-            c.fmt = f"top{smaller}"
-            need = smaller
-        ents = ents[:need]
-        for i, e in enumerate(ents):
-            e["rank"] = i + 1
-        r = dict(c.ranking or {})
-        r["entries"] = ents
-        c.ranking = r
-        confirm_titles(s, c)
-        c.stage_message = (f"🤖 Titles checked and confirmed automatically ({len(ents)}). Segments are made one at a time; "
-                           f"it stops for your review before the final render.")
+        c=s.get(CountdownProject,cid)
+        if not c:return
+        if stop_unconfirmed(c):s.commit();return
+        entries=entries_of(c);need=COUNTS.get(c.fmt)
+        real=sum(bool(e.get('tmdb_id')) for e in entries)
+        if (need is None or len(entries)!=need or real!=need
+                or any(len(str(e.get('why_it_ranks') or '').strip())<20 for e in entries)):
+            c.stage,c.stage_status='research','done'
+            c.stage_message=(f'Only {real} real titles in the saved ranking; {need or "a supported format"} required. '
+                'Review the exact entry count, unmatched titles and substantive editorial reasons. No titles were added, removed or reordered.')
+            s.commit();return
+        try:confirm_titles(s,c)
+        except HTTPException as exc:
+            c.stage,c.stage_status='research','done'
+            c.stage_message='Review title eligibility before segments: '+str(exc.detail)
+            s.commit();return
+        c.stage_message=(f'Title eligibility checked and confirmed automatically ({len(entries)}). '
+            'Segments are made separately; review the saved intro/outro and exact export before delivery.')
         s.commit()
-    logbus.log("info", "countdown_auto_titles", f"Countdown #{cid}: titles confirmed automatically")
+    logbus.log('info','countdown_auto_titles',f'Countdown #{cid}: complete ranking confirmed under current checks')
 
 
 def auto_status() -> dict[str, Any]:
@@ -1032,12 +1433,24 @@ class FromBreakdowns(BaseModel):
 
 class EntriesIn(BaseModel):
     entries: list[dict[str, Any]]   # #1 first
+    expected_ranking_version: str | None = None
 
 
 class ScriptIn(BaseModel):
+    expected_script_version: str | None = None
     title: str | None = None
     intro: str | None = None
     outro: str | None = None
+
+
+class BookendReviewIn(BaseModel):
+    expected_version: str = Field(min_length=64, max_length=64)
+    reviewed: StrictBool
+
+
+class ContractUpgradeIn(BaseModel):
+    expected_version: str = Field(min_length=64,max_length=64)
+    reviewed: StrictBool
 
 
 class FlagIn(BaseModel):
@@ -1072,7 +1485,7 @@ def create(req: NewCountdown) -> dict[str, Any]:
 
 @router.post("/from-breakdowns")
 def create_from_breakdowns(req: FromBreakdowns) -> dict[str, Any]:
-    """A countdown from rendered LongForm breakdowns you already have (no research step)."""
+    """A review draft from selected titles; never reuse another campaign's narrative."""
     if len(req.project_ids) < 2:
         raise HTTPException(400, "Pick at least 2 breakdowns")
     with SessionLocal() as s:
@@ -1086,11 +1499,10 @@ def create_from_breakdowns(req: FromBreakdowns) -> dict[str, Any]:
         n = len(entries)
         fmt = "top5" if n <= 5 else "top10" if n <= 10 else "top15"
         c = CountdownProject(topic=req.topic.strip() or f"Top {n}", fmt=fmt,
-                             ranking={"entries": entries, "title_options": [req.topic.strip() or f"Top {n}"]},
-                             stage="research", stage_status="done", stage_message="Made from your breakdowns.")
+                             ranking={"contract_version":1,"entries": entries, "title_options": [req.topic.strip() or f"Top {n}"]},
+                             stage="research", stage_status="done", stage_message="Drafted from selected breakdown titles. Review the entry count, add your ranking rationale and confirm current category eligibility before making separate segments.")
         s.add(c)
         s.flush()
-        confirm_titles(s, c)
         s.commit()
         return out(s, c)
 
@@ -1146,8 +1558,6 @@ def skip_next() -> dict[str, Any]:
 @router.get("/topics")
 def get_topics() -> dict[str, Any]:
     from . import countdown_topics
-    if countdown_topics.is_stale() and not countdown_topics.stored().get("topics"):
-        countdown_topics.refresh_async()
     return countdown_topics.listing()
 
 
@@ -1261,15 +1671,16 @@ def move_up(cid: int) -> dict[str, Any]:
 @router.put("/{cid}/settings")
 def put_settings(cid: int, req: SettingsIn) -> dict[str, Any]:
     """Segment length (minutes) for segments not written yet."""
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        if req.segment_minutes is not None:
-            if not 0.4 <= req.segment_minutes <= 3:
-                raise HTTPException(400, "segment length must be 0.4–3 minutes")
-            c.review = {**(c.review or {}), "segment_minutes": round(req.segment_minutes, 2)}
-            fix_lengths(s, c)
-        s.commit()
-        return out(s, c)
+    with media_use(cid, exclusive=True):
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            if req.segment_minutes is not None:
+                if not 0.4 <= req.segment_minutes <= 3:
+                    raise HTTPException(400, "segment length must be 0.4–3 minutes")
+                c.review = {**(c.review or {}), "segment_minutes": round(req.segment_minutes, 2)}
+                fix_lengths(s, c)
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/drive")
@@ -1282,24 +1693,44 @@ def drive(cid: int) -> dict[str, Any]:
 
 @router.post("/{cid}/thumbnails/refresh")
 def refresh_thumbnails(cid: int) -> dict[str, Any]:
-    """🔄 New thumbnail options (different titles' posters and stills each press)."""
-    from .compilations import stitch
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        if not c.render:
-            raise HTTPException(400, "Render the video first")
-        projects = [p for p in (s.get(StudioProject, int(x)) for x in c.segment_ids or []) if p is not None]
-        rnd = int(c.render.get("thumb_round") or 0) + 1
-        k = rnd % max(len(projects), 1)
-        rotated = projects[k:] + projects[:k]
-        title = (c.script or {}).get("thumbnail_text") or (c.script or {}).get("title") or c.topic
-        d = comp_dir(c) / "thumbnails"
-        stitch.generate_compilation_thumbnails(rotated, title, d)
-        sel = c.render.get("selected_thumbnail") or "poster"
-        shutil.copyfile(d / c.render["thumbnails"][sel], d / "thumbnail.jpg")
-        c.render = {**c.render, "thumb_round": rnd, "thumb_v": _now().timestamp()}
-        s.commit()
-        return out(s, c)
+    """New thumbnail options without replacing any queued media."""
+    with media_use(cid, exclusive=True, segments=True):
+        from .compilations import stitch
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            _require_thumbnail_editable(s, c)
+            if not c.render:
+                raise HTTPException(400, "Render the video first")
+            from ..export_versions import retain
+            retain(s,c);s.commit()
+            projects = [p for p in (s.get(StudioProject, int(x)) for x in c.segment_ids or []) if p is not None]
+            rnd = int(c.render.get("thumb_round") or 0) + 1
+            k = rnd % max(len(projects), 1)
+            rotated = projects[k:] + projects[:k]
+            title = (c.script or {}).get("thumbnail_text") or (c.script or {}).get("title") or c.topic
+            d = comp_dir(c) / "thumbnails"
+            from uuid import uuid4
+            temporary = d / ('.refresh-'+uuid4().hex)
+            try:
+                stitch.generate_compilation_thumbnails(rotated, title, temporary)
+                from ..budget_reservations import lock
+                from ..file_use import assert_current
+                lock(s); assert_current(s)
+                _require_thumbnail_editable(s,c)
+                sel = c.render.get('selected_thumbnail') or 'poster'
+                names = list(c.render['thumbnails'].values())
+                if any(Path(name).name != name for name in names):
+                    raise HTTPException(409,'Legacy thumbnail paths require a revised export')
+                shutil.copyfile(temporary/c.render['thumbnails'][sel],temporary/'selected.jpg')
+                for name in names:
+                    (temporary/name).replace(d/name)
+                (temporary/'selected.jpg').replace(d/'thumbnail.jpg')
+                c.render = {**c.render, 'thumb_round':rnd, 'thumb_v':_now().timestamp()}
+                s.commit()
+            finally:
+                # Only this invocation's private staging directory is removed.
+                shutil.rmtree(temporary,ignore_errors=True)
+            return out(s, c)
 
 
 @router.post("/{cid}/titles/score")
@@ -1439,27 +1870,68 @@ def rerun_research(cid: int) -> dict[str, Any]:
 
 @router.put("/{cid}/entries")
 def put_entries(cid: int, req: EntriesIn) -> dict[str, Any]:
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        if c.stage in ("segments", "render") and _running(c):
-            raise HTTPException(409, "Segments are being made — Stop first to change the titles")
-        from .. import undo
-        undo.record(s, f"countdown:{cid}", "Edit titles", rows=[c])
-        save_entries(c, req.entries)
-        s.commit()
-        return out(s, c)
+    with media_use(cid, exclusive=True):
+        with SessionLocal() as s:
+            from ..budget_reservations import lock
+            lock(s)
+            c = _get(s, cid)
+            if req.expected_ranking_version and req.expected_ranking_version != digest(c.ranking):
+                raise HTTPException(409, "Ranking changed; reload and compare before saving this edit")
+            if c.stage in ("segments", "render") and _running(c):
+                raise HTTPException(409, "Segments are being made — Stop first to change the titles")
+            from .. import undo
+            undo.record(s, f"countdown:{cid}", "Edit titles", rows=[c],model="countdown_projects")
+            save_entries(c, req.entries)
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/confirm")
 def confirm(cid: int) -> dict[str, Any]:
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        if not entries_of(c):
-            raise HTTPException(400, "Research first")
-        confirm_titles(s, c)
-        s.commit()
-        logbus.log("info", "countdown_confirmed", f"Countdown #{c.id}: {len(c.segment_ids)} titles confirmed")
-        return out(s, c)
+    with media_use(cid, exclusive=True):
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            if not entries_of(c):
+                raise HTTPException(400, "Research first")
+            confirm_titles(s, c)
+            s.commit()
+            logbus.log("info", "countdown_confirmed", f"Countdown #{c.id}: {len(c.segment_ids)} titles confirmed")
+            return out(s, c)
+
+
+@router.post('/{cid}/upgrade-saved-contract')
+def upgrade_saved_contract(cid:int,req:ContractUpgradeIn):
+    """Explicit recovery draft, never retroactive certification of old media."""
+    from copy import deepcopy
+    from ..budget_reservations import lock
+    from ..worker_leases import live
+    from ..export_versions import retain
+    from .. import undo
+    with media_use(cid,exclusive=True,segments=True):
+        with SessionLocal() as s:
+            lock(s);c=_get(s,cid)
+            if c.stage_status in ('running','queued','waiting') or live(f'countdown:{cid}'):
+                raise HTTPException(409,'Stop or finish active Countdown work before reviewing its saved contract')
+            if c.fmt not in COUNTS or current_contract(c) or not legacy_contract(c):
+                raise HTTPException(409,'This saved contract is current or unsupported; refresh and inspect its version instead of downgrading it')
+            if not req.reviewed or req.expected_version!=contract_upgrade_version(c):
+                raise HTTPException(409,'Saved Countdown identity or words changed; reload and review the current saved list')
+            for pid in c.segment_ids or []:
+                p=s.get(StudioProject,int(pid))
+                if live(f'studio:{pid}') or (p and p.stage_status in ('running','queued','waiting')):
+                    raise HTTPException(409,'A linked segment is active; stop or finish it before upgrading the saved list')
+            retain(s,c)
+            undo.record(s,f'countdown:{cid}','Review legacy saved contract',rows=[c],model='countdown_projects')
+            prior_version=(c.ranking or {}).get('contract_version')
+            ranking=deepcopy(c.ranking or {});ranking['contract_version']=1;ranking.pop('eligibility',None)
+            for entry in ranking.get('entries') or []:
+                entry.pop('segment_id',None);entry.pop('reused',None)
+            c.ranking=ranking;c.segment_ids=None;c.render=None
+            review=deepcopy(c.review or {});review.pop('bookend_review',None);review.pop('export_approval',None)
+            review['saved_contract_upgrade']={'from_version':prior_version,'at':_now().isoformat(),'basis':'owner_reviewed_recovery_draft_not_verified'}
+            c.review=review;c.stage='research';c.stage_status='done'
+            c.stage_message='Saved words and ranking retained. Repair the exact entry count, recheck title eligibility, make independent campaign segments and review the intro/outro before rendering.'
+            s.commit();return out(s,c)
 
 
 @router.post("/{cid}/make")
@@ -1467,6 +1939,7 @@ def make_segments(cid: int) -> dict[str, Any]:
     """▶ Make segments (also retries a failed or stopped segment from its step)."""
     with SessionLocal() as s:
         c = _get(s, cid)
+        require_contract(c)
         if not c.segment_ids:
             raise HTTPException(400, "Confirm the titles first (step 2)")
         for pid in c.segment_ids:
@@ -1491,6 +1964,9 @@ def stop(cid: int) -> dict[str, Any]:
             if p is not None and p.stage_status in ("running", "queued"):
                 runner.stop(p.id)
         control.stop_jobs_for("countdown", cid)
+        from ..worker_leases import revoke
+        revoke(s, f"countdown:{cid}")
+        revoke(s, f"countdown_drive:{cid}")
         c.stage_status = "stopped"
         c.stage_message = "Stopped. Finished segments are kept; ▶ Make segments carries on."
         s.commit()
@@ -1499,54 +1975,109 @@ def stop(cid: int) -> dict[str, Any]:
 
 @router.put("/{cid}/script")
 def put_script(cid: int, req: ScriptIn) -> dict[str, Any]:
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        from .. import undo
-        undo.record(s, f"countdown:{cid}", "Edit script", rows=[c])
-        sc = dict(c.script or default_script(c))
-        for k in ("title", "intro", "outro"):
-            v = getattr(req, k)
-            if v is not None:
-                sc[k] = v.strip()
-        c.script = sc
-        s.commit()
-        return out(s, c)
+    with media_use(cid, exclusive=True, segments=False):
+        with SessionLocal() as s:
+            from ..budget_reservations import lock
+            from ..worker_leases import live
+            from ..publication_journal import digest
+            lock(s)
+            c = _get(s, cid)
+            if _running(c) or live(f'countdown:{cid}'):raise HTTPException(409,'Wait for this countdown job before editing its script')
+            if req.expected_script_version and digest(c.script)!=req.expected_script_version:
+                raise HTTPException(409,'Saved script changed; reload and compare your draft before saving')
+            from .. import undo
+            undo.record(s, f"countdown:{cid}", "Edit script", rows=[c],model="countdown_projects")
+            sc = dict(c.script or default_script(c))
+            for k in ("title", "intro", "outro"):
+                v = getattr(req, k)
+                if v is not None:
+                    sc[k] = v.strip()
+            if any(sc.get(k) != (c.script or {}).get(k) for k in ("intro", "outro")):
+                c.render = None
+            c.script = sc
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/render")
 def render(cid: int) -> dict[str, Any]:
     with SessionLocal() as s:
         c = _get(s, cid)
+        require_contract(c)
         if _running(c):
             raise HTTPException(409, "This countdown is busy")
         if not out(s, c, full=False)["has"]["segments"]:
             raise HTTPException(400, "Every segment must be made first (step 3)")
+        require_bookends(s, c)
     return {"ok": True, "job_id": start_render(cid)}
+
+
+@router.post("/{cid}/review-bookends")
+def review_bookends(cid: int, req: BookendReviewIn) -> dict[str, Any]:
+    with media_use(cid, exclusive=True, segments=True):
+        with SessionLocal() as s:
+            from ..budget_reservations import lock
+            from .research_gate import require_checked
+            lock(s)
+            c = _get(s, cid)
+            require_contract(c)
+            if c.stage_status in ("running", "queued", "waiting"):
+                raise HTTPException(409, "Wait for the current Countdown work to finish before reviewing its words")
+            if not req.reviewed or req.expected_version != bookend_version(s, c):
+                raise HTTPException(409, "Countdown words or research changed; compare the current saved version")
+            sc = c.script or default_script(c)
+            if not all(str(sc.get(k) or "").strip() for k in ("intro", "outro")):
+                raise HTTPException(409, "Save explicit intro and outro words before reviewing them")
+            if not c.segment_ids:
+                raise HTTPException(409, "Confirm the title eligibility and check segment research first")
+            if (c.ranking or {}).get("contract_version") == 1:
+                require_current_eligibility(s, c)
+            try:
+                for pid in c.segment_ids:
+                    p = s.get(StudioProject, int(pid))
+                    if not p:
+                        raise RuntimeError("A segment is missing")
+                    require_checked(p.script,p.facts)
+            except RuntimeError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            c.review = {**(c.review or {}), "bookend_review": {"version": req.expected_version,
+                "at": _now().isoformat(), "scope": "owner_reviewed_exact_words_and_current_research"}}
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/thumbnail")
 def pick_thumbnail(cid: int, req: ThumbIn) -> dict[str, Any]:
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        files = (c.render or {}).get("thumbnails") or {}
-        if req.option not in files:
-            raise HTTPException(400, "Unknown thumbnail option")
-        d = comp_dir(c) / "thumbnails"
-        shutil.copyfile(d / files[req.option], d / "thumbnail.jpg")
-        r = dict(c.render)
-        r["selected_thumbnail"] = req.option
-        r["thumb_v"] = _now().timestamp()
-        c.render = r
-        s.commit()
-        return out(s, c)
+    with media_use(cid, exclusive=True, segments=False):
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            _require_thumbnail_editable(s, c)
+            files = (c.render or {}).get("thumbnails") or {}
+            if req.option not in files:
+                raise HTTPException(400, "Unknown thumbnail option")
+            from ..export_versions import retain
+            retain(s,c);s.commit()
+            d = comp_dir(c) / "thumbnails"
+            from ..budget_reservations import lock
+            from ..file_use import assert_current
+            lock(s); assert_current(s)
+            _require_thumbnail_editable(s,c)
+            shutil.copyfile(d / files[req.option], d / "thumbnail.jpg")
+            r = dict(c.render)
+            r["selected_thumbnail"] = req.option
+            r["thumb_v"] = _now().timestamp()
+            c.render = r
+            s.commit()
+            return out(s, c)
 
 
 @router.post("/{cid}/publish")
 def send_to_queue(cid: int) -> dict[str, Any]:
-    with SessionLocal() as s:
-        c = _get(s, cid)
-        item = publish(s, c)
-        return {"queue_item_id": item.id, "status": item.status}
+    with media_use(cid, segments=True):
+        with SessionLocal() as s:
+            c = _get(s, cid)
+            item = publish(s, c)
+            return {"queue_item_id": item.id, "status": item.status}
 
 
 @router.put("/{cid}/review")

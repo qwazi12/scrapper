@@ -6,6 +6,7 @@ one job at a time. Progress is in `status` for the UI to poll."""
 from __future__ import annotations
 
 import asyncio
+from fastapi import HTTPException
 import datetime
 import logging
 import threading
@@ -40,6 +41,15 @@ def ai_inputs(item: QueueItem, s) -> list[str]:
 
 
 def apply_ai(item: QueueItem, res: dict[str, Any], research: dict[str, Any] | None = None) -> None:
+    if item.status == "posting" or any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
+        raise metadata.MetadataError("Submission unresolved; reconcile before rewriting")
+    if (item.research or {}).get("native_export_id"):
+        raise metadata.MetadataError("Native campaign copy is bound to its inspected export")
+    from sqlalchemy.orm import object_session
+    from .. import queue_sources
+    source_session=object_session(item)
+    if source_session is not None and queue_sources.controlled(source_session,item):
+        raise metadata.MetadataError('Studio source copy is bound to its reviewed export; revise and resend from its studio')
     item.title = res.get("title", item.title)
     item.description = res.get("caption", item.description)
     item.tags = " ".join(res.get("hashtags", []))
@@ -50,6 +60,8 @@ def apply_ai(item: QueueItem, res: dict[str, Any], research: dict[str, Any] | No
 async def ai_for(item: QueueItem, s, cache: dict | None = None) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Metadata for one item. Clips: TMDB-researched (clip_research). Compilations:
     the clip-titles prompt. Raises metadata.MetadataError with a readable reason."""
+    from .. import queue_sources
+    if queue_sources.controlled(s,item):raise metadata.MetadataError('Studio source copy is bound to its reviewed export; revise and resend from its studio')
     if item.compilation_id:
         return await metadata.generate_social_metadata(ai_inputs(item, s), strict=True), None
     from ..studio import gemini as sgem, tmdb
@@ -78,8 +90,13 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 status["failed"] += 1
                 return
             try:
+                from .enqueue import rewrite_version
+                version=rewrite_version(s,item)
+                s.rollback()
                 with costs.operation("queue:bulk_ai", ref=f"queue:{item_id}"):
                     res, research = await ai_for(item, s, _cache)
+                if rewrite_version(s,item)!=version:
+                    raise metadata.MetadataError('Queue metadata changed during AI generation; result was not applied')
                 apply_ai(item, res, research)
                 s.commit()
                 status["done"] += 1
@@ -89,7 +106,7 @@ async def _one(item_id: int, sem: asyncio.Semaphore) -> None:
                 # Not a failure: this item and the rest wait for tomorrow's budget.
                 status["aborted"] = f"paused — {exc}"
                 status["budget_paused"] = True
-            except metadata.MetadataError as exc:
+            except (HTTPException, metadata.MetadataError) as exc:
                 status["failed"] += 1
                 if len(status["errors"]) < 5:
                     status["errors"].append(f"#{item_id}: {str(exc)[:200]}")
@@ -125,6 +142,7 @@ def start(ids: list[int], rid: int | None = None, already_done: list[int] | None
     def work() -> None:
         outcome = "done"
         try:
+            resume.assert_current_lease()
             with control.job("ai", label, scope="socialpilot"):
                 asyncio.run(_run(todo))
             if status.get("budget_paused"):
@@ -146,7 +164,7 @@ def start(ids: list[int], rid: int | None = None, already_done: list[int] | None
                        f"AI rewrite: {status['done']}/{status['total']} done, {status['failed']} failed"
                        + (f" (stopped: {status['aborted']})" if status["aborted"] else ""))
 
-    threading.Thread(target=work, daemon=True, name="bulk_ai").start()
+    threading.Thread(target=resume.bind_work(rid, work), daemon=True, name="bulk_ai").start()
     return dict(status)
 
 

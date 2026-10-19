@@ -25,7 +25,7 @@ from ..models import StudioProject
 from .. import control
 from . import media
 from . import motion
-from .runner import project_dir, stage
+from .runner import attempt_dir, project_dir, stage
 
 W, H, FPS = 1920, 1080, 30
 # Fit the whole picture inside 16:9, centred, black where it doesn't reach (never crop).
@@ -211,6 +211,7 @@ def render(project_id: int) -> str:
     with SessionLocal() as s:
         p = s.get(StudioProject, project_id)
         facts, script, plan, shots = p.facts or {}, p.script or {}, p.plan, p.shots or []
+        previous_render = dict(p.render or {})
     if not plan:
         raise RuntimeError("Run 'plan' first")
     with SessionLocal() as s:
@@ -218,12 +219,17 @@ def render(project_id: int) -> str:
     if archived:
         raise RuntimeError("This breakdown is archived (footage deleted to save space; the video is in Drive). "
                            "Press Restore footage first, then render.")
+    from .research_gate import require_checked
+    require_checked(script,facts)
+    if not script.get("timeline"):
+        raise RuntimeError("Narration timeline missing — run Voice + shots before rendering")
     from .archive import ensure_footage
     ensure_footage(project_id)      # footage freed after its Drive save comes back from IMDb (no AI cost)
     root = project_dir(project_id)
     # Build in render_new/ and swap it in only when finished: a stopped or failed
     # re-render must never delete the last good video (it did until 2026-10-02).
-    out_dir = root / "render_new"
+    attempt = attempt_dir(project_id)
+    out_dir = attempt / "render_new"
     if out_dir.exists():
         shutil.rmtree(out_dir)
     segs_dir = out_dir / "segments"
@@ -239,8 +245,15 @@ def render(project_id: int) -> str:
     mode = motion_mode()
     want_motion = mode in ("on", "compare")
     clean_poster = poster_frame(poster, backdrop, "", out_dir / "poster_clean.jpg", card_room=True) if want_motion else None
-    cache = root / "segcache"
+    cache = attempt / "segcache"
     cache.mkdir(exist_ok=True)
+    # Copy only immutable, previously committed cache entries into this attempt.
+    # Each generation owns its writable cache; no shared .part or pruning races.
+    previous_cache = (root / previous_render["file"]).parent.parent / "segcache" if previous_render.get("file") else root / "segcache"
+    if previous_cache != cache and previous_cache.is_dir():
+        for entry in previous_cache.glob("*.mp4"):
+            if not entry.name.endswith(".part.mp4"):
+                shutil.copy2(entry, cache / entry.name)
     seg_files, motion_segs, poster_slots, jobs, keys = [], [], [], [], set()
 
     def job(kind: str, src: pathlib.Path, params: tuple, dest: pathlib.Path, make) -> None:
@@ -377,7 +390,12 @@ def render(project_id: int) -> str:
     active_thumb = out_dir / "thumbnail.jpg"
 
     secs = media.duration(final)
+    from .media_quality import inspect_export
+    quality = inspect_export(final, expected_seconds=total)
+    if quality["errors"]:
+        raise RuntimeError("Final export quality blocked: " + "; ".join(quality["errors"]))
     info = {"file": str(final.relative_to(root)), "thumbnail": str(active_thumb.relative_to(root)),
+            "quality": quality,
             "selected_thumbnail": "poster",
             "thumb_round": 0,
             "thumbnails": [
@@ -394,9 +412,10 @@ def render(project_id: int) -> str:
         if f.stem not in keys:
             f.unlink(missing_ok=True)
     shutil.rmtree(segs_dir, ignore_errors=True)  # intermediates; final.mp4 is what we keep
+    shutil.rmtree(out_dir/'motion_inputs',ignore_errors=True)  # owned copies were fully consumed
     video.unlink(missing_ok=True)
     cleanup.cleanup_render_intermediates(out_dir)
-    live = root / "render"
+    live = attempt / "render"
     if live.exists():
         shutil.rmtree(live)
     out_dir.rename(live)
@@ -450,7 +469,7 @@ def _parallel(tasks: list, workers: int = RENDER_WORKERS, progress: str | None =
         return task_fn()
 
     with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as ex:
-        futs = {ex.submit(_run_task, t): i for i, t in enumerate(tasks)}
+        futs = {ex.submit(contextvars.copy_context().run, _run_task, t): i for i, t in enumerate(tasks)}
         try:
             for f in as_completed(futs):
                 results[futs[f]] = f.result()
@@ -579,13 +598,16 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
     overlays: list[tuple[pathlib.Path, float]] = []
     busy: list[tuple[float, float]] = []
     pieces = 0
+    def owned_piece(kind,values,assets=None):
+        ext='mov' if kind in motion.OVERLAY_KINDS else 'mp4'
+        destination=out_dir/'motion_inputs'/f'{kind}-{len(overlays)}.{ext}'
+        return motion.try_piece(kind,values,assets,failures,destination=destination)
     _prewarm_motion(facts, plan, shots_by_id, poster_slots, windows, rel_line, backdrop, channel)
 
     first = next((it for it in plan if it.get("kind") in ("clip", "still") and shots_by_id.get(it.get("shot") or "")), None)
     if first:
         d = 3.8
-        f = motion.try_piece("intro", {"title": facts.get("title", ""), "meta": motion.intro_meta(facts), "duration": d},
-                             None, failures)
+        f = owned_piece("intro", {"title": facts.get("title", ""), "meta": motion.intro_meta(facts), "duration": d})
         if f:
             start = float(first["start"])
             overlays.append((f, start)); busy.append((start, start + d)); pieces += 1
@@ -595,7 +617,7 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
         if not rel_line:
             break
         d = round(min(dur, 6.0), 2)
-        f = motion.try_piece("release", {"where": where, "date": date, "duration": d}, None, failures)
+        f = owned_piece("release", {"where": where, "date": date, "duration": d})
         if f:
             pieces += 1
         else:  # the motion version's poster has no baked banner: lay the static one on instead
@@ -605,7 +627,7 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
 
     for i, (a, b) in enumerate(windows):
         d = round(b - a, 2)
-        f = motion.try_piece("subscribe", {"channel": channel, "duration": d}, None, failures)
+        f = owned_piece("subscribe", {"channel": channel, "duration": d})
         if f:
             pieces += 1
         overlays.append((f or sub_movs[i][0], a))
@@ -613,13 +635,12 @@ def _motion_pieces(facts, plan, shots_by_id, poster_slots, windows, rel_line, ba
 
     cast = motion.cast_cards(plan, shots_by_id, facts.get("cast", []), motion_cast_cards(), busy)
     for c in cast:
-        f = motion.try_piece("cast", {"actor": c["actor"], "character": c["character"], "duration": c["duration"]},
-                             None, failures)
+        f = owned_piece("cast", {"actor": c["actor"], "character": c["character"], "duration": c["duration"]})
         if f:
             overlays.append((f, c["start"])); pieces += 1
 
-    end_motion = motion.try_piece("endscreen", {"channel": channel, "duration": END_CARD},
-                                  {"backdrop.jpg": backdrop} if backdrop else None, failures)
+    end_motion = owned_piece("endscreen", {"channel": channel, "duration": END_CARD},
+                                  {"backdrop.jpg": backdrop} if backdrop else None)
     if end_motion:
         pieces += 1
     ok, why = motion.available()
@@ -667,11 +688,14 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
             raise RuntimeError("Project not found")
         if p.stage_status == "running":
             raise RuntimeError("A step is running on this project; wait for it to finish")
+        from ..export_versions import retain
+        retain(s,p);s.commit()
         facts, shots, render_info = p.facts or {}, p.shots or [], dict(p.render or {})
 
     root = project_dir(project_id)
-    render_dir = root / "render"
-    render_dir.mkdir(exist_ok=True)
+    import uuid
+    render_dir = (root / render_info["file"]).parent / ('thumbs-'+uuid.uuid4().hex)
+    render_dir.mkdir(parents=True,exist_ok=False)
 
     title = facts.get("title", "") or p.title or "Trailer Breakdown"
     local = facts.get("local") or {}
@@ -700,12 +724,12 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
         shutil.copy(active_src, render_dir / "thumbnail.jpg")
 
     thumb_fields = {
-        "thumbnail": "render/thumbnail.jpg",
+        "thumbnail": str((render_dir / "thumbnail.jpg").relative_to(root)),
         "selected_thumbnail": selected,
         "thumbnails": [
-            {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": "render/thumbnail_poster.jpg"},
-            {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": "render/thumbnail_shot1.jpg"},
-            {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": "render/thumbnail_shot2.jpg"},
+            {"id": "poster", "label": "Official Poster", "desc": "TMDB official movie/show poster", "file": str((render_dir / "thumbnail_poster.jpg").relative_to(root))},
+            {"id": "shot1", "label": "Lead Close-Up", "desc": "High-impact character close-up", "file": str((render_dir / "thumbnail_shot1.jpg").relative_to(root))},
+            {"id": "shot2", "label": "Key Scene Still", "desc": "Cinematic scene / action shot", "file": str((render_dir / "thumbnail_shot2.jpg").relative_to(root))},
         ],
         "thumbnails_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "thumb_round": rnd,
@@ -723,32 +747,27 @@ def generate_thumbnails_for_project(project_id: int) -> dict[str, Any]:
 
 
 def select_project_thumbnail(project_id: int, thumb_id: str) -> dict[str, Any]:
-    """Select one of the 3 thumbnails as the active thumbnail."""
-    if thumb_id not in ("poster", "shot1", "shot2"):
-        raise ValueError(f"Invalid thumbnail id: {thumb_id}. Must be poster, shot1, or shot2.")
-
+    """Select an immutable option path; never overwrite a queued/retained image."""
+    if thumb_id not in ('poster','shot1','shot2'):
+        raise ValueError('Invalid thumbnail id: choose poster, shot1 or shot2')
+    root=project_dir(project_id)
     with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        if p and p.stage_status == "running":
-            raise RuntimeError("A step is running on this project; wait for it to finish")
-
-    root = project_dir(project_id)
-    render_dir = root / "render"
-    target = render_dir / f"thumbnail_{thumb_id}.jpg"
-    if not target.exists():
-        generate_thumbnails_for_project(project_id)
-
-    if target.exists():
-        shutil.copy(target, render_dir / "thumbnail.jpg")
-
+        p=s.get(StudioProject,project_id)
+        if not p or not p.render:raise RuntimeError('Render this project first')
+        if p.stage_status in ('running','queued'):raise RuntimeError('A step is running on this project; wait for it to finish')
+        from ..export_versions import retain
+        retain(s,p);s.commit()
+        options={t['id']:t['file'] for t in p.render.get('thumbnails',[])}
+        target=root/options[thumb_id] if thumb_id in options else (root/p.render['file']).parent/f'thumbnail_{thumb_id}.jpg'
+    if not target.is_file():
+        result=generate_thumbnails_for_project(project_id)
+        options={t['id']:t['file'] for t in result.get('thumbnails',[])}
+        target=root/options[thumb_id]
+    if not target.resolve().is_relative_to(root.resolve()) or not target.is_file():
+        raise RuntimeError('Thumbnail option is missing or outside this project')
     with SessionLocal() as s:
-        p = s.get(StudioProject, project_id)
-        if not p:
-            raise RuntimeError("Project not found")
-        render_info = dict(p.render or {})
-        render_info["selected_thumbnail"] = thumb_id
-        render_info["thumbnail"] = "render/thumbnail.jpg"
-        render_info["thumbnails_updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        p.render = render_info
+        p=s.get(StudioProject,project_id)
+        p.render={**p.render,'selected_thumbnail':thumb_id,'thumbnail':str(target.relative_to(root)),
+                  'thumbnails_updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
         s.commit()
-    return render_info
+        return p.render

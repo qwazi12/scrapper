@@ -11,8 +11,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from app import auth
-from app.config import settings
+from backend.app import auth
+from backend.app.config import settings
 from fastapi import HTTPException
 
 
@@ -77,6 +77,7 @@ class TestAuth(unittest.TestCase):
         req = MagicMock()
         path = "/api/clips/10/thumb"
         req.url.path = path
+        req.method = "GET"
         req.client.host = "127.0.0.1"
 
         query = auth.sign_url(path, expires_in_seconds=300)

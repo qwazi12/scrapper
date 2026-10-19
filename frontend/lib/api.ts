@@ -1,5 +1,81 @@
+import { ApiError, apiError } from "./apiErrors";
+
 // Thin client for the Scrapper backend API.
 // API base + access token come from env (NEXT_PUBLIC_*) or localStorage.
+
+export type EditorialOpportunity = {
+  id: number; title: string; angle: string; audience: string; formats: string[];
+  evidence: { url: string; excerpt: string; entity: string; retrieved_at: string }[];
+  demand: number | null; demand_source: string | null; competition: string; feasibility: string;
+  planned_for: string | null; status: string; approval?: { fingerprint: string };
+  feedback_refs?: number[];
+  assessment?: { confidence: string; uncertainty: string[]; evidence_count: number };
+};
+export type EditorialInsights = {
+  adapters: { platform: string; status: string; reason: string; live_metrics: null; imported_observations: number }[];
+  observation_count: number; observation_version: string;
+  cohorts: { platform: string; account_id?: string; format: string; age_hours: number; n: number; confidence: string;
+    medians: Record<string, number | null>; metric_samples: Record<string, number>; limitations: string }[];
+  next_actions: string[]; claim: string;
+};
+export type PerformanceDiagnostic = {
+  key: string; version: string; platform: string; account_id: string; format: string; age_hours: number;
+  content_id: string; observation_key: string; source_title: string | null; observed_at: string;
+  measures: { metric: string; value: number | null; peer_n: number; peer_median: number | null; ratio: number | null; status: string }[];
+  cost: { status: string; amount_usd: number | null; per_1000: number | null; denominator: string | null; as_of?: string; scope: string; limitation: string };
+  suggestions: { kind: string; text: string; support_metric: string | null }[]; unknowns: string[]; limitations: string[];
+  last_decision: LearningDecision | null;
+};
+export type LearningDecision = { id: string; action: string; version: string; created_at: string; matches_current_evidence: boolean | null;
+  data: { rationale: string; diagnostic: PerformanceDiagnostic; execution: string } };
+export type ExperimentSeed = { decision_id: string; name: string; hypothesis: string; platform: string; account: string; format: string; age: string; metric: string };
+export type ContentSource = { kind: "export_version" | "native_export" | "delivery_archive"; id: string; title: string; fingerprint: string; created_at: string;
+  preview: { kind: "video" | "image"; file?: string; role?: string; index?: number } | null };
+export type ContentMappingDecision = { platform: string; account_id: string; content_id: string; format: string; published_at: string;
+  source_kind: ContentSource["kind"]; source_id: string; expected_source_fingerprint: string; mapping_evidence: string; reviewed: true };
+export type ContentBinding = { id: string; revision: number; platform: string; account_id: string; content_id: string; created_at: string;
+  data: { decision: ContentMappingDecision; source_fingerprint: string; supersedes: string | null;
+    cost_snapshot: { status: string; amount_usd: number | null; scope?: string; reason?: string; limitations?: string[]; by_basis?: Record<string, number> }; mapping_basis: string; public_bytes_verified: boolean } };
+export type AudienceAdapterStatus = { platform: string; status: string; reason: string; mode: string; real_account_verified: boolean; latency: string };
+export type NativeBeat = { role: "hook" | "body" | "payoff"; text: string; source_refs: number[]; asset_id?: number | null; asset_metadata_version?: string | null; audio_metadata_version?: string | null; clip_start?: number | null; clip_end?: number | null; clip_end_policy?: "hold" | "loop" | null;
+  background_audio_id?: number | null; audio_start?: number | null; audio_end?: number | null; audio_end_policy?: "silence" | "loop" | null; audio_gain_db?: number | null };
+export type NativeExport = { id: string; campaign_id: number; format: string; queue_item_id: number | null;
+  approval: { fingerprint: string; approved_at?: string; schema?: number; at?: string } | null;
+  manifest: { cards: { file: string; alt: string; sha256: string; caption_lines: number }[];
+    video?: { file: string }; cover: { file: string }; quality: { decode: string; errors: string[]; warnings: string[]; seconds?: number; width?: number; height?: number };
+    visual_sources?: { asset_id: number; card: number; source_start: number; source_end: number; excerpt_seconds: number; presentation_seconds: number; end_policy: "hold" | "loop"; source_audio: string; source_sha256: string }[];
+    audio_sources?: { asset_id: number; card: number; source_start: number; source_end: number; excerpt_seconds: number; presentation_seconds: number; end_policy: "silence" | "loop"; gain_db: number; source_sha256: string }[];
+    delivery?: string; platform_copy?: string;
+    manual_post?: { format: string; title: string; text: string; options: string[]; delivery: string; publication_status: string };
+    manual_assets?: { file: string; sha256: string; content_type: string }[];
+    limitations: string[]; timeline?: { start: number; end: number; text: string }[] } };
+export type NativeCampaign = { id: number; opportunity_id: number; stage_status: string; stage_message: string | null;
+  brief: { research_fingerprint?: string; title: string; formats: string[]; beats: NativeBeat[]; short_caption: string; reel_caption?: string; carousel_caption: string; community_question: string; image_text?: string; image_caption?: string; community_text?: string; poll_question?: string; poll_options?: string[] };
+  exports: NativeExport[] };
+export type IndexedAsset = { asset_identity: string; metadata_version: string; use_status: "permitted" | "blocked"; id: number; sha256: string; kind: string; tags: string[]; provenance: { license: string; attestation: string; description?: string; people?: string[]; media?: { seconds: number } } };
+export type CatalogAsset = IndexedAsset & { score: number; matching_spans: { start: number; end: number; text: string }[];
+  provenance: IndexedAsset["provenance"] & { description?: string; people?: string[];
+    media?: { seconds: number; bytes: number; caption_count: number; frames: { at: number; sha256: string }[] } } };
+export type AssetMetadata = { license: "owner_created" | "licensed"; attestation: string; description: string; tags: string[]; people: string[];
+  caption_cues: { start: number; end: number; text: string }[]; use_status: "permitted" | "blocked" };
+export type AssetMetadataReview = { asset_id: number; asset_identity: string; sha256: string; kind: string; version: string; identity_known: boolean;
+  metadata: AssetMetadata; seconds: number | null; original: { tags: string[]; provenance: Record<string, unknown> }; history_count: number;
+  history: { id: string; revision: number; created_at: string; data: Record<string, unknown> }[]; scope: string };
+export type AssetMetadataDecision = AssetMetadata & { expected_version: string; rationale: string; reviewed: true };
+export type CommentCursorView = { id: string; version: string; pages: number; pagination_exhausted: boolean; can_resume: boolean; status: string; last_error: string | null; seen_entries: number; new_versions: number; duplicates: number; scope: string };
+export type FeedbackCoverage = { reported_replies: number | null; retained_replies: number; pagination_exhausted: boolean; requires_decision: boolean; parent_evidence_id: string; scope: string };
+export type AudienceFeedback = { id: number; feedback_identity: string; text: string; category: string; classification: string;
+  reply_draft: string; reply_version: string; approved_for_manual_use: boolean; privacy_note: string;
+  lineage_id?: string; latest_evidence_id?: string; context_lineage_id: string | null; context_title: string | null;
+  context_mapping_superseded: boolean; coverage: FeedbackCoverage | null };
+export type FeedbackContext = AudienceFeedback & { thread_members: { feedback_id: number; evidence_id: string; text: string; reply: boolean; provider_updated_at: string }[];
+  thread_total: number; claim_total: number; claims: { key: string; kind: string; index: number; text: string }[];
+  decisions: { id: string; action: string; data: Record<string, unknown>; at: string }[] };
+export type LearningReport = { delivery: string; live_comment_ingestion: string; feedback: AudienceFeedback[];
+  question_groups: { topic_token: string; n: number; suggestion: string; feedback_ids: number[] }[];
+  experiments: { id: number; name: string; hypothesis: string; metric: string; age_hours: number;
+    result: { status: string; design: string; winner: null; relative_median_change_percent: number | null;
+      groups: { control: { n: number; median: number | null }; variant: { n: number; median: number | null } }; next_action: string } }[] };
 
 export type Clip = {
   id: number;
@@ -33,6 +109,8 @@ export type Compilation = {
 };
 
 export type Stats = {
+  disk?: DiskSystemStatus;
+  safe_e2e_mode?: boolean;
   clips_total: number;
   clips_selected: number;
   clips_done: number;
@@ -90,6 +168,8 @@ export type QueueItem = {
   pipeline: string;
   video_name: string;
   video_path: string | null;
+  media_kind?: "video" | "images";
+  media_files?: string[];
   thumb_path: string | null;
   thumb_version?: number | null;
   drive_link: string | null;
@@ -102,7 +182,8 @@ export type QueueItem = {
   notes: string | null;
   position: number | null;
   research?: {
-    matched: boolean; title?: string; year?: string | null; confidence?: number; reason?: string;
+    native_export_id?: string; approval_fingerprint?: string;
+    matched?: boolean; title?: string; year?: string | null; confidence?: number; reason?: string;
     guess?: string; source?: string; cast?: { actor: string; character: string }[]; keywords?: string[];
   } | null;
   scheduled_at: string | null;
@@ -112,6 +193,33 @@ export type QueueItem = {
   media_url?: string | null;
   momentum?: ReleaseMomentum | null;
   created_at: string;
+};
+
+export type QueuedSourceSnapshot = {
+  format?: string | null;
+  requested_duration?: RequestedDurationIntent | null;
+  id: string; kind: "studio" | "countdown"; title: string; project_id: number;
+  current_project_matches: boolean; captured_at: string; source_created_at: string;
+  script: unknown; facts: unknown; approval: unknown;
+  assets: { role: string; sha256: string; bytes: number; available: boolean }[];
+};
+export type QueuedSourceView = {
+  queue_id: number; queue_created_at: string; queue_identity: string;
+  scope: string; state: string; message: string;
+  binding: { id: string; revision: number; kind: string; captured_at: string } | null;
+  source: QueuedSourceSnapshot | null; segments: QueuedSourceSnapshot[];
+};
+export type PublicationEntry = { client_request_id: string; state: string; profile?: string; platforms?: string[]; request_id?: string; error?: string };
+export type PublicationEvidenceView = {
+  queue_id: number; status: string;
+  current: { entry: PublicationEntry; version: string; resolvable: boolean }[];
+  events: { id: number; attempt_id: string; kind: string; payload: Record<string, unknown>; at: string }[];
+  decisions: { id: number; attempt_id: string; evidence: Record<string, unknown>; at: string }[];
+};
+export type PublicationDecisionInput = {
+  request_key: string; attempt_id: string; expected_version: string; account: string;
+  outcome: "accepted" | "not_accepted" | "unresolved"; provider_request_id: string | null;
+  evidence_url: string; rationale: string; reviewed_account: true; absence_confirmed: boolean;
 };
 
 export type ReleaseMomentum = {
@@ -441,13 +549,14 @@ export type RenderBatch = {
 };
 
 export type StudioProject = {
+  script_version?: string;
   id: number;
   tmdb_id: number;
   media_type: string;
   title: string;
   target_minutes: number;
   stage: string;
-  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused" | "queued";
+  stage_status: "idle" | "running" | "done" | "error" | "stopped" | "paused" | "queued" | "awaiting_worker";
   stage_message: string | null;
   queue_item_id: number | null;
   created_at: string;
@@ -458,12 +567,15 @@ export type StudioProject = {
   cost_usd?: number;
   archive?: { posted_at?: string | null; archived_at?: string | null; freed_mb?: number; restored_at?: string | null } | null;
   review?: { auto?: boolean; reviewed_at?: string | null; score?: number;
+             export_approval?: { fingerprint: string; approved_at: string };
              archived_at?: string | null; delete_after?: string | null } | null;
   drive?: { status: "uploading" | "saved" | "error" | "stopped"; error?: string | null; link?: string;
             thumb_link?: string | null; saved_at?: string; rendered_at?: string } | null;
   has: Record<string, boolean>;
+  script_ready?: boolean;
+  research_issues?: string[];
   facts?: any;
-  research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[] }[] } | null;
+  research?: { text: string; sources: { title: string; url: string }[]; claims: { text: string; sources: number[]; evidence?: { verdict: string; scope?: string; excerpt?: string; rationale?: string } }[] } | null;
   trailer?: any;
   shots?: StudioShot[] | null;
   plan?: StudioPlanItem[] | null;
@@ -478,6 +590,7 @@ export type StudioProject = {
     narration_seconds?: number;
   } | null;
   render?: { file: string; thumbnail: string; selected_thumbnail?: string;
+             quality?: { status: string; decode: string; sha256: string; lufs: number | null; errors: string[]; warnings: string[] };
             thumbnails?: { id: string; label: string; desc: string; file: string }[];
             thumbnails_updated_at?: string;
             seconds: number; size: number; rendered_at: string;
@@ -552,7 +665,7 @@ export type CompilationPreview = {
 };
 
 export type StitchResult = {
-  compilation_id: number;
+  compilation_id: number | string;
   title: string;
   total_seconds: number;
   total_minutes: number;
@@ -628,7 +741,21 @@ export type CountdownSegment = {
   missing?: boolean;
 };
 
+export type CountdownEligibility = {
+  territory: string; medium: string | null; genres: string[]; genre_mode: string; excluded_genres: string[];
+  country_mode: string; provider_mode: string;
+  production_countries: string[]; original_languages: string[]; year_min: number | null; year_max: number | null;
+  date_from: string | null; date_to: string | null; providers: string[]; requires_independent_review: string[]; interpretation: string;
+};
 export type CountdownProject = {
+  saved_contract?: "current" | "new" | "legacy" | "unsupported";
+  contract_upgrade_version?: string | null;
+  ranking_version?: string;
+  eligibility_criteria?: CountdownEligibility;
+  bookend_version?: string;
+  bookend_reviewed?: boolean;
+  bookend_issue?: string;
+  script_version?: string;
   id: number;
   topic: string;
   fmt: "top5" | "top10" | "top15" | string;
@@ -640,6 +767,7 @@ export type CountdownProject = {
   queue_item_id?: number | null;
   queue_status?: string | null;
   review: { reviewed_at?: string | null; delete_after?: string | null; auto?: boolean; keyword?: string; keywords?: string[];
+            export_approval?: { fingerprint: string; approved_at: string; countdown_format?: string };
             demand?: { overall?: number; monthly_searches?: number; growth_pct?: number } };
   created_at: string;
   updated_at: string;
@@ -654,13 +782,14 @@ export type CountdownProject = {
   cost_usd: number;
   has: { ranking: boolean; titles: boolean; segments: boolean; script: boolean; render: boolean };
   render?: {
-    compilation_id: number; file: string; thumbnail: string; thumbnails: Record<string, string>;
+    quality?: { decode: string; errors: string[]; warnings: string[]; sha256: string; lufs: number | null };
+    compilation_id: number | string; file: string; thumbnail: string; thumbnails: Record<string, string>;
     selected_thumbnail: string; chapters: { time_formatted: string; title: string }[];
     seconds: number; minutes: number; rendered_at: string; thumb_v?: number; archived_at?: string;
     drive?: { status?: string; error?: string | null; link?: string; saved_at?: string };
   } | null;
   // full view only
-  ranking?: { entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
+  ranking?: { contract_version?: number; eligibility?: { criteria: CountdownEligibility; checked_at: string; scope: string }; entries: CountdownEntryRow[]; title_options?: string[]; hook_script?: string; closing_question?: string;
               why_now?: string; honorable_mentions?: string[];
               market?: { keyword?: string; demand?: { monthly_searches: number; competition: number; growth_pct: number } | null;
                          related?: { keyword: string; monthly_searches: number }[]; questions?: { question: string; monthly_searches: number }[];
@@ -796,7 +925,7 @@ export type Job = {
   label: string;
   scope: string;
   ref?: any;
-  status: "queued" | "running" | "stopping" | "cancelled" | "done" | "error";
+  status: "queued" | "running" | "stopping" | "cancelled" | "done" | "error" | "waiting";
   message: string;
   started_at?: string | null;
   finished_at?: string | null;
@@ -839,7 +968,19 @@ export type QueueThumbOptions = {
   options: { id: string; label: string; desc: string; file: string }[];
 };
 
+export type RequestedDurationIntent = { schema: number; kind: string; target_seconds: number | null;
+  segment_count?: number | null; segment_seconds?: number | null; basis: string };
+export type ExportAcceptanceView = { fingerprint: string; checks: Record<string, string>; requested_format?: string | null;
+  requested_duration?: (RequestedDurationIntent & { actual_seconds: number | null; review_tolerance_percent: number; scope: string }) | null;
+  findings: { id: string; kind: string; message: string }[]; source: unknown; rights_status: string };
+export type ExportAcceptanceRequest = { expected_fingerprint: string; checks: string[];
+  warning_decisions: Record<string, string>; rights_rationale: string; reviewed: true };
+
+export type FinancialHold = { id: string; kind: "usd" | "credit"; service: string; state: string; ref: string | null;
+  reserved: number; actual: number | null; amount_basis: string; usage_estimate: number | null; provider_invoice_verified: boolean; version: string; worker_live: boolean; orphan: boolean; can_resolve: boolean; created_at: string };
+export type FinancialHoldView = { holds: FinancialHold[]; history: { id: string; kind: string; reservation_id: string; amount: number; receipt: string; rationale: string; at: string }[] };
 export type CostSettings = {
+  request_bounds?: Record<string, number>;
   budget_usd: number;
   daily_usd: number;
   hard_stop: boolean;
@@ -854,6 +995,8 @@ export type CostSettings = {
 
 export type CostSummary = {
   month: string;
+  billing_status: string;
+  by_cost_basis: Record<string, { cost_usd: number; events: number }>;
   variable_usd: number;
   fixed_usd: number;
   total_usd: number;
@@ -870,6 +1013,7 @@ export type CostSummary = {
     base_cap_usd?: number;
     extra_today_usd?: number;
     spent_usd: number;
+    held_usd?: number;
     remaining_usd: number | null;
     reached: boolean;
     resets_at: string;
@@ -884,26 +1028,28 @@ export type CostSummary = {
   settings: CostSettings;
 };
 
-// The token value the server last refused. Until a different one is saved, the
+// The API origin and token the server last refused. Until that pair changes, the
 // page sends nothing: its panels refresh every few seconds, and a wrong or
 // missing token used to fire dozens of failed sign-ins a minute (2026-10-04).
-let rejectedToken: string | null = null;
+let rejectedCredential: { base: string; token: string } | null = null;
 export function tokenRejected(): boolean {
-  return rejectedToken !== null && rejectedToken === token();
+  return rejectedCredential !== null && rejectedCredential.token === token() && rejectedCredential.base === apiBase();
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (tokenRejected()) {
-    throw new Error("401: the access token was refused — enter the value of ACCESS_TOKEN (Railway) under ⚙ Connection");
+    throw new ApiError(401, "The access token was refused. Enter the current access token under Connection.");
   }
-  const sent = token();
-  const res = await fetch(`${apiBase()}${path}`, init);
+  const sent = token(); const sentBase = apiBase();
+  let res: Response;
+  try { res = await fetch(`${sentBase}${path}`, init); }
+  catch { throw new ApiError(0, "The server response could not be confirmed. Check the current item state before retrying."); }
   if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 401 && !body.includes("media link")) rejectedToken = sent;
-    throw new Error(`${res.status}: ${body}`);
+    const error = await apiError(res);
+    if (res.status === 401 && !error.message.includes("media link") && token() === sent && apiBase() === sentBase) rejectedCredential = { base: sentBase, token: sent };
+    throw error;
   }
-  if (rejectedToken === sent) rejectedToken = null;
+  if (rejectedCredential?.token === sent && rejectedCredential.base === sentBase) rejectedCredential = null;
   return res.json() as Promise<T>;
 }
 
@@ -949,7 +1095,100 @@ export function mediaUrl(url: string): string {
 }
 const withToken = mediaUrl;
 
+/** Private backups require the owner header; never attach a reusable media pass. */
+export async function downloadBackup(path: string, filename: string): Promise<void> {
+  if (!/^\/api\/backup\/download\/scrapper_[^/]+\.db\.gz$/.test(path)) throw new Error("Invalid backup path");
+  const res = await fetch(`${apiBase()}${path}`, { headers: headers(false), cache: "no-store" });
+  if (!res.ok) throw await apiError(res);
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export type RetainedVersion = { id: string; kind: "studio" | "countdown"; project_id: number; title: string;
+  created_at: string; project_created_at: string; approval_recorded: boolean;
+  assets: { role: string; available: boolean; sha256?: string; bytes?: number; reason?: string }[] };
+export type RetainedDetail = { id: string; kind: "studio" | "countdown"; project_id: number;
+  manifest: { title: string; snapshot: { inputs: { script?: any }; render: any; approval: any } } };
+
+export type DeliveryHistory = {
+  retention: string; next_offset: number; has_more: boolean;
+  deliveries: { id: string; queue_id: number; created_at: string; title: string; pipeline: string; published_at: string | null; status: string; asset_count: number }[];
+  remote_copies: { id: string; resource: string; file_id: string; action: string; created_at: string;
+    evidence: { role?: string; link?: string; reason?: string; verification_recorded?: boolean; verification?: { sha256?: string; remote_file_id?: string; bytes?: number }; scope?: string; retention?: string } }[];
+};
+export type DeliveryDetail = { id: string; manifest: {
+  snapshot: { title: string; description: string; tags: string; status: string; accounts: string[];
+    published_at: string | null; drive_link?: string; notes?: string; publish_requests?: { state?: string; profile?: string; request_id?: string }[] };
+  assets: { role: string; mime: string; available: boolean; bytes?: number; sha256?: string; reason?: string }[];
+  delivery_scope: string; remote_retention: string;
+} };
+
 export const api = {
+  deliveryHistory: (offset = 0) => req<DeliveryHistory>(`/api/delivery-history?offset=${offset}`, { headers: headers(false) }),
+  deliveryDetail: (id: string) => req<DeliveryDetail>(`/api/delivery-history/${id}`, { headers: headers(false) }),
+  deliveryFile: (id: string, index: number) => mediaUrl(`/api/delivery-history/${id}/file/${index}`),
+  retainedVersions: (kind?: string, projectId?: number) => req<{ project_version: string | null; versions: RetainedVersion[] }>(
+    `/api/export-history${kind && projectId ? `?kind=${kind}&project_id=${projectId}` : ""}`, { headers: headers(false) }),
+  retainedDetail: (id: string) => req<RetainedDetail>(`/api/export-history/${id}`, { headers: headers(false) }),
+  retainedCapture: (kind: string, id: number) => req<{ id: string | null }>(`/api/export-history/${kind}/${id}/capture`, { method: "POST", headers: headers() }),
+  retainedRestore: (id: string, expected: string) => req<{ restored: string }>(`/api/export-history/${id}/restore-draft`,
+    { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true, expected_project_version: expected }) }),
+  retainedFile: (id: string, role: string) => mediaUrl(`/api/export-history/${id}/file/${role}`),
+  editorialLearning: () => req<LearningReport>("/api/editorial/learning", { headers: headers(false) }),
+  editorialFeedback: (data: unknown) => req<{ created: number[] }>("/api/editorial/feedback/import", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  editorialReply: (id: number, data: { text: string; expected_version: string; approved_for_manual_use: boolean; reviewed: boolean; context_lineage_id: string | null; coverage_rationale: string }) => req<AudienceFeedback>(`/api/editorial/feedback/${id}/draft`, { method: "PUT", headers: headers(), body: JSON.stringify(data) }),
+  feedbackContext: (id: number, offset = 0) => req<FeedbackContext>(`/api/editorial/feedback/${id}/context?offset=${offset}`, { headers: headers(false) }),
+  feedbackList: (lineage_id: string, q = "", offset = 0) => req<{ feedback: AudienceFeedback[]; total: number }>(`/api/editorial/feedback?${new URLSearchParams({ lineage_id, q, offset: String(offset) })}`, { headers: headers(false) }),
+  feedbackCorrection: (id: number, data: { expected_version: string; claim_key: string; proposal: string; evidence_url: string; evidence_excerpt: string; rationale: string; reviewed: true; create_followup: boolean }) => req<{ id: string; followup_opportunity_id: number | null; status: string }>(`/api/editorial/feedback/${id}/correction`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  commentProgress: (id: string, parent_id?: string) => req<{ cursor: CommentCursorView; configured: boolean }>(`/api/editorial/comments/${id}${parent_id ? `?parent_id=${encodeURIComponent(parent_id)}` : ""}`, { headers: headers(false) }),
+  commentAction: (id: string, action: "page" | "restart" | "stop", data: { expected_version: string; parent_id?: string; reviewed: true }) => req<{ cursor: CommentCursorView }>(`/api/editorial/comments/${id}/${action}`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  editorialExperiment: (data: unknown) => req<unknown>("/api/editorial/experiments", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  nativeCampaigns: () => req<NativeCampaign[]>("/api/editorial/campaigns", { headers: headers(false) }),
+  nativeCreate: (data: unknown) => req<NativeCampaign>("/api/editorial/campaigns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  nativeRender: (cid: number, fmt: string) => req<NativeExport>(`/api/editorial/campaigns/${cid}/render/${fmt}`, { method: "POST", headers: headers() }),
+  nativeEnqueue: (id: string, accounts: string[]) => req<{ queue_item_id: number; status: string }>(`/api/editorial/exports/${id}/enqueue`,
+    { method: "POST", headers: headers(), body: JSON.stringify({ accounts }) }),
+  nativeFile: (id: string, file: string) => withToken(`${apiBase()}/api/editorial/exports/${id}/file/${encodeURIComponent(file.split("/").pop() || "")}`),
+  nativeManualDownload: async (id: string, file: string) => {
+    const response = await fetch(`${apiBase()}/api/editorial/exports/${id}/manual/${encodeURIComponent(file.split("/").pop() || "")}`, { headers: headers(false) });
+    if (!response.ok) throw await apiError(response);
+    return response.blob();
+  },
+  contentSources: () => req<{ sources: ContentSource[] }>("/api/editorial/content-sources", { headers: headers(false) }),
+  contentLineages: () => req<{ bindings: ContentBinding[]; versions: ContentBinding[]; total: number }>("/api/editorial/content-lineage", { headers: headers(false) }),
+  bindContent: (data: ContentMappingDecision & { expected_current_id: string | null }) => req<ContentBinding>("/api/editorial/content-lineage", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  audienceStatus: () => req<AudienceAdapterStatus>("/api/editorial/audience/status", { headers: headers(false) }),
+  audienceSync: (id: string) => req<{ status: string; reason?: string; through_day?: string; observed_at?: string; created: boolean }>(`/api/editorial/audience/${id}/sync`, { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true }) }),
+  contentPreview: (source: ContentSource) => source.kind === "native_export" ? withToken(`${apiBase()}/api/editorial/exports/${source.id}/file/${encodeURIComponent(source.preview?.file?.split("/").pop() || "")}`) : source.kind === "export_version" ? withToken(`${apiBase()}/api/export-history/${source.id}/file/${source.preview?.role || "video"}`) : withToken(`${apiBase()}/api/delivery-history/${source.id}/file/${source.preview?.index || 0}`),
+  assetMetadataReview: (id: number) => req<AssetMetadataReview>(`/api/editorial/assets/${id}/metadata-review`, { headers: headers(false) }),
+  assetMetadataSave: (id: number, decision: AssetMetadataDecision) => req<{ id: string; created: boolean; is_current: boolean; view: AssetMetadataReview }>(`/api/editorial/assets/${id}/metadata-review`, { method: "POST", headers: headers(), body: JSON.stringify(decision) }),
+  assetSearch: (q: string, kind: string) => req<{ assets: CatalogAsset[]; total: number; method: string }>(`/api/editorial/assets/search?${new URLSearchParams({ q, ...(kind ? { kind } : {}) })}`, { headers: headers(false) }),
+  assetMedia: (id: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/media`),
+  assetFrame: (id: number, index: number) => withToken(`${apiBase()}/api/editorial/assets/${id}/frame/${index}`),
+  assetImport: (file: File, fields: Record<string, string>) => {
+    const body = new FormData(); body.append("file", file); Object.entries(fields).forEach(([key, value]) => body.append(key, value));
+    return req<IndexedAsset & { duplicate: boolean }>("/api/editorial/assets/media", { method: "POST", headers: headers(false), body });
+  },
+  nativeAsset: (id: number, signal?: AbortSignal) => req<IndexedAsset>(`/api/editorial/assets/${id}`, { headers: headers(false), signal }),
+  nativeAssets: () => req<IndexedAsset[]>("/api/editorial/assets", { headers: headers(false) }),
+  nativeAssetUpload: (file: File, license: string, attestation: string, tags: string) => {
+    const body = new FormData(); body.append("file", file); body.append("license", license); body.append("attestation", attestation); body.append("tags", tags);
+    return req<{ id: number; duplicate: boolean }>("/api/editorial/assets", { method: "POST", headers: headers(false), body });
+  },
+  editorialOpportunities: () => req<EditorialOpportunity[]>("/api/editorial/opportunities", { headers: headers(false) }),
+  editorialSave: (data: unknown, id?: number) => req<EditorialOpportunity>(`/api/editorial/opportunities${id ? `/${id}` : ""}`,
+    { method: id ? "PUT" : "POST", headers: headers(), body: JSON.stringify(data) }),
+  editorialApprove: (id: number) => req<EditorialOpportunity>(`/api/editorial/opportunities/${id}/approve`, { method: "POST", headers: headers() }),
+  learningDiagnostics: (q = "", offset = 0) => req<{ total: number; items: PerformanceDiagnostic[]; policy: { mode: string } }>(`/api/editorial/learning-diagnostics?${new URLSearchParams({ q, offset: String(offset) })}`, { headers: headers(false) }),
+  learningReview: (id: string, data: { expected_version: string; action: "plan_experiment" | "defer" | "reject"; rationale: string; reviewed: true }) => req<LearningDecision>(`/api/editorial/learning-diagnostics/${id}/review`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  learningHistory: (id: string) => req<{ total: number; decisions: LearningDecision[] }>(`/api/editorial/learning-diagnostics/${id}/history`, { headers: headers(false) }),
+  editorialInsights: () => req<EditorialInsights>("/api/editorial/insights", { headers: headers(false) }),
+  editorialObservation: (data: unknown) => req<{ key: string; created: boolean }>("/api/editorial/observations",
+    { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   base: apiBase,
   thumbUrl: (id: number) => withToken(`${apiBase()}/api/clips/${id}/thumb`),
   downloadUrl: (id: number) => withToken(`${apiBase()}/api/compilations/${id}/download`),
@@ -1014,7 +1253,7 @@ export const api = {
     const t = token();
     if (t) h["x-access-token"] = t;
     const res = await fetch(`${apiBase()}/api/queue/${id}/thumbnail`, { method: "POST", headers: h, body: fd });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) throw await apiError(res);
     return res.json();
   },
   uploadCookies: async (file: File) => {
@@ -1024,7 +1263,7 @@ export const api = {
     const t = token();
     if (t) h["x-access-token"] = t;
     const res = await fetch(`${apiBase()}/api/cookies`, { method: "POST", headers: h, body: fd });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw await apiError(res);
     return res.json();
   },
 
@@ -1117,6 +1356,11 @@ export const api = {
       headers: headers(),
     }),
 
+  publicationEvidence: (id: number) => req<PublicationEvidenceView>(`/api/queue/${id}/publication-evidence`, { headers: headers(false) }),
+  queueSourceContext: (id: number, createdAt: string, signal?: AbortSignal) => req<QueuedSourceView>(`/api/queue/${id}/source-context?expected_created_at=${encodeURIComponent(createdAt)}`, { headers: headers(false), signal }),
+  publicationDecision: (id: number, data: PublicationDecisionInput) => req<{ saved: number; duplicate: boolean }>(`/api/queue/${id}/publication-decisions`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  publicationLedger: () => req<PublicationEvidenceView["events"]>("/api/queue/publication-ledger/export?limit=2000", { headers: headers(false) }),
+  reconcileQueue: () => req<{ settled: number }>("/api/queue/reconcile", { method: "POST", headers: headers() }),
   publishQueueItem: (id: number) =>
     req<QueueItem>(`/api/queue/${id}/publish`, {
       method: "POST",
@@ -1187,6 +1431,9 @@ export const api = {
       "/api/studio/calendar", { headers: headers(false) }),
   studioSearch: (q: string) =>
     req<StudioTitle[]>(`/api/studio/search?q=${encodeURIComponent(q)}`, { headers: headers(false) }),
+  studioSources: (id: number) => req<{ review_version: string; context: Record<string, string>; claim_keys: string[]; reviews: { id: string; record_id: string; claim: string; claim_key: string; excerpt: string; verdict: string; rationale: string; conflicts: string[]; context: Record<string, string>; reviewed_at: string; resolved_review_ids: string[]; resolution_rationale: string | null }[]; records: { id: string; url: string; requested_url: string; text: string; sha256: string; retrieved_at: string }[] }>(`/api/studio/projects/${id}/source-records`, { headers: headers(false) }),
+  studioFetchSource: (id: number, url: string) => req<{ id: string }>(`/api/studio/projects/${id}/source-records`, { method: "POST", headers: headers(), body: JSON.stringify({ url }) }),
+  studioReviewClaim: (id: number, index: number, data: object) => req<StudioProject>(`/api/studio/projects/${id}/claims/${index}/review`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   studioProjects: () => req<StudioProject[]>("/api/studio/projects", { headers: headers(false) }),
   studioProject: (id: number) => req<StudioProject>(`/api/studio/projects/${id}`, { headers: headers(false) }),
   studioCandidates: () => req<StudioCandidates>("/api/studio/candidates", { headers: headers(false) }),
@@ -1220,7 +1467,7 @@ export const api = {
       "/api/studio/publish-batch", { method: "POST", headers: headers(), body: JSON.stringify({ ids }) }),
   studioCreate: (t: { tmdb_id: number; media_type: string; title: string; target_minutes?: number; force?: boolean }) =>
     req<StudioProject>("/api/studio/projects", { method: "POST", headers: headers(), body: JSON.stringify(t) }),
-  studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any }) =>
+  studioPatch: (id: number, data: { target_minutes?: number; script?: any; plan?: any; expected_script_version?: string }) =>
     req<StudioProject>(`/api/studio/projects/${id}`, { method: "PATCH", headers: headers(), body: JSON.stringify(data) }),
   studioDelete: (id: number, force = false) =>
     req<{ deleted: number }>(`/api/studio/projects/${id}${force ? "?force=true" : ""}`, { method: "DELETE", headers: headers(false) }),
@@ -1239,6 +1486,8 @@ export const api = {
   studioGenerateThumbnails: (id: number) =>
     req<StudioProject>(`/api/studio/projects/${id}/thumbnail/generate`, {
       method: "POST", headers: headers() }),
+  exportAcceptanceView: (kind: "studio" | "countdown" | "native", id: number | string) => req<ExportAcceptanceView>(`${kind === "native" ? "/api/editorial/exports" : kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/export-review`, { headers: headers(false) }),
+  approveReviewedExport: (kind: "studio" | "countdown" | "native", id: number | string, data: ExportAcceptanceRequest) => req<StudioProject | CountdownProject | NativeExport>(`${kind === "native" ? "/api/editorial/exports" : kind === "studio" ? "/api/studio/projects" : "/api/countdowns"}/${id}/${kind === "native" ? "approve" : "approve-export"}`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   studioPublish: (id: number) =>
     req<{ queue_item_id: number; status: string; drive_job_id?: string | null }>(`/api/studio/projects/${id}/publish`, {
       method: "POST", headers: headers() }),
@@ -1249,7 +1498,7 @@ export const api = {
     const t = token();
     if (t) h["x-access-token"] = t;
     const res = await fetch(`${apiBase()}/api/studio/projects/${id}/trailer-upload`, { method: "POST", headers: h, body: fd });
-    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+    if (!res.ok) throw await apiError(res);
     return res.json() as Promise<StudioProject>;
   },
   studioSetShot: (id: number, shotId: string, usable: boolean) =>
@@ -1288,9 +1537,9 @@ export const api = {
   countdownTopics: (trigger?: string, refresh?: boolean) => {
     const params = new URLSearchParams();
     if (trigger && trigger !== "all") params.set("trigger", trigger);
-    if (refresh) params.set("refresh", "true");
     const q = params.toString() ? `?${params.toString()}` : "";
-    return req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${q}`, { headers: headers(false) });
+    return req<CountdownTopicCandidate[]>(`/api/studio/compilations/topics${refresh ? "/refresh" : ""}${q}`,
+      { method: refresh ? "POST" : "GET", headers: headers(false) });
   },
 
   // --- Countdowns Studio (2026-10-12): a countdown is a project, like a breakdown ---
@@ -1302,15 +1551,19 @@ export const api = {
     req<CountdownProject>("/api/countdowns/from-breakdowns", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   countdownResearch: (id: number) =>
     req<{ ok: boolean }>(`/api/countdowns/${id}/research`, { method: "POST", headers: headers(false) }),
-  countdownEntries: (id: number, entries: CountdownEntryRow[]) =>
-    req<CountdownProject>(`/api/countdowns/${id}/entries`, { method: "PUT", headers: headers(), body: JSON.stringify({ entries }) }),
+  countdownEntries: (id: number, entries: CountdownEntryRow[], expected_ranking_version?: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/entries`, { method: "PUT", headers: headers(), body: JSON.stringify({ entries, expected_ranking_version }) }),
+  countdownReviewBookends: (id: number, expected_version: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/review-bookends`, { method: "POST", headers: headers(), body: JSON.stringify({ reviewed: true, expected_version }) }),
   countdownConfirm: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/confirm`, { method: "POST", headers: headers(false) }),
+  countdownUpgradeSaved: (id: number, expected_version: string) =>
+    req<CountdownProject>(`/api/countdowns/${id}/upgrade-saved-contract`, { method: "POST", headers: headers(), body: JSON.stringify({ expected_version, reviewed: true }) }),
   countdownMake: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/make`, { method: "POST", headers: headers(false) }),
   countdownStop: (id: number) =>
     req<CountdownProject>(`/api/countdowns/${id}/stop`, { method: "POST", headers: headers(false) }),
-  countdownScript: (id: number, patch: { title?: string; intro?: string; outro?: string }) =>
+  countdownScript: (id: number, patch: { title?: string; intro?: string; outro?: string; expected_script_version?: string }) =>
     req<CountdownProject>(`/api/countdowns/${id}/script`, { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   countdownRender: (id: number) =>
     req<{ ok: boolean; job_id: string }>(`/api/countdowns/${id}/render`, { method: "POST", headers: headers(false) }),
@@ -1399,6 +1652,8 @@ export const api = {
       method: "POST", headers: headers(), body: JSON.stringify({ scope }) }),
   costs: (month?: string) =>
     req<CostSummary>(`/api/costs${month ? `?month=${encodeURIComponent(month)}` : ""}`, { headers: headers(false) }),
+  financialHolds: () => req<FinancialHoldView>("/api/financial/holds", { headers: headers(false) }),
+  resolveFinancialHold: (data: { request_key: string; kind: "usd" | "credit"; reservation_id: string; expected_version: string; actual: number; receipt: string; rationale: string; reviewed: true; confirm_interrupted: boolean }) => req<{ resolved: string }>("/api/financial/resolve", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   setCostSettings: (patch: Partial<CostSettings>) =>
     req<CostSummary>("/api/costs/settings", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   seo: () => req<{ auto: boolean; clips_without_seo: number }>("/api/seo", { headers: headers(false) }),
@@ -1409,6 +1664,13 @@ export const api = {
   setAutopost: (paused: boolean) =>
     req<{ paused: boolean }>("/api/autopost", { method: "PUT", headers: headers(), body: JSON.stringify({ paused }) }),
 
+  archiveChannels: () => req<{ channels: ChannelArchive[] }>("/api/channel-archives", { headers: headers(false) }),
+  inventoryArchive: (data: { url: string; parent_folder_id: string; formats: string[] }) => req<{ job_id: string }>("/api/channel-archives/inventory", { method: "POST", headers: headers(), body: JSON.stringify(data) }),
+  runArchive: (id: string, retry_failures = false) => req<{ job_id: string }>(`/api/channel-archives/${encodeURIComponent(id)}/run`, { method: "POST", headers: headers(), body: JSON.stringify({ retry_failures }) }),
+  handoffArchive: (id: string) => req<{ awaiting_worker: boolean }>(`/api/channel-archives/${encodeURIComponent(id)}/handoff`, { method: "POST", headers: headers() }),
+  stopArchive: (id: string) => req<{ stopped: boolean }>(`/api/channel-archives/${encodeURIComponent(id)}/stop`, { method: "POST", headers: headers() }),
+  archiveCapacity: (id: string) => req<ArchiveCapacity>(`/api/channel-archives/${encodeURIComponent(id)}/capacity`, { headers: headers(false) }),
+  archiveManifest: (id: string) => req<ChannelArchive>(`/api/channel-archives/${encodeURIComponent(id)}/manifest`, { headers: headers(false) }),
   ingestChannel: (data: {
     url: string;
     parent_folder_id?: string;
@@ -1492,4 +1754,19 @@ export function fmtDuration(s: number | null): string {
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+
+export interface ChannelArchive {
+  channel_id: string; title: string; handle: string | null; source_url: string;
+  formats: string[]; status: string; error: string | null; drive_folder_id: string | null; manifest_id: string | null;
+  inventory: { complete: boolean; revision: string; discovered: number; estimated_bytes: number; unknown_size_count: number; completed_at: string };
+  counts: { discovered: number; downloaded: number; uploaded: number; skipped: number; failed: number; remaining: number; missing_from_latest_inventory: number };
+  active_job: { id: string; status: string; message: string } | null; active_lease: boolean;
+  uploaded_bytes: number; items: { video_id: string; title: string; status: string; error: string | null; drive_file_id: string | null; sha256: string | null }[];
+}
+export interface ArchiveCapacity {
+  local_free_bytes: number; local_reserve_bytes: number; drive_limit_bytes: number | null;
+  drive_usage_bytes: number; drive_available_bytes: number | null; shared_drive_id: string | null;
+  estimate_known_bytes: number; estimate_unknown_count: number; quota_note: string | null;
 }

@@ -7,6 +7,7 @@ Sections:  ingest (paste links) · clips (storyboard table) · compile (Extract)
 from __future__ import annotations
 
 import datetime
+from contextlib import asynccontextmanager
 import json
 import pathlib
 import queue
@@ -14,7 +15,8 @@ import time
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
+from .file_response import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
@@ -50,7 +52,16 @@ from .schemas import (
 )
 from .social import ai_bulk, metadata as social_metadata, queue_manager, tts, upload_post
 
-app = FastAPI(title="Scrapper API", version="1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _startup()  # Failed pre-migration backup/init must prevent request serving.
+    try:
+        yield
+    finally:
+        _mark_jobs_cut_by_shutdown()
+
+
+app = FastAPI(title="Scrapper API", version="1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,6 +83,29 @@ from .studio import countdown as countdown_studio  # noqa: E402  (Countdowns Stu
 app.include_router(countdown_studio.router)
 from . import vidiq  # noqa: E402  (vidIQ: topics, keywords, tags, trends — 2026-10-13)
 app.include_router(vidiq.router)
+from .editorial import routes as editorial_routes
+app.include_router(editorial_routes.router)
+from . import delivery_archive
+app.include_router(delivery_archive.router)
+from .editorial import campaigns as campaign_routes
+app.include_router(campaign_routes.router)
+from .editorial import asset_catalog
+app.include_router(asset_catalog.router)
+from .queue_source_routes import router as queue_source_router
+app.include_router(queue_source_router)
+from .editorial import asset_annotations
+app.include_router(asset_annotations.router)
+from .editorial import learning as learning_routes
+app.include_router(learning_routes.router)
+from .editorial import content_lineage,audience
+app.include_router(content_lineage.router)
+app.include_router(audience.router)
+from .editorial import comments
+app.include_router(comments.router)
+from .editorial import feedback_review
+app.include_router(feedback_review.router)
+from .editorial import performance_diagnostics
+app.include_router(performance_diagnostics.router)
 
 
 @app.middleware("http")
@@ -84,7 +118,6 @@ async def _wake_poster_on_queue_change(request, call_next):
     return response
 
 
-@app.on_event("shutdown")
 def _mark_jobs_cut_by_shutdown() -> None:
     """Deploy/restart: running jobs resume on the next server without using up a retry."""
     from . import resume
@@ -96,9 +129,11 @@ def _mark_jobs_cut_by_shutdown() -> None:
         logbus.log("error", "jobs_flag_failed", f"Could not flag running jobs at shutdown: {exc}")
 
 
-@app.on_event("startup")
 def _startup() -> None:
     init_db()
+    if settings.safe_e2e_mode:
+        logbus.log("info", "safe_e2e_startup", "Isolated E2E: schedulers, recovery, rescan and cleanup disabled")
+        return
     # Self-heal: rebuild any missing clip/compilation rows from files on the
     # volume, so a lost or rolled-back DB recovers automatically.
     try:
@@ -159,7 +194,7 @@ def _clip_out(c: Clip) -> ClipOut:
 # --- health / stats ----------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, **engine.health()}
+    return {"ok": True, "safe_e2e_mode": settings.safe_e2e_mode, **engine.health()}
 
 
 @app.get("/api/stats", dependencies=_AUTH)
@@ -177,6 +212,8 @@ def stats(s: Session = Depends(get_session)) -> dict:
         "retention_days": settings.retention_days,
         "sources": logbus.source_stats(),
         "engine": engine.health(),
+        "disk": cleanup.get_disk_usage(),
+        "safe_e2e_mode": settings.safe_e2e_mode,
     }
 
 
@@ -239,9 +276,7 @@ def delete_clip(clip_id: int, s: Session = Depends(get_session)) -> dict:
     clip = s.get(Clip, clip_id)
     if not clip:
         raise HTTPException(404, "clip not found")
-    cleanup.remove_clip_files(clip)
-    s.delete(clip)
-    s.commit()
+    cleanup.delete_media(s,Clip,clip_id)
     return {"deleted": clip_id}
 
 
@@ -249,6 +284,20 @@ def delete_clip(clip_id: int, s: Session = Depends(get_session)) -> dict:
 def rescan_now(s: Session = Depends(get_session)) -> dict:
     """Rebuild clip + compilation rows from the video files on the volume."""
     return rescan.rescan_library(s)
+
+
+from .worker_transfers import router as worker_transfer_router
+app.include_router(worker_transfer_router)
+from .publication_journal import router as publication_journal_router
+app.include_router(publication_journal_router)
+from .financial_reconciliation import router as financial_reconciliation_router
+app.include_router(financial_reconciliation_router)
+from .export_history import router as export_history_router
+app.include_router(export_history_router)
+from .archive_routes import router as archive_router
+app.include_router(archive_router)
+from .archive_worker import router as archive_worker_router
+app.include_router(archive_worker_router)
 
 
 # --- hybrid local worker (Reliability Layer 5) -------------------------------
@@ -263,7 +312,7 @@ def blocked_clips(s: Session = Depends(get_session)) -> list[dict]:
         # Only links the server was blocked from (marked when handed over); a post
         # that is suspended/deleted/private fails the same way at home too.
         .filter(Clip.status == Status.failed, Clip.file_path.is_(None),
-                Clip.error.like("Transferred to Mac worker%"))
+                (Clip.error.like("Transferred to Mac worker%") | Clip.error.like("%queued for the home Mac worker%")))
         .order_by(Clip.id)
         .all()
     )
@@ -281,54 +330,95 @@ async def upload_clip(
     # Must be Form(...) — a bare `str` default is read as a query param, which
     # silently drops the multipart field and loses all the metadata.
     meta: str = Form(default="{}"),
+    worker_token: str = Form(default=""),
+    worker_id: str = Form(default=""),
+    worker_generation: int = Form(default=0),
     s: Session = Depends(get_session),
 ) -> dict:
     """Accept a video downloaded by a local worker and attach it to its clip."""
+    from . import worker_transfers as transfers, worker_leases as leases
+    from .studio.media_quality import file_hash
+    claim=transfers.get_transfer(s,worker_token,worker_id,worker_generation,allow_done=True)
+    if claim.clip_id != clip_id: raise HTTPException(409,"Claim belongs to another clip")
+    if claim.status=='done': return claim.receipt
+    # Do not hold the lease row lock while a potentially slow upload streams.
+    s.rollback()
     clip = s.get(Clip, clip_id)
-    if not clip:
-        raise HTTPException(404, "clip not found")
+    if not clip or not transfers.pending(clip): raise HTTPException(409,"Clip no longer awaits this upload")
 
+
+    if len(meta.encode()) > 65536: raise HTTPException(413,"Metadata exceeds 64 KiB")
     try:
         info = json.loads(meta) if meta else {}
     except json.JSONDecodeError:
-        info = {}
+        raise HTTPException(400, "Invalid metadata JSON")
+    if not isinstance(info, dict):
+        raise HTTPException(400, "Metadata must be an object")
 
-    dest_dir = settings.downloads_path / (clip.platform or info.get("extractor") or "other")
+    import re
+    import uuid
+    platform = re.sub(r"[^a-zA-Z0-9_-]", "_", str(clip.platform or info.get("extractor") or "other"))[:64] or "other"
+    dest_dir = settings.downloads_path / platform / "_transfers" / worker_token
     dest_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = pathlib.Path(file.filename or f"clip_{clip_id}.mp4").name
+    safe_name = f"clip_{clip_id}_{uuid.uuid4().hex}.mp4"
     dest = dest_dir / safe_name
 
-    size = 0
-    with dest.open("wb") as fh:
-        while chunk := await file.read(1024 * 1024):
-            fh.write(chunk)
-            size += len(chunk)
+    from .uploads import save_video
+    size, probe = await save_video(file, dest)
 
     if thumb is not None:
         thumb_dest = dest.with_suffix(".jpg")
-        thumb_dest.write_bytes(await thumb.read())
-        clip.thumb_path = str(thumb_dest)
+        from PIL import Image
+        import io
+        content = await thumb.read(5 * 1024 * 1024 + 1)
+        if len(content) > 5 * 1024 * 1024:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(413, "Thumbnail exceeds 5 MB")
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                if image.width * image.height > 20_000_000: raise ValueError("Thumbnail exceeds pixel limit")
+                image.convert("RGB").save(thumb_dest, "JPEG")
+        except Exception as exc:
+            dest.unlink(missing_ok=True)
+            thumb_dest.unlink(missing_ok=True)
+            raise HTTPException(400, "Invalid thumbnail") from exc
 
     if info:
         dest.with_suffix(".info.json").write_text(json.dumps(info))
 
-    clip.file_path = str(dest)
-    clip.size_bytes = size
-    clip.video_id = info.get("id") or clip.video_id
-    clip.uploader = info.get("uploader") or info.get("uploader_id") or clip.uploader
-    clip.title = info.get("title") or clip.title
-    clip.duration = info.get("duration") or clip.duration
-    clip.width = info.get("width") or clip.width
-    clip.height = info.get("height") or clip.height
-    clip.status = Status.done
-    clip.error = None
-    clip.selected = True
-    s.commit()
+    try:
+        claim=transfers.get_transfer(s,worker_token,worker_id,worker_generation)
+        clip=s.get(Clip,clip_id,populate_existing=True)
+        if not transfers.pending(clip): raise HTTPException(409,"Clip changed during upload")
+        for field in ("webpage_url","original_url"):
+            if info.get(field) and not transfers.same_media(clip.source_url,info[field]):
+                raise HTTPException(422,"Downloaded media identity does not match the requested URL")
+        if thumb is not None: clip.thumb_path = str(dest.with_suffix(".jpg"))
+        result={"clip_id":clip_id,"size_bytes":size,"status":"done","sha256":file_hash(dest),
+                "transfer_id":worker_token,"generation":worker_generation}
+        clip.file_path = str(dest)
+        clip.size_bytes = size
+        clip.video_id = info.get("id") or clip.video_id
+        clip.uploader = info.get("uploader") or info.get("uploader_id") or clip.uploader
+        clip.title = info.get("title") or clip.title
+        stream=next(x for x in probe["streams"] if x.get("codec_type")=="video")
+        clip.duration = float(probe["format"]["duration"])
+        clip.width, clip.height = stream["width"], stream["height"]
+        clip.status = Status.done
+        clip.error = None
+        clip.selected = True
+        claim.status, claim.receipt = "done", result
+        leases.release(s, transfers.handle(claim))
+        s.commit()
+    except BaseException:
+        s.rollback()
+        for path in (dest,dest.with_suffix(".jpg"),dest.with_suffix(".info.json")): path.unlink(missing_ok=True)
+        raise
 
     logbus.log("info", "local_upload",
                f"{clip.title or clip.source_url} ({round(size / 1e6)} MB) via local worker",
                source=clip.platform)
-    return {"clip_id": clip_id, "size_bytes": size, "status": "done"}
+    return result
 
 
 @app.get("/api/debug/storage", dependencies=_AUTH)
@@ -422,19 +512,17 @@ def delete_compilation(comp_id: int, s: Session = Depends(get_session)) -> dict:
     comp = s.get(Compilation, comp_id)
     if not comp:
         raise HTTPException(404, "not found")
-    cleanup.remove_compilation_files(comp)
-    s.delete(comp)
-    s.commit()
+    cleanup.delete_media(s,Compilation,comp_id)
     return {"deleted": comp_id}
 
 
 # --- cookies upload (Reliability Layer 2) -----------------------------------
 @app.post("/api/cookies", dependencies=_AUTH)
 async def upload_cookies(file: UploadFile = File(...)) -> dict:
-    data = await file.read()
-    settings.cookies_path.write_bytes(data)
-    logbus.log("info", "cookies_uploaded", f"{len(data)} bytes")
-    return {"ok": True, "bytes": len(data)}
+    from .uploads import save_cookies
+    size=await save_cookies(file,settings.cookies_path)
+    logbus.log("info", "cookies_uploaded", f"{size} bytes")
+    return {"ok": True, "bytes": size}
 
 
 @app.get("/api/cookies", dependencies=_AUTH)
@@ -532,47 +620,7 @@ async def generate_metadata(req: MetadataGenerateRequest, s: Session = Depends(g
 
 @app.post("/api/social/publish", response_model=SocialPostOut, dependencies=_AUTH)
 async def publish_social_post(req: SocialPublishRequest, s: Session = Depends(get_session)):
-    comp = s.get(Compilation, req.compilation_id)
-    if not comp or not comp.output_path or not pathlib.Path(comp.output_path).exists():
-        raise HTTPException(404, "compilation video not found or not finished")
-    if not req.account_ids:
-        raise HTTPException(400, "pick at least one account")
-
-    video_path = pathlib.Path(comp.output_path)
-    title, _, rest = req.content.strip().partition("\n")
-    logbus.log("info", "social_upload_start",
-               f"Uploading compilation {comp.id} to Upload-Post for {', '.join(req.account_ids)}")
-    try:
-        entries = await queue_manager.submit_upload(
-            video_path, req.account_ids, title=title or f"Compilation #{comp.id}",
-            description=req.content.strip(), tags=[], scheduled_date=req.scheduled_at,
-        )
-    except upload_post.UploadPostError as exc:
-        raise HTTPException(exc.status_code if exc.status_code < 500 else 502, exc.message)
-    if not any(e.get("request_id") for e in entries):
-        raise HTTPException(502, "Upload-Post rejected the upload: " + "; ".join(e.get("error", "") for e in entries))
-
-    sched_dt = None
-    if req.scheduled_at:
-        try:
-            sched_dt = datetime.datetime.fromisoformat(req.scheduled_at.replace("Z", "+00:00"))
-        except Exception:
-            pass
-
-    # "submitted" until the scheduler reads the real platform result.
-    post_record = SocialPost(
-        compilation_id=comp.id,
-        publish_requests=entries,
-        accounts=req.account_ids,
-        content=req.content,
-        scheduled_at=sched_dt,
-        status="submitted",
-    )
-    s.add(post_record)
-    s.commit()
-    s.refresh(post_record)
-    logbus.log("info", "social_submitted", f"Compilation {comp.id} submitted to Upload-Post (post {post_record.id})")
-    return post_record
+    raise HTTPException(410, "Direct submission has been retired. Add this compilation to the review queue, inspect it, then approve posting there.")
 
 
 @app.get("/api/social/posts", response_model=list[SocialPostOut], dependencies=_AUTH)
@@ -679,6 +727,7 @@ def get_queue_counts(
 
 @app.post("/api/queue", response_model=QueueItemOut, dependencies=_AUTH)
 async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_session)):
+    comp = None
     video_path = None
     thumb_path = None
     video_name = req.title or "Untitled"
@@ -688,6 +737,8 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         comp = s.get(Compilation, req.compilation_id)
         if not comp:
             raise HTTPException(404, "compilation not found")
+        if not comp.output_path or not pathlib.Path(comp.output_path).is_file():
+            raise HTTPException(409, "Render the compilation before adding it to the queue")
         video_path = comp.output_path
         video_name = f"Compilation #{comp.id}"
         if not source:
@@ -753,8 +804,15 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         scheduled_at=sched_dt,
         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1,
     )
-    s.add(item)
-    s.flush()
+    if comp:
+        from .social import enqueue
+        item, created = enqueue.claim(s, comp, item)
+        if not created:
+            s.commit()
+            return item
+    else:
+        s.add(item)
+        s.flush()
     undo.add_created(s, "queue", f"Add '{(item.title or '')[:40]}' to the queue", [item.id])
     s.commit()
     s.refresh(item)
@@ -769,11 +827,31 @@ def _refuse_blocked(accounts: list[str] | None) -> None:
                                  f"Posting Queue or LongForm videos (refused: {', '.join(bad)}).")
 
 
+def _require_queue_editable(item) -> None:
+    from sqlalchemy.orm import object_session
+    from .budget_reservations import lock
+    from . import worker_leases,publication_journal
+    session=object_session(item)
+    if session:
+        lock(session);session.refresh(item)
+    if (item.status == "posting" or worker_leases.live(f'publication:{item.id}')
+            or (session and publication_journal.unresolved_late_receipt(session,item))
+            or any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or [])):
+        raise HTTPException(409, "Submission unresolved — reconcile with the provider before editing, deleting or requeueing")
+
+
 @app.patch("/api/queue/{item_id}", response_model=QueueItemOut, dependencies=_AUTH)
 def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(get_session)):
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
+    if (item.research or {}).get("native_export_id") and any(
+            getattr(req, key) is not None and getattr(req, key) != getattr(item, key) for key in ("title", "description", "tags")):
+        raise HTTPException(409, "Native campaign copy is approved with its media; create a revised treatment before changing copy")
+    from . import queue_sources
+    if any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','source','pipeline','media_url')):
+        queue_sources.require_copy_editable(s,item)
     undo.record(s, "queue", f"Edit #{item.id} '{(item.title or '')[:40]}'", rows=[item])
 
     if req.title is not None:
@@ -834,6 +912,7 @@ def approve_queue_item(item_id: int, s: Session = Depends(get_session)):
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Approve #{item.id}", rows=[item])
     item.status = "ready"
     s.commit()
@@ -853,20 +932,37 @@ async def publish_queue_item_now(item_id: int, s: Session = Depends(get_session)
         raise HTTPException(502, f"Publishing failed: {exc}")
 
 
+@app.post("/api/queue/reconcile", dependencies=_AUTH)
+def reconcile_queue_now(s: Session = Depends(get_session)) -> dict:
+    """Explicit owner-triggered status reconciliation, never a new submission."""
+    return {"settled": queue_manager.reconcile_posting(s, datetime.datetime.now(datetime.timezone.utc))}
+
+
 @app.post("/api/queue/{item_id}/generate-ai", response_model=QueueItemOut, dependencies=_AUTH)
 async def generate_queue_item_ai(item_id: int, s: Session = Depends(get_session)):
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
+    from . import queue_sources
+    queue_sources.require_copy_editable(s,item)
 
     if not settings.gemini_api_key:
         raise HTTPException(502, "AI generation failed: GEMINI_API_KEY is not set on the server")
+    if (item.research or {}).get("native_export_id"):
+        raise HTTPException(409, "Native campaign copy is bound to its export approval; create a revised campaign treatment")
     from . import costs
+    from .publication_journal import digest
+    expected=digest([item.title,item.description,item.tags,item.research,item.accounts,item.status,item.video_path,item.thumb_path])
+    s.rollback()  # No database writer lock during paid provider I/O.
     try:
         with costs.operation("queue:ai", ref=f"queue:{item.id}"):
             res, research = await ai_bulk.ai_for(item, s)
     except social_metadata.MetadataError as exc:
         raise HTTPException(502, f"AI generation failed: {exc}")
+    _require_queue_editable(item)
+    if digest([item.title,item.description,item.tags,item.research,item.accounts,item.status,item.video_path,item.thumb_path])!=expected:
+        raise HTTPException(409,'Queue metadata changed during AI generation; review before applying it')
     undo.record(s, "queue", f"AI rewrite of #{item.id}", rows=[item])
     ai_bulk.apply_ai(item, res, research)
     s.commit()
@@ -881,6 +977,7 @@ def queue_post_next(item_id: int, s: Session = Depends(get_session)) -> dict:
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Post next: #{item.id}", rows=[item])
     first = s.query(func.min(func.coalesce(QueueItem.position, QueueItem.id))).scalar() or 0
     item.position = first - 1
@@ -940,10 +1037,13 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
+    from . import queue_sources
+    queue_sources.require_copy_editable(s,item)
     p = _studio_project_for(s, item)
     if not p:
         raise HTTPException(400, "this row didn't come from LongForm Studio — upload an image instead")
-    undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
+    s.rollback()  # Thumbnail generation owns its own short database transactions.
     try:
         if req.option == "refresh":
             stage_render.generate_thumbnails_for_project(p.id)
@@ -951,7 +1051,15 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
             stage_render.select_project_thumbnail(p.id, req.option)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc))
-    item.thumb_path = str(studio_routes.runner.project_dir(p.id) / "render" / "thumbnail.jpg")
+    _require_queue_editable(item)
+    s.refresh(p)
+    undo.record(s,"queue",f"Thumbnail of #{item.id}",rows=[item])
+    import shutil,uuid
+    source=studio_routes.runner.project_dir(p.id)/(p.render or {}).get('thumbnail','render/thumbnail.jpg')
+    root=settings.data_path/'queue_thumbs';root.mkdir(parents=True,exist_ok=True)
+    target=root/f'{item.id}_{uuid.uuid4().hex}.jpg'
+    shutil.copyfile(source,target)
+    item.thumb_path=str(target)
     s.commit()
     logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail set from LongForm ({req.option})")
     return queue_thumb_options(item_id, s)
@@ -965,25 +1073,36 @@ async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Sess
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
+    from . import queue_sources
+    queue_sources.require_copy_editable(s,item)
+    if (item.research or {}).get('native_export_id'):raise HTTPException(409,'Native cover is bound to its approved export')
+    s.rollback()
     data = await file.read(QUEUE_THUMB_MAX + 1)
     if len(data) > QUEUE_THUMB_MAX:
         raise HTTPException(400, "image is larger than 5 MB")
     try:
         with Image.open(io.BytesIO(data)) as im:
+            if im.width*im.height>20_000_000:raise HTTPException(413,"Thumbnail exceeds 20 megapixels")
             im = im.convert("RGB")
             im.thumbnail((1920, 1080))
             out_dir = settings.data_path / "queue_thumbs"
             out_dir.mkdir(parents=True, exist_ok=True)
-            dest = out_dir / f"{item.id}_{int(datetime.datetime.now().timestamp())}.jpg"
+            import uuid
+            dest = out_dir / f"{item_id}_{uuid.uuid4().hex}.jpg"
             for q in (90, 80, 70, 60):
                 im.save(dest, "JPEG", quality=q)
                 if dest.stat().st_size <= 2_000_000:
                     break
-    except (UnidentifiedImageError, OSError):
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
         raise HTTPException(400, "that file isn't an image (use JPG, PNG or WebP)")
-    undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
-    item.thumb_path = str(dest)
-    s.commit()
+    try:
+        _require_queue_editable(item)
+        undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
+        item.thumb_path = str(dest)
+        s.commit()
+    except BaseException:
+        s.rollback();dest.unlink(missing_ok=True);raise
     logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail uploaded ({dest.stat().st_size // 1024} KB)")
     return queue_thumb_options(item_id, s)
 
@@ -993,6 +1112,7 @@ def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
     item = s.get(QueueItem, item_id)
     if not item:
         raise HTTPException(404, "queue item not found")
+    _require_queue_editable(item)
     undo.record(s, "queue", f"Delete #{item.id} '{(item.title or '')[:40]}'", rows=[item])
     s.delete(item)
     s.commit()
@@ -1004,6 +1124,11 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
     if req.action == "set_accounts":
         _refuse_blocked(req.accounts)       # checked before anything (incl. the undo point) is written
     items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
+    for item in items:
+        _require_queue_editable(item)
+        if req.action=='edit' and any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','pipeline')):
+            from . import queue_sources
+            queue_sources.require_copy_editable(s,item)
     count = len(items)
     what = {"approve": "Approve", "review": "Set to Review", "archive": "Archive", "posted": "Mark posted",
             "change_status": f"Set status {req.target_status}", "set_accounts": "Change targets",
@@ -1181,6 +1306,7 @@ class CostSettingsIn(BaseModel):
     upload_post_plan: str | None = None
     fixed_costs: list[dict] | None = None
     gemini: dict | None = None
+    request_bounds: dict[str, float] | None = None
     tts_usd_per_million_chars: float | None = None
     grounding_usd_per_1000: float | None = None
 
@@ -1210,6 +1336,13 @@ def put_cost_settings(req: CostSettingsIn, s: Session = Depends(get_session)) ->
     from . import costs
     from .models import AppSetting
     patch = {k: v for k, v in req.model_dump().items() if v is not None}
+    from .budget_reservations import micros, lock
+    for key, value in (patch.get("request_bounds") or {}).items():
+        try:
+            if not key.strip() or micros(value) <= 0: raise ValueError()
+        except ValueError:
+            raise HTTPException(400, "Request bounds need a service:model and a finite positive USD ceiling")
+    lock(s)
     if "budget_usd" in patch and patch["budget_usd"] < 0:
         raise HTTPException(400, "budget must be 0 or more")
     if "daily_usd" in patch and patch["daily_usd"] < 0:
@@ -1255,8 +1388,12 @@ def _undo_guard(scope: str) -> None:
             raise HTTPException(400, "bad scope")
         if control.running(scope="studio", ref=pid):
             raise HTTPException(409, "A stage is running on this video — stop it or wait, then undo")
+    elif scope.startswith("countdown:"):
+        try:cid=int(scope.split(":",1)[1])
+        except ValueError:raise HTTPException(400,"bad scope")
+        if control.running(scope="countdown",ref=cid):raise HTTPException(409,"A countdown job is running; stop it before undo")
     elif scope not in ("queue", "settings"):
-        raise HTTPException(400, "scope must be queue, settings or studio:<id>")
+        raise HTTPException(400, "scope must be queue, settings, studio:<id> or countdown:<id>")
 
 
 @app.get("/api/undo", dependencies=_AUTH)
@@ -1368,8 +1505,10 @@ def stop_job(job_id: str, s: Session = Depends(get_session)) -> dict:
     if job_id.startswith(("ingest:", "compile:")):
         kind, _, num = job_id.partition(":")
         row = s.get(IngestJob if kind == "ingest" else Compilation, int(num))
-        if not row or row.status != Status.queued:
-            raise HTTPException(409, "not queued any more — stop it from the running list")
+        if not row or row.status not in (Status.queued,Status.running):
+            raise HTTPException(409,"Job is no longer queued or running")
+        from .worker_leases import revoke
+        revoke(s,f"{kind}:{row.id}")
         row.status = Status.failed
         if kind == "compile":
             row.error = "stopped before it started"
@@ -1378,6 +1517,14 @@ def stop_job(job_id: str, s: Session = Depends(get_session)) -> dict:
         return {"id": job_id, "status": "cancelled"}
     try:
         j = control.request_stop(job_id)
+        if j.kind in ("ingest","compile") and j.ref is not None:
+            from .worker_leases import revoke
+            revoke(s,f"{j.kind}:{int(j.ref)}")
+            row=s.get(IngestJob if j.kind=="ingest" else Compilation,int(j.ref))
+            if row:
+                row.status=Status.failed
+                if j.kind=="compile": row.error="Stopped by owner"
+            s.commit()
         if j.scope == "studio" and j.ref is not None:
             import contextlib
             with contextlib.suppress(Exception):
@@ -1413,6 +1560,7 @@ def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_sessi
         queue_manager.save_schedule(s, None if req.reset else dumped)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    queue_manager.plan_schedule(s, datetime.datetime.now(datetime.timezone.utc))
     return get_schedule(s)
 
 
@@ -1421,6 +1569,10 @@ def start_bulk_ai(req: QueueBulkAction, s: Session = Depends(get_session)) -> di
     if not settings.gemini_api_key:
         raise HTTPException(400, "GEMINI_API_KEY is not set on the server")
     rows = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
+    for row in rows:
+        _require_queue_editable(row)
+        if (row.research or {}).get("native_export_id"):
+            raise HTTPException(409, "Native campaign copy must be revised in its research treatment")
     ids = [r.id for r in rows]
     if not ids:
         raise HTTPException(400, "No matching queue items")
@@ -1585,7 +1737,6 @@ async def queue_item_voiceover(
 def get_schedule(s: Session = Depends(get_session)) -> dict:
     """Posting schedule config + what is lined up next, per pipeline."""
     now = datetime.datetime.now(datetime.timezone.utc)
-    queue_manager.plan_schedule(s, now)  # so the answer matches what will post
     ready = (
         s.query(QueueItem)
         .filter(QueueItem.status == "ready")
@@ -1638,18 +1789,13 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
 
 @app.post("/api/social/ingest-channel", dependencies=_AUTH)
 def ingest_channel(req: ChannelIngestRequest, s: Session = Depends(get_session)):
-    """
-    Bulk scrape videos from a YouTube channel/playlist or single video,
-    automatically label them, upload directly to the channel subfolder in Google Drive,
-    and add them to the SocialPilot posting queue. Zero local storage footprint.
-    """
-    try:
-        cleanup.check_disk_space()
-    except cleanup.DiskFullError as exc:
-        raise HTTPException(507, str(exc))
-
-    job_id = _start_channel_ingest(req.model_dump())
-    return {"job_id": job_id, "status": "running"}
+    """Compatibility endpoint: enumerate the complete Shorts library first."""
+    from .archive_routes import inventory_job
+    if req.auto_approve: raise HTTPException(422,"Archive files cannot automatically enter the publishing queue")
+    from .channel_sources import canonical_input
+    try: url=canonical_input(req.url)
+    except ValueError as exc:raise HTTPException(422,str(exc))
+    return {"job_id":inventory_job({"url":url,"parent_folder_id":req.parent_folder_id,"formats":["shorts"]}),"status":"running"}
 
 
 def _start_channel_ingest(p: dict, rid: int | None = None) -> str:
@@ -1664,7 +1810,7 @@ def _start_channel_ingest(p: dict, rid: int | None = None) -> str:
                 return ingest_channel_to_drive(
                     url=p["url"], parent_folder_id=p.get("parent_folder_id"),
                     parent_folder_name=p.get("parent_folder_name"), channel_name=p.get("channel_name"),
-                    max_videos=p.get("max_videos", 25), auto_approve=p.get("auto_approve", False), db_session=js,
+                    max_videos=p.get("max_videos", 0), auto_approve=p.get("auto_approve", False), db_session=js,
                 )
             except control.Cancelled:
                 logbus.log("warning", "channel_ingest_stopped", f"Channel ingest stopped by user: {p['url']}")
@@ -1713,3 +1859,26 @@ def _start_drive_sync(p: dict, rid: int | None = None) -> str:
 
 
 resume.launcher("drive_sync")(lambda p, cp, rid: _start_drive_sync(p, rid))
+
+
+@app.get("/api/costs/reservations", dependencies=_AUTH)
+def cost_reservations(s: Session = Depends(get_session)):
+    from .models import BudgetReservation
+    return [{"id": r.id, "service": r.service, "state": r.state, "ref": r.ref,
+             "reserved_usd": r.reserved_micros/1e6, "actual_usd": r.actual_micros/1e6 if r.actual_micros is not None else None,
+             "created_at": r.created_at} for r in s.query(BudgetReservation).filter(
+                 BudgetReservation.state.in_(("reserved","dispatched","unknown","breach"))).order_by(BudgetReservation.created_at).all()]
+
+
+class BudgetResolutionIn(BaseModel):
+    actual_usd: float
+    receipt: str
+    rationale: str
+
+
+@app.post("/api/costs/reservations/{rid}/resolve", dependencies=_AUTH)
+def resolve_cost_reservation(rid: str, req: BudgetResolutionIn):
+    from . import budget_reservations as br
+    try: br.resolve(rid,req.actual_usd,req.receipt,req.rationale)
+    except ValueError as exc: raise HTTPException(409,str(exc))
+    return {"resolved": rid}

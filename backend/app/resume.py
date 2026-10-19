@@ -10,9 +10,10 @@ marked failed with the reason.
 Deploys overlap: Railway starts the new server while the old one is still
 running (and finishing) its jobs. So each server stamps the rows it runs
 (`owner` = this process) and refreshes `updated_at` every HEARTBEAT seconds;
-a new server only resumes rows whose owner has been silent for STALE seconds,
-and keeps checking for WATCH seconds after it starts (an old server can take
-a while to be shut down). Never two copies of one job.
+a new server claims an expired resource atomically and keeps watching for later
+interruptions. Generation tokens fence old checkpoints, completion, content DB
+writes and paid admission. An old process may still compute or have external IO
+in flight; those effects need their own durable intent and reconciliation.
 
 Kinds and how they resume:
   studio          the interrupted step re-runs; an auto-chain carries on
@@ -35,7 +36,7 @@ import threading
 import uuid
 from typing import Any, Callable
 
-from . import control, logbus
+from . import control, logbus, worker_leases as leases
 from .db import SessionLocal
 from .models import ResumableJob
 
@@ -44,7 +45,9 @@ MAX_RESUMES = 2
 BOOT = uuid.uuid4().hex[:16]          # this server process
 HEARTBEAT, STALE, WATCH = 20, 75, 600
 _launchers: dict[str, Callable[[dict, dict, int], Any]] = {}
-_lock = threading.Lock()
+_lock = threading.RLock()
+_claims: dict[int, leases.Handle] = {}
+_active_rids: set[int] = set()
 
 
 def launcher(kind: str):
@@ -57,49 +60,100 @@ def launcher(kind: str):
 
 def begin(kind: str, label: str, params: dict) -> int:
     with SessionLocal() as s:
-        row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT)
-        s.add(row)
-        s.commit()
+        key = leases.resource(kind, params)
+        h = leases.acquire(s, key, BOOT)
+        # An explicit fresh invocation after expiry supersedes old crash rows;
+        # the watcher must not revive their obsolete checkpoint after it finishes.
+        for previous in s.query(ResumableJob).filter(ResumableJob.kind==kind,ResumableJob.status.in_(("running","queued","budget_paused","awaiting_worker"))).all():
+            if leases.resource(previous.kind, previous.params) == key:
+                previous.status = "stopped"
+                previous.last_error = "Superseded by an explicit new invocation of the same resource"
+        row = ResumableJob(kind=kind, label=label, params=params, checkpoint={}, status="running", owner=BOOT,created_at=leases.clock(s),updated_at=leases.clock(s))
+        s.add(row); s.commit(); _claims[row.id] = h
         return row.id
 
 
 def reopen(rid: int) -> None:
-    _update(rid, status="running", owner=BOOT)
+    with _lock, SessionLocal() as s:
+        row=s.get(ResumableJob,rid)
+        if not row: raise RuntimeError("Resumable job not found")
+        if rid in _active_rids: raise leases.LeaseLost("Job already has an active invocation in this process")
+        if rid in _claims and row.owner == BOOT and row.status == "running":
+            leases.guard(s, _claims[rid]); s.commit(); return
+        h=leases.acquire(s, leases.resource(row.kind,row.params), BOOT)
+        row.status, row.owner = "running", BOOT
+        row.updated_at=leases.clock(s)
+        s.commit(); _claims[rid]=h
+
+
+def _handle_for(row):
+    current=leases.current()
+    key=leases.resource(row.kind,row.params)
+    # A batch can enqueue/close a different child job. Never use the parent's
+    # lease for that child's checkpoint or completion, even on the same server.
+    if current and current.resource == key: return current
+    return _claims.get(row.id)
+
+
+def _mutate(rid, fn):
+    if not rid: return False
+    with _lock, SessionLocal() as s:
+        row=s.get(ResumableJob,rid)
+        if not row: return False
+        h=_handle_for(row)
+        if row.status == "running":
+            if not h or row.owner != h.owner: raise leases.LeaseLost("Job is no longer owned by this worker")
+            leases.guard(s,h)
+        elif leases.current():
+            raise leases.LeaseLost("Job is no longer running")
+        fn(row);row.updated_at=leases.clock(s); s.commit(); return True
 
 
 def checkpoint(rid: int | None, **data) -> None:
-    if rid:
-        with _lock, SessionLocal() as s:
-            row = s.get(ResumableJob, rid)
-            if row:
-                row.checkpoint = {**(row.checkpoint or {}), **data}
-                s.commit()
+    _mutate(rid, lambda row: setattr(row,"checkpoint",{**(row.checkpoint or {}),**data}))
 
 
 def add_done(rid: int | None, item: Any) -> None:
-    """Append one finished item to checkpoint["done"] (bulk jobs)."""
-    if rid:
-        with _lock, SessionLocal() as s:
-            row = s.get(ResumableJob, rid)
-            if row:
-                cp = dict(row.checkpoint or {})
-                cp["done"] = [*cp.get("done", []), item]
-                row.checkpoint = cp
-                s.commit()
+    _mutate(rid, lambda row: setattr(row,"checkpoint",{**(row.checkpoint or {}),
+        "done":[*(row.checkpoint or {}).get("done",[]),item]}))
 
 
 def finish(rid: int | None, status: str, error: str | None = None) -> None:
-    if rid:
-        _update(rid, status=status, last_error=(error or None) and str(error)[:500])
+    if not rid: return
+    with SessionLocal() as lookup:
+        target=lookup.get(ResumableJob,rid)
+        if not target: return
+        h=_handle_for(target)
+    try:
+        def apply(row):
+            row.status, row.last_error=status,(str(error)[:500] if error else None)
+        if h:
+            with SessionLocal() as s:
+                leases.guard(s,h)
+                row=s.get(ResumableJob,rid)
+                if row and row.owner == h.owner:
+                    apply(row);row.updated_at=leases.clock(s); leases.release(s,h); s.commit()
+        else:
+            _mutate(rid,apply)
+    except leases.LeaseLost:
+        logger.warning("Ignoring stale completion for job %s", rid)
+    finally:
+        if _claims.get(rid) == h: _claims.pop(rid,None)
+        if leases.current() == h: leases._current.set(None)
 
 
-def _update(rid: int, **fields) -> None:
-    with _lock, SessionLocal() as s:
-        row = s.get(ResumableJob, rid)
-        if row:
-            for k, v in fields.items():
-                setattr(row, k, v)
-            s.commit()
+def bind_work(rid, fn):
+    with _lock:
+        h=_claims.get(rid)
+        if not h or rid in _active_rids: raise leases.LeaseLost("Cannot start duplicate work or work without a lease")
+        _active_rids.add(rid)
+    def wrapped():
+        try:
+            with leases.bind(h), leases.keepalive(h):
+                return fn()
+        finally:
+            with _lock: _active_rids.discard(rid)
+    return wrapped
 
 
 def tracked_thread(kind: str, label: str, scope: str, params: dict, fn: Callable[[], Any],
@@ -112,6 +166,7 @@ def tracked_thread(kind: str, label: str, scope: str, params: dict, fn: Callable
 
     def work():
         try:
+            leases.guard()
             out = fn()
         except control.Cancelled:
             finish(rid, "stopped")
@@ -122,20 +177,22 @@ def tracked_thread(kind: str, label: str, scope: str, params: dict, fn: Callable
         finish(rid, "done")
         return out
 
-    return control.start_thread(kind, label, scope, work, ref=ref)
+    return control.start_thread(kind, label, scope, bind_work(rid, work), ref=ref)
 
 
 def _heartbeat_once() -> None:
-    now = datetime.datetime.now(datetime.timezone.utc)
     with _lock, SessionLocal() as s:
-        for row in s.query(ResumableJob).filter(ResumableJob.status == "running", ResumableJob.owner == BOOT).all():
-            row.updated_at = now
+        now=leases.clock(s)
+        for rid,h in list(_claims.items()):
+            row=s.get(ResumableJob,rid)
+            if row and row.status == "running" and row.owner == BOOT and leases.renew(s,h):
+                row.updated_at=now
         s.commit()
 
 
-def start_background(watch: int = WATCH) -> None:
+def start_background(watch: int | None = None) -> None:
     """Startup: keep this server's jobs alive, and resume dead servers' jobs as
-    soon as they've been silent STALE seconds (checked for `watch` seconds)."""
+    soon as their lease expires (continuous unless `watch` is explicitly bounded)."""
     import time
 
     def beat():
@@ -147,8 +204,8 @@ def start_background(watch: int = WATCH) -> None:
             time.sleep(HEARTBEAT)
 
     def watcher():
-        end = time.time() + watch
-        while time.time() < end:
+        end = time.time() + watch if watch is not None else None
+        while end is None or time.time() < end:
             try:
                 resume_interrupted()
             except Exception as exc:  # noqa: BLE001
@@ -175,27 +232,36 @@ def mark_shutdown() -> int:
 
 def resume_interrupted(stale: int = STALE) -> int:
     """Relaunch jobs whose server died. Returns how many were resumed."""
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=stale)
     with SessionLocal() as s:
+        cutoff = leases.clock(s) - datetime.timedelta(seconds=stale)
         rows = [r for r in s.query(ResumableJob).filter(ResumableJob.status == "running").order_by(ResumableJob.id).all()
-                if r.owner != BOOT and _aware(r.updated_at) < cutoff]
+                if _aware(r.updated_at) < cutoff]
         todo = []
         for row in rows:
             cp = dict(row.checkpoint or {})
-            if cp.pop("cut_by_shutdown", False) and row.kind in _launchers:
-                row.checkpoint = cp           # a deploy, not a crash: doesn't use up a resume
-                row.owner = BOOT
-                todo.append((row.id, row.kind, dict(row.params or {}), cp, row.label, row.attempts))
+            shutdown = cp.pop("cut_by_shutdown", False)
+            exhausted = row.attempts >= MAX_RESUMES and not shutdown
+            # Claim expired resource and compare the scanned job version in one transaction.
+            try:
+                with s.begin_nested():
+                    h=leases.acquire(s,leases.resource(row.kind,row.params),BOOT)
+                    from sqlalchemy import update
+                    won=s.execute(update(ResumableJob).where(ResumableJob.id==row.id,
+                        ResumableJob.status=="running", ResumableJob.owner==row.owner,
+                        ResumableJob.updated_at==row.updated_at).values(owner=BOOT,
+                        attempts=row.attempts+(0 if shutdown or exhausted else 1),checkpoint=cp,
+                        updated_at=leases.instant(s))).rowcount
+                    if won != 1: raise leases.LeaseLost("Job was claimed concurrently")
+                if exhausted or row.kind not in _launchers:
+                    row.status="failed"
+                    row.last_error=(f"interrupted by server restarts {row.attempts + 1} times — not resumed again"
+                        if row.kind in _launchers else f"no way to resume '{row.kind}'")
+                    leases.release(s,h)
+                    continue
+                _claims[row.id]=h
+                todo.append((row.id,row.kind,dict(row.params or {}),cp,row.label,row.attempts))
+            except leases.LeaseLost:
                 continue
-            if row.attempts >= MAX_RESUMES or row.kind not in _launchers:
-                row.status = "failed"
-                row.last_error = (f"interrupted by server restarts {row.attempts + 1} times — not resumed again"
-                                  if row.kind in _launchers else f"no way to resume '{row.kind}'")
-                logbus.log("error", "job_not_resumed", f"{row.label}: {row.last_error}")
-                continue
-            row.attempts += 1
-            row.owner = BOOT
-            todo.append((row.id, row.kind, dict(row.params or {}), dict(row.checkpoint or {}), row.label, row.attempts))
         s.commit()
     resumed = 0
     for rid, kind, params, cp, label, n in todo:
@@ -262,9 +328,13 @@ def resume_budget_paused() -> int:
         if kind not in _launchers:
             finish(rid, "failed", f"no way to resume '{kind}'")
             continue
+        claimed=False
         try:
+            reopen(rid)
+            claimed=True
             _launchers[kind](params, cp, rid)
         except RuntimeError as exc:  # busy: try again next tick, keep the order
+            if claimed: finish(rid, "budget_paused")
             logger.info("budget-paused job %s waits: %s", rid, exc)
             break
         except Exception as exc:  # noqa: BLE001
@@ -274,3 +344,7 @@ def resume_budget_paused() -> int:
         resumed += 1
         logbus.log("info", "job_budget_resumed", f"{label}: resumed — new day's budget", job=rid, kind=kind)
     return resumed
+
+
+def assert_current_lease() -> None:
+    leases.guard()

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api, CostSummary } from "../lib/api";
+import { FinancialHolds } from "./FinancialHolds";
 import { UndoButton } from "./UndoButton";
 import { notify } from "../lib/dialogs";
 
@@ -115,6 +116,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "baseline", marginBottom: 12 }}>
         <div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>{usd(data.total_usd)}</div>
+          <p style={{ fontSize: 12 }}>Local budget ledger: configured estimates and owner-attested adjustments. Provider invoices are not independently verified.</p>
           <div style={{ fontSize: 11, color: "var(--muted)" }}>this month so far</div>
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
@@ -123,6 +125,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
         </div>
       </div>
 
+      <FinancialHolds bounds={cfg.request_bounds || {}} onChanged={load} />
       <DailyCap data={data} saving={saving} onSave={(v) => save({ daily_usd: v }, "daily cap")} onReload={load} />
       {!!data.breakdowns?.length && <BreakdownCosts rows={data.breakdowns} />}
 
@@ -136,7 +139,7 @@ export function SpendingCard({ card, h2 }: { card: React.CSSProperties; h2: Reac
           )}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: "var(--yellow)", marginBottom: 14 }}>No monthly budget set — spending is tracked but never limited.</div>
+        <div style={{ fontSize: 12, color: "var(--yellow)", marginBottom: 14 }}>No monthly budget set — the daily cap and request ceilings still apply.</div>
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
@@ -255,14 +258,15 @@ function DailyCap({ data, saving, onSave, onReload }: { data: CostSummary; savin
   return (
     <div style={{ marginBottom: 14, padding: 10, background: "var(--row)", borderRadius: 8, fontSize: 11 }}>
       {t.cap_usd > 0 ? (
-        <Meter label={`Today (daily cap, ${t.timezone})`} used={t.spent_usd} limit={t.cap_usd} fmt={usd} />
+        <Meter label={`Today (daily cap, ${t.timezone})`} used={t.spent_usd + (t.held_usd || 0)} limit={t.cap_usd} fmt={usd} />
       ) : (
         <div style={{ color: "var(--yellow)" }}>No daily cap — today so far {usd(t.spent_usd)}.</div>
       )}
+      {!!t.held_usd && <div role="status">Reserved for pending or uncertain calls: {usd(t.held_usd)}. These holds remain across midnight until usage is reconciled.</div>}
       {t.reached && (
         <div style={{ color: "var(--red)", marginTop: 4 }}>
-          ⚠ Daily cap reached — every AI, voice-over and research call on the site is paused until {resets}.
-          Paused work resumes first, from where it stopped.
+          ⚠ Daily budget is committed. The day resets at {resets}; uncertain charges stay reserved.
+          Paused work resumes when the remaining budget can cover its next request.
         </div>
       )}
       {t.paused_jobs.length > 0 && (

@@ -1,0 +1,241 @@
+"""Deterministic original beat cards, native captions and immutable exports.
+
+This deliberately small renderer provides an inspectable first native treatment.
+It does not infer rights or relevance, generate research, or certify creativity.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+import json
+import math
+import shutil
+
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+from .. import control
+from ..config import settings
+from ..studio import media, tts
+from ..studio.media_quality import file_hash, inspect_export
+from .routes import digest
+
+
+def font(size):
+    for filename in ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"):
+        if Path(filename).is_file(): return ImageFont.truetype(filename, size)
+    raise RuntimeError("Install Arial or DejaVu Sans before rendering native cards")
+
+
+def lines(draw, text, face, width):
+    words, result, line = text.split(), [], ""
+    for word in words:
+        if draw.textlength(word, font=face) > width: raise ValueError("A word is too wide for the caption safe area")
+        candidate = f"{line} {word}".strip()
+        if draw.textlength(candidate, font=face) > width:
+            result.append(line); line = word
+        else: line = candidate
+    if line: result.append(line)
+    return result
+
+
+def card(path: Path, title: str, beat: dict, index: int, total: int, *, vertical=True, asset=None):
+    w, h = (1080, 1920) if vertical else (1080, 1350)
+    image = Image.new("RGB", (w, h), "#0d1523")
+    draw = ImageDraw.Draw(image)
+    accent = ("#64e6c4", "#ffc766", "#b5a0ff", "#ff929b")[index % 4]
+    draw.rounded_rectangle((80, 180, 900, 196), 8, fill="#344055")
+    draw.rounded_rectangle((80, 180, 80 + int(820 * (index + 1) / total), 196), 8, fill=accent)
+    draw.text((90, 115), "SCREEN CENTRAL / ORIGINAL", font=font(26), fill=accent)
+    title_lines = lines(draw, title, font(48), 810)
+    if len(title_lines) > 3: raise ValueError("Shorten the title to fit its safe area")
+    draw.multiline_text((90, 235), "\n".join(title_lines), font=font(48), fill="white", spacing=12)
+    image_y = 500 if vertical else 440
+    if asset:
+        with Image.open(asset) as source:
+            image.paste(ImageOps.fit(source.convert("RGB"), (810, 440 if vertical else 270)), (90, image_y))
+    else:
+        # Each beat is an original graphic, never a random borrowed movie shot.
+        draw.rounded_rectangle((100 + index * 14, image_y, 650 + index * 22, image_y + (380 if vertical else 250)),
+                               70, outline=accent, width=14)
+        draw.ellipse((620 - index * 12, image_y + 60, 880 - index * 12, image_y + 320), fill=accent)
+        draw.text((150, image_y + 65), f"0{index + 1}", font=font(120), fill="white")
+    caption_y = 1040 if vertical else 790
+    caption_lines = lines(draw, beat["text"], font(54), 790)
+    max_lines = 5
+    if len(caption_lines) > max_lines: raise ValueError("Shorten this beat: caption exceeds five safe-area lines")
+    draw.rounded_rectangle((70, caption_y - 30, 920, caption_y + len(caption_lines) * 72 + 20), 24, fill="#1e2c43")
+    draw.multiline_text((100, caption_y), "\n".join(caption_lines), font=font(54), fill="white", spacing=18)
+    footer = f"{index + 1:02d} / {total:02d}"
+    if not vertical: footer += "  /  YOUR TAKE?" if index == total - 1 else "  /  SWIPE TO CONTINUE"
+    draw.text((100, h - 280 if vertical else h - 120), footer, font=font(26), fill=accent)
+    image.save(path, "PNG")
+    return {"file": str(path), "sha256": file_hash(path), "width": w, "height": h,
+            "alt": beat["text"], "caption": beat["text"], "caption_lines": len(caption_lines),
+            "safe_area": {"left": 70, "right": 160, "top": 100, "bottom": 280 if vertical else 80},
+            "font_px": 54, "role": beat["role"], "source_refs": beat["source_refs"],
+            "asset_id": beat.get("asset_id"), "visual": "owner_selected_asset" if asset else "original_graphic"}
+
+
+def background_excerpt(root,index,beat,assets):
+    aid=beat.get('background_audio_id')
+    if not aid:return None
+    source=assets.get(aid)
+    start,end,policy,gain=(beat.get(key) for key in ('audio_start','audio_end','audio_end_policy','audio_gain_db'))
+    if not source or policy not in ('silence','loop') or not 0<=start<end or not .25<=end-start<=12 or not -36<=gain<=-12:
+        raise ValueError('Invalid explicit background-audio selection')
+    path=root/f'background-{index + 1}.m4a'
+    media.run(['ffmpeg','-v','error','-y','-ss',str(start),'-i',str(source),'-t',str(end-start),
+        '-map','0:a:0','-vn','-sn','-dn','-map_metadata','-1','-af','asetpts=PTS-STARTPTS',
+        '-c:a','aac','-b:a','128k','-ar','48000','-ac','2',str(path)],timeout=60)
+    actual=media.duration(path)
+    if not .2<=actual<=12.1 or abs(actual-(end-start))>.1:
+        raise ValueError('Selected background-audio interval was truncated; no export can be promoted')
+    return {'file':str(path),'sha256':file_hash(path),'asset_id':aid,'source_sha256':file_hash(source),
+        'source_start':start,'source_end':end,'excerpt_seconds':actual,'end_policy':policy,'gain_db':gain,
+        'normalization_reference_lufs':-18,'mix_policy':'normalized stems with fixed relative gain; no automatic speech ducking',
+        'card':index+1}
+
+
+def render(root: Path, brief: dict, fmt: str, assets: dict[int, Path]):
+    root.mkdir(parents=True, exist_ok=False)
+    manifest = {"schema": 1, "input_sha256": digest(brief), "format": fmt, "cards": [],
+                "quality": {"errors": [], "warnings": [], "status": "needs_owner_review"},
+                "limitations": ["Original cards with explicit video insets; no semantic footage search or word-aligned karaoke captions",
+                                "Owner must inspect narration, relevance, originality and all rights"]}
+    manifest['platform_copy']={
+        'short':brief.get('short_caption'),'reel':brief.get('reel_caption'),
+        'carousel':brief.get('carousel_caption'),'image':brief.get('image_caption'),
+        'community':brief.get('community_text'),'poll':brief.get('poll_question'),
+    }.get(fmt)
+    manifest['delivery']='manual_only' if fmt in ('community','poll') else 'explicit_destination_review_queue'
+    segments, timeline, total = [], [], 0.0
+    vertical = fmt in ("short", "reel")
+    normalized_voice=any(beat.get('background_audio_id') for beat in brief['beats'])
+    if not vertical and normalized_voice:
+        raise ValueError('Background audio is supported only in Short/Reel treatments')
+    if normalized_voice:
+        manifest['audio_mix_policy']={'narration_reference_lufs':-18,'background_gain_bounds_db':[-36,-12],
+            'scope':'All narration stems targeted consistently; selected background gain is relative to normalized stems. Final mix is normalized separately. No automatic speech ducking or semantic music selection.'}
+    beats=brief['beats']
+    if fmt=='image':beats=[{**brief['beats'][0],'text':brief['image_text']}]
+    if fmt in ('community','poll'):beats=[brief['beats'][0]]
+    for i, beat in enumerate(beats):
+        control.check()
+        path = root / f"card-{i + 1}.png"
+        asset=assets.get(beat.get('asset_id'));clip=None;visual=None
+        if beat.get('clip_start') is not None:
+            if not vertical or not asset:raise ValueError('Video intervals require a selected asset and vertical treatment')
+            start,end,policy=beat['clip_start'],beat['clip_end'],beat['clip_end_policy']
+            if policy not in ('hold','loop') or not 0<=start<end or not .25<=end-start<=12:
+                raise ValueError('Invalid selected video interval or end treatment')
+            clip=root/f'visual-{i + 1}.mp4'
+            # Map only video: source music/dialogue is never mixed into the output.
+            media.run(['ffmpeg','-v','error','-y','-ss',str(start),'-i',str(asset),'-t',str(end-start),
+                '-map','0:v:0','-an','-sn','-dn','-map_metadata','-1','-vf','setpts=PTS-STARTPTS',
+                '-r','30','-c:v','libx264','-preset','veryfast','-crf','20',str(clip)],timeout=90)
+            actual=media.duration(clip)
+            if not .2<=actual<=12.1 or abs(actual-(end-start))>.1:
+                raise ValueError('Selected source interval was truncated; no export can be promoted')
+            visual={'file':str(clip),'sha256':file_hash(clip),'asset_id':beat['asset_id'],
+                'source_sha256':file_hash(asset),'source_start':start,'source_end':end,'excerpt_seconds':actual,
+                'end_policy':policy,'source_audio':'excluded','card':i+1}
+            manifest.setdefault('visual_sources',[]).append(visual)
+            asset=root/f'poster-{i + 1}.png'
+            media.run(['ffmpeg','-v','error','-y','-i',str(clip),'-frames:v','1','-vf',
+                'scale=810:440:force_original_aspect_ratio=decrease,pad=810:440:(ow-iw)/2:(oh-ih)/2:color=0x0d1523',str(asset)],timeout=30)
+        manifest["cards"].append(card(path, brief["title"], beat, i, len(beats), vertical=vertical,
+                                      asset=asset))
+        if clip:manifest['cards'][-1]['visual']='owner_selected_video_interval'
+        if vertical:
+            narration = root / f"voice-{i + 1}.mp3"
+            tts.synth(beat["text"], narration)
+            seconds = media.duration(narration)
+            if not math.isfinite(seconds) or not .7 <= seconds <= 12:
+                raise ValueError("Narration duration outside 0.7–12 seconds per beat; inspect the speech")
+            # Keep the complete burned-in caption readable even when the voice
+            # provider returns unusually fast speech. Never trim the words.
+            readable = max(seconds, len(beat["text"]) / 17, 2.5)
+            tempo = seconds / readable
+            filters = []
+            while tempo < .5:
+                filters.append("atempo=0.5"); tempo /= .5
+            if tempo < .999: filters.append(f"atempo={tempo:.6f}")
+            seconds = readable
+            seconds = math.ceil((seconds + .15) * 30) / 30
+            segment = root / f"beat-{i + 1}.mp4"
+            background=background_excerpt(root,i,beat,assets)
+            args=['ffmpeg','-v','error','-y','-loop','1','-framerate','30','-i',str(path)]
+            video_graph=None
+            if clip:
+                if visual['end_policy']=='loop':args+=['-stream_loop','-1']
+                args+=['-i',str(clip),'-i',str(narration)]
+                footprint='scale=810:440:force_original_aspect_ratio=decrease,pad=810:440:(ow-iw)/2:(oh-ih)/2:color=0x0d1523,setsar=1,setpts=PTS-STARTPTS'
+                if visual['end_policy']=='hold':footprint+=f',tpad=stop_mode=clone:stop_duration={seconds:.6f}'
+                video_graph=f'[1:v]{footprint}[excerpt];[0:v][excerpt]overlay=90:500:shortest=1[v]'
+                visual['presentation_seconds']=seconds
+            else:args+=['-i',str(narration)]
+            if background:
+                voice_index=2 if clip else 1;bed_index=voice_index+1
+                if background['end_policy']=='loop':args+=['-stream_loop','-1']
+                args+=['-i',background['file']]
+                voice=','.join([*filters,f'apad=whole_dur={seconds:.6f}',f'atrim=duration={seconds:.6f}',
+                    'asetpts=PTS-STARTPTS','loudnorm=I=-18:TP=-3:LRA=7','aresample=48000','aformat=channel_layouts=stereo'])
+                bed=[]
+                if background['end_policy']=='loop':bed.append(f'atrim=duration={seconds:.6f}')
+                ending=seconds if background['end_policy']=='loop' else min(seconds,background['excerpt_seconds'])
+                bed+=['asetpts=PTS-STARTPTS','loudnorm=I=-18:TP=-3:LRA=7','aresample=48000','aformat=channel_layouts=stereo',
+                    f"volume={background['gain_db']:.6f}dB",'afade=t=in:st=0:d=0.05',f'afade=t=out:st={max(0,ending-.05):.6f}:d=0.05',
+                    f'apad=whole_dur={seconds:.6f}',f'atrim=duration={seconds:.6f}']
+                video_graph=video_graph or '[0:v]scale=1080:1920,setsar=1[v]'
+                graph=f"{video_graph};[{voice_index}:a]{voice}[voice];[{bed_index}:a]{','.join(bed)}[bed];[voice][bed]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.85[a]"
+                args+=['-filter_complex',graph,'-map','[v]','-map','[a]']
+                background['presentation_seconds']=seconds
+                manifest.setdefault('audio_sources',[]).append(background)
+            else:
+                if video_graph:args+=['-filter_complex',video_graph,'-map','[v]','-map','2:a:0']
+                else:args+=['-map','0:v:0','-map','1:a:0','-vf','scale=1080:1920,setsar=1']
+                audio_filters=[*filters,'apad','alimiter=limit=0.85']
+                if normalized_voice:
+                    audio_filters=[*filters,f'apad=whole_dur={seconds:.6f}',f'atrim=duration={seconds:.6f}',
+                        'asetpts=PTS-STARTPTS','loudnorm=I=-18:TP=-3:LRA=7','aresample=48000','aformat=channel_layouts=stereo','alimiter=limit=0.85']
+                args+=['-af',','.join(audio_filters)]
+            media.run([*args, "-t", str(seconds),
+                       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
+                       "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", str(segment)], timeout=180)
+            segments.append(segment)
+            timeline.append({"start": round(total, 3), "end": round(total + seconds, 3), "text": beat["text"], "card": path.name})
+            total += seconds
+    if vertical:
+        if not 6 <= total <= 90: raise ValueError("Native Short/Reel must be 6–90 seconds; adjust beat length")
+        listing = root / "concat.txt"
+        listing.write_text("\n".join(f"file '{p.name}'" for p in segments))
+        final = root / "vertical.mp4"
+        media.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                   "-c:v", "copy", "-af", "loudnorm=I=-14:TP=-1.5:LRA=7", "-c:a", "aac", "-ar", "48000",
+                   "-movflags", "+faststart", str(final)], timeout=180)
+        quality = inspect_export(final, expected_seconds=total, aspect=9 / 16)
+        if quality["errors"]: raise ValueError("Final native export blocked: " + "; ".join(quality["errors"]))
+        manifest.update(video={"file": str(final), "sha256": file_hash(final)}, quality=quality, timeline=timeline)
+        (root / "captions.json").write_text(json.dumps(timeline, indent=2))
+    else:
+        # Full image decode and native aspect are checked, not inferred from names.
+        for item in manifest["cards"]:
+            with Image.open(item["file"]) as image: image.load()
+        manifest["quality"].update(decode="passed",width=manifest["cards"][0]["width"],height=manifest["cards"][0]["height"])
+    if fmt in ('community','poll'):
+        post={'format':fmt,'title':brief['title'],'text':brief['community_text'] if fmt=='community' else brief['poll_question'],
+            'options':brief.get('poll_options',[]) if fmt=='poll' else [],'source_refs':sorted({ref for beat in brief['beats'] for ref in beat['source_refs']}),
+            'delivery':'manual_only','publication_status':'not_published'}
+        text=post['text']+('\n\n'+'\n'.join(f"{index+1}. {option}" for index,option in enumerate(post['options'])) if post['options'] else '')
+        manifest['manual_post']=post
+        manifest['manual_assets']=[]
+        for extension,content,ctype in [('json',json.dumps(post,ensure_ascii=False,indent=2),'application/json'),('txt',text+'\n','text/plain; charset=utf-8')]:
+            path=root/f'{fmt}-post.{extension}'
+            path.write_text(content,encoding='utf-8')
+            manifest['manual_assets'].append({'file':str(path),'sha256':file_hash(path),'content_type':ctype})
+        manifest['limitations']=['Local manual posting package; no queue item, account assignment, schedule or publication was created',
+            'Owner must inspect all text, options, source support and permissions before manual use']
+    cover = root / "cover.png"
+    shutil.copyfile(manifest["cards"][0]["file"], cover)
+    manifest["cover"] = {"file": str(cover), "sha256": file_hash(cover)}
+    (root / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    return manifest

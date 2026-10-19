@@ -99,6 +99,14 @@ def settings_dict(s=None) -> dict[str, Any]:
             s.close()
 
 
+def clock(s):
+    # Keep local SQLite test clocks, but distributed budget periods use DB time.
+    if s.get_bind().dialect.name == 'postgresql':
+        from .worker_leases import clock as database_clock
+        return database_clock(s)
+    return datetime.datetime.now(UTC)
+
+
 def month_key(t: datetime.datetime | None = None) -> str:
     return (t or datetime.datetime.now(UTC)).strftime("%Y-%m")
 
@@ -114,7 +122,7 @@ def fixed_monthly(cfg: dict) -> float:
 
 
 def month_spend(s, month: str | None = None) -> float:
-    month = month or month_key()
+    month = month or month_key(clock(s))
     return float(s.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).filter(UsageEvent.month == month).scalar() or 0)
 
 
@@ -138,7 +146,7 @@ def day_bounds(now: datetime.datetime | None = None) -> tuple[datetime.datetime,
 
 
 def today_spend(s, now: datetime.datetime | None = None) -> float:
-    start, end = day_bounds(now)
+    start, end = day_bounds(now or clock(s))
     return float(s.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0)).filter(
         UsageEvent.created_at >= start, UsageEvent.created_at < end).scalar() or 0)
 
@@ -161,10 +169,12 @@ def add_today_extra(usd: float) -> dict[str, Any]:
     if not 0 < usd <= 50:
         raise ValueError("extra must be between $0 and $50")
     with SessionLocal() as s:
-        row = s.get(AppSetting, "costs")
+        from .budget_reservations import lock
+        lock(s)
+        row = s.get(AppSetting, "costs", populate_existing=True)
         value = dict((row.value or {}) if row else {})
         extra = value.get("daily_extra") or {}
-        day = today_key()
+        day = today_key(clock(s))
         total = (float(extra.get("usd") or 0) if extra.get("day") == day else 0.0) + usd
         value["daily_extra"] = {"day": day, "usd": round(total, 2)}
         if row:
@@ -182,14 +192,17 @@ def daily_status(s=None) -> dict[str, Any]:
     s = s or SessionLocal()
     try:
         cfg = settings_dict(s)
+        asof=clock(s)
         base = float(cfg.get("daily_usd") or 0)
-        cap = effective_cap(cfg)
-        spent = today_spend(s)
-        _, resets = day_bounds()
+        cap = effective_cap(cfg,asof)
+        from .budget_reservations import held_micros
+        held = held_micros(s) / 1e6
+        spent = today_spend(s,asof)
+        _, resets = day_bounds(asof)
         return {"cap_usd": cap, "base_cap_usd": base, "extra_today_usd": round(cap - base, 2) if base else 0.0,
-                "spent_usd": round(spent, 4),
-                "remaining_usd": round(max(0.0, cap - spent), 4) if cap else None,
-                "reached": bool(cap) and spent >= cap, "resets_at": resets.isoformat(),
+                "spent_usd": round(spent, 4), "held_usd": round(held, 6),
+                "remaining_usd": round(max(0.0, cap - spent - held), 4) if cap else None,
+                "reached": bool(cap) and spent + held >= cap, "resets_at": resets.isoformat(),
                 "timezone": str(day_tz())}
     finally:
         if own:
@@ -202,14 +215,19 @@ def check_budget() -> None:
     spend (variable + fixed) has reached the budget."""
     with SessionLocal() as s:
         cfg = settings_dict(s)
-        total = month_spend(s) + fixed_monthly(cfg) if cfg.get("hard_stop") and cfg.get("budget_usd") else 0.0
+        from .budget_reservations import held_micros
+        from .models import BudgetReservation
+        if s.query(BudgetReservation).filter_by(state="breach").first():
+            raise BudgetExceeded("Provider usage exceeded a declared request bound; resolve the budget breach before continuing")
+        held = held_micros(s) / 1e6
+        total = held + month_spend(s) + fixed_monthly(cfg) if cfg.get("hard_stop") and cfg.get("budget_usd") else 0.0
         if cfg.get("hard_stop") and cfg.get("budget_usd") and total >= float(cfg["budget_usd"]):
             raise BudgetExceeded(
                 f"Monthly budget reached (${total:.2f} of ${float(cfg['budget_usd']):.2f}). "
                 "Raise the budget or turn off the hard stop in Settings → Spending.")
-        cap = effective_cap(cfg)
+        cap = effective_cap(cfg,clock(s))
         if cap:
-            spent = today_spend(s)
+            spent = today_spend(s) + held
             if spent >= cap:
                 raise DailyCapReached(
                     f"Daily spend cap reached (${spent:.2f} of ${cap:.2f} today). Paused work resumes "
@@ -218,14 +236,22 @@ def check_budget() -> None:
 
 def _record(service: str, cost: float, **fields) -> None:
     op, ref = _op.get()
-    try:
-        with SessionLocal() as s:
-            s.add(UsageEvent(service=service, operation=fields.pop("operation", None) or op,
-                             ref=fields.pop("ref", None) or ref, cost_usd=round(cost, 6),
-                             month=month_key(), **fields))
-            s.commit()
-    except Exception as exc:  # never let accounting break the work itself
-        logger.error("cost record failed: %s", exc)
+    from . import budget_reservations as br
+    provided = fields.pop("_session", None)
+    complete = fields.pop("receipt_complete", True)
+    with contextlib.nullcontext(provided) if provided is not None else SessionLocal() as s:
+        if provided is None: br.lock(s)
+        if br._active.get() and not complete and service != "gemini-search": cost = 0.0
+        asof=clock(s)
+        fields.setdefault("created_at",asof)
+        fields.setdefault("cost_basis","configured_usage_estimate")
+        fields.setdefault("reservation_id",br._active.get())
+        event = UsageEvent(service=service, operation=fields.pop("operation", None) or op,
+                          ref=fields.pop("ref", None) or ref, cost_usd=round(cost, 6),
+                          month=month_key(asof), **fields)
+        if complete: br.settle_record(s, event)
+        s.add(event)
+        if provided is None: s.commit()
 
 
 def gemini_price(model: str, cfg: dict, now: datetime.datetime | None = None) -> tuple[float, float]:
@@ -242,16 +268,20 @@ def record_gemini(model: str, usage: dict, grounded: bool = False, batch: bool =
     inp = int(usage.get("promptTokenCount") or 0)
     out = int(usage.get("candidatesTokenCount") or 0) + int(usage.get("thoughtsTokenCount") or 0)
     with SessionLocal() as s:
+        from .budget_reservations import lock
+        lock(s)
         cfg = settings_dict(s)
-        pin, pout = gemini_price(model, cfg)
+        pin, pout = gemini_price(model, cfg,clock(s))
         cost = (inp / 1e6 * pin + out / 1e6 * pout) * (BATCH_DISCOUNT if batch else 1.0)
         if grounded:
-            used = _month_sum(s, UsageEvent.requests, "gemini-search", month_key())
+            used = _month_sum(s, UsageEvent.requests, "gemini-search", month_key(clock(s)))
             if used >= cfg["grounding_free_per_month"]:
                 cost += cfg["grounding_usd_per_1000"] / 1000
-    _record("gemini-batch" if batch else "gemini", cost, model=model, input_tokens=inp, output_tokens=out, requests=1)
-    if grounded:
-        _record("gemini-search", 0.0, model=model, requests=1)
+        _record("gemini-batch" if batch else "gemini", cost, model=model, input_tokens=inp, output_tokens=out, requests=1,
+                _session=s, receipt_complete="promptTokenCount" in usage and "candidatesTokenCount" in usage)
+        if grounded:
+            _record("gemini-search", 0.0, model=model, requests=1, _session=s, receipt_complete=False)
+        s.commit()
     return cost
 
 
@@ -264,19 +294,22 @@ def record_gemini_tts(model: str, usage: dict, seconds: float, chars: int) -> fl
     inp = int(usage.get("input_tokens") or usage.get("promptTokenCount") or 0) or max(1, chars // 4)
     out = int(usage.get("output_tokens") or usage.get("candidatesTokenCount") or 0) or int(seconds * 25)
     cost = inp / 1e6 * p["in"] + out / 1e6 * p["out"]
-    _record("gemini-tts", cost, model=model, input_tokens=inp, output_tokens=out, chars=chars, requests=1)
+    _record("gemini-tts", cost, model=model, input_tokens=inp, output_tokens=out, chars=chars, requests=1,
+            receipt_complete=("input_tokens" in usage and "output_tokens" in usage) or ("promptTokenCount" in usage and "candidatesTokenCount" in usage))
     return cost
 
 
 def record_tts(chars: int, voice: str) -> float:
+    from .budget_reservations import lock
     with SessionLocal() as s:
+        lock(s)
         cfg = settings_dict(s)
-        used = _month_sum(s, UsageEvent.chars, "tts", month_key())
-    free_left = max(0, cfg["tts_free_chars_per_month"] - used)
-    billable = max(0, chars - free_left)
-    cost = billable / 1e6 * cfg["tts_usd_per_million_chars"]
-    _record("tts", cost, model=voice, chars=chars, requests=1)
-    return cost
+        used = _month_sum(s, UsageEvent.chars, "tts", month_key(clock(s)))
+        free_left = max(0, cfg["tts_free_chars_per_month"] - used)
+        cost = max(0, chars - free_left) / 1e6 * cfg["tts_usd_per_million_chars"]
+        _record("tts", cost, model=voice, chars=chars, requests=1, _session=s)
+        s.commit()
+        return cost
 
 
 def record_free(service: str, requests: int = 1, model: str | None = None) -> None:
@@ -285,15 +318,18 @@ def record_free(service: str, requests: int = 1, model: str | None = None) -> No
 
 
 def summary(month: str | None = None) -> dict[str, Any]:
-    month = month or month_key()
     with SessionLocal() as s:
+        month = month or month_key(clock(s))
         cfg = settings_dict(s)
         q = s.query(UsageEvent).filter(UsageEvent.month == month)
         by_service: dict[str, dict] = {}
         by_op: dict[str, dict] = {}
         by_day: dict[str, float] = {}
         by_ref: dict[str, float] = {}
+        by_basis: dict[str, dict] = {}
         for e in q.all():
+            basis=by_basis.setdefault(e.cost_basis or 'legacy_unknown',{'cost_usd':0.0,'events':0})
+            basis['cost_usd']+=e.cost_usd or 0;basis['events']+=1
             sv = by_service.setdefault(e.service, {"cost": 0.0, "requests": 0, "input_tokens": 0,
                                                     "output_tokens": 0, "chars": 0})
             sv["cost"] += e.cost_usd or 0
@@ -316,6 +352,8 @@ def summary(month: str | None = None) -> dict[str, Any]:
         total = variable + fixed
         return {
             "month": month,
+            "billing_status": "local_estimates_and_owner_attestations; provider_invoice_not_verified",
+            "by_cost_basis": by_basis,
             "variable_usd": round(variable, 4),
             "fixed_usd": round(fixed, 2),
             "total_usd": round(total, 4),

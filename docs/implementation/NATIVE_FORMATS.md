@@ -1,0 +1,24 @@
+# Native formats and manual packages
+
+Reviewed opportunity briefs now admit Short, Reel, carousel, single image, community text and poll treatments. Each selected treatment requires its own format copy. Reels require a Reel caption; image posts require their own image text/caption; polls require a question and two to four distinct bounded options. The underlying three-beat research treatment remains mandatory. This renderer uses original cards, optional cleared stills and explicit authorized video insets for Short/Reel-only campaigns; a Reel caption alone does not prove a distinct visual treatment or a recut.
+
+A single-image export contains exactly one1080×1350 image and its own caption. Explicit Instagram/Facebook destinations use the existing image review-queue path. It never becomes Ready or publishes merely by rendering/approval. Shorts/Reels remain vertical video; carousel exports preserve slide order.
+
+Community/polls write actual local UTF-8 JSON and text files plus a preview card. Their manifests say manual_only/not_published. Full text/options appear in the owner interface for inspection. After exact-export approval the owner can download either file. These formats cannot create queue items, select accounts, schedule uploads or publish through this integration. Unsupported API capabilities are not inferred.
+
+Manual package downloads require owner credentials and current exact-file approval. A media pass does not authorize private JSON/text downloads; they are absent from the media-file route. Changed/missing package bytes invalidate approval and download. Source refs and input manifests remain attached. Rendering another version keeps the earlier files. Rights and source review remain owner responsibilities; structured native acceptance now shares the exact-export review UI and validator with LongForm/Countdowns, using checks appropriate for silent images and manual posts as well as video. Every current warning, timed black/long-silence finding and delivered repeated source image needs its own substantive decision; the final acknowledgment resets after edits. Full manifest and inspection changes require fresh acceptance.
+
+Local evidence: full backend4:602 passed/1optional skip; actual PostgreSQL5:136 passed including native/media/manual contracts; build5; focused5:14 passed. Browser4:2 actual flows cover prior Short/carousel with simulated delivery and new image/community/poll form creation, preview, approval and real local downloads. Browser6 repeats the new workflow after display/format-status refinements and verifies queue counts unchanged. Evidence is retained under ignored artifacts/e2e/history/native-formats6. No actual provider upload or post occurred. Recuts, deeper Reel treatment and wider editorial/caption acceptance remain open.
+
+Current native acceptance also rechecks schema2 evidence at review-queue admission, private download and provider dispatch under media claims. Legacy blanket approvals cannot release files. Publisher comparisons use image/reel format-specific captions and the correct image/video kind; actual original-image and generated-tone Reel tests reach simulated transports. Latest backend/PG/build evidence is indexed in SCRAPPER_COMPLETION_REPORT.md; four actual media UI workflows passed, followed by a fresh visual-capture pass.
+
+Authorized catalog videos can now be selected with explicit bounded intervals and intentional hold/loop treatment, keeping source audio excluded. Retained range/byte provenance and each extended treatment join the exact acceptance gate. See NATIVE_CLIPS.md; this remains a card/inset treatment, not an automatic semantic recut engine.
+
+The native treatment form now has explicit private browser recovery for all copy,
+formats, beat/source/asset selections and selected-video choices, scoped to the API
+origin. A changed approved research version requires current-context review while
+preserving the draft. Confirmed create and failed view refresh are shown separately;
+late responses cannot erase a newer editor's words. See OWNER_RECOVERY.md for the
+exact behavior and remaining file-import/other-form limits.
+
+Authorized indexed audio can now provide an explicit optional background interval/relative level and silence-or-loop ending for Short/Reel beats. Narration stems target a consistent reference across the campaign; visual-source audio stays excluded. Retained audio provenance and a mandatory per-track review decision join exact acceptance. NATIVE_AUDIO.md distinguishes these local mechanics from subjective mix quality and automatic semantic music selection.

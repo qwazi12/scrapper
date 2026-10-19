@@ -29,7 +29,7 @@ from ..db import SessionLocal
 from ..models import StudioProject
 from .. import control
 from . import gemini, media, tts
-from .runner import project_dir, stage
+from .runner import attempt_dir, project_dir, stage
 
 GAP, PARA_GAP = 0.35, 0.6
 LOOK_ALIKE = 10       # max differing bits (of 64) for two stills to count as the same picture
@@ -55,7 +55,7 @@ def dhash(path) -> int | None:
     try:
         with Image.open(path) as im:
             g = im.convert("L").resize((9, 8))
-            px = list(g.getdata())
+            px = list(g.get_flattened_data())
     except Exception:  # noqa: BLE001 — a missing/broken still just gets no fingerprint
         return None
     bits = 0
@@ -226,13 +226,15 @@ def plan(project_id: int) -> str:
         script, shots, facts = p.script, p.shots, p.facts
     if not script or not script.get("sentences"):
         raise RuntimeError("Run 'script' first")
+    from .research_gate import require_checked
+    require_checked(script,facts)
     if not shots:
         raise RuntimeError("Run 'shots' first")
     catalog = [sh for sh in shots if sh.get("usable")]
     if len(catalog) < 5:
         raise RuntimeError(f"Only {len(catalog)} usable shots — add footage (upload or more trailers)")
     root = project_dir(project_id)
-    tts_dir = root / "tts"
+    tts_dir = attempt_dir(project_id) / "tts"
     tts_dir.mkdir(exist_ok=True)
 
     # 1. Voice every sentence; its real length drives the timeline.

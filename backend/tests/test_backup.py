@@ -22,8 +22,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 sys.path.insert(0, str(REPO_ROOT))
 
-from app import backup
-from app.config import settings
+from backend.app import backup
+from backend.app.config import settings
 from scripts import restore_db
 
 
@@ -161,7 +161,7 @@ class TestDatabaseBackup(unittest.TestCase):
 
         # 4. Test confirmed restore
         captured_out2 = io.StringIO()
-        with patch.object(sys, "argv", ["restore_db.py", "--from", str(gz_file), "--to", str(self.db_file), "--confirm"]):
+        with patch.object(sys, "argv", ["restore_db.py", "--from", str(gz_file), "--to", str(self.db_file), "--confirm", "--offline-confirmed"]):
             with patch("sys.stdout", captured_out2):
                 ret_confirm = restore_db.main()
         self.assertEqual(ret_confirm, 0)

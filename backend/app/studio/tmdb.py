@@ -91,6 +91,7 @@ def _summary(r: dict[str, Any], media_type: str | None = None) -> dict[str, Any]
         "tmdb_id": r.get("id"),
         "media_type": mt,
         "title": r.get("title") or r.get("name") or "",
+        "original_title": r.get("original_title") or r.get("original_name") or "",
         "date": r.get("release_date") or r.get("first_air_date") or "",
         "overview": r.get("overview") or "",
         "poster": image_url(r.get("poster_path"), "w342"),
@@ -236,7 +237,10 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
     crew = credits.get("crew", [])
     directors = [c["name"] for c in crew if c.get("job") == "Director"] or \
                 [c.get("name") for c in d.get("created_by", [])]
-    writers = [c["name"] for c in crew if c.get("department") == "Writing"][:4]
+    writing_credits = [{"name": c["name"], "job": c["job"]} for c in crew
+                       if c.get("department") == "Writing" and c.get("name") and c.get("job")]
+    writers = list(dict.fromkeys(c["name"] for c in writing_credits
+                                if c["job"] in ("Screenplay", "Writer", "Teleplay")))
 
     videos = [{
         "name": v.get("name"),
@@ -260,6 +264,10 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
         "tagline": d.get("tagline") or "",
         "overview": d.get("overview") or "",
         "genres": [g["name"] for g in d.get("genres", [])],
+        "production_countries": [c["iso_3166_1"] for c in d.get("production_countries", []) if c.get("iso_3166_1")],
+        "origin_countries": d.get("origin_country") or [],
+        "original_language": d.get("original_language"),
+        "region": region,
         "runtime": d.get("runtime") or (d.get("episode_run_time") or [None])[0],
         "status": d.get("status") or "",
         "primary_date": d.get("release_date") or d.get("first_air_date") or "",
@@ -268,6 +276,7 @@ def fact_sheet(media_type: str, tmdb_id: int, region: str | None = None) -> dict
         "networks": [n["name"] for n in d.get("networks", [])][:3],
         "directors": directors,
         "writers": writers,
+        "writing_credits": writing_credits,
         "cast": cast,
         "videos": videos,
         "poster": image_url(d.get("poster_path"), "original"),

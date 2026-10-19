@@ -29,8 +29,8 @@ const short = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ?
 // --- delete / archive (shared by Your videos and the project page) ----------------------
 /** Confirm, delete, and handle "still in the Posting Queue". Returns true if deleted. */
 export async function deleteProject(p: StudioProject): Promise<boolean> {
-  if (!(await askConfirm(`Delete "${p.title}" now?\n\nRemoves the project and all its files on the server. ` +
-    `The copy in Google Drive stays. This can't be undone — use 🗄 Archive instead for a 5-day grace period.`))) return false;
+  if (!(await askConfirm(`Delete "${p.title}" now?\n\nRemoves the project and its working files. ` +
+    `Retained export history and the copy in Google Drive stay. Project deletion can't be undone — use 🗄 Archive instead for a 5-day grace period.`))) return false;
   try {
     await api.studioDelete(p.id);
     return true;

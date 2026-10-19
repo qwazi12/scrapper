@@ -105,7 +105,7 @@ def test_tick_posts_one_per_pipeline(session, monkeypatch):
 
 
 # --- archive sweep ----------------------------------------------------------
-def test_sweep_trashes_drive_file_and_deletes_after_4_days(session, monkeypatch):
+def test_sweep_retains_drive_file_and_delivery_history_before_removing_queue_row(session, monkeypatch):
     now = datetime.datetime.now(UTC)
     old = add(session, 1, status="posted", drive_link="https://drive.google.com/file/d/OLD/view",
               published_at=now - datetime.timedelta(days=4, minutes=1))[0]
@@ -116,12 +116,15 @@ def test_sweep_trashes_drive_file_and_deletes_after_4_days(session, monkeypatch)
     monkeypatch.setattr(ds, "trash_drive_file", lambda link: trashed.append(link) or True)
     old_id, fresh_id = old.id, fresh.id
     assert qm.sweep_archive(session, now) == 1
-    assert trashed == ["https://drive.google.com/file/d/OLD/view"]
+    assert trashed == []
+    from backend.app.models import DeliveryArchive
+    retained = session.query(DeliveryArchive).filter_by(queue_id=old_id).one()
+    assert retained.manifest["snapshot"]["drive_link"] == "https://drive.google.com/file/d/OLD/view"
     assert session.get(QueueItem, old_id) is None
     assert session.get(QueueItem, fresh_id) is not None
 
 
-def test_sweep_keeps_row_when_drive_trash_fails(session, monkeypatch):
+def test_sweep_never_calls_remote_trash_even_if_the_old_provider_is_unavailable(session, monkeypatch):
     now = datetime.datetime.now(UTC)
     it = add(session, 1, status="archived", drive_link="https://drive.google.com/file/d/X/view",
              published_at=now - datetime.timedelta(days=10))[0]
@@ -131,11 +134,12 @@ def test_sweep_keeps_row_when_drive_trash_fails(session, monkeypatch):
         raise RuntimeError("drive down")
 
     monkeypatch.setattr(ds, "trash_drive_file", boom)
-    assert qm.sweep_archive(session, now) == 0
-    assert session.get(QueueItem, it.id) is not None
+    it_id = it.id
+    assert qm.sweep_archive(session, now) == 1
+    assert session.get(QueueItem, it_id) is None
 
 
-def test_sweep_drops_row_when_robot_cannot_trash_owner_file(session, monkeypatch):
+def test_sweep_keeps_owner_remote_file_and_retains_its_reference(session, monkeypatch):
     now = datetime.datetime.now(UTC)
     it = add(session, 1, status="archived", drive_link="https://drive.google.com/file/d/Y/view",
              published_at=now - datetime.timedelta(days=10))[0]
@@ -296,7 +300,7 @@ def test_whole_profile_submits_one_request_with_all_its_platforms(monkeypatch, t
     monkeypatch.setattr(upload_post, "list_accounts", accounts)
     monkeypatch.setattr(upload_post, "upload_video", upload)
     asyncio.run(qm.submit_upload(video, ["default:*"], title="t", description="", tags=[]))
-    assert calls == [("default", ["youtube", "tiktok"])]
+    assert calls == [("default", ["youtube"]), ("default", ["tiktok"])]
 
 
 def _entry(profile, rid, nets=("youtube",), minutes_ago=1):
@@ -340,10 +344,10 @@ def test_rejected_profile_upload_is_a_failure_not_silence():
     assert "mk:youtube" in res["failed"] and not res["ok"]
 
 
-def test_stuck_request_times_out():
+def test_stuck_request_remains_unknown_and_cannot_be_blindly_retried():
     now = datetime.datetime.now(UTC)
     res = qm.resolve_results([_entry("mk", "r1", minutes_ago=200)], {"r1": {"status": "processing"}}, now)
-    assert "mk:youtube" in res["failed"]
+    assert res is None
 
 
 def test_reconcile_polls_upload_post(session, monkeypatch):
@@ -375,6 +379,7 @@ def test_outstand_module_is_gone():
 
 def test_no_outstand_text_in_ui_or_backend():
     import pathlib
+    import re
     root = pathlib.Path(__file__).resolve().parents[2]
     hits = []
     for base, pats in ((root / "frontend" / "app", ("*.tsx",)), (root / "frontend" / "lib", ("*.ts",)),
@@ -383,7 +388,7 @@ def test_no_outstand_text_in_ui_or_backend():
             for f in base.rglob(pat):
                 text = f.read_text(encoding="utf-8")
                 for line in text.splitlines():
-                    if "outstand" in line.lower() and "outstand_post_id" not in line:
+                    if re.search(r"outstand(?!ing\b)", line, re.I) and "outstand_post_id" not in line:
                         hits.append(f"{f.name}: {line.strip()[:80]}")
     assert hits == []
 
@@ -532,7 +537,7 @@ def test_clip_research_uses_tmdb_facts_in_the_prompt(session, monkeypatch):
                 "hashtags": ["#shorts", "#Superman & Lois"]}
 
     monkeypatch.setattr(sgem, "ask_json", fake_ask)
-    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 95057, "media_type": "tv", "date": "2021-02-23", "popularity": 50}])
+    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 95057, "title": "Superman & Lois", "media_type": "tv", "date": "2021-02-23", "popularity": 50}])
     monkeypatch.setattr(clip_research, "lookup", lambda mt, i: {
         "tmdb_id": i, "media_type": mt, "title": "Superman & Lois", "year": "2021", "genres": ["Drama"],
         "overview": "o", "cast": [{"actor": "Tyler Hoechlin", "character": "Clark Kent"}],
@@ -564,7 +569,7 @@ def test_research_cache_shares_lookups(session, monkeypatch):
     monkeypatch.setattr(sgem, "ask_json", lambda p, **kw: {"title": "Superman & Lois", "media_type": "tv",
                                                           "year": 2021, "confidence": 0.9})
     looked = []
-    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 1, "media_type": "tv", "date": "2021", "popularity": 1}])
+    monkeypatch.setattr(stmdb, "search", lambda q: [{"tmdb_id": 1, "title": "Superman & Lois", "media_type": "tv", "date": "2021", "popularity": 1}])
     monkeypatch.setattr(clip_research, "lookup", lambda mt, i: looked.append(i) or {"title": "S", "cast": [],
                         "genres": [], "keywords": [], "watch_on": [], "overview": "", "media_type": mt, "tmdb_id": i})
     cache = {}
@@ -866,13 +871,22 @@ def test_longform_row_uses_its_breakdowns_options(session, client, monkeypatch, 
                       render={"thumbnails": [{"id": "poster"}, {"id": "shot1"}, {"id": "shot2"}], "selected_thumbnail": "shot1"})
     session.add(p)
     session.commit()
+    from PIL import Image
+    monkeypatch.setattr(runner,'project_dir',lambda pid:tmp_path)
+    source=tmp_path/'render'/'thumbnail.jpg';source.parent.mkdir()
+    Image.new('RGB',(100,60),'orange').save(source)
     picked = []
     monkeypatch.setattr(stage_render, "select_project_thumbnail", lambda pid, opt: picked.append(opt))
     d = client.get(f"/api/queue/{it.id}/thumbnail/options").json()
     assert d["project_id"] == p.id and len(d["options"]) == 3
     assert client.post(f"/api/queue/{it.id}/thumbnail/studio", json={"option": "shot2"}).status_code == 200
     session.refresh(it)
-    assert picked == ["shot2"] and it.thumb_path.endswith("render/thumbnail.jpg")
+    assert picked == ["shot2"]
+    from pathlib import Path
+    copied=Path(it.thumb_path)
+    assert copied!=source and copied.read_bytes()==source.read_bytes()
+    source.write_bytes(b'changed later Studio thumbnail')
+    assert copied.read_bytes()!=source.read_bytes()
     (other,) = add(session, 1)                      # a Shorts row has no breakdown options
     assert client.post(f"/api/queue/{other.id}/thumbnail/studio", json={"option": "poster"}).status_code == 400
 
@@ -995,13 +1009,13 @@ def test_per_platform_daily_numbers(session, reset_schedule, monkeypatch, tmp_pa
     session.commit()
     asyncio.run(qm.publish_queue_item(rows[0].id, session, regular=True))
     asyncio.run(qm.publish_queue_item(rows[1].id, session, regular=True))
-    assert sent == [["facebook", "instagram", "youtube"], ["facebook", "instagram"]]   # YouTube only its 1 a day
+    assert sent == [["youtube"], ["facebook"], ["instagram"], ["facebook"], ["instagram"]]   # YouTube only its 1 a day
     session.refresh(rows[1])
     assert "Not sent to default:youtube" in rows[1].notes
     assert qm.platform_posts_today(session, "Movie Clips", now) == {"youtube": 1, "facebook": 2, "instagram": 2}
     (pinned,) = add(session, 1, accounts=["default:*"], video_path=str(video))
     asyncio.run(qm.publish_queue_item(pinned.id, session, regular=False))          # Post now / pinned: everywhere
-    assert sent[-1] == ["facebook", "instagram", "youtube"]
+    assert sent[-3:] == [["youtube"], ["facebook"], ["instagram"]]
 
 
 def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tmp_path):
@@ -1035,7 +1049,7 @@ def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tm
         it.scheduled_at = datetime.datetime.now(tz).replace(hour=h, minute=m, second=0, microsecond=0).astimezone(UTC)
         session.commit()
         asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
-        assert sent[-1] == expect
+        assert sorted(x[0] for x in sent[-len(expect):]) == sorted(expect)
 
 
 def test_schedule_api_keeps_platform_settings(session, client, reset_schedule):

@@ -26,9 +26,11 @@ class GeminiError(Exception):
 
 
 def _post(body: dict[str, Any], model: str | None = None, retries: int = 3) -> dict[str, Any]:
+    from ..e2e_safety import deny_live
+    deny_live("Gemini generation")
     if not settings.gemini_api_key:
         raise GeminiError("GEMINI_API_KEY is not set on the server")
-    from .. import control, costs
+    from .. import control, costs, budget_reservations as br
     url = f"{BASE}/{model or settings.gemini_model}:generateContent"
     last = ""
     for attempt in range(retries):
@@ -37,12 +39,13 @@ def _post(body: dict[str, Any], model: str | None = None, retries: int = 3) -> d
             costs.check_budget()
         except costs.BudgetExceeded as exc:
             raise GeminiError(str(exc)) from exc
-        res = httpx.post(url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}, timeout=TIMEOUT)
-        if res.is_success:
-            data = res.json()
-            costs.record_gemini(model or settings.gemini_model, data.get("usageMetadata") or {},
-                                grounded="tools" in body)
-            return data
+        with br.attempt("gemini", br.request_bound("gemini", body, model or settings.gemini_model)):
+            res = httpx.post(url, json=body, headers={"x-goog-api-key": settings.gemini_api_key}, timeout=TIMEOUT)
+            if res.is_success:
+                data = res.json()
+                costs.record_gemini(model or settings.gemini_model, data.get("usageMetadata") or {},
+                                    grounded="tools" in body)
+                return data
         last = f"HTTP {res.status_code}: {res.text[:300]}"
         if res.status_code not in (429, 500, 502, 503, 504):
             break
@@ -133,45 +136,53 @@ def ask_json_batch(items: list[dict[str, Any]], max_wait: int = 1800, poll: int 
     if len(raw) > BATCH_MAX_BYTES:
         raise BatchUnavailable(f"batch too large for inline mode ({len(raw) // 1_000_000} MB)")
     headers = {"x-goog-api-key": settings.gemini_api_key, "content-type": "application/json"}
-    res = httpx.post(f"{BASE}/{model}:batchGenerateContent", content=raw, headers=headers, timeout=TIMEOUT)
-    if not res.is_success:
-        raise BatchUnavailable(f"batch refused: HTTP {res.status_code}: {res.text[:200]}")
-    name = res.json().get("name")
-    if not name:
-        raise BatchUnavailable(f"batch refused: no job name in {res.text[:200]}")
-    url = f"https://generativelanguage.googleapis.com/v1beta/{name}"
-    deadline = time.time() + max_wait
-    while True:
-        control.check()       # Stop works while waiting
-        r = httpx.get(url, headers=headers, timeout=60)
-        data = r.json() if r.is_success else {}
-        state = str((data.get("metadata") or {}).get("state") or data.get("state") or "")
-        if "SUCCEEDED" in state or data.get("done") and "FAILED" not in state:
-            break
-        if any(x in state for x in ("FAILED", "CANCELLED", "EXPIRED")):
-            raise BatchUnavailable(f"batch {name} ended {state}")
-        if time.time() > deadline:
-            httpx.post(f"{url}:cancel", headers=headers, timeout=30)
-            raise BatchUnavailable(f"batch {name} not done after {max_wait // 60} min — cancelled")
-        control.progress(f"Gemini batch (half price) {state.replace('JOB_STATE_', '').replace('BATCH_STATE_', '').lower() or 'queued'}…")
-        time.sleep(poll)
-    resp = data.get("response") or data.get("dest") or {}
-    inl = resp.get("inlinedResponses") or resp.get("inlined_responses") or {}
-    if isinstance(inl, dict):
-        inl = inl.get("inlinedResponses") or inl.get("inlined_responses") or []
-    out: dict[str, Any] = {}
-    for n, item in enumerate(inl):
-        key = str(((item.get("metadata") or {}).get("key")) or (items[n]["key"] if n < len(items) else n))
-        answer = item.get("response")
-        if not answer:
-            continue
-        costs.record_gemini(model, answer.get("usageMetadata") or {}, batch=True)
-        try:
-            out[key] = parse_json(_text(answer))
-        except (json.JSONDecodeError, GeminiError):
-            continue          # asked again the normal way by the caller
-    logger.info("Gemini batch %s: %s of %s answers usable", name, len(out), len(items))
-    return out
+    from .. import budget_reservations as br
+    bound = sum(br.request_bound("gemini", r["request"], model) for r in reqs)
+    with br.attempt("gemini-batch", bound):
+        res = httpx.post(f"{BASE}/{model}:batchGenerateContent", content=raw, headers=headers, timeout=TIMEOUT)
+        if not res.is_success:
+            raise BatchUnavailable(f"batch refused: HTTP {res.status_code}: {res.text[:200]}")
+        name = res.json().get("name")
+        if not name:
+            raise BatchUnavailable(f"batch refused: no job name in {res.text[:200]}")
+        url = f"https://generativelanguage.googleapis.com/v1beta/{name}"
+        deadline = time.time() + max_wait
+        while True:
+            control.check()       # Stop works while waiting
+            r = httpx.get(url, headers=headers, timeout=60)
+            data = r.json() if r.is_success else {}
+            state = str((data.get("metadata") or {}).get("state") or data.get("state") or "")
+            if "SUCCEEDED" in state or data.get("done") and "FAILED" not in state:
+                break
+            if any(x in state for x in ("FAILED", "CANCELLED", "EXPIRED")):
+                raise BatchUnavailable(f"batch {name} ended {state}")
+            if time.time() > deadline:
+                httpx.post(f"{url}:cancel", headers=headers, timeout=30)
+                raise BatchUnavailable(f"batch {name} not done after {max_wait // 60} min — cancelled")
+            control.progress(f"Gemini batch (half price) {state.replace('JOB_STATE_', '').replace('BATCH_STATE_', '').lower() or 'queued'}…")
+            time.sleep(poll)
+        resp = data.get("response") or data.get("dest") or {}
+        inl = resp.get("inlinedResponses") or resp.get("inlined_responses") or {}
+        if isinstance(inl, dict):
+            inl = inl.get("inlinedResponses") or inl.get("inlined_responses") or []
+        out: dict[str, Any] = {}
+        totals = {"promptTokenCount": 0, "candidatesTokenCount": 0, "thoughtsTokenCount": 0}
+        complete = len(inl) == len(items)
+        for n, item in enumerate(inl):
+            key = str(((item.get("metadata") or {}).get("key")) or (items[n]["key"] if n < len(items) else n))
+            answer = item.get("response")
+            if not answer:
+                continue
+            usage = answer.get("usageMetadata") or {}
+            complete = complete and "promptTokenCount" in usage and "candidatesTokenCount" in usage
+            for k in totals: totals[k] += int(usage.get(k) or 0)
+            try:
+                out[key] = parse_json(_text(answer))
+            except (json.JSONDecodeError, GeminiError):
+                continue          # asked again the normal way by the caller
+        costs.record_gemini(model, totals if complete else {}, batch=True)
+        logger.info("Gemini batch %s: %s of %s answers usable", name, len(out), len(items))
+        return out
 
 
 def research(prompt: str) -> dict[str, Any]:

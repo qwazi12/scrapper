@@ -436,9 +436,11 @@ def stitch_countdown_compilation(
     if len(projects) < 2:
         raise ValueError("A countdown compilation requires at least 2 projects (typically 5 or 10).")
 
-    comp_id = int(datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
+    # Separate attempts must never share output files, even in the same second.
+    from uuid import uuid4
+    comp_id = uuid4().hex
     comp_dir = compilations_dir() / str(comp_id)
-    comp_dir.mkdir(parents=True, exist_ok=True)
+    comp_dir.mkdir(parents=True, exist_ok=False)
     segs_dir = comp_dir / "segments"
     segs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -577,14 +579,14 @@ def stitch_countdown_compilation(
     # 6. Format Chapter Text & SEO Description
     chapters_txt = "\n".join(f"{ch['time_formatted']} - {ch['title']}" for ch in chapters)
     description = (
-        f"Counting down the top {len(projects)} movie and television releases you cannot afford to miss! "
-        f"From upcoming blockbusters to sleeper hits, here is our definitive breakdown.\n\n"
+        f"An editorial countdown of {len(projects)} film and TV picks: {title}. "
+        f"The order reflects our editorial preferences.\n\n"
         f"TIMESTAMPS:\n{chapters_txt}\n\n"
         f"Subscribe to {channel_name} for daily movie news, trailers, and breakdowns.\n\n"
         f"{tmdb.ATTRIBUTION}"
     )
 
-    tags = f"top {len(projects)}, movie countdown, best movies, upcoming movies 2026, trailer breakdown, screen central"
+    tags = f"top {len(projects)}, movie countdown, film and tv, trailer breakdown, screen central"
     for p in projects:
         tags += f", {p.title}"
 

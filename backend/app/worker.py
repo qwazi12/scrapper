@@ -16,7 +16,7 @@ import time
 
 from ..core import compiler, engine
 from ..core.scraper import platform_of, scrape
-from . import cleanup, control
+from . import cleanup, control, worker_leases as leases
 from .config import settings
 from .db import SessionLocal, init_db
 from .logbus import log, record_outcome
@@ -54,7 +54,39 @@ def _sleep(seconds: float) -> None:
         time.sleep(min(0.5, end - time.time()) if end > time.time() else 0)
 
 
-def _process_ingest(job_id: int) -> None:
+def _owned(kind, model, ident, fn) -> bool:
+    """Lease before reading queue state; a stale scanned candidate is rechecked."""
+    try:
+        with leases.scope(f"{kind}:{ident}"):
+            with SessionLocal() as s:
+                row=s.get(model,ident)
+                if not row or row.status != Status.queued: return False
+            fn(ident)
+            return True
+    except leases.LeaseLost:
+        return False
+
+
+def _process_ingest(job_id: int) -> bool:
+    return _owned('ingest',IngestJob,job_id,_ingest_owned)
+
+
+def _process_compile(comp_id: int) -> bool:
+    return _owned('compile',Compilation,comp_id,_compile_owned)
+
+
+def _attempt_root(base):
+    import hashlib
+    h=leases.current()
+    if not h: raise leases.LeaseLost('Worker output requires a claimed resource')
+    leases.guard()
+    key=hashlib.sha256(h.resource.encode()).hexdigest()[:16]
+    path=base / '_attempts' / f'{key}-{h.owner}-{h.generation}'
+    path.mkdir(parents=True,exist_ok=True)
+    return path
+
+
+def _ingest_owned(job_id: int) -> None:
     with SessionLocal() as s:
         job = s.get(IngestJob, job_id)
         if not job:
@@ -79,6 +111,8 @@ def _process_ingest(job_id: int) -> None:
                 _scrape_one(job_id, url)
                 if n < len(urls):
                     _sleep(settings.per_clip_delay_seconds)  # Layer 3: self-rate-limit
+    except leases.LeaseLost:
+        raise
     except control.Cancelled:
         with SessionLocal() as s:
             job = s.get(IngestJob, job_id)
@@ -114,10 +148,15 @@ def _process_ingest(job_id: int) -> None:
 
 def _scrape_call(url: str):
     """One yt-dlp run; Stop kills it (control.run)."""
+    import shutil
+    root=_attempt_root(settings.downloads_path)
+    archive=root / 'archive.txt'
+    if not archive.exists() and settings.archive_path.is_file():
+        shutil.copy2(settings.archive_path,archive)  # snapshot; stale workers cannot edit shared history
     return scrape(
         url,
-        downloads_dir=settings.downloads_path,
-        archive_path=settings.archive_path,
+        downloads_dir=root,
+        archive_path=archive,
         cookies_path=settings.cookies_path,
         proxy=settings.proxy_url or None,
         sleep_preset=settings.ytdlp_sleep_preset,
@@ -225,7 +264,7 @@ def _apply(clip: Clip, meta: dict) -> None:
             setattr(clip, k, meta[k])
 
 
-def _process_compile(comp_id: int) -> None:
+def _compile_owned(comp_id: int) -> None:
     with SessionLocal() as s:
         comp = s.get(Compilation, comp_id)
         if not comp:
@@ -234,10 +273,10 @@ def _process_compile(comp_id: int) -> None:
         s.commit()
         clip_ids, orientation = list(comp.clip_ids), comp.orientation
         clips = [s.get(Clip, cid) for cid in clip_ids]
-        files = [c.file_path for c in clips if c and c.file_path]
+        files = [c.file_path for c in clips if c and c.status==Status.done and c.file_path]
 
-    if len(files) < 1:
-        _fail_compile(comp_id, "no valid clips selected")
+    if not files or len(files)!=len(clip_ids):
+        _fail_compile(comp_id, "Every selected clip must be complete and available; compilation was not shortened")
         return
 
     try:
@@ -248,7 +287,7 @@ def _process_compile(comp_id: int) -> None:
 
     stamp = _now().strftime("%Y-%m-%d_%H%M%S")
     suffix = "_landscape" if orientation == "landscape" else ""
-    out = settings.compilations_path / f"compilation_{stamp}{suffix}.mp4"
+    out = _attempt_root(settings.compilations_path) / f"compilation_{comp_id}_{stamp}{suffix}.mp4"
     log("info", "compile_start", f"{len(files)} clips -> {out.name}", orientation=orientation)
 
     def progress(p: float) -> None:
@@ -259,13 +298,19 @@ def _process_compile(comp_id: int) -> None:
                 s.commit()
 
     try:
-        with control.job("compile", f"Compilation #{comp_id} ({len(files)} clips)", scope="compile", ref=comp_id):
+        from .file_use import pin
+        with pin(files), control.job("compile", f"Compilation #{comp_id} ({len(files)} clips)", scope="compile", ref=comp_id):
             compiler.compile_videos(
                 files, out, orientation=orientation,
                 encoder=settings.video_encoder, bitrate=settings.video_bitrate,
                 fps=settings.encode_fps, on_progress=progress, on_start=control.track,
             )
             control.check()
+            from .studio.media_quality import inspect_export
+            quality=inspect_export(out,aspect=16/9 if orientation=='landscape' else 9/16)
+            if quality['errors']: raise RuntimeError('Compilation quality blocked: '+'; '.join(quality['errors']))
+    except leases.LeaseLost:
+        raise
     except control.Cancelled:
         out.unlink(missing_ok=True)
         _fail_compile(comp_id, "stopped by user")
@@ -299,19 +344,11 @@ def _fail_compile(comp_id: int, msg: str) -> None:
 
 def _drain_once() -> bool:
     """Process one queued job (ingest first, then compile). Returns True if it did work."""
-    with SessionLocal() as s:
-        job = s.query(IngestJob).filter(IngestJob.status == Status.queued).order_by(IngestJob.id).first()
-        job_id = job.id if job else None
-    if job_id is not None:
-        _process_ingest(job_id)
-        return True
-
-    with SessionLocal() as s:
-        comp = s.query(Compilation).filter(Compilation.status == Status.queued).order_by(Compilation.id).first()
-        comp_id = comp.id if comp else None
-    if comp_id is not None:
-        _process_compile(comp_id)
-        return True
+    for model, fn in ((IngestJob,_process_ingest),(Compilation,_process_compile)):
+        with SessionLocal() as s:
+            ids=[r.id for r in s.query(model).filter(model.status==Status.queued).order_by(model.id).limit(20)]
+        for ident in ids:
+            if fn(ident): return True
     return False
 
 
@@ -344,44 +381,28 @@ def recover_interrupted_worker(s: Session) -> dict:
     recovered_comp = 0
     recovered_clips = 0
 
-    # 1. Clean up clips stuck in running
-    for c in s.query(Clip).filter(Clip.status == Status.running).all():
-        if c.file_path and pathlib.Path(c.file_path).exists() and pathlib.Path(c.file_path).stat().st_size > 0:
-            c.status = Status.done
-        else:
-            if c.file_path:
-                pathlib.Path(c.file_path).unlink(missing_ok=True)
-            # Remove incomplete placeholder clip so re-scrape can run cleanly
-            s.delete(c)
-        recovered_clips += 1
-
-    # 2. Recover IngestJobs stuck in running
-    for job in s.query(IngestJob).filter(IngestJob.status == Status.running).all():
-        done_count = s.query(Clip).filter(Clip.job_id == job.id, Clip.status == Status.done).count()
-        job.done_count = done_count
-        if done_count >= len(job.urls):
-            job.status = Status.done
-            job.finished_at = _now()
-        else:
-            # Re-queue to finish remaining URLs
-            job.status = Status.queued
-            recovered_ingest += 1
-            log("info", "ingest_recovered", f"Job #{job.id} resumed after restart ({done_count}/{len(job.urls)} already completed)")
-
-    # 3. Recover Compilations stuck in running
-    for comp in s.query(Compilation).filter(Compilation.status == Status.running).all():
-        out = pathlib.Path(comp.output_path) if comp.output_path else None
-        if out and out.exists() and out.stat().st_size > 0:
-            comp.status = Status.done
-            comp.finished_at = _now()
-        else:
-            if out:
-                out.unlink(missing_ok=True)
-            comp.status = Status.queued
-            comp.progress = 0.0
-            recovered_comp += 1
-            log("info", "compile_recovered", f"Compilation #{comp.id} re-queued after restart")
-
+    # Only a lease claimant can recover. Never infer completion from nonempty
+    # partial files, delete a live worker's media, or promote an unverified output.
+    for kind, model in (("ingest",IngestJob),("compile",Compilation)):
+        ids=[r.id for r in s.query(model).filter(model.status==Status.running)]
+        s.rollback()  # do not hold a scanned snapshot across resource acquisition
+        for ident in ids:
+            try:
+                with leases.scope(f"{kind}:{ident}"):
+                    row=s.get(model,ident,populate_existing=True)
+                    if not row or row.status!=Status.running: continue
+                    if kind=="ingest":
+                        for clip in s.query(Clip).filter_by(job_id=ident,status=Status.running):
+                            clip.status=Status.skipped;clip.error="Interrupted attempt; media was not promoted"
+                            recovered_clips+=1
+                        row.done_count=s.query(Clip).filter_by(job_id=ident,status=Status.done).count()
+                        row.failed_count=s.query(Clip).filter_by(job_id=ident,status=Status.failed).count()
+                        row.status=Status.queued;recovered_ingest+=1
+                    else:
+                        row.status=Status.queued;row.progress=0;recovered_comp+=1
+                    s.commit()
+            except leases.LeaseLost:
+                s.rollback()
     s.commit()
     return {"ingest": recovered_ingest, "compilations": recovered_comp, "clips": recovered_clips}
 

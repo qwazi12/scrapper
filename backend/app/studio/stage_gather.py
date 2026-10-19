@@ -10,7 +10,7 @@ from .. import control
 from ..db import SessionLocal
 from ..models import StudioProject
 from . import gemini, sources, tmdb
-from .runner import project_dir, stage
+from .runner import attempt_dir, project_dir, stage
 
 # The guide's trusted sources, in its order of preference.
 GUIDE_SOURCES = (
@@ -66,7 +66,7 @@ def gather(project_id: int) -> str:
         media_type, tmdb_id = p.media_type, p.tmdb_id
 
     facts = tmdb.fact_sheet(media_type, tmdb_id)
-    assets = project_dir(project_id) / "assets"
+    assets = attempt_dir(project_id) / "assets"
     assets.mkdir(exist_ok=True)
     local = {
         "poster": _download(facts["poster"], assets / "poster.jpg"),
@@ -82,6 +82,9 @@ def gather(project_id: int) -> str:
 
     control.check()
     research = sources.annotate(gemini.research(research_prompt(facts)))
+    # Generated evidence/review identifiers cannot authorize narration.
+    for claim in research.get("claims", []):
+        claim.pop("evidence", None)
     control.check()
 
     with SessionLocal() as s:

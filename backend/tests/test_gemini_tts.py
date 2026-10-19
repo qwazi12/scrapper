@@ -35,6 +35,8 @@ class Resp:
 
 @pytest.fixture()
 def gem(monkeypatch, tmp_path):
+    from backend.app import costs
+    monkeypatch.setitem(costs.DEFAULTS, "request_bounds", {"gemini-tts:gemini-3.8-flash-tts": .05})
     tts._working_api.clear()
     monkeypatch.setattr(settings, "gemini_api_key", "test-gemini")
     monkeypatch.setattr(settings, "tts_engine", "gemini")

@@ -20,6 +20,7 @@ import json
 import logging
 import threading
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -30,7 +31,7 @@ from . import logbus
 from .auth import require_token
 from .config import settings
 from .db import SessionLocal
-from .models import AppSetting
+from .models import AppSetting, CreditReservation
 
 logger = logging.getLogger("scrapper.vidiq")
 UTC = datetime.timezone.utc
@@ -43,7 +44,8 @@ FREE = {"vidiq_balance", "vidiq_user_channels", "vidiq_jobs_list", "vidiq_job_po
         "vidiq_bookmarks_save", "vidiq_bookmarks_remove", "vidiq_list_competitors", "vidiq_update_competitors",
         "vidiq_trend_categories", "vidiq_voiceover_list_voices", "vidiq_video_upload", "vidiq_submit_feedback"}
 # Known heavier tools (estimates err high; vidiq_balance shows the true balance).
-COSTS = {"vidiq_video_watch": 25, "vidiq_watch_shortform_content": 10, "vidiq_generate_thumbnail": 22,
+COSTS = {"vidiq_keyword_research": 5, "vidiq_outliers": 5, "vidiq_score_title": 5,
+         "vidiq_trending_videos": 5, "vidiq_youtube_search": 5, "vidiq_video_watch": 25, "vidiq_watch_shortform_content": 10, "vidiq_generate_thumbnail": 22,
          "vidiq_refine_thumbnail": 22, "vidiq_voiceover_generate": 14, "vidiq_generate_video": 50,
          "vidiq_generate_music": 20, "vidiq_compose": 20, "vidiq_generate_clips": 30, "vidiq_generate_script": 10}
 BACKOFF = 30 * 60
@@ -83,9 +85,11 @@ def _ledger(s) -> dict[str, Any]:
     return dict(row.value or {}) if row else {}
 
 
-def _day() -> str:
+def _day(s=None) -> str:
     from . import costs
-    return datetime.datetime.now(UTC).astimezone(costs.day_tz()).date().isoformat()
+    if s is None:
+        with SessionLocal() as own:return _day(own)
+    return costs.clock(s).astimezone(costs.day_tz()).date().isoformat()
 
 
 def usage(s=None) -> dict[str, Any]:
@@ -93,8 +97,10 @@ def usage(s=None) -> dict[str, Any]:
     s = s or SessionLocal()
     try:
         led = _ledger(s)
-        day, month = _day(), _day()[:7]
-        return {"today": int((led.get("days") or {}).get(day, 0)),
+        day = _day(s)
+        month=day[:7]
+        held = sum(r.credits for r in s.query(CreditReservation).filter(CreditReservation.state.in_(("reserved","dispatched","unknown"))).all())
+        return {"held": held, "today": int((led.get("days") or {}).get(day, 0)),
                 "month": sum(int(v) for k, v in (led.get("days") or {}).items() if k.startswith(month)),
                 "calls_today": int((led.get("calls") or {}).get(day, 0))}
     finally:
@@ -102,39 +108,57 @@ def usage(s=None) -> dict[str, Any]:
             s.close()
 
 
-def _charge(tool: str, credits: int) -> None:
-    with SessionLocal() as s:
-        led = _ledger(s)
-        day = _day()
-        days = dict(led.get("days") or {})
-        calls = dict(led.get("calls") or {})
-        days[day] = int(days.get(day, 0)) + credits
-        calls[day] = int(calls.get(day, 0)) + 1
-        keep = sorted(days)[-62:]                         # ~2 months of history
-        led = {"days": {k: days[k] for k in keep}, "calls": {k: calls.get(k, 0) for k in keep}}
-        row = s.get(AppSetting, "vidiq_ledger")
-        if row:
-            row.value = led
-        else:
-            s.add(AppSetting(key="vidiq_ledger", value=led))
+def _update_ledger(s, credits):
+    led = _ledger(s)
+    day = _day(s)
+    days, calls = dict(led.get('days') or {}), dict(led.get('calls') or {})
+    days[day] = int(days.get(day, 0)) + credits
+    calls[day] = int(calls.get(day, 0)) + 1
+    keep = sorted(days)[-62:]
+    value = {'days': {k: days[k] for k in keep}, 'calls': {k: calls.get(k, 0) for k in keep}}
+    row = s.get(AppSetting, 'vidiq_ledger')
+    if row: row.value = value
+    else: s.add(AppSetting(key='vidiq_ledger', value=value))
+
+
+def _charge(tool: str, credits: int, reservation: str | None = None) -> None:
+    from . import worker_leases as leases, file_use
+    from .models import FinancialResolution
+    # Receipt accounting must survive loss of the content-generation lease.
+    with leases.bind(None), file_use.suspend(), SessionLocal() as s:
+        from .budget_reservations import lock
+        lock(s)
+        if reservation:
+            hold=s.get(CreditReservation,reservation)
+            reviewed=s.query(FinancialResolution).filter_by(kind='credit',reservation_id=reservation).first()
+            if not hold or (hold.state not in ('dispatched','unknown') and not reviewed):
+                raise VidIQError('Credit receipt already settled or missing')
+            s.add(FinancialResolution(id=str(uuid.uuid4()),kind='credit_estimate',reservation_id=reservation,
+                amount=credits,receipt='Configured cost for '+tool,
+                rationale='Tool completed. This is the configured credit estimate, not an independently verified provider invoice.'))
+            if reviewed:
+                s.commit();return  # Preserve the owner's exact provider receipt amount.
+            hold.state='settled'
+        _update_ledger(s,credits)
         s.commit()
 
 
 def cost_of(tool: str) -> int:
     if tool in FREE:
         return 0
-    return COSTS.get(tool, COST_DEFAULT)
+    if tool not in COSTS: raise VidIQError(f"Unknown credit cost for {tool}; add an explicit bounded tool price first")
+    return COSTS[tool]
 
 
-def _check_credits(tool: str) -> int:
+def _check_credits(tool: str, s=None) -> int:
     c = cost_of(tool)
     if not c:
         return 0
-    cfg = settings_value()
-    u = usage()
-    if u["today"] + c > int(cfg["daily_credits"]):
+    cfg = settings_value(s)
+    u = usage(s)
+    if u["today"] + u["held"] + c > int(cfg["daily_credits"]):
         raise CreditCapReached(f"vidIQ daily credit cap reached ({u['today']} of {cfg['daily_credits']})")
-    if u["month"] + c > int(cfg["monthly_credits"]):
+    if u["month"] + u["held"] + c > int(cfg["monthly_credits"]):
         raise CreditCapReached(f"vidIQ monthly credit cap reached ({u['month']} of {cfg['monthly_credits']})")
     return c
 
@@ -237,19 +261,19 @@ def _call(method: str, params: dict | None = None) -> Any:
     if time.time() < _state["down_until"]:
         raise VidIQError(f"vidIQ is backing off after an error: {_state['last_error']}")
     with _lock:
-        for attempt in range(2):
+        for attempt in range(1 if method == "tools/call" else 2):
             try:
                 _ensure_session()
                 out = _rpc(method, params)
                 _state["last_error"] = None
                 return out
             except VidIQError as exc:
-                if str(exc) == "session expired" and attempt == 0:
+                if method != "tools/call" and str(exc) == "session expired" and attempt == 0:
                     continue
                 _fail(str(exc))
                 raise
             except httpx.HTTPError as exc:
-                if attempt == 0:
+                if method != "tools/call" and attempt == 0:
                     time.sleep(1.5)
                     continue
                 _fail(f"network: {exc}")
@@ -290,6 +314,7 @@ def _content(result: Any) -> Any:
 
 def call(tool: str, args: dict | None = None, *, cache_hours: float | None = None, purpose: str = "") -> Any:
     """Run a vidIQ tool with credit guard + cache. Raises VidIQError / CreditCapReached."""
+    if not configured():raise VidIQError("VIDIQ_API_KEY is not configured; no credits reserved")
     args = args or {}
     cfg = settings_value()
     if not cfg["enabled"]:
@@ -300,13 +325,44 @@ def call(tool: str, args: dict | None = None, *, cache_hours: float | None = Non
         hit = _cache_get(k, hours)
         if hit is not None:
             return hit
-    credits = _check_credits(tool)
-    result = _call("tools/call", {"name": tool, "arguments": args})
-    if isinstance(result, dict) and result.get("isError"):
-        raise VidIQError(f"{tool}: {str(_content(result))[:200]}")
-    out = _content(result)
-    if credits:
-        _charge(tool, credits)
+    from . import resume
+    from .budget_reservations import lock
+    resume.assert_current_lease()
+    rid=None
+    handle=None
+    from . import worker_leases as leases
+    from .resume import BOOT
+    with SessionLocal() as s:
+        lock(s)
+        credits=_check_credits(tool,s)
+        if credits:
+            hold=CreditReservation(id=str(uuid.uuid4()),tool=tool,credits=credits,state="reserved",created_at=leases.clock(s))
+            s.add(hold); rid=hold.id
+            handle=leases.acquire(s,"credit:"+rid,BOOT)
+        s.commit()
+    try:
+        import contextlib
+        with leases.keepalive(handle) if handle else contextlib.nullcontext():
+            resume.assert_current_lease()
+            if rid:
+                with SessionLocal() as s:
+                    lock(s)
+                    leases.guard(s,handle)
+                    s.get(CreditReservation,rid).state='dispatched';s.commit()
+            result = _call("tools/call", {"name": tool, "arguments": args})
+            if isinstance(result, dict) and result.get("isError"):
+                raise VidIQError(f"{tool}: {str(_content(result))[:200]}")
+            out = _content(result)
+            if credits: _charge(tool, credits, rid)
+    finally:
+        if rid:
+            with SessionLocal() as s:
+                lock(s)
+                row=s.get(CreditReservation,rid)
+                if row.state == 'reserved': row.state='released'
+                elif row.state == 'dispatched': row.state='unknown'
+                leases.release(s,handle)
+                s.commit()
     logbus.log("info", "vidiq_call", f"vidIQ {tool}" + (f" ({purpose})" if purpose else "") + f" — {credits} credits")
     if hours > 0:
         _cache_put(k, out)
