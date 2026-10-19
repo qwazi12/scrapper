@@ -153,3 +153,24 @@ Detailed contracts: [local safety](LOCAL_CONTRACTS_20261018.md),
 [learning](LEARNING_DIAGNOSTICS.md), [database recovery](DATABASE_RECOVERY.md),
 and [owner recovery](OWNER_RECOVERY.md). The progress ledger retains earlier
 failures, corrective runs and historical counts; older counts are not current.
+
+## Original-Studio queue source lineage
+
+```mermaid
+flowchart LR
+  A[Reviewed LongForm or Countdown] --> B[Retained ExportVersion inputs and bytes]
+  B --> C[Append-only QueueSourceBinding]
+  C --> D[Queue creation identity and exact copy]
+  D --> E[Current retained facts and byte checks]
+  E --> F[Atomic revision/identity claim and intent]
+  F --> G[Simulated or authorized provider transport]
+  G --> H[Durable result or late receipt with source binding]
+  C --> I[Owner read-only source evidence]
+```
+
+Countdown bindings include each exact retained segment and current eligibility
+evidence. Legacy unbound Studio rows require an explicit reviewed resend; queue
+copy/cover changes require revising the source. Working render/cover revisions
+can coexist with retained queued bytes. This is typed consistency plus owner
+acceptance, not independent complete truth or legal certification. See
+[queued source contract](QUEUED_STUDIO_SOURCES.md) and [credit context](CREDIT_CONTEXT.md).

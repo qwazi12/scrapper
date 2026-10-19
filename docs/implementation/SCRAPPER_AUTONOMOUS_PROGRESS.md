@@ -715,3 +715,32 @@ Evidence history/live-research-admission1/2, source
 Next critical task is immutable source/fact binding through original Studio queue
 dispatch, whose existing summary metadata cannot provide retained research proof.
 No paid/public/account/archive/push/deploy activity; work continues.
+
+## Retained Studio dispatch, writing roles and full29 browser regression
+
+Backend source commit56a0b7f retains accepted source exports/Countdown segments,
+exact copy/media and queue creation identity in append-only versioned bindings.
+Dispatch checks current retained facts, acceptance, bytes and source revision
+before durable intent; late receipts preserve source identity. Unknown/legacy
+sources fail closed. Writer commit3360abb requires every explicit credited writer
+and title context, preserving original novelist/story roles and owner words.
+
+Backend760passed/1optional skip83.73s; actualPG284passed38.57s plus native restore
+1.350s206252bytes/source unchanged. Production build2/tsc2passed. Fresh actual
+full browser29passed5.3min; sourceee302aca8fc87bf0221dc184b3c27fd1b8bb7c9401d1d4d7234ee6dc3fdc308f,
+all media/DB/traces/reports/exact executed spec/component/verified snapshot under
+artifacts/e2e/history/queue-source-binding3. SnapshotSHA
+678c97a1116f24c78848ff5c5ec6c4f88ae37b832b0596c1b63d82a057859a10.
+Initial scoped/full failed test assumptions are retained in history1/2: wrong
+queue tab, old working-cover lock expectation, visible vs hidden DOM text.
+No product admission was weakened for those fixtures; actual source/binding and
+working-cover immutability checks now pass. Source evidence UI displays exact
+plain words, expandable acceptance/facts/timing/hashes, identity-safe refresh,
+last-view preservation and explicit unconfirmed reads.
+
+Separate following protocol-write compatibility changes are outside that full29
+frozen source. Their focused53/backend766/1skip/actualPG290/native restore are
+separate lanes and still require current startup/UI inspection. The database
+marker does not stop arbitrary old code without a DB write or recall in-flight
+provider requests; old publishers must stop for rollout/rollback. No production
+compatibility, paid/public/account/archive/push/deploy claim. Continue C01–C14.

@@ -115,6 +115,17 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   await page.getByRole("button", { name: /SocialPilot AI/ }).click();
   await page.getByRole("button", { name: "🎬 LongForm Breakdowns", exact: true }).click();
   await page.getByRole("button", { name: /Ready to Post/ }).click();
+  await page.getByRole("button", { name: "Queued source evidence", exact: true }).click();
+  const sourceDialog = page.getByRole("dialog", { name: "Queued source evidence", exact: true });
+  await sourceDialog.getByLabel("Source queue item").selectOption({ label: (await sourceDialog.getByLabel("Source queue item").locator("option").allTextContents()).find(text => text.startsWith(`#${queued.queue_item_id} ·`))! });
+  await expect(sourceDialog.getByTestId("queued-source-context")).toContainText("Local checks passed");
+  await expect(sourceDialog.getByTestId("queued-source-context")).toContainText("Binding revision 1");
+  const retainedSource = await (await request.get(`${stack.api}/api/queue/${queued.queue_item_id}/source-context`, { headers })).json();
+  expect(retainedSource.source.script).toEqual(project.script);
+  expect(retainedSource.source.assets.find((a: any) => a.role === "video").sha256).toBe(createHash("sha256").update(readFileSync(actual)).digest("hex"));
+  expect((await request.patch(`${stack.api}/api/queue/${queued.queue_item_id}`, { headers, data: { title: "Unreviewed copy cannot replace source" } })).status()).toBe(409);
+  await sourceDialog.screenshot({ path: path.join(evidence, "queued-source-evidence.png") });
+  await sourceDialog.getByRole("button", { name: "Close source evidence", exact: true }).click();
   await page.screenshot({ path: path.join(evidence, "queue-before-submit.png"), fullPage: true });
   await page.getByRole("button", { name: "🚀 Post Now", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
@@ -128,6 +139,49 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   await page.screenshot({ path: path.join(evidence, "queue-reconciled.png"), fullPage: true });
   writeFileSync(path.join(evidence, "browser-errors.json"), JSON.stringify(errors, null, 2));
   expect(errors).toEqual([]);
+});
+
+test("queued source evidence retains last retrieved words on read failure and fences late refreshes", async ({ page, request }) => {
+  // This suite deliberately follows the preceding actual LongForm production
+  // flow; no opaque source or mocked approval is represented as a real export.
+  const items = await (await request.get(`${stack.api}/api/queue`, { headers })).json();
+  const item = items.find((value: any) => value.source === "LongForm Studio" && value.status === "archived");
+  expect(item).toBeTruthy();
+  await page.goto("/#socialpilot");
+  await page.getByRole("button", { name: "🎬 LongForm Breakdowns", exact: true }).click();
+  await page.getByRole("button", { name: "Queued source evidence", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Queued source evidence", exact: true });
+  await dialog.getByLabel("Source queue item").selectOption(`${item.id}:${item.created_at}`);
+  await expect(dialog.getByTestId("queued-source-context")).toContainText("Local checks passed");
+  const before = await dialog.getByTestId("queued-source-context").innerText();
+  const routePattern = `**/api/queue/${item.id}/source-context?*`;
+  await page.route(routePattern, route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic source read outage" }) }));
+  await dialog.getByRole("button", { name: "Refresh source checks", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Last retrieved evidence retained; current checks are unconfirmed");
+  await expect.poll(() => dialog.getByTestId("queued-source-context").innerText()).toBe(before);
+  await dialog.screenshot({ path: path.join(evidence, "queued-source-read-outage.png") });
+  await page.unroute(routePattern);
+  let unblock!: () => void;
+  let entered!: () => void;
+  const pending = new Promise<void>(resolve => { unblock = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let reads = 0;
+  await page.route(routePattern, async route => {
+    if (++reads === 1) { entered(); await pending; }
+    await route.continue().catch(() => {}); // superseded browser read is aborted
+  });
+  await dialog.getByRole("button", { name: "Refresh source checks", exact: true }).click();
+  await started;
+  await dialog.getByRole("button", { name: "Refresh source checks", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByText("Checking retained source…", { exact: true })).toHaveCount(0);
+  unblock();
+  await expect.poll(() => dialog.getByTestId("queued-source-context").innerText()).toBe(before);
+  await page.unroute(routePattern);
+  await dialog.getByLabel("Source queue item").selectOption("");
+  await expect(dialog.getByTestId("queued-source-context")).toHaveCount(0);
+  await dialog.getByLabel("Source queue item").selectOption(`${item.id}:${item.created_at}`);
+  await expect(dialog.getByTestId("queued-source-context")).toContainText("Local checks passed");
 });
 
 test("all main navigation pages and same-document hash changes render without browser errors", async ({ page }) => {
@@ -207,10 +261,24 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await expect.poll(async () => !!(await getCountdown()).queue_item_id).toBe(true);
   const queuedExport = await getCountdown();
+  const countdownSource = await (await request.get(`${stack.api}/api/queue/${queuedExport.queue_item_id}/source-context`, { headers })).json();
+  expect(countdownSource.state).toBe("checks_passed");
+  expect(countdownSource.binding.kind).toBe("countdown");
+  expect(countdownSource.segments).toHaveLength(5);
+  expect(countdownSource.source.script).toEqual(queuedExport.script);
   const queuedThumbnail = readFileSync(queuedExport.render.thumbnail);
+  const queuedItem = (await (await request.get(`${stack.api}/api/queue`, { headers })).json()).find((value: any) => value.id === queuedExport.queue_item_id);
+  const retainedThumbnail = readFileSync(queuedItem.thumb_path);
+  expect(retainedThumbnail.equals(queuedThumbnail)).toBe(true);
   const replacement = await request.post(`${stack.api}/api/countdowns/${cid}/thumbnail`, { headers, data: { option: "action" } });
-  expect(replacement.status()).toBe(409);
-  expect(readFileSync(queuedExport.render.thumbnail).equals(queuedThumbnail)).toBe(true);
+  // The working draft can now change because the queue owns an independent,
+  // accepted retained cover. It must never silently adopt that changed draft.
+  expect(replacement.status()).toBe(200);
+  expect(readFileSync(queuedItem.thumb_path).equals(retainedThumbnail)).toBe(true);
+  const afterDraftEdit = await (await request.get(`${stack.api}/api/queue/${queuedExport.queue_item_id}/source-context`, { headers })).json();
+  expect(afterDraftEdit.state).toBe("checks_passed");
+  expect(afterDraftEdit.binding.id).toBe(countdownSource.binding.id);
+  expect((await request.post(`${stack.api}/api/countdowns/${cid}/publish`, { headers })).status()).toBe(409);
   await page.screenshot({ path: path.join(evidence, "countdown-queued.png"), fullPage: true });
   writeFileSync(path.join(evidence, "countdown-browser-errors.json"), JSON.stringify(errors, null, 2));
   const isolation = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
@@ -1788,6 +1856,12 @@ test("Credit context UI preserves exact canonical names and blocks wrong title o
     ["Ada Example plays The Traveler / Invented Character.", false],
     ["Bea Fixture plays The Man in the Wall in Synthetic Film 88.", true],
     ["Dr. Original is played by Dee E. Sample in Synthetic Film 88.", true],
+    ["The screenplay was written by Invented Writer.", false, "structured writing credits"],
+    ["Ada Example and Invented Writer wrote the screenplay.", false, "structured writing credits"],
+    ["The screenplay was written by Ada Example for Other Story.", false, "structured writing credits"],
+    ["Ada Example wrote the screenplay for Synthetic Film 88 (2027).", false, "structured writing credits"],
+    ["The novel was written by Dee Sample.", true],
+    ["The screenplay was written by Bea E. Fixture.", true],
   ];
   for (const [words, valid, reason] of cases) {
     await editor.fill(words); await page.getByRole("button", { name: "Save script", exact: true }).click();
@@ -1803,6 +1877,7 @@ test("Credit context UI preserves exact canonical names and blocks wrong title o
     else {
       await expect(page.getByTestId("research-blocked")).toContainText(reason || "context conflicts");
       await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeDisabled();
+      if (words.includes("Invented Writer")) await page.screenshot({ path: path.join(evidence, "writing-context-blocked.png"), fullPage: true });
       if (words.includes("Other Story")) await page.screenshot({ path: path.join(evidence, "credit-context-blocked.png"), fullPage: true });
     }
   }

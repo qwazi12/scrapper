@@ -119,3 +119,24 @@ make tests look complete. Rollout remains one controlled worker/replica first;
 real unknown receipts must be reconciled before retry. Main, production and live
 accounts remain untouched while independent local work continues. No additional
 routine implementation permission is pending.
+
+## October19 retained-source and current-credit verification
+
+Latest complete UI generation: **29passed5.3min**, frozen backend/scripts
+ee302aca8fc87bf0221dc184b3c27fd1b8bb7c9401d1d4d7234ee6dc3fdc308f.
+Source bindings now retain accepted LongForm/Countdown script/facts/media/copy;
+new queue admission checks current facts and bytes, revision/identity CAS, legacy
+review and receipt lineage. Owner inspection shows plain narration plus retained
+acceptance/hashes with honest failed-read recovery. All previous actual local
+worker/media/native/recovery/audience/comment/learning flows passed alongside
+13 synthetic credit cases, including complete joint writers and original authors.
+The full backend for this generation passed760/1optional skip; actualPG284 plus
+restore1.350s/source unchanged. Build2/tsc2passed. One dependency deprecation warning
+per Python lane remains. Evidence: artifacts/e2e/history/queue-source-binding3.
+Earlier failed test assumptions and refinements are retained in history1/2; they
+are not represented as passes. No real external provider or public delivery was
+used. Queued-source contract: QUEUED_STUDIO_SOURCES.md.
+
+A later runtime database-write protocol fence is being verified separately;
+full29 does not include it. Broader C01–C14 and external/operational proof remain
+incomplete. Continue from MEMORY.md rather than stopping at this evidence index.

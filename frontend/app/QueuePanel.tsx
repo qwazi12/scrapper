@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PublicationEvidence } from "./PublicationEvidence";
+import { QueuedSourceEvidence } from "./QueuedSourceEvidence";
 import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, QueueThumbOptions, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
 import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
@@ -615,6 +616,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
             catch (e: any) { notify(`Reconciliation failed: ${e.message}`); }
           }}>Reconcile submitted posts</button>
           <PublicationEvidence items={allItems} onChanged={() => { void loadQueue(); onChange(); }} />
+          <QueuedSourceEvidence items={allItems} />
           {autopostPaused !== null && (
             <button
               onClick={toggleAutopost}

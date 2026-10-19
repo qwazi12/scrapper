@@ -53,15 +53,16 @@ permission decisions, stale/recovered review words and explicitly rebound revise
 native treatments passed focused actual UI and the complete24-browser regression. Still integrity and selected sources outside
 the actual100-row picker now also passed the complete26-browser regression.
 
-Latest completed broad evidence: **714 backend passes /1 optional skip**,
-**238 actual PostgreSQL passes** plus native restore, **6 frontend error unit
-passes**, production build/tsc passed, **26 actual browser scenarios passed**,
+Latest completed broad evidence: **760 backend passes /1 optional skip**,
+**284 actual PostgreSQL passes** plus native restore, **6 frontend error unit
+passes**, production build/tsc passed, **29 actual browser scenarios passed**,
 including background audio and asset-import metadata/catalog read recovery.
 Each Python lane has one reported TestClient/httpx deprecation warning; do not
 silence it or mutate the shared environment. Exact evidence paths are indexed in
-the report. More recent verified runs in the ledger supersede these counts. The26-browser
-full regression precedes the later typed credit-context correction; that slice
-has distinct actual persisted/API/UI evidence in CREDIT_CONTEXT.md.
+the report. More recent verified runs in the ledger supersede these counts. The29-browser
+regression includes retained queue sources, current-facts/cached-green admission,
+explicit writer relationships and asset/native recovery. Protocol compatibility
+changes may have later separate evidence; inspect MEMORY.md before continuing.
 
 Use the shared installed backend Python without changing it. Tests use fresh
 synthetic data and block unmocked external sockets. PostgreSQL uses only its marked

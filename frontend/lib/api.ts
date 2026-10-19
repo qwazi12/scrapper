@@ -195,6 +195,18 @@ export type QueueItem = {
   created_at: string;
 };
 
+export type QueuedSourceSnapshot = {
+  id: string; kind: "studio" | "countdown"; title: string; project_id: number;
+  current_project_matches: boolean; captured_at: string; source_created_at: string;
+  script: unknown; facts: unknown; approval: unknown;
+  assets: { role: string; sha256: string; bytes: number; available: boolean }[];
+};
+export type QueuedSourceView = {
+  queue_id: number; queue_created_at: string; queue_identity: string;
+  scope: string; state: string; message: string;
+  binding: { id: string; revision: number; kind: string; captured_at: string } | null;
+  source: QueuedSourceSnapshot | null; segments: QueuedSourceSnapshot[];
+};
 export type PublicationEntry = { client_request_id: string; state: string; profile?: string; platforms?: string[]; request_id?: string; error?: string };
 export type PublicationEvidenceView = {
   queue_id: number; status: string;
@@ -1337,6 +1349,7 @@ export const api = {
     }),
 
   publicationEvidence: (id: number) => req<PublicationEvidenceView>(`/api/queue/${id}/publication-evidence`, { headers: headers(false) }),
+  queueSourceContext: (id: number, createdAt: string, signal?: AbortSignal) => req<QueuedSourceView>(`/api/queue/${id}/source-context?expected_created_at=${encodeURIComponent(createdAt)}`, { headers: headers(false), signal }),
   publicationDecision: (id: number, data: PublicationDecisionInput) => req<{ saved: number; duplicate: boolean }>(`/api/queue/${id}/publication-decisions`, { method: "POST", headers: headers(), body: JSON.stringify(data) }),
   publicationLedger: () => req<PublicationEvidenceView["events"]>("/api/queue/publication-ledger/export?limit=2000", { headers: headers(false) }),
   reconcileQueue: () => req<{ settled: number }>("/api/queue/reconcile", { method: "POST", headers: headers() }),
