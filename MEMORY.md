@@ -1,5 +1,20 @@
 # Scrapper Memory
 
+## Current plan — 2026-10-19 (pm) — finish Codex's remaining roadmap (owner chose this)
+Order (Claude's recommendation from docs/implementation/CLAUDE_REVIEW_20261019.md), one commit + tests each:
+1. C05 Countdown audio/video stream-duration mismatch (>250 ms gate): reproduce on real + synthetic renders, fix the
+   cause in the stitch/mux, keep the gate.
+2. C13 Typed per-platform posting status in the queue UI (YouTube/Facebook/Instagram each: sent, posted+link,
+   rejected, unknown, waiting for its slot).
+3. C04/C11 The 409 media-ownership refusal in the legacy-upgrade browser case: find whether a failed render keeps
+   its file claim; release it correctly.
+4. C12 Test image: include the real worker modules (local_worker, archive_worker) so the archive/residential cases
+   run; get GitHub CI (backend, PostgreSQL, frontend, browser) green on Linux.
+5. C14 Docs: consolidate MEMORY.md (Current State / Pending / Log), RUNBOOK/CONFIG drift, handbook update.
+Parked until the owner connects accounts or asks: C08 audience adapters (YouTube Analytics first), C09 comments,
+C10 learning, C07 extra formats, C06 semantic beat/music matching, C02 specialised evidence, A01 archive
+(needs the channel-ownership check). Countdown #9 finishes on its own after the 00:00 ET budget reset.
+
 ## Live Drive sync correction — 2026-10-19 20:52 UTC (Codex)
 
 Logger fix 7d7004a is pushed to main and live in Railway deployment
