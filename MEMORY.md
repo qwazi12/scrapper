@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## Current plan — 2026-10-20 (pm) — full live test of the website (owner request)
+Owner: "test and click everything live even postings", report what works / what doesn't, after a bulk "Send to
+queue" of 20 LongForm videos sent 0 (false credit conflicts; pre-release renders never inspected; bulk send has no
+approval step). Plan: 1) drive the live site (owner's Chrome, already signed in — no credentials typed by Claude)
+through every page/tab/button incl. one real post; 2) record each result; 3) report issues ranked; 4) fix after the
+owner reviews (credit-check false positives, inspection backfill for old renders, bulk send approval).
+
 ## Current plan — 2026-10-19 (pm) — finish Codex's remaining roadmap (owner chose this)
 Order (Claude's recommendation from docs/implementation/CLAUDE_REVIEW_20261019.md), one commit + tests each:
 1. C05 Countdown audio/video stream-duration mismatch (>250 ms gate): reproduce on real + synthetic renders, fix the
