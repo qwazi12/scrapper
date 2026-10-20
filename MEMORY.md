@@ -1,5 +1,23 @@
 # Scrapper Memory
 
+## Authenticated 25-per-channel run active — 2026-10-20 03:28:45 UTC
+
+Started detached caffeinate-backed local batch at03:28:02 UTC from source2ec97dd,
+wrapper/PythonPID36569, new round-robin-auth state/log/launch evidence. Exact
+owner-selected session passed its preflight. First Agi3D3 Short -HrESrJCd48 was
+actually verified in Drive at03:28:35 UTC. Fresh checkpoint:107uploaded/downloaded,
+1skipped,0failed,3,899remaining,1,067,122,942video bytes. Process independently
+confirmed alive and state running, currently Agi3D3. Existing successful IDs are
+excluded; up to25new verified uploads per channel per turn, repeated rounds,
+Review-only Drive sync after each successful turn. Keep Mac powered/online.
+The previous blocked105 state and106 single-test checkpoint below are historical.
+This is a running archive, not all-channels completion. No server deployment,
+Ready/schedule/publish change or unrelated-worker interruption. Subsequent status
+must read live ledger/process/state; this timestamp is not a perpetual guarantee.
+Evidence: authenticated-running-checkpoint.json and round-robin-auth-log.txt in
+ignored operation artifacts. Source/tests and MEMORY are saved to GitHub branch
+codex/shorts-archive-20261019; no main merge/deployment was necessary.
+
 ## Owner-selected Brave session verified — 2026-10-20 03:27 UTC (Oct 19 ET)
 
 Owner supplied the exact Brave Personal Default Profile Path after signing into
