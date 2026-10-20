@@ -60,6 +60,11 @@ def pipeline_group(item: QueueItem) -> str:
     """Top-level pipeline an item posts under ("Movie Clips / @X" -> "Movie Clips")."""
     if item.pipeline in MOVIE_CLIPS_CHANNELS:
         return "Movie Clips"
+    # Anything imported from the Movie Clips Drive folder is a Short, whatever its channel subfolder is
+    # called (2026-10-20: archived channels named "AfridiAE — UC…" each became their own queue on the
+    # 1-a-day default, all firing at 10:00 together).
+    if (item.source or "").startswith("Movie Clips / ") and item.pipeline not in ("LongForm", "Countdowns"):
+        return "Movie Clips"
     if item.pipeline and not item.pipeline.startswith("@"):
         return item.pipeline
     src = item.source or ""

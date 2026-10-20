@@ -1146,3 +1146,10 @@ def test_default_destination_skips_blocked_profiles_and_falls_back(monkeypatch):
     monkeypatch.setattr(qm.upload_post, "list_accounts", down)
     monkeypatch.setattr(qm, "_dest_cache", {"at": 0.0, "profiles": None})
     assert qm.default_destination(["x:*"]) == ["x:*"]
+
+
+def test_any_movie_clips_drive_subfolder_posts_on_the_shorts_schedule():
+    it = QueueItem(pipeline="AfridiAE — UCKdzRZbkyT--dJcVvOhIK_w", source="Movie Clips / AfridiAE — UCKdzRZbkyT--dJcVvOhIK_w")
+    assert qm.pipeline_group(it) == "Movie Clips"
+    assert qm.pipeline_group(QueueItem(pipeline="LongForm", source="Movie Clips / x")) == "LongForm"
+    assert qm.pipeline_group(QueueItem(pipeline="Abyss", source="Abyss / @x")) == "Abyss"
