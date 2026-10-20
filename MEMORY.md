@@ -11,6 +11,19 @@ Order (Claude's recommendation from docs/implementation/CLAUDE_REVIEW_20261019.m
 4. C12 Test image: include the real worker modules (local_worker, archive_worker) so the archive/residential cases
    run; get GitHub CI (backend, PostgreSQL, frontend, browser) green on Linux.
 5. C14 Docs: consolidate MEMORY.md (Current State / Pending / Log), RUNBOOK/CONFIG drift, handbook update.
+PROGRESS 2026-10-20 (Claude):
+- Step 1 C05 DONE (ce32caa): uniform_audio cuts audio to the COPIED video length (two passes) and re-encodes
+  trimmed pieces (mid-stream copy cuts left out-of-order B-frames → "Final export decode reported errors" on
+  countdown #9's first render); final loudnorm cut to picture length. Repro skew 0.48 s/0.121 s → 0.0; real-ffmpeg test.
+- COUNTDOWN PROOF VERIFIED: #9 (Top 10 R-rated comic book) upgraded (300 year 2006→2007), 10 entries remade,
+  bookends reviewed, rendered 612.2 s with audio=video, approved (detailed), queue #844 (new reviewed binding),
+  posted: YouTube oOIWAsLG9Ks, FB reel 1372518811362658, IG Des-U6BjmTb.
+- Step 2 C13 DONE (d89f4ea): per-platform status chips on queue rows (frontend tests + tsc; not visually checked).
+- Steps 3/4 BLOCKED: need the Linux browser container — Docker Desktop is stopped on the Mac (starting it restarts
+  the owner's other containers) and quality.yml only runs on codex/** pushes and PRs. Owner decision.
+- Step 5 HELD: Codex is editing MEMORY.md on codex/shorts-archive-20261019 (local archive process running since
+  23:28 ET 10-19: 57/4007 Shorts uploaded per its state file; imports land in Review).
+
 HANDOFF (2026-10-19 ~17:30 UTC, session cleared by owner):
 - Step 1 C05 DIAGNOSED, NOT FIXED. Repro script (synthetic Top 5, 22.05 kHz mono "espeak-shaped" voices, real
   stitch.uniform_audio + voice_bumper + concat + final loudnorm). Causes: (a) stitch.uniform_audio sizes each piece by
