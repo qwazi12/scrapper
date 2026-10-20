@@ -11,6 +11,14 @@ Order (Claude's recommendation from docs/implementation/CLAUDE_REVIEW_20261019.m
 4. C12 Test image: include the real worker modules (local_worker, archive_worker) so the archive/residential cases
    run; get GitHub CI (backend, PostgreSQL, frontend, browser) green on Linux.
 5. C14 Docs: consolidate MEMORY.md (Current State / Pending / Log), RUNBOOK/CONFIG drift, handbook update.
+QUEUE 2026-10-20 (Claude, owner request): 727 archived Shorts (Codex archive → Drive → Review → owner set Ready).
+- Each channel subfolder became its own queue on the 1/day default (all 9 at 10:00, to YouTube too). 73a4b92:
+  any "Movie Clips / …" source groups as Movie Clips. Targets set to Cinama:facebook + Cinama:instagram (owner wants
+  FB/IG only); owner mass-set Cinama:* at 11:24 UTC by mistake → re-set (undo would have dropped SEO rewrites).
+  Schedule verified: 182/182/182/181 at 08:00/11:00/15:00/19:00 ET, through 2027-04-19.
+- Bulk AI SEO: 725/727 rewritten (8 retried after "metadata changed during AI generation" from the target change);
+  #763 and #1468 refused by Gemini (PROHIBITED_CONTENT) — post with raw text unless the owner edits them.
+
 PROGRESS 2026-10-20 (Claude):
 - Step 1 C05 DONE (ce32caa): uniform_audio cuts audio to the COPIED video length (two passes) and re-encodes
   trimmed pieces (mid-stream copy cuts left out-of-order B-frames → "Final export decode reported errors" on
