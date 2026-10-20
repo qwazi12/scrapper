@@ -7,6 +7,20 @@ approval step). Plan: 1) drive the live site (owner's Chrome, already signed in 
 through every page/tab/button incl. one real post; 2) record each result; 3) report issues ranked; 4) fix after the
 owner reviews (credit-check false positives, inspection backfill for old renders, bulk send approval).
 
+### Live test results 2026-10-20 (Claude, owner's signed-in Chrome; one real post)
+WORKS: every page loads, no console errors; queue lists/filters/archive; per-platform chips on posted rows; Post Now
+(#845 → YT SKjdjK2uxeI, FB 1153986026957104, IG DeuZpFXjGyi); schedule/next times; Drive Sync runs; voice test
+(Charon 8.1 s); Settings spending/accounts/backups; Scraper ingest + Mac handoff.
+BROKEN (ranked): 1) 20 rendered LongForms can't reach the queue — pre-release renders have no quality inspection
+(Approve greyed, no inspect action), bulk send has no approval step, credit check false positives (Outlander,
+Jailer 2, Hexed "voiced by", Sacrifice). 2) YouTube blocks the home Mac too ("not a bot") — every YouTube download
+fails (Scraper, YouTube trailers); likely the bulk archive on the same IP. 3) LongForm + Countdown automation OFF,
+countdown line empty, Countdowns queue empty. 4) Countdown #7 entry blocked: true peak > 0 dBFS (segment render
+has no limiter). 5) Drive Sync default folder = old empty personal folder; archive is Shared Drive
+1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY. 6) Budget holds leak on refused/timed-out Gemini calls (6 = $0.60). 7) Research
+ReadTimeout (#140). 8) vidIQ chip red while working. UX: Pacing "1/day, 728 days"; Errors tab red banner at 0;
+Editorial "refreshed" with no data source; Drive Sync channel list stale; SEO caption accuracy (Doctor Who).
+
 ## Current plan — 2026-10-19 (pm) — finish Codex's remaining roadmap (owner chose this)
 Order (Claude's recommendation from docs/implementation/CLAUDE_REVIEW_20261019.md), one commit + tests each:
 1. C05 Countdown audio/video stream-duration mismatch (>250 ms gate): reproduce on real + synthetic renders, fix the
