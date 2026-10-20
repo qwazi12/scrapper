@@ -83,24 +83,52 @@ def trailing_silence(path: pathlib.Path, total: float | None = None) -> float:
     return max(0.0, total - start) if start is not None else 0.0
 
 
+def video_seconds(path: pathlib.Path) -> float:
+    """Length of the video track itself (the file's length is the longer of video and audio)."""
+    out = media.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=duration",
+                     "-of", "csv=p=0", str(path)], timeout=30).stdout.strip()
+    try:
+        return float(out)
+    except ValueError:
+        return media.duration(path)
+
+
 def uniform_audio(src: pathlib.Path, dst: pathlib.Path, keep: float | None = None) -> pathlib.Path:
     """Same audio format for every piece before the join (owner, 2026-10-13: countdown audio broken).
     Breakdown renders are 96 kHz mono, #N cards 48 kHz stereo, the intro/outro voice another
     format — joined as-is, players read a stretched, drifting audio timeline. Each piece gets
-    48 kHz stereo AAC padded/trimmed to exactly its video's length (silence if it has none);
-    the video is copied untouched."""
-    v_dur = keep or media.duration(src)
-    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(src)]
+    48 kHz stereo AAC cut to exactly its video's length (silence if it has none); the video is
+    copied untouched.
+
+    C05 (2026-10-19): the audio is cut to the length of the COPIED video track, measured after the
+    copy — not the file's overall length (the longer of the two tracks) and not the requested cut
+    (a copied video can only stop on a frame). Otherwise each piece drifted 0.07–0.5 s."""
+    want = video_seconds(src)
+    if keep:
+        want = min(keep, want)
+    picture = dst.with_name(dst.stem + "_v.mp4")
+    if want < video_seconds(src) - 0.02:
+        # A trimmed piece is re-encoded: cutting a copied H.264 stream mid-way leaves out-of-order
+        # B-frames past the cut, which overlap the next piece at the join (frame times ran backwards;
+        # the release decode check rejected the countdown — C05, 2026-10-20).
+        video_codec = [*ENC]
+    else:
+        video_codec = ["-c:v", "copy"]
+    media.run(["ffmpeg", "-v", "error", "-y", "-t", f"{want:.3f}", "-i", str(src), "-map", "0:v:0", *video_codec,
+               "-an", "-video_track_timescale", "30000", str(picture)])
+    length = video_seconds(picture)
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(picture), "-i", str(src)]
     if has_audio(src):
-        amap = "0:a:0"
+        amap = "1:a:0"
     else:                                   # no sound at all: a silent track, so the join stays aligned
         cmd += ["-f", "lavfi", "-i", f"anullsrc=channel_layout=stereo:sample_rate={AUDIO_RATE}"]
-        amap = "1:a:0"
+        amap = "2:a:0"
     cmd += ["-map", "0:v:0", "-map", amap, "-c:v", "copy",
-            "-af", f"aresample={AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,apad",
-            "-t", f"{v_dur:.3f}", "-c:a", "aac", "-b:a", "192k", "-ar", str(AUDIO_RATE), "-ac", "2",
+            "-af", f"aresample={AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=0:{length:.6f}",
+            "-t", f"{length:.6f}", "-c:a", "aac", "-b:a", "192k", "-ar", str(AUDIO_RATE), "-ac", "2",
             "-video_track_timescale", "30000", str(dst)]
     media.run(cmd)
+    picture.unlink(missing_ok=True)
     return dst
 
 
@@ -560,13 +588,16 @@ def stitch_countdown_compilation(
     media.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(raw_joined_mp4)])
 
     final_mp4 = comp_dir / "final_compilation.mp4"
-    # Normalize master audio to YouTube broadcast standard -14 LUFS
+    # Normalize master audio to YouTube broadcast standard -14 LUFS, cut to the picture's exact length
+    # (the loudness pass alone lengthened the audio ~0.1 s — C05).
+    total = video_seconds(raw_joined_mp4)
     media.run([
         "ffmpeg", "-v", "error", "-y",
         "-i", str(raw_joined_mp4),
         "-c:v", "copy",
-        "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
+        "-af", f"loudnorm=I=-14:TP=-1.5:LRA=11,apad,atrim=0:{total:.3f}",
         "-c:a", "aac", "-b:a", "192k", "-ar", str(AUDIO_RATE), "-ac", "2",   # loudnorm upsamples; keep 48 kHz
+        "-t", f"{total:.3f}",
         str(final_mp4)
     ])
 
