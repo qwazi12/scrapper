@@ -1,5 +1,23 @@
 # Scrapper Memory
 
+## Current plan — 2026-10-20 (evening) — FIX PLAN from the live test — AWAITING OWNER APPROVAL (nothing built)
+Full plan: docs/implementation/FIX_PLAN_20261020.md. Most serious first; each step = reproduce → smallest fix →
+regression test → full suite + frontend checks → one commit → push when Studio is idle → verify live → log here.
+1. Unblock the 20 finished LongForms: (a) "Run inspection" route + backfill for pre-release renders (Approve is
+   greyed without render.quality); (b) bulk "Approve & send" using one-tap rules + saved rights statement;
+   (c) credit check flags only real contradictions (fixtures: Outlander, Jailer 2, Hexed, Sacrifice, Wicker; still
+   blocks Pattinson/Feyd-Rautha).
+2. True-peak limiter (−1 dBFS) on the final LongForm/entry render — unblocks countdown #7.
+3. YouTube "not a bot" on the Mac worker: owner picks pause-archive or Brave sign-in; show the real reason on rows.
+4. Turn LongForm + Countdown automation back on (owner), refill the line, re-run #10, fix #6/#8.
+5. Drive Sync default → Shared Drive Movie Clips 1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY via one setting; real channel list.
+6. Budget holds: settle refused calls at prompt cost; auto-settle timed-out holds at their bound after 24 h.
+7. Research ReadTimeout (#140): bounded retries.
+8. Honest labels: vidIQ chip, pacing runway, Shorts per-day, Errors banner, Editorial "refreshed".
+9. AI captions name actors only when the clip supports it.
+10. Housekeeping: stuck clip #1, MEMORY.md structure, RUNBOOK/CONFIG/handbook, one agent at a time on main.
+Owner decisions: D1 rights statement, D2 YouTube block option, D3 automation on, D4 countdowns #6/#8.
+
 ## Current plan — 2026-10-20 (pm) — full live test of the website (owner request)
 Owner: "test and click everything live even postings", report what works / what doesn't, after a bulk "Send to
 queue" of 20 LongForm videos sent 0 (false credit conflicts; pre-release renders never inspected; bulk send has no
