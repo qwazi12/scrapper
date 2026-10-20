@@ -11,6 +11,19 @@ Order (Claude's recommendation from docs/implementation/CLAUDE_REVIEW_20261019.m
 4. C12 Test image: include the real worker modules (local_worker, archive_worker) so the archive/residential cases
    run; get GitHub CI (backend, PostgreSQL, frontend, browser) green on Linux.
 5. C14 Docs: consolidate MEMORY.md (Current State / Pending / Log), RUNBOOK/CONFIG drift, handbook update.
+HANDOFF (2026-10-19 ~17:30 UTC, session cleared by owner):
+- Step 1 C05 DIAGNOSED, NOT FIXED. Repro script (synthetic Top 5, 22.05 kHz mono "espeak-shaped" voices, real
+  stitch.uniform_audio + voice_bumper + concat + final loudnorm). Causes: (a) stitch.uniform_audio sizes each piece by
+  media.duration() = format duration = max(video, audio), so a piece whose audio is longer than its video keeps the
+  extra audio (0.2–0.5 s per piece); (b) the final loudnorm pass (stitch.py ~line 564) lengthens audio ~0.1 s.
+  Fix to make: in uniform_audio use the VIDEO STREAM duration (min(keep, video) when keep is set); in the final
+  step add "apad,atrim=0:<video seconds>" after loudnorm plus -t <video seconds>. Add a test with real ffmpeg that
+  builds mixed-format pieces and asserts |video-audio| <= 0.05 s. Keep the 250 ms gate (media_quality.py:41).
+- Steps 2–5 not started. Countdown #9: 9/10 entries; Sin City resumes after 00:00 ET, then render → inspect →
+  approve → post (no watcher survives a cleared session — check it manually).
+- Open owner questions: web findings in new scripts (restore trusted-source auto use?), rights statement for
+  one-tap Approve, $0.10 hold (studio:144), channel-ownership check (Takeout vs OAuth) for the old Shorts channels,
+  "Save to Drive" button for single clips.
 Parked until the owner connects accounts or asks: C08 audience adapters (YouTube Analytics first), C09 comments,
 C10 learning, C07 extra formats, C06 semantic beat/music matching, C02 specialised evidence, A01 archive
 (needs the channel-ownership check). Countdown #9 finishes on its own after the 00:00 ET budget reset.
