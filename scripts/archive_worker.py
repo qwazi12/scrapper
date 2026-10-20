@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Archive public authorized Shorts on the Mac; keep bytes until verified Drive receipt.
 
-No cookies, proxy, bot-challenge workarounds or Drive credential transfer. Uses
+An explicit --brave-profile enables owner-authorized local browser authentication;
+no session export to the server, proxy, challenge workaround or Drive credential transfer. Uses
 existing authenticated streaming transport. Server/token come from deploy.env or
 environment; never print the token. --inventory registers a complete local public
 inventory when server-side metadata retrieval is unavailable.
@@ -26,6 +27,24 @@ from backend.app import channel_sources as source
 WORKER=uuid.uuid4().hex
 
 
+def browser_session_status(profile):
+    """Confirm YouTube auth cookies exist; never return, log or export values."""
+    source.browser_cookie_args(profile)
+    from backend.app.e2e_safety import deny_live
+    deny_live('local owner YouTube session access')
+    from yt_dlp.cookies import extract_cookies_from_browser
+    class Quiet:
+        def debug(self,*args,**kwargs):pass
+        info=warning=error=debug
+    jar=extract_cookies_from_browser('brave',profile=str(Path(profile).expanduser().resolve()),logger=Quiet())
+    names={c.name for c in jar if c.domain.lstrip('.').endswith('.youtube.com') or c.domain.lstrip('.')=='youtube.com'
+           if c.value and not c.is_expired()}
+    auth_names=names.intersection({'SAPISID','__Secure-1PAPISID','__Secure-3PAPISID'})
+    if 'LOGIN_INFO' not in names or not auth_names:
+        raise RuntimeError('Selected Brave profile has no active YouTube sign-in session; no video request was started')
+    return {'browser':'brave','authenticated_youtube_session':True,'auth_cookie_count':len(auth_names)+1}
+
+
 @contextlib.contextmanager
 def claimed(server,token,claim):
     stopped,lost=threading.Event(),threading.Event()
@@ -38,22 +57,26 @@ def claimed(server,token,claim):
     finally:stopped.set();thread.join(timeout=1)
 
 
-def download(cid,vid,directory,bound,cancelled):
+def download(cid,vid,directory,bound,cancelled,*,browser_profile=None):
     info_file=directory/(vid+'.info.json')
     videos=[p for p in directory.glob(vid+'.*') if p.suffix in ('.mp4','.mkv','.webm','.mov')]
     if info_file.is_file() and len(videos)==1 and videos[0].stat().st_size<=bound:
         info=json.loads(info_file.read_text())
         if info.get('id')==vid and info.get('channel_id')==cid:return videos[0],info
-    return source.download(cid,vid,directory,bound,cancelled=cancelled)
+    options={'browser_profile':browser_profile} if browser_profile is not None else {}
+    return source.download(cid,vid,directory,bound,cancelled=cancelled,**options)
 
 
-def drain(server,token,cid,workdir,*,max_videos=0):
+def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None):
     if not isinstance(max_videos,int) or isinstance(max_videos,bool) or max_videos<0:
         raise ValueError('max_videos must be a nonnegative integer (0 means all pending)')
     u=urlsplit(server)
     if u.scheme!='https' and not (u.scheme=='http' and u.hostname in ('127.0.0.1','localhost')):
         raise ValueError('Use HTTPS, or isolated localhost HTTP')
     if not source.CHANNEL_ID.fullmatch(cid):raise ValueError('Use a canonical channel ID')
+    if browser_profile is not None:
+        browser_session_status(browser_profile)
+        log_msg('Owner-selected local YouTube session verified (no session export)')
     cap=api_get(server,token,f'/api/channel-archives/{cid}/capacity')
     log_msg('Capacity: '+json.dumps(cap))
     claim=api_post(server,token,f'/api/archive-workers/channels/{cid}/claim',{'worker_id':WORKER})
@@ -70,7 +93,8 @@ def drain(server,token,cid,workdir,*,max_videos=0):
                 directory.mkdir(parents=True,exist_ok=True)
                 if shutil.disk_usage(directory).free<2*claim['max_bytes']+256*1024*1024:raise RuntimeError('Mac temporary storage reserve reached')
                 try:
-                    video,info=download(cid,vid,directory,claim['max_bytes'],lost)
+                    options={'browser_profile':browser_profile} if browser_profile is not None else {}
+                    video,info=download(cid,vid,directory,claim['max_bytes'],lost,**options)
                 except source.AccessRestricted as exc:
                     reason=str(exc)[-2000:];halt=any(x in reason.lower() for x in ('not a bot','captcha','http error 403','http error 429'))
                     api_post(server,token,base+f'/videos/{vid}/failure',{**auth,'reason':reason,'restricted':True,'halt':halt})
@@ -112,6 +136,7 @@ def main():
     parser.add_argument('--parent-folder',default='1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo')
     parser.add_argument('--workdir',default=str(Path(__file__).resolve().parents[1]/'data'/'archive-worker'))
     parser.add_argument('--batch-size',type=int,default=0,help='Maximum verified videos in this turn; 0 drains the channel')
+    parser.add_argument('--brave-profile',help='Owner-selected Brave Profile Path; authenticate locally without exporting sessions')
     args=parser.parse_args();token=os.environ.get('ACCESS_TOKEN') or env.get('ACCESS_TOKEN')
     if not args.server or not token:parser.error('Set SERVER_URL and ACCESS_TOKEN, or data/deploy.env')
     parsed=urlsplit(args.server)
@@ -121,7 +146,7 @@ def main():
         response=api_post(args.server,token,'/api/archive-workers/inventory',{**data,'parent_folder_id':args.parent_folder,'formats':['shorts']})
         print(json.dumps(response,indent=2));return
     if not args.channel:parser.error('Choose --inventory URL or --channel UC_ID')
-    print('Verified files:',drain(args.server,token,args.channel,args.workdir,max_videos=args.batch_size))
+    print('Verified files:',drain(args.server,token,args.channel,args.workdir,max_videos=args.batch_size,browser_profile=args.brave_profile))
 
 
 if __name__=='__main__':main()

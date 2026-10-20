@@ -13,7 +13,8 @@ httpx==0.28.1
 # (SABR protocol, PO tokens). Pinning an old version is the #1 cause of 403s.
 # NOTE: the Dockerfile runs `yt-dlp -U` after this, so Railway always gets
 # the absolute latest regardless of this floor.
-yt-dlp>=2026.8.19
+# The default extras include the matching EJS component needed by YouTube's JS runtime.
+yt-dlp[default]>=2026.8.19
 google-api-python-client==2.201.0
 google-auth==2.59.1
 # IANA timezone data for zoneinfo (python:slim ships none) — posting schedule.

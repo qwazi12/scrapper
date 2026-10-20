@@ -33,13 +33,14 @@ def sync_review(server,token,folder):
     raise RuntimeError('Drive sync is still running; inspect the recorded job before retrying')
 
 
-def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,sync_folder=None):
+def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,sync_folder=None,browser_profile=None):
     parsed=urlsplit(server)
     if (parsed.username or parsed.password or parsed.query or parsed.fragment or
         (parsed.scheme!='https' and not (parsed.scheme=='http' and parsed.hostname in ('localhost','127.0.0.1')))):
         raise ValueError('Use HTTPS or isolated localhost HTTP')
     if not isinstance(batch_size,int) or isinstance(batch_size,bool) or batch_size<1:
         raise ValueError('Use a positive batch size')
+    if browser_profile is not None:worker.source.browser_cookie_args(browser_profile)
     rows=list(rows);ids=[r['channel_id'] for r in rows]
     if not ids or len(set(ids))!=len(ids) or any(not worker.source.CHANNEL_ID.fullmatch(cid) for cid in ids):
         raise ValueError('Catalog must contain unique canonical channel IDs')
@@ -48,7 +49,8 @@ def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,syn
     state_dir=Path(state_dir);state_dir.mkdir(parents=True,exist_ok=True)
     state={'pid':os.getpid(),'status':'running','batch_size':batch_size,'round':0,
            'started_at':dt.datetime.now(dt.timezone.utc).isoformat(),'results':[],
-           'inventory_unavailable':{},'channel_errors':{},'syncs':[]}
+           'inventory_unavailable':{},'channel_errors':{},'syncs':[],
+           'authentication':'owner_selected_local_brave' if browser_profile is not None else 'public'}
 
     def save():
         state['updated_at']=dt.datetime.now(dt.timezone.utc).isoformat()
@@ -79,7 +81,8 @@ def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,syn
                 print(f"Round {state['round']}: {state['current_channel']}, up to {batch_size} verified Shorts",flush=True)
                 result={'round':state['round'],'channel_id':cid,'handle':state['current_channel']}
                 try:
-                    result['verified_this_batch']=worker.drain(server,token,cid,workdir,max_videos=batch_size)
+                    options={'browser_profile':browser_profile} if browser_profile is not None else {}
+                    result['verified_this_batch']=worker.drain(server,token,cid,workdir,max_videos=batch_size,**options)
                     result['status']='batch_finished'
                 except Exception as exc:
                     result.update(status='stopped',error_type=type(exc).__name__,error=str(exc)[-2000:])
@@ -122,9 +125,10 @@ def main():
     p.add_argument('--batch-size',type=int,default=25)
     p.add_argument('--start-after',help='Canonical channel already served; begin with the next catalog channel')
     p.add_argument('--sync-folder',help='Explicitly import verified Drive videos as Review only after each batch')
+    p.add_argument('--brave-profile',help='Owner-selected Brave Profile Path; session use stays on this Mac')
     a=p.parse_args()
     result=run(a.server,a.token_file.read_text().strip(),json.loads(a.catalog.read_text())['channels'],
-               a.workdir,a.state_dir,batch_size=a.batch_size,start_after=a.start_after,sync_folder=a.sync_folder)
+               a.workdir,a.state_dir,batch_size=a.batch_size,start_after=a.start_after,sync_folder=a.sync_folder,browser_profile=a.brave_profile)
     return 0 if result['status']=='complete' else 2
 
 

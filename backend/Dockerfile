@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir -r /srv/backend/requirements.txt
 # even when the requirements.txt version floor hasn't been bumped.
 # YouTube's extractor changes frequently; a stale yt-dlp is the #1 cause of
 # 403s on Railway. This layer is fast (single package, cached by Docker).
-RUN pip install --no-cache-dir -U yt-dlp
+RUN pip install --no-cache-dir -U "yt-dlp[default]"
 
 # Motion layer: the HyperFrames CLI + GSAP at the exact versions in the lockfile
 # (never resolved at render time), and Chrome baked in so renders never download.

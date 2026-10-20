@@ -1,5 +1,47 @@
 # Scrapper Memory
 
+## Owner-selected Brave session verified — 2026-10-20 03:27 UTC (Oct 19 ET)
+
+Owner supplied the exact Brave Personal Default Profile Path after signing into
+YouTube, explicitly authorizing this local session for Scrapper. Opt-in
+--brave-profile now authenticates only the Mac downloader. It validates the
+selected local profile, verifies current YouTube sign-in markers without logging
+cookie values, and never exports a cookie jar or transmits browser sessions to
+Railway, Drive, GitHub or the metadata API. Public mode remains the default;
+server/non-Mac profile access is refused. Renewed access challenges still stop
+work; no challenge bypass, proxy rotation or credential collection was added.
+
+The first authenticated attempt exposed missing official EJS support. Installed
+matching yt-dlp-ejs 0.8.0 for existing yt-dlp 2026.8.19 in the existing local venv;
+Node 24.3.0 was already present. Requirements/Dockerfile now select yt-dlp[default]
+so its matching official component accompanies installation. No server deployment
+was needed or performed for this Mac client change. pip check passed.
+
+Actual live test, 03:23:28–03:24:18 UTC: previously blocked Rock Movie Short
+BBDoUF82DCs was downloaded through the selected owner session, validated and
+checksum-verified in Drive, then its temporary video was removed after receipt.
+Fresh ledger at 03:27 UTC: 106 uploaded/downloaded (Charan57, Afridi25, Rock24),
+1 skipped, 0 failed, 3,900 remaining; 1,054,286,362 actual video bytes. No archive
+lease remained after the test. This is real YouTube/Drive evidence, distinct from
+33 passing focused tests using synthetic assets and simulated external services.
+
+Future durable local info receipts retain only identity/title/date/duration/live/
+format fields, mode0600 in mode0700 directories; signed URLs and HTTP headers are
+removed after extraction. This also avoids retaining multi-megabyte metadata per
+Short on the limited-space Mac. Resume still reuses completed pending local bytes
+and excludes successful remote ledger entries from new downloads.
+
+Preparing a new authenticated 25-per-channel run starting after Rock Movie, so
+Agi3D3 is next. New state will be round-robin-auth/batch-state.json under ignored
+artifacts/shorts-archive-20261019; old public round-robin state remains historical.
+Review-only Drive sync remains explicitly authorized after successful turns;
+no Ready/schedule/publish action, and existing unrelated posting stays unchanged.
+Tiny Friends TV remains inventory-incomplete. Do not claim all ten archives done.
+Evidence: brave-session-preflight.json, authenticated-real-handoff-with-ejs.json,
+authenticated-before-batch.json. Browser values, private media and tokens stay out
+of GitHub. Save source/tests/notes on codex/shorts-archive-20261019 only to avoid a
+main-triggered deployment during transfers.
+
 ## Archive blocked again — 2026-10-19 21:51 UTC status check (Codex)
 
 Live ledger now has 105 actual downloaded and verified Drive videos:
