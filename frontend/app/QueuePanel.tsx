@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PublicationEvidence } from "./PublicationEvidence";
+import { PlatformStatus } from "./PlatformStatus";
 import { QueuedSourceEvidence } from "./QueuedSourceEvidence";
 import { StopButton } from "./StopButton";
 import { api, apiBase, BulkAiStatus, mediaUrl, parseApiDate, QueueItem, QueueThumbOptions, ScheduleConfig, ScheduleInfo, SocialAccount } from "../lib/api";
@@ -1045,7 +1046,9 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                   {item.status === "ready" && item.scheduled_at && (
                     <div style={{ fontSize: 11, color: "#34d399" }}>{item.pinned_at ? "📌" : "⏰"} {fmtET(item.scheduled_at)}{item.pinned_at ? " (pinned)" : ""}</div>
                   )}
-                  {item.notes && (item.status === "retry" || item.status === "error" || DONE.includes(item.status)) && (
+                  <PlatformStatus item={item} />
+                  {item.notes && (item.status === "retry" || item.status === "error" || DONE.includes(item.status)
+                                  || /^(Not posted|Didn't post)/.test(item.notes)) && (
                     <div style={{ fontSize: 10, color: DONE.includes(item.status) ? "var(--muted)" : "#f87171",
                                   wordBreak: "break-word" }}>{item.notes}</div>
                   )}
@@ -1207,6 +1210,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                           {item.tags}
                         </div>
                       )}
+                      <div style={{ marginTop: 4 }}><PlatformStatus item={item} /></div>
                       {item.notes && (
                         <div
                           style={{

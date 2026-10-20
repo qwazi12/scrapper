@@ -6,7 +6,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
-    "test:api-errors": "node --experimental-strip-types --test tests/api-errors.test.mjs"
+    "test:api-errors": "node --experimental-strip-types --test tests/api-errors.test.mjs",
+    "test:platform-status": "node --experimental-strip-types --test tests/platform-status.test.mjs"
   },
   "dependencies": {
     "next": "^15.5.20",

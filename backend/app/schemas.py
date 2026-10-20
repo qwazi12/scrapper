@@ -167,6 +167,7 @@ class QueueItemOut(BaseModel):
     pinned_at: UTCDateTime | None = None
     published_at: UTCDateTime | None
     publish_requests: list | None = None
+    catchup: dict | None = None   # per-platform posted links while a video still owes a platform
     research: dict | None = None
     momentum: dict | None = None
     media_url: str | None = None

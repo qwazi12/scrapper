@@ -152,7 +152,8 @@ export type MetadataResult = {
 export type SocialPost = {
   id: number;
   compilation_id: number | null;
-  publish_requests: { profile: string; request_id?: string; error?: string; state?: string; platforms?: string[] }[] | null;
+  publish_requests: { profile: string; request_id?: string; error?: string; state?: string; platforms?: string[]; skipped?: string[] }[] | null;
+  catchup?: { done?: [string, string][]; slots?: string[] } | null;
   accounts: string[];
   content: string;
   scheduled_at: string | null;
@@ -189,7 +190,8 @@ export type QueueItem = {
   scheduled_at: string | null;
   pinned_at?: string | null;          // owner-pinned post time (never re-planned)
   published_at: string | null;
-  publish_requests: { profile: string; request_id?: string; error?: string; state?: string; platforms?: string[] }[] | null;
+  publish_requests: { profile: string; request_id?: string; error?: string; state?: string; platforms?: string[]; skipped?: string[] }[] | null;
+  catchup?: { done?: [string, string][]; slots?: string[] } | null;
   media_url?: string | null;
   momentum?: ReleaseMomentum | null;
   created_at: string;
