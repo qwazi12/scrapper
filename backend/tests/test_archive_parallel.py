@@ -28,9 +28,9 @@ def catalog(monkeypatch):
 def test_two_lanes_overlap_but_never_same_channel_and_resume_25_plus_1(tmp_path,monkeypatch):
     rows,channels,lock=catalog(monkeypatch)
     barrier=threading.Barrier(2);active=set();peak=0;calls=[]
-    def drain(server,token,cid,workdir,*,max_videos,cancelled,storage_slots):
+    def drain(server,token,cid,workdir,*,max_videos,cancelled,storage_slots,max_video_bytes):
         nonlocal peak
-        assert storage_slots==2
+        assert storage_slots==2 and max_video_bytes==256*1024*1024
         with lock:
             assert cid not in active
             active.add(cid);peak=max(peak,len(active))
@@ -62,7 +62,7 @@ def test_two_lanes_overlap_but_never_same_channel_and_resume_25_plus_1(tmp_path,
 
 def test_error_stops_other_lane_before_any_further_video(tmp_path,monkeypatch):
     rows,channels,lock=catalog(monkeypatch);both=threading.Barrier(2);calls=[]
-    def drain(server,token,cid,workdir,*,max_videos,cancelled,storage_slots):
+    def drain(server,token,cid,workdir,*,max_videos,cancelled,storage_slots,max_video_bytes):
         calls.append(cid);both.wait(timeout=5)
         if cid==rows[0]['channel_id']:raise RuntimeError('HTTP Error 429: Too Many Requests')
         assert cancelled.wait(5)

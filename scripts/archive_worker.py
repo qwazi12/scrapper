@@ -67,11 +67,13 @@ def download(cid,vid,directory,bound,cancelled,*,browser_profile=None):
     return source.download(cid,vid,directory,bound,cancelled=cancelled,**options)
 
 
-def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled=None,storage_slots=1):
+def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled=None,storage_slots=1,max_video_bytes=None):
     if not isinstance(max_videos,int) or isinstance(max_videos,bool) or max_videos<0:
         raise ValueError('max_videos must be a nonnegative integer (0 means all pending)')
     if not isinstance(storage_slots,int) or isinstance(storage_slots,bool) or storage_slots<1:
         raise ValueError('storage_slots must be a positive integer')
+    if max_video_bytes is not None and (not isinstance(max_video_bytes,int) or isinstance(max_video_bytes,bool) or max_video_bytes<1):
+        raise ValueError('max_video_bytes must be a positive integer')
     u=urlsplit(server)
     if u.scheme!='https' and not (u.scheme=='http' and u.hostname in ('127.0.0.1','localhost')):
         raise ValueError('Use HTTPS, or isolated localhost HTTP')
@@ -83,6 +85,7 @@ def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled
     cap=api_get(server,token,f'/api/channel-archives/{cid}/capacity')
     log_msg('Capacity: '+json.dumps(cap))
     claim=api_post(server,token,f'/api/archive-workers/channels/{cid}/claim',{'worker_id':WORKER})
+    if max_video_bytes is not None:claim['max_bytes']=min(claim['max_bytes'],max_video_bytes)
     auth={'worker_id':WORKER,'generation':claim['generation']}
     base=f"/api/archive-workers/{claim['token']}";completed=0
     try:

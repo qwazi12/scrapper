@@ -30,15 +30,17 @@ def run(server,token,rows,workdir,state_dir,*,priority,browser_profile=None,sync
            'rotation':[r for r in rows if r['channel_id']!=priority]}
     if not lanes['rotation']:raise ValueError('Two lanes require at least two channels')
     workdir=Path(workdir);workdir.mkdir(parents=True,exist_ok=True)
-    # Current archive claims limit each video to 500MiB. Reserve two full
-    # input/merge budgets plus the shared minimum before either lane starts.
-    required=2*2*500*1024*1024+256*1024*1024
+    # Bound each lane to 256MiB per video on this low-space Mac. The worker
+    # also uses the smaller of this bound and the actual server claim limit.
+    # Reserve both lanes' input/merge budgets before either lane starts.
+    video_bound=256*1024*1024
+    required=2*2*video_bound+256*1024*1024
     if shutil.disk_usage(workdir).free<required:
         raise RuntimeError('Mac temporary storage reserve for two workers is insufficient')
     state_dir=Path(state_dir);state_dir.mkdir(parents=True,exist_ok=True)
     stop=threading.Event();sync_lock=threading.Lock()
     state={'pid':os.getpid(),'status':'running','concurrency_limit':2,
-           'priority_channel':priority,'started_at':dt.datetime.now(dt.timezone.utc).isoformat(),
+           'max_video_bytes':video_bound,'priority_channel':priority,'started_at':dt.datetime.now(dt.timezone.utc).isoformat(),
            'lanes':{name:{'channels':[r['channel_id'] for r in catalog],'status':'running'}
                     for name,catalog in lanes.items()}}
 
@@ -52,7 +54,7 @@ def run(server,token,rows,workdir,state_dir,*,priority,browser_profile=None,sync
         try:
             result=batch.run(server,token,catalog,workdir,state_dir/name,batch_size=25,
                              browser_profile=browser_profile,sync_folder=sync_folder,
-                             cancelled=stop,sync_lock=sync_lock,storage_slots=2)
+                             cancelled=stop,sync_lock=sync_lock,storage_slots=2,max_video_bytes=video_bound)
             if result['status'] not in ('complete','partial') or result['channel_errors']:
                 stop.set()
             return result

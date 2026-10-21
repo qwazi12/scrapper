@@ -34,7 +34,7 @@ def sync_review(server,token,folder):
     raise RuntimeError('Drive sync is still running; inspect the recorded job before retrying')
 
 
-def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,sync_folder=None,browser_profile=None,cancelled=None,sync_lock=None,storage_slots=1):
+def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,sync_folder=None,browser_profile=None,cancelled=None,sync_lock=None,storage_slots=1,max_video_bytes=None):
     parsed=urlsplit(server)
     if (parsed.username or parsed.password or parsed.query or parsed.fragment or
         (parsed.scheme!='https' and not (parsed.scheme=='http' and parsed.hostname in ('localhost','127.0.0.1')))):
@@ -87,6 +87,7 @@ def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,syn
                     options={'browser_profile':browser_profile} if browser_profile is not None else {}
                     if cancelled is not None:options['cancelled']=cancelled
                     if storage_slots!=1:options['storage_slots']=storage_slots
+                    if max_video_bytes is not None:options['max_video_bytes']=max_video_bytes
                     result['verified_this_batch']=worker.drain(server,token,cid,workdir,max_videos=batch_size,**options)
                     result['status']='batch_finished'
                 except Exception as exc:
