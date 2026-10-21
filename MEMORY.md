@@ -1,5 +1,29 @@
 # Scrapper Memory
 
+## Storage blocker resolved by owner-authorized cleanup — 2026-10-21
+
+Owner explicitly approved Tier1 and Tier2 local Mac cleanup. Completed bounded
+cache/old-installer/temp cleanup and approved game/mod/download removals outside
+application source. Kept live Python tool environments and active browser cache
+journals, browser profiles/auth, Steam userdata/saves, projects, backups, npm_npx
+and all Tier3 items. Mounted old installer images were ejected without force,
+then their leftovers removed. Six game-local configuration files copied and
+hash-verified before removal; existing save-folder metadata remained unchanged.
+
+Final verified Mac free114,996,883,456bytes (~115GB), from347,914,240bytes at actual
+cleanup start. Brave owner-selected YouTube session still verifies; no cookie
+values exported/logged. Live ledger remains937verified Drive videos and zero
+archive leases. STORAGE BLOCKER IS RESOLVED; prior low-space checkpoint below is
+historical. Workers remain stopped; no automatic restart, Mac reboot, publishing
+or deployment was performed. Monitor should not repeat the previously reported
+stop or describe disk space as still insufficient. Resume requires a current
+owned-process/lease/preflight check and owner instruction; reuse pending ledger.
+
+Private cleanup receipt/verification/config backups retained in this chat's local
+workspace storage-cleanup-20261021-applied; no private filesystem inventory or
+saved-game contents pushed to GitHub. This memory entry records only operational
+storage readiness and archive safety.
+
 ## Parallel archive stopped on Mac storage — 2026-10-21 09:52 ET
 
 Issue monitor found owned process66281 exited, parent blocked. At09:48:25 ET the
