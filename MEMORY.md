@@ -1,7 +1,8 @@
 # Scrapper Memory
 
 ## Current plan — 2026-10-20 (evening) — FIX PLAN from the live test — AWAITING OWNER APPROVAL (nothing built)
-Full plan: docs/implementation/FIX_PLAN_20261020.md. Most serious first; each step = reproduce → smallest fix →
+Full plan: docs/implementation/FIX_PLAN_20261020.md. STEP 0 (Railway cost) APPROVED and in progress: 0.1 release file cache
+(1.69 GB of 1.99 GB service memory is cache), 0.2 trim unused files on the 15.8 GB volume. Most serious first; each step = reproduce → smallest fix →
 regression test → full suite + frontend checks → one commit → push when Studio is idle → verify live → log here.
 1. Unblock the 20 finished LongForms: (a) "Run inspection" route + backfill for pre-release renders (Approve is
    greyed without render.quality); (b) bulk "Approve & send" using one-tap rules + saved rights statement;
