@@ -1,5 +1,35 @@
 # Scrapper Memory
 
+## Owner resumed Shorts archive — 2026-10-21 09:07 ET
+
+Owner: “Start downloading again let me know if any issues.” This supersedes the
+previous stop instruction for this archive. Preflight confirmed no archive
+process/lease active, owner-selected Brave session valid, baseline725 verified
+uploads/727downloaded/3,281remaining/2failed/1skipped. The previous run actually
+ended partial at2026-10-20 04:04:52 ET after server500/502/write-timeout errors;
+its old active107 memory checkpoint below is historical, not ongoing status.
+
+Restarted the existing unchanged25-per-channel runner at09:06:05 ET, PID63314,
+source627bc6c, detached with caffeinate. Starts Agi3D3; completed Afridi208,
+Rock130 and Arli16 are skipped through the existing ledger. Successful uploads
+are excluded; pending completed local bytes are reused. Existing owner-selected
+local Brave path remains opt-in; no credentials/session export. No server deploy
+or publishing changes. Review-only sync follows successful turns as authorized.
+
+Actual first resumed Agi video2lLpPf8tpbc verified in Drive at09:06:39 ET. Fresh
+09:07:10 ET checkpoint: process alive/running,726uploaded,728downloaded,
+3,280remaining,2failed,1skipped. Existing failed entries are not newly declared
+successful. Tiny Friends remains inventory-incomplete. Keep Mac powered/online.
+Evidence: artifacts/shorts-archive-20261021/launch.json, restart-checkpoint.json,
+round-robin-auth/batch-state.json and round-robin-auth-log.txt (ignored/private).
+
+Created owner-requested issue monitor heartbeat monitor-shorts-archive, every15
+minutes on this chat. Notify only new actionable failures, stopped/dead process,
+30-minute stall, required action or completion; quiet during normal unchanged
+progress. It must not automatically restart stopped jobs or bypass challenges.
+If owner stops the archive, pause the monitor. State/ledger/process must be
+rechecked for future status, not inferred from this timestamped note.
+
 ## Authenticated 25-per-channel run active — 2026-10-20 03:28:45 UTC
 
 Started detached caffeinate-backed local batch at03:28:02 UTC from source2ec97dd,
