@@ -1,5 +1,54 @@
 # Scrapper Memory
 
+## Two-worker archive verified live — 2026-10-21 09:17 ET
+
+Owner approved the proposed two-worker test (“Ok proceed”). Added local
+scripts/archive_parallel.py: exactly two disjoint channel lanes in one owned
+process, DoctorWhoShorts dedicated priority lane and all other channels in the
+rotation lane. Each lane retains25verified-per-turn behavior and server leases,
+pending-ID exclusion, receipt reconciliation, SHA/Drive verification and delete-
+only-after-verified behavior. No same-channel concurrent work. Review-only Drive
+syncs share a mutex. Any lane error sets a shared cancellation event immediately;
+both lanes stop starting videos, in-flight download is cancellable, and an
+already-sent upload may finish/reconcile before shutdown. Owner interruption also
+sets cancellation and waits for lease release. Failed/unverified files retained.
+
+38 focused tests passed9.14s; actual thread tests prove two overlapping distinct
+channels,25+1 unique pending turns, serialized sync, global429 cancellation before
+third channel, and pre-claim cancellation/storage rejection. Real isolated media
+handoff test confirms cancellation after download skips upload, retains bytes and
+releases lease. External YouTube/Drive services in these tests are simulated;
+real live proof is separately recorded below. Existing public/auth mode unchanged.
+
+Gracefully stopped owned sequential runner64202 with all leases released, at754
+verified total/149DoctorWho. Initial two-worker launch65876 correctly refused
+before downloading: actual Mac diskfree2.069GB was below two500MiB input/merge
+budgets+reserve. No files were deleted to override this. Configured parallel-only
+256MiB/video ceiling, smaller of server limit and local bound. Both active slots'
+input/merge budgets plus256MiB reserve are checked dynamically per video using
+actual server claim bound. Oversized items remain pending/error, not silently
+skipped or published. Single-worker default remains server500MiB. Disk space
+remains tight and may stop the run; server capacity local_free is server disk,
+not this Mac, whose free space is measured independently.
+
+Current run66281 started09:16:57 ET, sourcece91e45 (includesc8fdf4b coordination).
+Actual first two-channel verified pairs: Charan ZBtc-ncZj9c09:17:05 and
+DoctorWho8vItDnmUhnI09:17:11; then Charan Zhl9SWQbTfE09:17:18 and
+DoctorWho8wamRDHgtJI09:17:26. Checkpoint09:17:29: process alive/running, two
+independent live channel leases,758verified total/3,248remaining/0failed/1skipped;
+DoctorWho151verified/872remaining. Local Macfree2,094,026,752bytes. This is a
+successful limited live parallel test, not a full-archive or sustained-speed claim.
+
+Current evidence/state/log/launch: artifacts/shorts-archive-20261021/
+parallel-two-256/parallel-state.json; lane states priority/batch-state.json and
+rotation/batch-state.json below it; parallel-two-256-log.txt,
+parallel-two-256-launch.json, parallel-two-256-checkpoint.json. Initial parallel-two
+failed launch and prior doctor-priority state remain historical. Updated existing
+15-minute issue-only monitor to current paths, limits and shared-stop behavior.
+Save source/tests/MEMORY to codex/shorts-archive-20261019. No Railway deployment,
+main merge, session export, Ready/schedule/publish change or unrelated-worker
+interruption. Completed library IDs still excluded; Tiny inventory incomplete.
+
 ## Doctor Who prioritized — 2026-10-21 09:09 ET
 
 Owner requested more DoctorWhoShorts and asked whether parallel downloads are
