@@ -1,5 +1,30 @@
 # Scrapper Memory
 
+## Owner restarted two-lane archive — 2026-10-21 18:30 ET
+
+Owner explicitly requested “Start the downloads again” after cleanup and after
+stopping monitoring. Preflight confirmed no archive process/lease,937verified,
+3,069remaining,0failed,1skipped; DoctorWho261verified. Actual Macfree118,378,962,944
+bytes and owner-selected Brave session valid. No new authentication grant or
+session export. Restarted unchanged two-lane runner18:29:58 ET, ownedPID1663,
+sourceed69eab. DoctorWho dedicated lane; other channels rotate separately,25new
+verified per turn, limit2 transfers/256MiB each, shared stop/storage checks,
+serialized Review-only sync. Completed IDs excluded and pending local bytes reused.
+
+Actual live verification18:30:19 ET: Charan daRRmy5PgaQ and DoctorWhoEuchGe-YIqk
+both verified in Drive. Fresh18:30:31: process alive/running, two distinct active
+leases,939verified total/3,067remaining/0failed/1skipped; DoctorWho262/1,023,
+761remaining. This is a timestamped restart checkpoint, not whole-library completion.
+Tiny inventory remains incomplete. No deployment, publishing or Mac restart.
+
+Current run evidence: artifacts/shorts-archive-20261021/latest-run.json points to
+parallel-resume-182958/parallel-state.json and parallel-resume-182958-log.txt.
+latest-restart-checkpoint.json holds fresh counts. Prior parallel-two-256 stop
+state is historical. Monitor-shorts-archive remains PAUSED as the owner requested;
+resuming downloads did not silently re-enable recurring notifications. Future
+status must read latest-run.json and live ledger/process, not older fixed paths.
+Keep Mac powered/online. Source unchanged; notes saved on operations branch only.
+
 ## Storage blocker resolved by owner-authorized cleanup — 2026-10-21
 
 Owner explicitly approved Tier1 and Tier2 local Mac cleanup. Completed bounded
