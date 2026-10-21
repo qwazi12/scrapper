@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-21 — FB favourites + no FB Stories — AWAITING OWNER APPROVAL (nothing built)
+Full plan: docs/implementation/PLAN_FB_FEATURED_20261021.md.
+A. Send `facebook_no_story=true` on every Facebook upload (Upload-Post flag; we never sent it) → Reels stop going to Stories.
+B. New "FB Favourites" queue for DoctorWhoShorts + RockMovie777 Shorts: Facebook 10:00/14:00/18:00 ET, Rookie first.
+Decisions: E1 2 or 3/day · E2 FB-only (rec.) or FB + 1/day YT/IG · E3 2 Rookie + 1 Doctor Who (rec.).
+Note: railway ssh timed out twice on 2026-10-21 — channel counts not yet measured (Part B step 0).
+
 ## Current plan — 2026-10-20 (evening) — FIX PLAN from the live test — AWAITING OWNER APPROVAL (nothing built)
 Full plan: docs/implementation/FIX_PLAN_20261020.md. STEP 0 (Railway cost) DONE 2026-10-20:
 0.1 file-cache release (9fedbfc) — live 1997→415 MB, after redeploy 1535→372 MB (948 files);
