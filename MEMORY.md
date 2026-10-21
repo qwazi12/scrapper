@@ -1,5 +1,30 @@
 # Scrapper Memory
 
+## Doctor Who prioritized — 2026-10-21 09:09 ET
+
+Owner requested more DoctorWhoShorts and asked whether parallel downloads are
+possible. Gracefully interrupted only owned runner63314, verified it exited and
+all archive leases released, then restarted existing unchanged rotation with
+--start-after Tiny Friends so DoctorWho is first each round. New detachedPID64202,
+source4db64c5, sequential concurrency1, up to25verified new Shorts per turn,
+existing ledger deduplication/local-file reuse/Review-only sync preserved.
+Original resumed run added7uploads (725to732) before priority switch.
+
+DoctorWho baseline127/1,023; actual resumed verification7to3i5n_JBE at09:09:39
+and7vZxB4s2ybc at09:09:53 ET. Fresh count129DoctorWho verified,894remaining,
+0failed; total734verified. Existing cached failed pending file succeeded without
+needing redownload. No server deployment or Ready/schedule/publish change.
+
+Current evidence is artifacts/shorts-archive-20261021/doctor-priority/
+batch-state.json, doctor-priority-log.txt, doctor-priority-launch.json. Updated
+monitor-shorts-archive heartbeat to these new paths; prior round-robin-auth state
+is intentionally interrupted historical evidence, not a new failure. Monitor
+continues every15minutes, issue-only. No parallelism was enabled. Two bounded
+workers are possible with distinct channel leases, but previous upload failures
+and global storage/access-stop coordination should be tested before increasing
+concurrency. No speed guarantee. Completed videos remain excluded. Keep powered/
+online; inspect live ledger/process for later status rather than this checkpoint.
+
 ## Owner resumed Shorts archive — 2026-10-21 09:07 ET
 
 Owner: “Start downloading again let me know if any issues.” This supersedes the
