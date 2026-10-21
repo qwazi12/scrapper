@@ -1384,6 +1384,18 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error checking nightly backup in scheduler: %s", exc)
 
+        # Railway bills memory, and the kernel counts cached video files as ours (2026-10-20: 1.69 GB of
+        # 1.99 GB). Let it drop them; nothing is deleted.
+        try:
+            from .. import memory_relief
+            res = memory_relief.maybe_release(settings.data_path)
+            if res and res.get("memory_before") and res["memory_before"] - res.get("memory_after", 0) > 200_000_000:
+                logbus.log("info", "memory_cache_released",
+                           f"Released cached video files: memory {res['memory_before'] // 1_000_000} MB → "
+                           f"{res['memory_after'] // 1_000_000} MB ({res['files']} files)")
+        except Exception as exc:
+            logger.error("Error releasing file cache: %s", exc)
+
         # Disk guard: at 80% full, back up first, then free rebuildable space (owner, 2026-10-05).
         try:
             from .. import space
