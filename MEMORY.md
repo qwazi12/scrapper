@@ -1,5 +1,23 @@
 # Scrapper Memory
 
+## Parallel archive stopped on Mac storage — 2026-10-21 09:52 ET
+
+Issue monitor found owned process66281 exited, parent blocked. At09:48:25 ET the
+DoctorWho lane reached its dynamic Mac storage reserve and cancelled both lanes.
+Other lane's already-sent upload verified09:48:31, then it stopped and released
+its lease. Its “lease lost; local files retained” message represents coordinated
+stop here, not evidence of a new server or YouTube authentication failure.
+Fresh live ledger09:52:04:937verified uploads,3,069remaining,0failed,1skipped;
+DoctorWho261verified/762remaining. All archive leases released. Actual Macfree
+1,017,892,864bytes, below required1,342,177,280bytes for two256MiB input/merge
+budgets+reserve. No automatic restart, file deletion, storage-gate weakening,
+YouTube workaround or publishing change. Need free disk space before resuming;
+recommend several GB headroom because other local work is consuming storage.
+Saved ignored evidence parallel-two-256-storage-stop.json with reported=true.
+Notify owner once; subsequent monitor checks stay quiet for unchanged blocker.
+Earlier active758 checkpoint below is historical. Verified Drive copies preserved,
+ledger excludes them on authorized restart; archive remains unfinished.
+
 ## Two-worker archive verified live — 2026-10-21 09:17 ET
 
 Owner approved the proposed two-worker test (“Ok proceed”). Added local
