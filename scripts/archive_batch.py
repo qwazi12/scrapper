@@ -7,6 +7,7 @@ opts into Review-only queue imports. There is no scheduling or publication.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import os
@@ -33,7 +34,7 @@ def sync_review(server,token,folder):
     raise RuntimeError('Drive sync is still running; inspect the recorded job before retrying')
 
 
-def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,sync_folder=None,browser_profile=None):
+def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,sync_folder=None,browser_profile=None,cancelled=None,sync_lock=None,storage_slots=1):
     parsed=urlsplit(server)
     if (parsed.username or parsed.password or parsed.query or parsed.fragment or
         (parsed.scheme!='https' and not (parsed.scheme=='http' and parsed.hostname in ('localhost','127.0.0.1')))):
@@ -72,6 +73,8 @@ def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,syn
         while True:
             state['round']+=1;progress=0
             for row in rows:
+                if cancelled is not None and cancelled.is_set():
+                    state['status']='stopped';return state
                 cid=row['channel_id']
                 current=api_get(server,token,f'/api/channel-archives/{cid}?limit=1')
                 if not current['inventory']['complete']:
@@ -82,9 +85,12 @@ def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,syn
                 result={'round':state['round'],'channel_id':cid,'handle':state['current_channel']}
                 try:
                     options={'browser_profile':browser_profile} if browser_profile is not None else {}
+                    if cancelled is not None:options['cancelled']=cancelled
+                    if storage_slots!=1:options['storage_slots']=storage_slots
                     result['verified_this_batch']=worker.drain(server,token,cid,workdir,max_videos=batch_size,**options)
                     result['status']='batch_finished'
                 except Exception as exc:
+                    if cancelled is not None:cancelled.set()
                     result.update(status='stopped',error_type=type(exc).__name__,error=str(exc)[-2000:])
                     state['channel_errors'][cid]=result['error']
                 after=api_get(server,token,f'/api/channel-archives/{cid}?limit=1')
@@ -97,14 +103,19 @@ def run(server,token,rows,workdir,state_dir,*,batch_size=25,start_after=None,syn
                 if any(x in error for x in ('not a bot','captcha','sign in','http error 403',
                                             'http error 429','quota','storage reserve','http error 507')):
                     state['status']='blocked';return state
+                if cancelled is not None and cancelled.is_set():
+                    state['status']='blocked' if result.get('error') else 'stopped';return state
                 if sync_folder and result.get('verified_this_batch',0):
-                    state['syncs'].append(sync_review(server,token,sync_folder));save()
+                    with sync_lock if sync_lock is not None else contextlib.nullcontext():
+                        if cancelled is None or not cancelled.is_set():
+                            state['syncs'].append(sync_review(server,token,sync_folder));save()
             snapshot()
             if state['all_channels_complete']:
                 state['status']='complete';return state
             if not progress:
                 state['status']='partial';return state
     except BaseException as exc:
+        if cancelled is not None:cancelled.set()
         state['status']='interrupted' if isinstance(exc,KeyboardInterrupt) else 'error'
         state['error']=str(exc)[-2000:];raise
     finally:

@@ -137,3 +137,31 @@ def test_mac_25_video_turn_releases_claim_and_resumes_without_redownload(fixture
     assert used_profiles==[browser_profile]*26
     assert len(downloads)==len(set(downloads))==26
     assert len([f for f in drive.items.values() if f.get('appProperties')])==26
+
+
+def test_parallel_stop_after_download_retains_media_and_releases_claim(fixture,tmp_path,monkeypatch):
+    import threading
+    from scripts import archive_worker as mac
+    client=TestClient(app);stop=threading.Event()
+    def get(server,token,path):
+        response=client.get(path,headers=HEAD)
+        assert response.status_code==200,response.text
+        return response.json()
+    def post(server,token,path,body):
+        response=client.post(path,headers=HEAD,json=body)
+        assert response.status_code==200,response.text
+        return response.json()
+    media=[]
+    def fetch(cid,vid,directory,bound,cancelled):
+        video,info=mac.source.download(cid,vid,directory,bound)
+        media.append(video);stop.set()
+        assert cancelled.is_set()
+        return video,info
+    monkeypatch.setattr(mac,'api_get',get)
+    monkeypatch.setattr(mac,'api_post',post)
+    monkeypatch.setattr(mac,'download',fetch)
+    monkeypatch.setattr(mac,'multipart_video',lambda *a,**k:pytest.fail('No upload after coordinated stop'))
+    with pytest.raises(RuntimeError,match='upload skipped'):
+        mac.drain('http://localhost','test-token',CID,tmp_path/'mac',cancelled=stop)
+    assert media[0].is_file() and not archive.view(CID)['active_lease']
+    assert archive.view(CID)['counts']['uploaded']==0

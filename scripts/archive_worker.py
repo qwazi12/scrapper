@@ -67,13 +67,16 @@ def download(cid,vid,directory,bound,cancelled,*,browser_profile=None):
     return source.download(cid,vid,directory,bound,cancelled=cancelled,**options)
 
 
-def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None):
+def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled=None,storage_slots=1):
     if not isinstance(max_videos,int) or isinstance(max_videos,bool) or max_videos<0:
         raise ValueError('max_videos must be a nonnegative integer (0 means all pending)')
+    if not isinstance(storage_slots,int) or isinstance(storage_slots,bool) or storage_slots<1:
+        raise ValueError('storage_slots must be a positive integer')
     u=urlsplit(server)
     if u.scheme!='https' and not (u.scheme=='http' and u.hostname in ('127.0.0.1','localhost')):
         raise ValueError('Use HTTPS, or isolated localhost HTTP')
     if not source.CHANNEL_ID.fullmatch(cid):raise ValueError('Use a canonical channel ID')
+    if cancelled is not None and cancelled.is_set():raise RuntimeError('Archive stopped by coordinator')
     if browser_profile is not None:
         browser_session_status(browser_profile)
         log_msg('Owner-selected local YouTube session verified (no session export)')
@@ -83,7 +86,11 @@ def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None):
     auth={'worker_id':WORKER,'generation':claim['generation']}
     base=f"/api/archive-workers/{claim['token']}";completed=0
     try:
-        with claimed(server,token,claim) as lost:
+        with claimed(server,token,claim) as lease_lost:
+            class Cancellation:
+                def is_set(self):
+                    return lease_lost.is_set() or (cancelled is not None and cancelled.is_set())
+            lost=Cancellation()
             while True:
                 if lost.is_set():raise RuntimeError('Archive lease lost; local files retained')
                 if max_videos and completed>=max_videos:break
@@ -91,7 +98,7 @@ def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None):
                 if not items:break
                 item=items[0];vid=item['video_id'];directory=Path(workdir).resolve()/cid/vid
                 directory.mkdir(parents=True,exist_ok=True)
-                if shutil.disk_usage(directory).free<2*claim['max_bytes']+256*1024*1024:raise RuntimeError('Mac temporary storage reserve reached')
+                if shutil.disk_usage(directory).free<2*claim['max_bytes']*storage_slots+256*1024*1024:raise RuntimeError('Mac temporary storage reserve reached')
                 try:
                     options={'browser_profile':browser_profile} if browser_profile is not None else {}
                     video,info=download(cid,vid,directory,claim['max_bytes'],lost,**options)
