@@ -1,8 +1,13 @@
 # Scrapper Memory
 
 ## Current plan — 2026-10-20 (evening) — FIX PLAN from the live test — AWAITING OWNER APPROVAL (nothing built)
-Full plan: docs/implementation/FIX_PLAN_20261020.md. STEP 0 (Railway cost) APPROVED and in progress: 0.1 release file cache
-(1.69 GB of 1.99 GB service memory is cache), 0.2 trim unused files on the 15.8 GB volume. Most serious first; each step = reproduce → smallest fix →
+Full plan: docs/implementation/FIX_PLAN_20261020.md. STEP 0 (Railway cost) DONE 2026-10-20:
+0.1 file-cache release (9fedbfc) — live 1997→415 MB, after redeploy 1535→372 MB (948 files);
+0.2 volume trim — deleted 6 compilation folders that no DB column references (20261013161110, 163521aaf9…,
+20261013185347, 20261014233336, 20261014165701, 20261013184253) = 1849 MB; volume 15.3→13.45 GB. Kept
+20261014040209 (an undo entry points to it), 20261014233646/20261016175711 (queue rows), cd5d7414… (countdown 9),
+all export_history (posting evidence). All 136 studio project folders belong to live projects — no more orphans.
+Remaining space is real project media (studio 11.5 GB, export_history 1.6 GB); trimming more needs an owner choice. Most serious first; each step = reproduce → smallest fix →
 regression test → full suite + frontend checks → one commit → push when Studio is idle → verify live → log here.
 1. Unblock the 20 finished LongForms: (a) "Run inspection" route + backfill for pre-release renders (Approve is
    greyed without render.quality); (b) bulk "Approve & send" using one-tap rules + saved rights statement;
