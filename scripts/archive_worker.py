@@ -17,7 +17,9 @@ from pathlib import Path
 import shutil
 import sys
 import threading
+import time
 import uuid
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode,urlsplit
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -65,6 +67,52 @@ def download(cid,vid,directory,bound,cancelled,*,browser_profile=None):
         if info.get('id')==vid and info.get('channel_id')==cid:return videos[0],info
     options={'browser_profile':browser_profile} if browser_profile is not None else {}
     return source.download(cid,vid,directory,bound,cancelled=cancelled,**options)
+
+
+def transient_transfer_error(error):
+    if isinstance(error,HTTPError):return error.code in (408,500,502,503,504)
+    return isinstance(error,(URLError,TimeoutError,ConnectionError))
+
+
+def retry_pause(seconds,cancelled):
+    deadline=time.monotonic()+seconds
+    while True:
+        if cancelled.is_set():raise RuntimeError('Archive lease lost; retry stopped, local files retained')
+        remaining=deadline-time.monotonic()
+        if remaining<=0:return
+        time.sleep(min(.25,remaining))
+
+
+def send_with_reconciliation(server,token,endpoint,video,fields,*,cid,vid,max_bytes,cancelled):
+    """At most three sends of the SAME local file; reconcile before any resend.
+
+    Existing server identity/intent checks govern reuse of the same Drive file.
+    Unreadable receipts, access challenges, conflicts and quota errors fail closed.
+    """
+    for attempt in range(3):
+        if cancelled.is_set():raise RuntimeError('Archive lease lost; upload skipped')
+        try:return multipart_video(server,token,endpoint,video,fields,max_bytes=max_bytes)
+        except Exception as upload_error:
+            # A lost response can follow a successful Drive write. Never resend
+            # until an authoritative ledger read has resolved that possibility.
+            for check in range(3):
+                try:
+                    manifest=api_get(server,token,f'/api/channel-archives/{cid}/manifest')
+                    break
+                except Exception as receipt_error:
+                    if check==2 or not transient_transfer_error(receipt_error):raise
+                    retry_pause((5,15)[check],cancelled)
+            entry=next((dict(r) for r in manifest['items'] if r['video_id']==vid),None)
+            if entry is None:raise RuntimeError('Upload receipt missing identity; local file retained')
+            if entry['status']=='uploaded':
+                entry['verified']=True
+                return entry
+            if entry['status']=='ambiguous' and not entry.get('drive_file_id'):raise
+            if any(word in str(entry.get('error','')).lower() for word in
+                   ('quota','capacity','storage reserve','checksum','identity','trashed')):raise
+            if attempt==2 or not transient_transfer_error(upload_error):raise
+            log_msg(f'Temporary upload error; ledger checked, retry {attempt+1}/2 using retained local bytes')
+            retry_pause((5,15)[attempt],cancelled)
 
 
 def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled=None,storage_slots=1,max_video_bytes=None):
@@ -117,14 +165,8 @@ def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled
                 with video.open('rb') as stream:sha=hashlib.file_digest(stream,'sha256').hexdigest()
                 if lost.is_set():raise RuntimeError('Archive lease lost; upload skipped')
                 fields={**auth,'metadata':json.dumps({k:info.get(k) for k in ('id','channel_id','duration','upload_date','is_live','live_status')})}
-                try:
-                    response=multipart_video(server,token,base+f'/videos/{vid}',video,fields,max_bytes=claim['max_bytes'])
-                except Exception:
-                    # Reconcile the persisted receipt before sending another byte.
-                    manifest=api_get(server,token,f'/api/channel-archives/{cid}/manifest')
-                    response=next((r for r in manifest['items'] if r['video_id']==vid and r['status']=='uploaded'),{})
-                    response['verified']=response.get('status')=='uploaded'
-                    if not response['verified']:raise
+                response=send_with_reconciliation(server,token,base+f'/videos/{vid}',video,fields,
+                    cid=cid,vid=vid,max_bytes=claim['max_bytes'],cancelled=lost)
                 if not response.get('verified') or response.get('sha256')!=sha or not response.get('drive_file_id'):
                     raise RuntimeError('No matching verified Drive receipt; local file retained')
                 (directory/'verified-receipt.json').write_text(json.dumps(response,indent=2))
