@@ -1,5 +1,48 @@
 # Scrapper Memory
 
+## Continued archive with bounded upload retries — 2026-10-22 08:39 ET
+
+Owner asked “Keep going” after status check showed1,048verified/2,958remaining,
+DoctorWho327verified and both workers stopped the prior evening18:49ET. Root
+cause independently read from failed ledger itemIQTfDEraEIg: Google Drive upload
+API returned500 internalError. No newly recorded YouTube challenge or local disk
+blocker; Macfree117,320,204,288bytes and owner-selected Brave session valid.
+The failed5,211,812-byte MP4 was retained locally; itsSHA256 matched the ledger.
+
+Added Mac-only send_with_reconciliation: at most3sends using the same retained
+local file,5/15second cancellable waits, retries only temporary network/timeouts/
+HTTP408/500/502/503/504. Before any resend, read authoritative channel manifest;
+a verified receipt returns without sending again. Receipt-read transient retries
+are separately bounded; missing/unreadable identities fail closed. No retry for
+403/409/429/507, quota/capacity/storage/checksum/identity errors, or ambiguous
+creation without Drive ID. Existing server intent/identity/fenced upload protocol
+retains same Drive file; local bytes delete only after matching verified receipt.
+No Railway deployment or public-content change needed/performed.
+
+49focused tests pass10.22s: real isolated synthetic media/Drive-protocol tests
+prove one download across two sends, and one send when the successful response
+is lost. Both cases create one simulated remote media identity and release lease.
+Bounded retries, unreadable/missing receipts, cancellation and quota/access/claim/
+storage failures retain local bytes and stop appropriately. New test fixture
+initially passed an unsupported cancelled kwarg to its synthetic source; corrected
+fixture adapter, then all49passed. Live external evidence is separate below.
+
+Restarted detached two-lane runner48406 at08:38:57ET, source5dfaaa5. Current state
+artifacts/shorts-archive-20261022/parallel-resume-083857/parallel-state.json and
+parallel-resume-083857-log.txt. latest-run.json exists in bothOct22andOct21 roots
+and points to current run. DoctorWho dedicated lane, remaining channels rotate
+25per turn; two-transfer/256MiB bounds, shared stop and serialized Review-only
+sync unchanged. Recurring monitor remains PAUSED per prior owner instruction.
+
+Actual IQTfDEraEIg verified08:39:07ET using the SAME existing Drive file ID and
+SHA256 (no duplicate/new identity); then CharanhSoFK4djUEU08:39:14 and DoctorWho
+IcKAY1sUOag08:39:20 verified. Fresh08:39:35: process alive/running, two distinct
+active leases,1,051verified/2,955remaining/0failed/1skipped; DoctorWho329verified,
+694remaining. In-flight downloaded entries are not counted as verified uploads.
+restart-checkpoint.json holds receipts/counts privately. Old1,048blocked state is
+historical. Existing successful videos stay excluded; Tiny inventory incomplete.
+No all-ten-complete claim. Save source/tests/notes to operations branch only.
+
 ## Owner restarted two-lane archive — 2026-10-21 18:30 ET
 
 Owner explicitly requested “Start the downloads again” after cleanup and after
