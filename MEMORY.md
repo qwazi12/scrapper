@@ -1,5 +1,53 @@
 # Scrapper Memory
 
+## DoctorWho resumed past deferred uncertain entry — Oct23 08:04 ET
+
+Owner said “Keep going.” Fresh live check found previous run stopped03:25ET on
+AiPlot truncated network download (“2000 bytes read,2818906more expected,” after
+2source retries). FLICKS stopped by shared cancellation afterward. No bot flag
+recorded. Full ledger2,697verified/1,309remaining/2failed/1skipped; six channels
+complete:Afridi208,Agi277,Arli16,Charan299,Rock130,sir259. DoctorWho512 and
+FLICKS754/AiPlot242 were unfinished. No active leases; Macfree126GB.
+
+Added local next_pending selection: if server's first pending row has uncertain
+Drive creation (creating/ambiguous with no remoteID), preserve it untouched and
+read authoritative manifest for another eligible video. Manifest must match the
+canonical channel, have complete inventory and zero missing-from-latest rows;
+otherwise fail closed. Uploaded/restricted/unavailable and all unknown creations
+are excluded from selection. Known remote IDs still use existing reconciliation.
+No ledger status reset, new creation, false skipped count or deletion for held ID.
+Loop logs held identity once per turn. When only held rows remain, drain finishes
+truthful partial with lease released; outer rotation exits partial on no progress,
+not infinite loop or all-complete. Full catalog restored: DoctorWho no longer
+excluded wholesale. Its T91mMFTAsF0 alone remains deferred for reconciliation.
+
+53focused tests passed11.35s. New isolated original-media/Drive-protocol test
+archives two other IDs around an uncertain first entry, makes exactly two remote
+media identities, leaves held row byte-for-byte unchanged and never redownloads
+on next visit. Only-held outer rotation returns partial. Stale/incomplete/foreign
+manifest selection fails closed. Existing49retry/parallel/auth/lease/sync tests
+remain passing. Synthetic tests are separate from real evidence below.
+
+Restarted detached runner44899 at08:04:04ET, sourcea685c77, original full catalog,
+DoctorWho dedicated lane plus remaining-channel rotation. Same2workers/25turn/
+256MiB bounds, shared stop/storage and serialized Review-only sync. Mac preflight
+126,008,082,432free bytes; owner-selected session verified. No server deployment,
+public publishing, session export, or monitor reactivation. Monitor stays PAUSED.
+
+Actual held-entry deferral logged08:04:05. New DoctorWhoTDEszN4zBH8 verified
+08:04:20, FLICKSf-d2E284nFI08:04:32, DoctorWhoTJHcVCQVAvU08:04:36 and
+TJkaBcHni-o08:04:52. Fresh08:04:52ET: process alive/running, two distinct active
+leases,2,701verified/1,305remaining/2failed/1skipped; DoctorWho515verified,
+508remaining. Held row stillambiguous/nullID/originalerror, independently checked.
+AiPlot interrupted item awaits its next turn, so do not claim all failures cleared.
+
+Current state/log: artifacts/shorts-archive-20261023/parallel-resume-080404/
+parallel-state.json and parallel-resume-080404-log.txt; restart-checkpoint.json
+holds live counts/held identity. latest-run.json pointers inOct21/22/23allupdated.
+Old subset-run state and full DoctorWho hold are historical. Tiny inventory still
+incomplete; final unknown entry remains unfinished, not an all-ten-complete claim.
+Save source/tests/notes on operations branch only; keep Mac powered/online.
+
 ## Evening restart with DoctorWho held for uncertain Drive creation — Oct22 20:53 ET
 
 Owner requested “Start again.” Fresh preflight:1,350verified/2,656remaining,
