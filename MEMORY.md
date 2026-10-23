@@ -1,5 +1,49 @@
 # Scrapper Memory
 
+## Interrupted-fragment resume fixed and archive restarted — Oct23 19:09 ET
+
+Owner requested “Keep going.” Preflight found2,770verified/1,236remaining/
+2failed/1skipped, no active workers/leases, Macfree125.4GB. Previous08:17ET stop
+was AiPlot HTTP400, not a new YouTube challenge. Independently inspected ledger
+and local bytes: LsoTtr2-UZ8 was rejected “Upload is not a valid bounded playable
+video”; directory contained completed audio-only LsoTtr2-UZ8.f251-15.webm1.68MB,
+full extractor receipt and incomplete f788.mp4.part6.29MB. ffprobe confirmed only
+an audio stream104.941s. The worker's ID.* glob wrongly considered this lone
+format fragment a reusable completed video, preventing source resume.
+
+Fixed Mac cache and source completion checks to accept ONLY exact final basename
+ID.mp4/webm/mkv/mov, excluding ID.fFORMAT.ext and .part intermediates. Existing
+fragments retained for yt-dlp's normal bounded resume/merge. A final merged file
+remains reusable even with fragments present. No server validation weakened.
+55focused tests passed10.77s, including interrupted audio/video fragment regression,
+source rejection without exact final output, and subsequent cache reuse without
+another source fetch. Boundary tests simulate extraction; existing actual isolated
+media/receipt/lease/retry/parallel/auth/sync protocol tests also pass.
+
+Real AiPlot recovery19:07:31–59ET used corrected worker and retained fragments;
+LsoTtr2-UZ8 verified19:07:56 as complete105.0s/10,804,074byte video, SHA
+8f211f0f4e1fa48dcda6d9d0a13997327c8d160709ec30faf8f00e42b3b5ffab.
+Server full-video validation and Drive checksum receipt succeeded; local final
+removed only afterward. Ledger error cleared, total2,771. Private evidence:
+artifacts/shorts-archive-20261023/fragment-recovery-live.json. No source video
+marked uploaded from an audio fragment; server had correctly refused it.
+
+Restarted owned detached two-lane runner82343 at19:08:45ET, source94d1bb7, full
+catalog and DoctorWho priority. Same25turn/2transfer/256MiB limits, shared stop,
+reconciled upload retries and serialized Review-only sync. Mac preflightfree
+125,382,770,688bytes. Actual new DoctorWhoVUJKcyQm-uw19:09:03, FLICKSgPJuUn18meE
+19:09:06, DoctorWhoVVvIg_QiZIk19:09:16 verified. Fresh19:09:23: process alive/
+running,2distinct leases,2,774verified/1,232remaining/1failed/1skipped;
+DoctorWho562verified/461remaining. One existing ambiguous DoctorWhoT91mMFTAsF0
+is still deferred, not cleared/recreated. Tiny inventory remains incomplete.
+
+Current state/log: artifacts/shorts-archive-20261023/parallel-resume-190845/
+parallel-state.json and parallel-resume-190845-log.txt; evening-restart-checkpoint
+.json holds full live counts. latest-run pointers inOct21/22/23updated. Prior
+08:04run stopped is historical. Monitor remains PAUSED per owner; no deployment,
+public publishing, account-setting or Mac reboot. Source/tests/notes saved on
+operations branch only. Keep Mac powered/online; no all-ten-complete claim.
+
 ## DoctorWho resumed past deferred uncertain entry — Oct23 08:04 ET
 
 Owner said “Keep going.” Fresh live check found previous run stopped03:25ET on
