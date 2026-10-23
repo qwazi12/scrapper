@@ -1,5 +1,48 @@
 # Scrapper Memory
 
+## Evening restart with DoctorWho held for uncertain Drive creation — Oct22 20:53 ET
+
+Owner requested “Start again.” Fresh preflight:1,350verified/2,656remaining,
+2failed/1skipped, no running archive process or leases, Macfree117,779,795,968
+bytes, selected Brave session valid. Exact previous DoctorWho failureT91mMFTAsF0
+is AMBIGUOUS metadata creation: Drive files.create returned500 and no file ID was
+returned. This is not simply an exhausted media-upload retry; uncertainty gate
+correctly prevents creating another remote identity. AiPlot1zNufL17r2E is failed
+because coordinated stop cancelled its in-flight download, not a fresh bot flag.
+
+Attempted one existing-protocol DoctorWho reconciliation at20:51:08–12ET using
+retained local bytes. Server searched for canonical appProperties identity and
+reported “Unknown Drive creation outcome; no matching remote file yet.” Ledger
+remains ambiguous with nullDriveID; no new remote creation or reset attempted,
+lease released and local file retained. Saved evening-ambiguous-reconciliation.
+json in ignored artifacts/shorts-archive-20261022. Do not erase ambiguity, call it
+uploaded/restricted, or blindly recreate this video. Future reconciliation needed.
+
+To continue authorized work, started unchanged two-lane runner92069 at20:52:25ET
+using private operational catalog excluding only DoctorWho for this run. Server
+registration and all original videos/ledger remain intact. FLICKSFYP dedicated
+lane (large remaining library); second lane rotates the other eight channels.
+Same25verified per turn,2transfer/256MiB bounds, bounded reconciled upload retries,
+shared stop, serialized Review-only sync. DoctorWho512verified/511remaining stays
+on hold; Tiny inventory also incomplete. This run's catalog totals exclude held
+DoctorWho: always use FULL live server ledger for overall counts/completion, and
+never claim the full requested archive done if this subset finishes.
+
+Actual first verifications: CharanoV1cp-k8Yd8 at20:52:40; FLICKSFYP2aEmieB-2wE
+and Charanot2vFq5MjYY at20:52:53. Fresh20:53:03ET: process alive/running, distinct
+Charan/FLICKS live leases,1,353verified/2,653remaining/2failed/1skipped overall.
+Old failures are still counted, not newly successful. Source unchangede7ab6d3;
+no deployment, publishing, account-setting or monitor reactivation. Monitoring
+remains PAUSED per owner stop instruction. No new tests needed for operational
+catalog/start only; prior49focused pass evidence remains unchanged.
+
+Current state/log: artifacts/shorts-archive-20261022/parallel-resume-205225/
+parallel-state.json and parallel-resume-205225-log.txt; operational-catalog.json
+inside state folder records hold. BothOct21/Oct22 latest-run.json pointers updated.
+evening-restart-checkpoint.json holds counts. Earlier runs/stops below historical.
+Owner told DoctorWho is held to prevent duplicates and remaining channels resumed.
+Keep Mac powered/online. Save notes to operations branch only.
+
 ## Continued archive with bounded upload retries — 2026-10-22 08:39 ET
 
 Owner asked “Keep going” after status check showed1,048verified/2,958remaining,
