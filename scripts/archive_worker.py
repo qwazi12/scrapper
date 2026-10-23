@@ -115,6 +115,23 @@ def send_with_reconciliation(server,token,endpoint,video,fields,*,cid,vid,max_by
             retry_pause((5,15)[attempt],cancelled)
 
 
+def next_pending(server,token,base,auth,cid):
+    """Preserve unknown Drive creations while progressing other inventoried IDs."""
+    items=api_get(server,token,base+'/pending?'+urlencode(auth))['items']
+    def uncertain(row):
+        return row['status'] in ('creating','ambiguous') and not row.get('drive_file_id')
+    if not items or not uncertain(items[0]):return (items[0] if items else None),[]
+    manifest=api_get(server,token,f'/api/channel-archives/{cid}/manifest')
+    # The manifest includes historical rows. Only select from it when every row
+    # belongs to the current complete inventory; otherwise keep the queue closed.
+    if (manifest.get('channel_id')!=cid or not manifest['inventory']['complete'] or
+        manifest['counts']['missing_from_latest_inventory']):
+        raise RuntimeError('Cannot select past uncertain Drive creation from an incomplete or changed inventory')
+    held=[r['video_id'] for r in manifest['items'] if uncertain(r)]
+    eligible=[r for r in manifest['items'] if r['status'] not in ('uploaded','restricted','unavailable') and not uncertain(r)]
+    return (eligible[0] if eligible else None),held
+
+
 def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled=None,storage_slots=1,max_video_bytes=None):
     if not isinstance(max_videos,int) or isinstance(max_videos,bool) or max_videos<0:
         raise ValueError('max_videos must be a nonnegative integer (0 means all pending)')
@@ -135,7 +152,7 @@ def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled
     claim=api_post(server,token,f'/api/archive-workers/channels/{cid}/claim',{'worker_id':WORKER})
     if max_video_bytes is not None:claim['max_bytes']=min(claim['max_bytes'],max_video_bytes)
     auth={'worker_id':WORKER,'generation':claim['generation']}
-    base=f"/api/archive-workers/{claim['token']}";completed=0
+    base=f"/api/archive-workers/{claim['token']}";completed=0;deferred=set()
     try:
         with claimed(server,token,claim) as lease_lost:
             class Cancellation:
@@ -145,9 +162,12 @@ def drain(server,token,cid,workdir,*,max_videos=0,browser_profile=None,cancelled
             while True:
                 if lost.is_set():raise RuntimeError('Archive lease lost; local files retained')
                 if max_videos and completed>=max_videos:break
-                items=api_get(server,token,base+'/pending?'+urlencode(auth))['items']
-                if not items:break
-                item=items[0];vid=item['video_id'];directory=Path(workdir).resolve()/cid/vid
+                item,held=next_pending(server,token,base,auth,cid)
+                for vid in set(held)-deferred:
+                    log_msg(f'Deferred uncertain Drive creation, ledger preserved: {cid}/{vid}')
+                deferred.update(held)
+                if item is None:break
+                vid=item['video_id'];directory=Path(workdir).resolve()/cid/vid
                 directory.mkdir(parents=True,exist_ok=True)
                 if shutil.disk_usage(directory).free<2*claim['max_bytes']*storage_slots+256*1024*1024:raise RuntimeError('Mac temporary storage reserve reached')
                 try:
