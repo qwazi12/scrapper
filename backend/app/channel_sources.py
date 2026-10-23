@@ -133,7 +133,10 @@ def download(channel_id, video_id, destination: Path, max_bytes, cancelled=None,
     info=json.loads(info_path.read_text())
     if info.get('id')!=video_id or info.get('channel_id')!=channel_id: raise ValueError('Downloaded media belongs to a different channel/video')
     if info.get('is_live') or info.get('live_status') in ('is_live','is_upcoming'): raise ValueError('Live/upcoming broadcasts are not archived uploads')
-    paths=[p for p in destination.glob(video_id+'.*') if p.suffix.lower() in ('.mp4','.webm','.mkv','.mov')]
+    # yt-dlp format fragments (ID.f251.webm, ID.f788.mp4.part) are not
+    # completed videos and must never satisfy a cache or upload handoff.
+    paths=[destination/(video_id+ext) for ext in ('.mp4','.webm','.mkv','.mov')
+           if (destination/(video_id+ext)).is_file()]
     if len(paths)!=1 or paths[0].stat().st_size>max_bytes: raise RuntimeError('Download missing, ambiguous or exceeds available transfer bound')
     # Keep just the durable resume receipt. Full extractor JSON can be many MB
     # and contain temporary signed URLs/headers; none is needed by the ledger.

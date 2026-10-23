@@ -61,7 +61,7 @@ def claimed(server,token,claim):
 
 def download(cid,vid,directory,bound,cancelled,*,browser_profile=None):
     info_file=directory/(vid+'.info.json')
-    videos=[p for p in directory.glob(vid+'.*') if p.suffix in ('.mp4','.mkv','.webm','.mov')]
+    videos=[directory/(vid+ext) for ext in ('.mp4','.mkv','.webm','.mov') if (directory/(vid+ext)).is_file()]
     if info_file.is_file() and len(videos)==1 and videos[0].stat().st_size<=bound:
         info=json.loads(info_file.read_text())
         if info.get('id')==vid and info.get('channel_id')==cid:return videos[0],info
