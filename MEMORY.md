@@ -1,5 +1,45 @@
 # Scrapper Memory
 
+## Archive-only continuation avoids queue-status interruption — Oct23 20:14 ET
+
+Owner asked “keep downloading.” Previous runner stopped19:15ET at2,808verified/
+1,198remaining/2failed/1skipped after DoctorWho completed25verified and then the
+Review-sync status path returned404. Priority state has last_syncs empty and outer
+error404; the transfer turn itself succeeded. The old jobID was not persisted
+before polling, so exact missing-registry/numeric-ID/routing cause is unproven.
+Do not claim the Drive uploads failed or that a particular server defect was
+independently reproduced. FLICKS cancelled by shared stop; all leases released.
+
+Performed one explicitly authorized real Review-only sync diagnostic using
+folder1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY/pipelineMovieClips/auto_approve=false.
+Jobaa28be38355c completed:2,808actual video files scanned across10folders,
+2,808existing skipped,0added; no duplicate rows. Saved full receipt/status/result
+in artifacts/shorts-archive-20261023/review-sync-diagnostic.json. This proves
+current sync works, not that the prior missing status is retroactively known.
+
+Restarted unchanged runner87400 at20:13:58ET, sourceda7165a, WITHOUT --sync-folder
+for this run. The primary owner request is actual video archival; queue import
+is deferred so optional background-job polling cannot cancel media transfers.
+Final/repeat Review-only sync of newly archived files remains pending and must
+be completed/reconciled separately; do not claim new files entered SocialPilot.
+No server deployment or application source change; prior55focused tests remain
+valid, no new tests needed for launch/config only. Monitor remains PAUSED.
+
+Full original catalog,DoctorWho priority+rotation,25turn/2transfer/256MiB limits,
+shared safety stop and bounded reconciled upload retries retained. Existing
+successful IDs excluded; uncertainT91mMFTAsF0 remains deferred/unchanged. Macfree
+125,347,545,088bytes, selected session valid. Actual new DoctorWhoXFGQee-_rR4
+20:14:13, XHhnBSjIcGU20:14:30 and FLICKSh0ZV1fM81Mg20:14:31 verified. Fresh
+20:14:43ET: process alive/running, two distinct leases,2,811verified/1,195remaining/
+1failed/1skipped; DoctorWho587verified/436remaining. Remainingfailed count is the
+preserved ambiguous DoctorWho entry; no all-ten-complete claim,Tiny stillincomplete.
+
+Current state/log: artifacts/shorts-archive-20261023/parallel-resume-201358/
+parallel-state.json and parallel-resume-201358-log.txt. archive-only-restart-
+checkpoint.json holds full live counts; latest-run pointers inOct21/22/23updated.
+Older19:08run state is historical. Source unchanged; notes saved on ops branch.
+No Ready/schedule/publish action or account-setting change. Keep Mac powered/online.
+
 ## Interrupted-fragment resume fixed and archive restarted — Oct23 19:09 ET
 
 Owner requested “Keep going.” Preflight found2,770verified/1,236remaining/
