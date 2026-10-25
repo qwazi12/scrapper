@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-25 — AI SEO on the whole queue + Doctor Who 2 a day (owner asked; in progress)
+Snapshot (live API, 2026-10-25): 4,053 rows. Ready 716 (714 with AI SEO, 2 without). Review 3,328 (993 with
+AI SEO, 2,335 without; new archive imports 10-21..10-25). All Cinama:* except 11 Cinama:youtube.
+Doctor Who: 126 Ready + 896 Review; only 1 posted since 10-21; next Ready ones 10-27, 10-29 — NOT 2 a day.
+1. Approve the 993 Review rows that already have AI SEO → Ready (bulk-action approve; undo point recorded).
+2. AI SEO (bulk-ai, ≤1000 per job, one job at a time) on the 2,335 Review + 2 Ready rows without it; approve each
+   finished batch → Ready. Rows Gemini refuses (content filter) stay in Review with the reason — listed here.
+3. Doctor Who 2 a day: re-order the Movie Clips line so every other video is Doctor Who. The scheduler fills each
+   slot in line order, so DW gets 2 of the 4 daily Facebook/Instagram Shorts slots (8/11/15/19) and about 1 of the
+   2 YouTube ones; total posts per day unchanged. Old positions saved to /data/backups first (undo = restore them).
+   No code change. (The FB Favourites queue plan of 10-21 is still separate and unapproved.)
+4. Verify: schedule shows DW at 2 slots per day; counts logged here.
+
 ## PLAN — 2026-10-21 — FB favourites + no FB Stories — AWAITING OWNER APPROVAL (nothing built)
 Full plan: docs/implementation/PLAN_FB_FEATURED_20261021.md.
 A. Send `facebook_no_story=true` on every Facebook upload (Upload-Post flag; we never sent it) → Reels stop going to Stories.
