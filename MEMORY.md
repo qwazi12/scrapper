@@ -1,5 +1,87 @@
 # Scrapper Memory
 
+## Known Shorts inventory finished and verified — Oct 25, 14:52 ET
+
+CURRENT OUTCOME: 4,052 discovered / downloaded / uploaded and independently
+Drive-verified; 0 skipped, 0 failed, 0 remaining in the known ledger. Actual video
+storage 41,691,735,242 bytes (41.69 GB), plus ten channel manifests. All nine
+available Shorts inventories are processed. Tiny Friends TV still has no Shorts
+tab, so its inventory remains incomplete, not an empty complete library. Never
+claim all ten channels are fully archived. The earlier ambiguous/restricted/run
+checkpoints below are historical and have both been resolved.
+
+Fresh channel counts: Charan 303; Afridi 208; Rock Movie 133; AgiRecap 294;
+sir7076 264; FLICKSFYP 1,132; Ai Plot 677; Doctor Who 1,023; ArliStoryTime 18;
+Tiny Friends 0 with inventory unavailable. Ten canonical channel registrations,
+ten source folders and ten checksum-verified manifests remain in Movie Clips
+1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY inside LongForm Shared Drive.
+
+This continuation added 47 verified files: 45 newly published Shorts identified
+by fresh full-pagination inventories, one recovered Doctor Who upload, and one
+previously skipped Ai Plot video accessible through the owner's existing session.
+No successful ledger entry was redownloaded or reuploaded. The two-lane process
+49158 exited naturally after the 45 new transfers; its partial state at 4,050 is
+historical because the two remaining items were subsequently completed below.
+No archive worker/lease remains active. Unrelated local worker 4089 is intact;
+recurring archive monitor stays PAUSED. To archive later additions, refresh the
+channel inventories and reuse successful IDs; do not restart old partial states.
+
+Doctor Who T91mMFTAsF0 recovered 14:47:51 ET from the original 1,088,155-byte Mac
+copy, SHA256 unchanged. First independently searched the complete Shared Drive
+including Trash, then repeated Drive and user-corpus identity/filename queries
+under an exclusive channel claim; searches were complete and found no copy.
+Reserved a Drive file ID and fsynced an operational intent BEFORE metadata create;
+any retry reuses that ID. Existing server identity lookup, media validation,
+size/MD5/SHA receipts then reconciled and uploaded it without resetting ambiguous
+ledger status or weakening any server guard. Exactly one matching remote file
+exists. The local video was deleted only after verification. A real repeat of the
+recovery returned already_verified without any new creation/source fetch.
+
+This was a specific operational reconciliation, not a generic server-source fix.
+Future automatic unknown creates still fail closed. Persisting a pre-generated
+Drive ID before normal metadata creates remains a useful future hardening item.
+Google documents pre-generated IDs for duplicate prevention and crash recovery:
+https://developers.google.com/workspace/cse/guides/bulk-import-files#preventing_duplicates
+No credentials, session cookies, application code or account settings changed.
+
+Ai Plot -0cMFuJTmcI had originally been skipped on public age-gated access before
+owner authentication was connected. One normal attempt with the already approved
+Brave profile succeeded; no age-control bypass or alternate-player trick. Its
+15-second, 1,163,747-byte MP4 passed the existing server/Drive checks at 14:51:01
+ET; ledger restricted status cleared through the normal successful receive path.
+Local media was removed only after the verified receipt. No unresolved skipped
+or failed video remains in the known ledger. Tiny Friends was rechecked publicly
+and still has no Shorts tab; regular uploads were not substituted.
+
+Completed four explicitly authorized Review-only syncs, persisting each job ID
+before polling: 6b7ca8dc2ac0 scanned 4,005 / added 1,200 / skipped 2,805;
+ff685a401979 scanned 4,050 / added 45 / skipped 4,005; 774094c98948 scanned
+4,051 / added 1 / skipped 4,050; 4d882a603c75 scanned 4,052 / added 1 / skipped
+4,051. Final independent queue audit: exactly 4,052 matching Drive IDs / 4,052
+rows, zero missing or duplicate IDs. All 1,247 rows created today remain Review,
+Cinama:*, unscheduled and unpublished. Existing queue statuses and unrelated
+posting settings were left unchanged. No Ready, scheduling or publishing action.
+
+Final verification 14:52:16 ET: all 4,052 cloud files match ledger identity, size
+and MD5; all ten manifests' bytes/checksums/counts match the ledger. The initial
+full check covered 4,051 files, followed by a targeted recheck of Ai Plot's 677
+files and updated manifest after its last successful upload. Mac free space
+138,987,208,704 bytes at checkpoint. Shared Drive pooled capacity is not exposed
+by the service-account user-quota endpoint; do not report zero capacity from its
+personal quota. No paid AI call, source deployment or publishing was required.
+Prior 55 focused tests remain unchanged; this turn's evidence is real media,
+Drive/API transfers, no-op recovery, complete manifest and queue checks.
+
+Private evidence: artifacts/shorts-archive-20261025/final-verification.json,
+drive-verification.json, held-reconciliation-intent.json, held-recovery-noop-
+retry.json, last-restricted-owner-session-check.json, last-access-review-sync.json,
+recovered-review-sync.json, post-run-review-sync.json, review-sync.json and their
+row/inventory/launch receipts. Baseline evidence preserved in initial-drive-check
+and pre-last-access-verification.json. latest-run pointers in Oct21/22/23/25 now
+include the final outcome and explicitly identify the old partial state as history.
+Only this archival scope is verified complete for known videos; this is not a
+claim that the broader Screen Central engineering roadmap is fully implemented.
+
 ## Fresh channel inventories and continued downloads — Oct 25, 14:31 ET
 
 Owner requested “Keep going.” The Oct 23 two-lane run finished partial on

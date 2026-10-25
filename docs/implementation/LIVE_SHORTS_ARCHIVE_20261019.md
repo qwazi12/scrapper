@@ -1,5 +1,51 @@
 # Live Shorts archive — 2026-10-19
 
+**Current verified outcome — Oct 25, 14:52 ET:** **4,052 actual videos, 41.69 GB**
+(`41,691,735,242` video bytes), **zero failed, skipped or remaining known items**.
+This turn archived 45 new Shorts, recovered the retained Doctor Who file, and
+successfully accessed the previously skipped Ai Plot video through the existing
+owner-approved Brave sign-in. All nine available channel inventories are processed.
+Tiny Friends still has no Shorts tab; its inventory remains unavailable, so this
+is not an all-ten-channels-complete claim.
+
+| Channel | Verified videos | Current outcome |
+|---|---:|---|
+| Charan Ebenez | 303 | Known inventory processed |
+| AfridiAE | 208 | Known inventory processed |
+| Rock Movie | 133 | Known inventory processed |
+| AgiRecap | 294 | Known inventory processed |
+| sir7076 | 264 | Known inventory processed |
+| FLICKSFYP | 1,132 | Known inventory processed |
+| Ai Plot | 677 | Known inventory processed; owner sign-in resolved last item |
+| Doctor Who Shorts | 1,023 | Known inventory processed; retained upload recovered |
+| ArliStoryTime | 18 | Known inventory processed |
+| Tiny Friends TV | 0 | Inventory unavailable: no Shorts tab |
+
+Independently verified every archived file's Drive identity, size and MD5, plus
+all ten manifests' checksum/counts. Final queue audit: **4,052 unique Drive-linked
+rows, zero duplicates or missing IDs**. Today's **1,247 new rows are all Review,
+Cinama:*, unscheduled and unpublished**. Four real sync jobs completed; final
+`4d882a603c75` scanned 4,052, added one, skipped 4,051. Existing queue statuses
+and unrelated posting remain unchanged.
+
+The Doctor Who recovery performed complete no-copy searches including Trash
+under a channel claim, persisted a pre-generated Drive ID before metadata create,
+then used the existing backend validation/identity/checksum protocol. No ambiguous
+status reset or server guard weakening. Repeating recovery was an actual no-op.
+Ai Plot succeeded with ordinary previously approved sign-in, without bypassing age
+or authentication controls. Local media was removed only after verified receipts.
+These are specific operational recoveries; generic server ID preallocation remains
+a future hardening item, not a deployed implementation change.
+
+Archive process **49158 has exited; zero archive leases remain**. The historical
+parallel state ended partial at 4,050 before the two recoveries; use
+`artifacts/shorts-archive-20261025/final-verification.json` and updated `latest-run.json`
+for the final result. Monitor stays PAUSED. No application deployment, Ready,
+scheduling or publication action. Mac free 138.99 GB at final checkpoint; pooled
+Shared Drive available capacity is not exposed by user quota. Full evidence stays
+in ignored local operation artifacts; source notes are saved on the operations
+branch. Earlier running/held/restricted checkpoints below are historical.
+
 **Oct 25 continuation, 14:31 ET:** Independently reverified all **4,005 Drive
 videos (40.84 GB)** against ledger size/MD5/identity, zero mismatches; ten
 manifests present. Deferred Review-only sync job `6b7ca8dc2ac0` scanned 4,005,
