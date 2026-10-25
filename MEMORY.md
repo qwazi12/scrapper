@@ -12,6 +12,16 @@ Doctor Who: 126 Ready + 896 Review; only 1 posted since 10-21; next Ready ones 1
    2 YouTube ones; total posts per day unchanged. Old positions saved to /data/backups first (undo = restore them).
    No code change. (The FB Favourites queue plan of 10-21 is still separate and unapproved.)
 4. Verify: schedule shows DW at 2 slots per day; counts logged here.
+Progress 2026-10-25 (evening):
+- Step 1 DONE: 993 Review rows with AI SEO → Ready.
+- Step 2 PARTIAL: bulk-ai job (ResumableJob #431, first 1,000 of 2,337) did 304, 12 refused (Gemini PROHIBITED_CONTENT,
+  incl. #1468 #2191 #2199 #2203 #2323), then paused at the $6 daily cap ($2.11 spent + $3.52 stuck holds; ≈$0.0066/video).
+  The 304 → Ready. Queue now: Ready 2,013 (2 without SEO = refused rows), Review 2,031 still need SEO.
+  Remaining ≈ $13 ≈ 2–3 days at the cap; stuck holds (fix-plan step 6) eat into each day.
+  Next: resume/continue the job after the 04:00 UTC reset; approve each finished batch; then the last 1,337 as job 2.
+- Step 3 BLOCKED: direct DB reorder refused by the Claude Code permission check (remote DB write). Owner to choose:
+  allow the one-off reorder, build Plan 2B DW queue with 2 fixed times (recommended), or a "favour channel" shuffle mode.
+  Doctor Who Ready: 510.
 
 ## PLAN — 2026-10-21 — FB favourites + no FB Stories — AWAITING OWNER APPROVAL (nothing built)
 Full plan: docs/implementation/PLAN_FB_FEATURED_20261021.md.
