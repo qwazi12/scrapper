@@ -1,5 +1,23 @@
 # Live Shorts archive — 2026-10-19
 
+**Oct 25 continuation, 14:31 ET:** Independently reverified all **4,005 Drive
+videos (40.84 GB)** against ledger size/MD5/identity, zero mismatches; ten
+manifests present. Deferred Review-only sync job `6b7ca8dc2ac0` scanned 4,005,
+added 1,200, skipped 2,805; all 1,200 new rows independently confirmed Review,
+Cinama:*, unscheduled and unpublished. Refreshed all ten channel inventories:
+**45 new Shorts** across seven channels, no missing old IDs. Registered additions
+without resetting successes. Started unchanged two-worker run **49158** at
+14:30:48, with AgiRecap in one lane and other channels rotating because Doctor
+Who has no eligible pending media. First new Charan video verified 14:31:08;
+checkpoint 14:31:14: **4,006 verified, 45 remaining, one ambiguous, one skipped**.
+Same 25/turn, two-transfer, 256 MiB/video safety limits. Current state/log:
+`artifacts/shorts-archive-20261025/parallel-resume-143048/parallel-state.json`
+and `parallel-resume-143048-log.txt`. A final Review-only sync after this run is
+pending. Doctor Who `T91mMFTAsF0` remains ambiguous with retained local bytes;
+a full Shared Drive query including Trash found no match, so no blind recreation.
+Tiny Friends again has no Shorts tab; no all-ten-complete claim. Monitor remains
+PAUSED; no deployment or publishing action. Earlier checkpoints are historical.
+
 **Oct23 archive-only restart20:13:58ET:** previous run stopped at2,808after DoctorWho25-video turn succeeded and Review-sync status returned404. Exact missing-job cause unproven. New real diagnostic Review-only jobaa28be38355c completed:2,808videos scanned,2,808existing skipped,0added, no duplicates. To keep media transfers independent, restarted unchanged process87400 WITHOUT --sync-folder; queue import of new videos is deferred, not claimed complete. Same DoctorWhopriority/2workers/25turn/256MiB bounds and safeguards. Both lanes verified new files. Fresh20:14:43: **2,811verified,1,195remaining,1failed,1skipped; DoctorWho587verified/436remaining**. Current paths `artifacts/shorts-archive-20261023/parallel-resume-201358/parallel-state.json` and `parallel-resume-201358-log.txt`; latest-run pointers updated. UncertainT91mMFTAsF0 stilldeferred,Tiny incomplete. Monitor PAUSED; no app code/deploy/publishing change.
 
 **Oct23 evening19:09ET:** stopped at2,770 because a cache glob mistook an audio-only format fragment for final video; server400 validation correctly rejected it. Corrected cache/source selection to exact final ID.ext only; retained fragments resume normally.55focused tests pass. Actual AiPlotLsoTtr2-UZ8 recovered as complete105s/10,804,074byte video and verified in Drive19:07:56. Restarted two-lane process82343 at19:08:45, source94d1bb7, DoctorWho priority plus other-channel rotation. Both lanes have fresh actual verified files. Fresh19:09:23: **2,774verified,1,232remaining,1failed,1skipped; DoctorWho562verified/461remaining**. Existing ambiguousT91mMFTAsF0 stilldeferred; Tiny incomplete. Current state/log `artifacts/shorts-archive-20261023/parallel-resume-190845/parallel-state.json` and `parallel-resume-190845-log.txt`; latest-run pointers updated. Macfree125.4GB. Monitor remains PAUSED; no server deployment or publishing change. Earlier checkpoints below are historical.

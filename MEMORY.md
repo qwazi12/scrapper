@@ -1,5 +1,60 @@
 # Scrapper Memory
 
+## Fresh channel inventories and continued downloads — Oct 25, 14:31 ET
+
+Owner requested “Keep going.” The Oct 23 two-lane run finished partial on
+Oct 24 at 01:16:53 ET with 4,005 verified Drive videos, 40,840,642,509 video
+bytes, one unresolved Doctor Who creation, one restricted Ai Plot item, and
+Tiny Friends still incomplete. No archive worker or lease remained active.
+These are completed transfers, not a claim that all ten channels are complete.
+
+Independently listed every channel folder on Drive on Oct 25 and compared all
+4,005 uploaded ledger identities, sizes and MD5 checksums: all match, zero
+mismatches; all ten manifests present. A Shared Drive-wide query including
+Trash found no identity or filename for Doctor Who T91mMFTAsF0. Its original
+1,088,155-byte Mac copy still matches ledger SHA256. Preserve ambiguous/null-ID
+state and retained media; do not blindly recreate it. Railway CLI sign-in has
+expired, so the read-only remote diagnostic did not execute; existing local
+Drive credentials and authenticated Scrapper APIs performed the actual checks.
+No credentials were printed, exported, or committed.
+
+Completed the deferred real Review-only sync: job 6b7ca8dc2ac0 scanned 4,005
+videos, added 1,200 and skipped 2,805 existing rows. Independently read all 1,200
+new rows: every one is Review, Cinama:*, unscheduled and unpublished. Existing
+rows and unrelated posting remain untouched. A later sync for this new run is
+still required; do not claim the new downloads are already queue-imported.
+
+Refreshed all ten public Shorts inventories with complete pagination. Found
+45 new IDs: Charan 4, Rock Movie 3, AgiRecap 17, sir7076 5, FLICKSFYP 11,
+Ai Plot 3, ArliStoryTime 2. Afridi and Doctor Who unchanged. No previously
+inventoried IDs missing. Registered only inventories with additions using the
+existing API; successful hashes, Drive IDs and statuses were retained. Tiny
+Friends again returned no Shorts tab and remains incomplete; regular uploads
+were not substituted. Total ledger now 4,052 including the two exceptions.
+
+Started unchanged detached process 49158 at 14:30:48 ET, source 1d0f314.
+AgiRecap has one lane, other channels rotate in the second because Doctor Who
+has no eligible pending media. Same maximum two transfers, 25 verified per
+channel turn, 256 MiB/video, lease fencing, receipt reconciliation, shared
+cancellation, and storage bounds. Owner-selected Brave session verified locally;
+no session export or challenge bypass. Mac preflight about 50.5 GB free; Shared
+Drive pooled available capacity remains unexposed. Monitor stays PAUSED.
+
+Actual first new Charan -GCmWpBqOr4 verified 14:31:08 ET. Checkpoint 14:31:14:
+4,006 verified, 45 remaining (44 new plus held Doctor Who), one failed/ambiguous,
+one skipped; two distinct live leases. Current state/log are under
+artifacts/shorts-archive-20261025/parallel-resume-143048/parallel-state.json and
+parallel-resume-143048-log.txt. latest-run pointers in Oct21/22/23/25 updated.
+Read the current ledger/state before reporting status; this is a running
+checkpoint, not a full-archive completion claim. No application source change,
+deployment, Ready, scheduling or publishing action. Prior 55 focused tests
+remain applicable; new evidence is real Drive/API/media activity, not simulation.
+
+Private evidence in artifacts/shorts-archive-20261025/: initial-channels.json,
+drive-verification.json, per-channel manifests/fresh-inventory JSON,
+held-local-verification.json, review-sync.json, review-sync-row-verification.json,
+inventory-refresh.json, preflight.json, launch-checkpoint.json and latest-run.json.
+
 ## Archive-only continuation avoids queue-status interruption — Oct23 20:14 ET
 
 Owner asked “keep downloading.” Previous runner stopped19:15ET at2,808verified/
