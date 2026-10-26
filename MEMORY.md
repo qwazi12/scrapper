@@ -1,5 +1,19 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-25 (night) — Shorts 6 a day, SEO'd → Ready, render + queue LongForm and Countdowns (owner asked; in progress)
+1. Shorts 6 a day: Movie Clips Facebook/Instagram times 08:00, 11:00, 13:00, 15:00, 19:00, 22:00 ET (was 4: 8/11/15/19).
+   YouTube stays 09:00 + 17:00 unless the owner says otherwise (YouTube upload limit; LongForm 2 + Countdown 1 also post
+   there). Via the Settings schedule API; undo = put the old times back.
+2. Every Shorts row with AI SEO → Ready (now and after each SEO batch).
+3. LongForm: list every project that is unrendered, rendered-but-not-queued, or blocked; render the unrendered ones and
+   send the finished ones to the LongForm queue. Known blockers (FIX_PLAN_20261020 step 1): no quality inspection on
+   pre-release renders, bulk send has no approval, credit-check false positives — these are now in scope (owner asked).
+4. Countdowns: same — finish research/render for unfinished countdowns and queue them; #7 needs the true-peak limiter
+   (FIX_PLAN step 2); #6/#8 need trailers/titles.
+5. Budget: the $6/day cap is shared by AI SEO (~$13 left) and renders (~$0.3–0.6 each). The owner decides the order or a
+   higher cap; nothing is raised without asking.
+Each code fix: test → full suite → one commit → push when Studio is idle → verify live → log here.
+
 ## PLAN — 2026-10-25 — AI SEO on the whole queue + Doctor Who 2 a day (owner asked; in progress)
 Snapshot (live API, 2026-10-25): 4,053 rows. Ready 716 (714 with AI SEO, 2 without). Review 3,328 (993 with
 AI SEO, 2,335 without; new archive imports 10-21..10-25). All Cinama:* except 11 Cinama:youtube.
