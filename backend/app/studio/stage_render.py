@@ -51,6 +51,11 @@ _MOVES = [
     "z='1.08':x='(iw-iw/zoom)*(1-on/{n})':y='ih/2-(ih/zoom/2)'",                # pan right -> left
 ]
 
+# Loudness, then a hard ceiling: loudnorm alone can overshoot its TP target and the
+# release check blocks any export over 0 dBFS (countdown #7, 2026-10-20). -2.5 dBFS
+# leaves room for AAC encoding overshoot.
+NARRATION_MASTER = "loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.75:level=false:latency=true"
+
 
 def _human_date(iso: str) -> str:
     try:
@@ -306,7 +311,7 @@ def render(project_id: int) -> str:
             chains.append(f"[{i}:a]aresample=48000,adelay={ms}|{ms}[a{i}]")
         mix = "".join(f"[a{i}]" for i in range(len(timeline)))
         fc = ";".join(chains) + f";{mix}amix=inputs={len(timeline)}:normalize=0,apad=whole_dur={total:.3f}," \
-                                f"loudnorm=I=-14:TP=-1.5:LRA=11[out]"
+                                f"{NARRATION_MASTER}[out]"
         media.run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", fc, "-map", "[out]",
                    "-t", f"{total:.3f}", "-c:a", "aac", "-b:a", "192k", str(narration)])
     audio = narration if timeline else None
