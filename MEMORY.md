@@ -13,6 +13,19 @@
 5. Budget: the $6/day cap is shared by AI SEO (~$13 left) and renders (~$0.3–0.6 each). The owner decides the order or a
    higher cap; nothing is raised without asking.
 Each code fix: test → full suite → one commit → push when Studio is idle → verify live → log here.
+Progress 2026-10-26 (01:00–02:30 UTC):
+- 1 DONE: Movie Clips FB/IG 08,11,13,15,19,22 + YT 09,17 (8 slots/day). Old schedule saved in scratchpad schedule_before.json.
+- 2 ONGOING: every row with AI SEO is Ready (2,013 at 01:00 UTC). Bulk-ai job (642 rows) running, survived a deploy
+  restart. Owner raised the daily cap to $12 (+$2 today). Stuck holds now $8.52 (fix plan step 6) eat the cap.
+- 3: step 1a DONE 676dfe7 — POST /api/studio/projects/{id}/inspect + 🔍 Run inspection button. Inspected all 16
+  old renders live: 15 passed, #115 Cyberpunk blocked (true peak +1.0 dBFS). 22 rendered LongForms now await approval.
+  Approval BLOCKED on owner D1: no saved rights statement (export_rights_statement empty) — Claude can't attest rights.
+  Step 2 limiter committed ef8e546 (alimiter 0.75 after loudnorm; real renders peaked -1.3…+1.0 dBFS).
+  Queued after the SEO job stops (scratchpad after_seo.sh): push → render-batch [90,87,86,74,73,72,70,115] →
+  resume #75 #133 #140 → countdown #7 make segments, #10 research.
+- Mistake: pushed 676dfe7 while the SEO job was running (it resumed fine). Rule: check /api/queue/bulk-ai before pushing.
+- Not done / need owner: #95 credit false positive (step 1c), countdown #6 (Terrifier 2 trailer, YouTube block D2),
+  #8 (7 of 10 titles, D4); 12+13 rows refused by Gemini's content filter stay in Review.
 
 ## PLAN — 2026-10-25 — AI SEO on the whole queue + Doctor Who 2 a day (owner asked; in progress)
 Snapshot (live API, 2026-10-25): 4,053 rows. Ready 716 (714 with AI SEO, 2 without). Review 3,328 (993 with
