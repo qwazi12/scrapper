@@ -24,6 +24,10 @@ Progress 2026-10-26 (01:00–02:30 UTC):
   Queued after the SEO job stops (scratchpad after_seo.sh): push → render-batch [90,87,86,74,73,72,70,115] →
   resume #75 #133 #140 → countdown #7 make segments, #10 research.
 - Mistake: pushed 676dfe7 while the SEO job was running (it resumed fine). Rule: check /api/queue/bulk-ai before pushing.
+- Render batch (02:13–02:31 UTC, rid 432): OK #90 #87 #73 #72 #70 #115 (peaks now -2.1…-2.2 dBFS, #115 -0.4;
+  LUFS -15.3…-16.4). Failed: #86 credit check (step 1c false positive), #74 "Audio/video duration mismatch > 250 ms"
+  (not the limiter — the other 6 passed; needs a look). Countdown #7 segments queued behind; #10 research paused on budget.
+  → 28 rendered LongForms now wait only for the owner's rights statement (D1).
 - Not done / need owner: #95 credit false positive (step 1c), countdown #6 (Terrifier 2 trailer, YouTube block D2),
   #8 (7 of 10 titles, D4); 12+13 rows refused by Gemini's content filter stay in Review.
 
