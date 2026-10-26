@@ -1516,6 +1516,8 @@ export const api = {
     req<StudioArchive>("/api/studio/archive", { method: "PUT", headers: headers(), body: JSON.stringify(patch) }),
   studioArchiveNow: () =>
     req<StudioArchive & { archived: { id: number; freed_mb: number }[] }>("/api/studio/archive/run", { method: "POST", headers: headers() }),
+  studioInspect: (id: number) =>
+    req<StudioProject>(`/api/studio/projects/${id}/inspect`, { method: "POST", headers: headers() }),
   studioRestore: (id: number) =>
     req<{ job_id: string }>(`/api/studio/projects/${id}/restore`, { method: "POST", headers: headers() }),
   studioMotion: () => req<StudioMotion>("/api/studio/motion", { headers: headers(false) }),

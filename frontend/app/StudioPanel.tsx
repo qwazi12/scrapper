@@ -1166,6 +1166,16 @@ function VideoSection({ p, onChange }: { p: StudioProject; onChange: () => void 
         <b>Final export inspection: {r.quality?.decode === "passed" ? "decoded" : "inspection required"}</b>
         <div>Review facts, narration, captions, footage rights and title/thumbnail honesty before approval.</div>
         {r.quality?.warnings?.map((w) => <div key={w} style={{ color: "var(--yellow)" }}>{w}</div>)}
+        {!r.quality && (
+          <div style={{ margin: "6px 0" }}>
+            <div>This video was rendered before quality inspection existed, so Approve needs it inspected first (no re-render, no AI cost).</div>
+            <button disabled={thumbBusy} onClick={async () => {
+              setThumbBusy(true); setMsg("Inspecting the final export…");
+              try { await api.studioInspect(p.id); setMsg(""); } catch (e: any) { setMsg(String(e.message || e)); }
+              finally { setThumbBusy(false); onChange(); }
+            }}>🔍 Run inspection</button>
+          </div>
+        )}
         <ExportAcceptance kind="studio" id={p.id} label="Approve inspected export"
           disabled={!p.script_ready || !r.quality || !!r.quality.errors.length} onApproved={onChange} />
       </div>

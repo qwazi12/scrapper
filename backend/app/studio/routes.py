@@ -575,6 +575,29 @@ def export_review(project_id:int,s:Session=Depends(get_session)):
         except RuntimeError as exc:raise HTTPException(409,str(exc))
 
 
+@router.post("/projects/{project_id}/inspect")
+def inspect_render(project_id: int, s: Session = Depends(get_session)) -> dict[str, Any]:
+    """Quality-inspect the existing final export (renders made before inspection existed); no re-render, no AI."""
+    from ..file_use import pin
+    from sqlalchemy.orm.attributes import flag_modified
+    from .media_quality import inspect_export
+    root = runner.project_dir(project_id)
+    with pin([root], exclusive=True, session=s):
+        p = _get(s, project_id)
+        if p.stage_status in ("running", "queued"):
+            raise HTTPException(409, "Wait for the running stage before inspecting")
+        render = dict(p.render or {})
+        final = (root / str(render.get("file") or "")).resolve()
+        if not render.get("file") or not final.is_relative_to(root.resolve()) or not final.is_file():
+            raise HTTPException(409, "No final export to inspect — render first")
+        quality = inspect_export(final, expected_seconds=render.get("seconds"))
+        p.render = {**render, "quality": quality}
+        flag_modified(p, "render")
+        s.commit()
+        logbus.log("info", "studio_inspected", f"Studio #{p.id}: export inspected ({quality['status']})", project=p.id)
+        return _out(p)
+
+
 @router.post("/projects/{project_id}/quick-approve")
 def quick_approve_export(project_id: int, req: QuickIn, s: Session = Depends(get_session)) -> dict[str, Any]:
     """One-tap Approve after watching (owner, 2026-10-19); serious findings still need the full form."""
