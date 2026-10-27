@@ -19,6 +19,11 @@ Verified live 10:15 UTC: held $9.84 → $0.10 (one live call), remaining $7.90 (
 holds remain open for reconciliation (not on the cap). Then: countdown #7 resumed (making "Possession"), AI SEO
 started on 1,000 of 1,350 (watcher approves finished rows → Ready, then runs the last 350).
 Countdown #10 research finished with 9 of 10 titles — owner to add/approve a 10th.
+2026-10-27 11:04 UTC: Google returned HTTP 403 "issues with your billing account, please resolve / pay your outstanding
+balance for project projects/48189806448" on every Gemini call → all AI stopped (SEO, Studio, countdowns, TTS). OWNER must
+pay/fix billing in Google Cloud (Billing → project 48189806448). Run result before it: 738 SEO'd → Ready; 262 + 350 rows
+failed with the 403 (still in Review, no AI SEO) — re-run them once billing is fixed. Holds: peak $0.40 during the run,
+$0.00 after (403s released — fix verified).
 
 ## PLAN — 2026-10-25 (night) — Shorts 6 a day, SEO'd → Ready, render + queue LongForm and Countdowns (owner asked; in progress)
 1. Shorts 6 a day: Movie Clips Facebook/Instagram times 08:00, 11:00, 13:00, 15:00, 19:00, 22:00 ET (was 4: 8/11/15/19).
