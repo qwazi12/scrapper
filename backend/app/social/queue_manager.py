@@ -1396,6 +1396,15 @@ def run_scheduler_tick():
         except Exception as exc:
             logger.error("Error releasing file cache: %s", exc)
 
+        # Budget holds never sit on the daily cap after their call (owner, 2026-10-27).
+        try:
+            from .. import budget_reservations
+            count, usd = budget_reservations.settle_stale()
+            if count:
+                logbus.log("info", "budget_holds_settled", f"Settled {count} leftover budget holds (${usd:.2f} off today's cap)")
+        except Exception as exc:
+            logger.error("Error settling budget holds: %s", exc)
+
         # Disk guard: at 80% full, back up first, then free rebuildable space (owner, 2026-10-05).
         try:
             from .. import space

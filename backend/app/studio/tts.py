@@ -165,6 +165,8 @@ def _post(url: str, payload: dict) -> httpx.Response | None:
                     # every voice line left a $0.02 hold stuck and was recorded at ~$0).
                     b64 = _audio_from(data) or ""
                     costs.record_gemini_tts(model, tts_usage(data), len(b64) * 3 / 4 / 48000, len(_spoken_text(payload)))
+                else:
+                    br.not_billed()                   # error answers are not billed
 
         except httpx.HTTPError as exc:
             if attempt == 3:
@@ -220,6 +222,7 @@ def _chirp(spoken: str, dest: pathlib.Path) -> None:
             "audioConfig": {"audioEncoding": "MP3"},
         })
         if res.is_success: costs.record_tts(len(spoken), settings.tts_voice)
+        else: br.not_billed()
     if not res.is_success:
         # Never echo the URL (it carries the key) — body only.
         raise TTSError(f"Text-to-Speech failed ({res.status_code}): {res.text[:300]}")

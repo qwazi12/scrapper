@@ -32,14 +32,18 @@ def test_concurrent_sessions_cannot_over_reserve_daily_cap():
     with SessionLocal() as s: assert br.held_micros(s)==800000
 
 
-def test_timeout_hold_survives_restart_and_calendar_reset():
+def test_timeout_hold_stays_open_but_only_counts_on_its_own_day():
+    # Owner rule 2026-10-27: nothing sits on the daily cap after its day. The unknown outcome
+    # stays open for reconciliation (and on the monthly check) but no longer blocks later days.
     with pytest.raises(TimeoutError):
         with br.attempt('fixture',.7): raise TimeoutError('receipt lost')
+    with pytest.raises(costs.DailyCapReached): br.reserve('fixture',.4)      # same day: still counted
     with SessionLocal() as s:
         r=s.query(BudgetReservation).one(); assert r.state=='unknown'
         r.created_at=datetime.now(timezone.utc)-timedelta(days=45); s.commit()
-    with pytest.raises(costs.DailyCapReached): br.reserve('fixture',.4)
-    assert costs.daily_status()['held_usd']==.7
+        assert br.held_micros(s)==700000                                       # still open, still reconcilable
+    assert costs.daily_status()['held_usd']==0
+    assert br.reserve('fixture',.4)
 
 
 def test_usage_receipt_and_settlement_commit_together_and_cannot_repeat():

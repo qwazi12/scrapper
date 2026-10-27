@@ -1,6 +1,10 @@
 """Durable integer budget holds, serialized across processes and DB sessions.
 
-Uncertain dispatched calls retain their full hold across day/month boundaries.
+Owner rule (2026-10-27): nothing sits on the daily cap after its day. A call is
+settled at its receipt (a refused prompt's receipt is its input tokens), released
+when the provider answered with an error (not billed), and a call whose outcome is
+unknown (timeout, crash) stays open for reconciliation but counts against the
+daily cap only on the day it was made; monthly checks still count every open hold.
 These enforce declared request bounds against locally tracked estimated costs;
 provider invoices and incorrectly declared price/usage bounds remain external.
 """
@@ -19,6 +23,8 @@ from .models import BudgetMutex, BudgetReservation
 
 _active = contextvars.ContextVar("budget_reservation", default=None)
 HELD = ("reserved", "dispatched", "unknown")
+BREACH_FACTOR = 2      # an estimate up to 2x its declared bound settles; beyond that, stop and review
+STALE_AFTER_MINUTES = 30
 
 
 def micros(usd):
@@ -41,9 +47,13 @@ def lock(s):
     s.execute(update(BudgetMutex).where(BudgetMutex.id == 1).values(revision=BudgetMutex.revision + 1))
 
 
-def held_micros(s):
-    return int(s.query(func.coalesce(func.sum(BudgetReservation.reserved_micros), 0)).filter(
-        BudgetReservation.state.in_(HELD)).scalar())
+def held_micros(s, day_start=None):
+    """Open holds. With day_start (the daily cap), an unknown-outcome hold counts only on the day it was made."""
+    from sqlalchemy import or_
+    q = s.query(func.coalesce(func.sum(BudgetReservation.reserved_micros), 0)).filter(BudgetReservation.state.in_(HELD))
+    if day_start is not None:
+        q = q.filter(or_(BudgetReservation.state != "unknown", BudgetReservation.created_at >= day_start))
+    return int(q.scalar())
 
 
 def reserve(service: str, upper_usd) -> str:
@@ -57,11 +67,12 @@ def reserve(service: str, upper_usd) -> str:
         if s.query(BudgetReservation).filter_by(state="breach").first():
             raise costs.BudgetExceeded("Unresolved request budget breach")
         holds = held_micros(s)
+        day_holds = held_micros(s, costs.day_bounds(asof)[0])
         monthly = micros(costs.month_spend(s,costs.month_key(asof)) + costs.fixed_monthly(cfg))
         if cfg.get("hard_stop") and cfg.get("budget_usd") and monthly + holds + amount > micros(cfg["budget_usd"]):
             raise costs.BudgetExceeded("Monthly budget cannot cover this attempt and unsettled holds")
         cap = costs.effective_cap(cfg,asof)
-        if cap and micros(costs.today_spend(s,asof)) + holds + amount > micros(cap):
+        if cap and micros(costs.today_spend(s,asof)) + day_holds + amount > micros(cap):
             raise costs.DailyCapReached("Daily cap cannot cover this attempt and unsettled holds; unknown charges remain reserved")
         op, ref = costs._op.get()
         row = BudgetReservation(id=str(uuid.uuid4()), service=service, operation=op, ref=ref,
@@ -131,11 +142,70 @@ def settle_record(s, event):
         event.cost_basis='estimate_after_attestation'
         row.state='breach' if amount!=previous else 'settled'
     else:
-        row.state='breach' if amount>row.reserved_micros else 'settled'
+        row.state='breach' if amount>row.reserved_micros*BREACH_FACTOR else 'settled'
         row.actual_micros=amount
     s.add(BudgetReceipt(reservation_id=rid,amount_micros=amount,usage=dict(service=event.service,
         model=event.model,input_tokens=event.input_tokens,output_tokens=event.output_tokens,
         chars=event.chars,requests=event.requests,cost_basis="configured_usage_estimate")))
+
+
+def not_billed():
+    """The provider answered with an error (4xx/5xx): nothing was billed, so the hold is released."""
+    rid = _active.get()
+    if rid: transition(rid, ("dispatched",), "released")
+
+
+def _settle(s, row, amount, basis):
+    """Settle a hold with no usage receipt, dated on the day of the call (never on today's cap)."""
+    from . import costs
+    from .models import BudgetReceipt, UsageEvent
+    at = row.created_at
+    row.state, row.actual_micros = "settled", amount
+    if not s.get(BudgetReceipt, row.id):
+        s.add(BudgetReceipt(reservation_id=row.id, amount_micros=amount, usage={"cost_basis": basis}))
+    s.add(UsageEvent(service=row.service, operation=row.operation, ref=row.ref, month=costs.month_key(at),
+                     created_at=at, cost_usd=amount / 1e6, requests=0, cost_basis=basis, reservation_id=row.id))
+
+
+def settle_stale(now=None):
+    """Sweep holds left by older code or a crash (runs every scheduler tick):
+    - unknown with a recorded prompt-only usage (refused prompt) -> settled at that input cost, on its own day;
+    - reserved with no live worker after STALE_AFTER_MINUTES -> released (the call was never sent);
+    - dispatched with no live worker after STALE_AFTER_MINUTES -> unknown (open for reconciliation);
+    - breach within BREACH_FACTOR of its bound -> settled.
+    Returns (count, usd) of holds changed."""
+    import datetime
+    from . import costs
+    from .models import UsageEvent, WorkerLease
+    utc = datetime.timezone.utc
+    aware = lambda t: t if t is None or t.tzinfo else t.replace(tzinfo=utc)
+    freed, count = 0, 0
+    with SessionLocal() as s:
+        lock(s)
+        now = aware(now or costs.clock(s))
+        cutoff = now - datetime.timedelta(minutes=STALE_AFTER_MINUTES)
+        for row in s.query(BudgetReservation).filter(BudgetReservation.state.in_(HELD + ("breach",))).all():
+            if row.state == "breach":
+                if (row.actual_micros or 0) <= row.reserved_micros * BREACH_FACTOR:
+                    row.state = "settled"; count += 1
+                continue
+            if row.state == "unknown":
+                ev = s.query(UsageEvent).filter(UsageEvent.reservation_id == row.id, UsageEvent.input_tokens > 0,
+                                                UsageEvent.model.isnot(None)).first()
+                if ev is None or row.service != "gemini" or (ev.output_tokens or 0) > 0:
+                    continue
+                pin, _ = costs.gemini_price(ev.model, costs.settings_dict(s), row.created_at)
+                amount = min(row.reserved_micros, micros(ev.input_tokens / 1e6 * pin))
+                _settle(s, row, amount, "input_tokens_no_output")
+                freed += row.reserved_micros; count += 1
+                continue
+            lease = s.get(WorkerLease, "budget:" + row.id)
+            if (lease is not None and aware(lease.expires_at) > now) or aware(row.created_at) > cutoff:
+                continue
+            row.state = "released" if row.state == "reserved" else "unknown"
+            freed += row.reserved_micros if row.state == "released" else 0; count += 1
+        s.commit()
+    return count, freed / 1e6
 
 
 def request_bound(service: str, body: dict, model: str | None = None) -> float:
@@ -171,8 +241,11 @@ async def post_json_async(client, url, *, body, model, service="gemini", **kwarg
         res = await client.post(url, json=body, **kwargs)
         if res.is_success:
             data = res.json()
-            if service == "gemini": costs.record_gemini(model, data.get("usageMetadata") or {}, grounded="tools" in body)
+            if service == "gemini": costs.record_gemini(model, data.get("usageMetadata") or {}, grounded="tools" in body,
+                                                        no_output=costs.no_output(data))
             else: costs.record_gemini_tts(model, data.get("usageMetadata") or data.get("usage") or {}, 0, 0)
+        else:
+            not_billed()
         return res
 
 

@@ -44,8 +44,9 @@ def _post(body: dict[str, Any], model: str | None = None, retries: int = 3) -> d
             if res.is_success:
                 data = res.json()
                 costs.record_gemini(model or settings.gemini_model, data.get("usageMetadata") or {},
-                                    grounded="tools" in body)
+                                    grounded="tools" in body, no_output=costs.no_output(data))
                 return data
+            br.not_billed()                       # error answers are not billed
         last = f"HTTP {res.status_code}: {res.text[:300]}"
         if res.status_code not in (429, 500, 502, 503, 504):
             break
@@ -141,6 +142,7 @@ def ask_json_batch(items: list[dict[str, Any]], max_wait: int = 1800, poll: int 
     with br.attempt("gemini-batch", bound):
         res = httpx.post(f"{BASE}/{model}:batchGenerateContent", content=raw, headers=headers, timeout=TIMEOUT)
         if not res.is_success:
+            br.not_billed()
             raise BatchUnavailable(f"batch refused: HTTP {res.status_code}: {res.text[:200]}")
         name = res.json().get("name")
         if not name:

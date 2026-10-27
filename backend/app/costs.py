@@ -196,7 +196,7 @@ def daily_status(s=None) -> dict[str, Any]:
         base = float(cfg.get("daily_usd") or 0)
         cap = effective_cap(cfg,asof)
         from .budget_reservations import held_micros
-        held = held_micros(s) / 1e6
+        held = held_micros(s, day_bounds(asof)[0]) / 1e6
         spent = today_spend(s,asof)
         _, resets = day_bounds(asof)
         return {"cap_usd": cap, "base_cap_usd": base, "extra_today_usd": round(cap - base, 2) if base else 0.0,
@@ -227,7 +227,7 @@ def check_budget() -> None:
                 "Raise the budget or turn off the hard stop in Settings → Spending.")
         cap = effective_cap(cfg,clock(s))
         if cap:
-            spent = today_spend(s) + held
+            spent = today_spend(s) + held_micros(s, day_bounds(clock(s))[0]) / 1e6
             if spent >= cap:
                 raise DailyCapReached(
                     f"Daily spend cap reached (${spent:.2f} of ${cap:.2f} today). Paused work resumes "
@@ -264,7 +264,16 @@ def gemini_price(model: str, cfg: dict, now: datetime.datetime | None = None) ->
 BATCH_DISCOUNT = 0.5   # Gemini Batch Mode: 50% of the standard price (ai.google.dev/gemini-api/docs/batch-mode)
 
 
-def record_gemini(model: str, usage: dict, grounded: bool = False, batch: bool = False) -> float:
+def no_output(data: dict) -> bool:
+    """Gemini answered without generating anything (prompt blocked / empty candidate): output really is 0,
+    so a usage block with only promptTokenCount is a complete receipt."""
+    if (data.get("promptFeedback") or {}).get("blockReason"):
+        return True
+    return not any(p.get("text") or p.get("inlineData") or p.get("functionCall")
+                   for c in data.get("candidates") or [] for p in (c.get("content") or {}).get("parts") or [])
+
+
+def record_gemini(model: str, usage: dict, grounded: bool = False, batch: bool = False, no_output: bool = False) -> float:
     inp = int(usage.get("promptTokenCount") or 0)
     out = int(usage.get("candidatesTokenCount") or 0) + int(usage.get("thoughtsTokenCount") or 0)
     with SessionLocal() as s:
@@ -278,7 +287,7 @@ def record_gemini(model: str, usage: dict, grounded: bool = False, batch: bool =
             if used >= cfg["grounding_free_per_month"]:
                 cost += cfg["grounding_usd_per_1000"] / 1000
         _record("gemini-batch" if batch else "gemini", cost, model=model, input_tokens=inp, output_tokens=out, requests=1,
-                _session=s, receipt_complete="promptTokenCount" in usage and "candidatesTokenCount" in usage)
+                _session=s, receipt_complete="promptTokenCount" in usage and ("candidatesTokenCount" in usage or no_output))
         if grounded:
             _record("gemini-search", 0.0, model=model, requests=1, _session=s, receipt_complete=False)
         s.commit()
