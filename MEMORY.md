@@ -31,6 +31,10 @@ Progress 2026-10-26 (01:00–02:30 UTC):
 - 2026-10-26: owner chose rights statement "Commentary / fair use" (saved as export_rights_statement). 24 LongForms
   approved (one-tap) + sent → queue rows #4818–#4841, Ready, Cinama:*, first slot 2026-10-27 13:30 UTC. Refused by the
   credit check (step 1c false positives): #120 Outlander, #113 Sacrifice, #94 Jailer 2, #92 Hexed (+ #86, #95 unrendered).
+- 2026-10-27: owner: LongForm 2 videos/day, each to YT+FB+IG at 15:00 and 20:00 ET (was 6 staggered slots/day →
+  ~6 new videos/day). 26 Ready LongForms now scheduled 10-27 15:00 … 11-08 20:00. Old schedule: scratchpad schedule_before_lf2.json.
+- 2026-10-27: 683 more Review rows with AI SEO → Ready. Ready 2,717 (2 without SEO = filter refusals); Review 1,348 need SEO.
+  Bulk-ai job no longer listed as paused (total 0) — a new job is needed; today's cap: $1.69 spent, $9.84 stuck holds, $0.47 left.
 - 2026-10-27: #75 Avatar → queue #4842, #140 I Play Rocky → queue #4843 (rendered, one-tap approved, sent). 26 LongForms queued.
 - 2026-10-26: YouTube Shorts 4/day (09:00, 13:00, 17:00, 22:00 ET) per owner; FB/IG stay 6/day.
 - Not done / need owner: #95 credit false positive (step 1c), countdown #6 (Terrifier 2 trailer, YouTube block D2),
