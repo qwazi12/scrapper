@@ -28,6 +28,10 @@ Progress 2026-10-26 (01:00–02:30 UTC):
   LUFS -15.3…-16.4). Failed: #86 credit check (step 1c false positive), #74 "Audio/video duration mismatch > 250 ms"
   (not the limiter — the other 6 passed; needs a look). Countdown #7 segments queued behind; #10 research paused on budget.
   → 28 rendered LongForms now wait only for the owner's rights statement (D1).
+- 2026-10-26: owner chose rights statement "Commentary / fair use" (saved as export_rights_statement). 24 LongForms
+  approved (one-tap) + sent → queue rows #4818–#4841, Ready, Cinama:*, first slot 2026-10-27 13:30 UTC. Refused by the
+  credit check (step 1c false positives): #120 Outlander, #113 Sacrifice, #94 Jailer 2, #92 Hexed (+ #86, #95 unrendered).
+- 2026-10-26: YouTube Shorts 4/day (09:00, 13:00, 17:00, 22:00 ET) per owner; FB/IG stay 6/day.
 - Not done / need owner: #95 credit false positive (step 1c), countdown #6 (Terrifier 2 trailer, YouTube block D2),
   #8 (7 of 10 titles, D4); 12+13 rows refused by Gemini's content filter stay in Review.
 
