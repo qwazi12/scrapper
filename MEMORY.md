@@ -8,6 +8,17 @@ the hold stays "unknown" forever and counts against the daily cap ($9.84 of $12 
 3. Lost/timeout calls: settle conservatively but promptly (owner: nothing may sit on the cap) — exact rule after step 1.
 4. Clear today's stuck holds the same way; holds never block the cap longer than the call itself.
 5. Tests for each path; full suite; push when idle; verify held_usd ≈ 0 live; restart the AI SEO run (1,348 rows).
+DONE 2026-10-27 — b504e81. Causes found: (a) refused prompts (blockReason) had prompt-only usage → receipt
+"incomplete" → hold unknown forever (86 of 100 stale holds); (b) 4xx/5xx answers never released; (c) crashes left
+"dispatched"; (d) one 1.3¢ estimate overshoot (#140, $0.113 vs $0.10 bound) = breach → blocked EVERY paid call since
+2026-10-26 04:23 UTC (countdown #7 "Provider usage exceeded a declared request bound", SEO pauses).
+Fix: refusals settle at input cost; errors release (not billed); breach only beyond 2× bound; unknown (timeouts) stay
+open for reconciliation + monthly check but count on the daily cap only on their own day; scheduler tick sweeps leftovers.
+Changed one Codex test on purpose (timeout hold no longer blocks later days — owner rule); +5 tests; 906 passed.
+Verified live 10:15 UTC: held $9.84 → $0.10 (one live call), remaining $7.90 (cap $6 + $2 today). 14 old timeout
+holds remain open for reconciliation (not on the cap). Then: countdown #7 resumed (making "Possession"), AI SEO
+started on 1,000 of 1,350 (watcher approves finished rows → Ready, then runs the last 350).
+Countdown #10 research finished with 9 of 10 titles — owner to add/approve a 10th.
 
 ## PLAN — 2026-10-25 (night) — Shorts 6 a day, SEO'd → Ready, render + queue LongForm and Countdowns (owner asked; in progress)
 1. Shorts 6 a day: Movie Clips Facebook/Instagram times 08:00, 11:00, 13:00, 15:00, 19:00, 22:00 ET (was 4: 8/11/15/19).
