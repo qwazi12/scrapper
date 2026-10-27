@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-27 — Stuck budget holds (FIX_PLAN step 6, owner: "nothing should be eating the budget") — in progress
+Problem: AI calls reserve a hold before calling; when a call is refused (content filter) or its answer is lost (timeout),
+the hold stays "unknown" forever and counts against the daily cap ($9.84 of $12 on 2026-10-26; $1.69 real spend).
+1. Read the reservation code (costs.py / budget reservations) and find every path that leaves a hold unsettled.
+2. Refused calls (Gemini answered with promptFeedback.blockReason): settle at the real prompt-token cost.
+3. Lost/timeout calls: settle conservatively but promptly (owner: nothing may sit on the cap) — exact rule after step 1.
+4. Clear today's stuck holds the same way; holds never block the cap longer than the call itself.
+5. Tests for each path; full suite; push when idle; verify held_usd ≈ 0 live; restart the AI SEO run (1,348 rows).
+
 ## PLAN — 2026-10-25 (night) — Shorts 6 a day, SEO'd → Ready, render + queue LongForm and Countdowns (owner asked; in progress)
 1. Shorts 6 a day: Movie Clips Facebook/Instagram times 08:00, 11:00, 13:00, 15:00, 19:00, 22:00 ET (was 4: 8/11/15/19).
    YouTube stays 09:00 + 17:00 unless the owner says otherwise (YouTube upload limit; LongForm 2 + Countdown 1 also post
