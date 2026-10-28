@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## 2026-10-28 — Queue thumbnails on Ready LongForm rows (owner: "409 Studio source: content is bound…")
+Cause: Studio rows are bound to their approved export and the thumbnail is part of it; the queue offered thumbnail
+buttons but refused. Fix: queue thumbnail pick/upload on a bound LongForm row now sets it on the breakdown, re-approves
+with the one-tap rules (saved rights statement; serious findings still refuse) and resends → same row, new binding
+revision. Countdown/native rows still say to change it at the source. Test test_queue_thumbnail_resend.py; 907 passed.
+
 ## PLAN — 2026-10-27 — Stuck budget holds (FIX_PLAN step 6, owner: "nothing should be eating the budget") — in progress
 Problem: AI calls reserve a hold before calling; when a call is refused (content filter) or its answer is lost (timeout),
 the hold stays "unknown" forever and counts against the daily cap ($9.84 of $12 on 2026-10-26; $1.69 real spend).

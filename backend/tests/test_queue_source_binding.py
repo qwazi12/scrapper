@@ -99,7 +99,8 @@ def test_source_copy_edits_and_paid_rewrites_are_rejected_before_work(reviewed_s
     assert client.patch(f'/api/queue/{qid}',json={'title':'Unreviewed replacement title'}).status_code==409
     assert client.post('/api/queue/bulk-action',json={'ids':[qid],'action':'edit','description':'Unreviewed bulk words'}).status_code==409
     assert client.post(f'/api/queue/{qid}/generate-ai').status_code==409
-    assert client.post(f'/api/queue/{qid}/thumbnail',files={'file':('synthetic.png',b'opaque placeholder')}).status_code==409
+    # Not an image: refused before anything changes (a real image re-approves and resends — test_queue_thumbnail_resend).
+    assert client.post(f'/api/queue/{qid}/thumbnail',files={'file':('synthetic.png',b'opaque placeholder')}).status_code==400
     assert client.patch(f'/api/queue/{qid}',json={'notes':'Private owner notes preserved','accounts':['default:youtube']}).status_code==200
 
 

@@ -1064,6 +1064,36 @@ class QueueThumbPick(BaseModel):
     option: str        # poster | shot1 | shot2 | refresh
 
 
+def _resend_from_studio(s: Session, item: QueueItem, project_id: int) -> None:
+    """A Studio row is bound to its approved export, and the thumbnail is part of it (owner, 2026-10-28:
+    "why can't I edit thumbnails in Ready to post"). After the thumbnail changes on the breakdown, approve
+    the new export with the one-tap rules (serious findings and a missing rights statement still refuse)
+    and send it again, which updates this same queue row and its slot."""
+    from .studio import routes as studio_routes
+    from .studio.export_acceptance import QuickIn, view
+    project = s.get(studio_routes.StudioProject, project_id)
+    s.refresh(project)
+    try:
+        fingerprint = view(project, studio_routes.runner.project_dir(project_id))["fingerprint"]
+    except RuntimeError as exc:
+        raise HTTPException(409, f"New thumbnail saved on the breakdown, but it can't be re-approved: {exc}")
+    studio_routes.quick_approve_export(project_id, QuickIn(expected_fingerprint=fingerprint), s)
+    studio_routes.publish(project_id, s)
+    s.refresh(item)
+    logbus.log("info", "queue_thumbnail", f"Item #{item.id}: thumbnail changed on breakdown #{project_id}, re-approved and resent")
+
+
+def _studio_thumbnail_editable(s: Session, item: QueueItem):
+    """The breakdown behind a bound LongForm row, or a clear refusal for other bound rows."""
+    from . import queue_sources
+    if not queue_sources.controlled(s, item):
+        return None
+    p = _studio_project_for(s, item)
+    if p is None or (item.research or {}).get("native_export_id"):
+        queue_sources.require_copy_editable(s, item)     # countdowns / native campaigns: change it at the source
+    return p
+
+
 @app.post("/api/queue/{item_id}/thumbnail/studio", dependencies=_AUTH)
 def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depends(get_session)) -> dict:
     """LongForm row: use one of its breakdown's thumbnail options (or draw new ones)."""
@@ -1072,20 +1102,23 @@ def queue_thumb_from_studio(item_id: int, req: QueueThumbPick, s: Session = Depe
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
-    from . import queue_sources
-    queue_sources.require_copy_editable(s,item)
-    p = _studio_project_for(s, item)
+    bound = _studio_thumbnail_editable(s, item)
+    p = bound or _studio_project_for(s, item)
     if not p:
         raise HTTPException(400, "this row didn't come from LongForm Studio — upload an image instead")
+    pid = p.id
     s.rollback()  # Thumbnail generation owns its own short database transactions.
     try:
         if req.option == "refresh":
-            stage_render.generate_thumbnails_for_project(p.id)
+            stage_render.generate_thumbnails_for_project(pid)
         else:
-            stage_render.select_project_thumbnail(p.id, req.option)
+            stage_render.select_project_thumbnail(pid, req.option)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc))
     _require_queue_editable(item)
+    if bound is not None:
+        _resend_from_studio(s, item, pid)
+        return queue_thumb_options(item_id, s)
     s.refresh(p)
     undo.record(s,"queue",f"Thumbnail of #{item.id}",rows=[item])
     import shutil,uuid
@@ -1108,9 +1141,8 @@ async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Sess
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
-    from . import queue_sources
-    queue_sources.require_copy_editable(s,item)
     if (item.research or {}).get('native_export_id'):raise HTTPException(409,'Native cover is bound to its approved export')
+    bound = _studio_thumbnail_editable(s, item)
     s.rollback()
     data = await file.read(QUEUE_THUMB_MAX + 1)
     if len(data) > QUEUE_THUMB_MAX:
@@ -1121,15 +1153,33 @@ async def queue_thumb_upload(item_id: int, file: UploadFile = File(...), s: Sess
             im = im.convert("RGB")
             im.thumbnail((1920, 1080))
             out_dir = settings.data_path / "queue_thumbs"
+            if bound is not None:   # the breakdown's own render folder: the image becomes part of its export
+                from .studio import runner as studio_runner
+                out_dir = studio_runner.project_dir(bound.id) / pathlib.Path((bound.render or {}).get("file", "render/final.mp4")).parent
             out_dir.mkdir(parents=True, exist_ok=True)
             import uuid
-            dest = out_dir / f"{item_id}_{uuid.uuid4().hex}.jpg"
+            dest = out_dir / (f"thumbnail_custom_{uuid.uuid4().hex}.jpg" if bound is not None else f"{item_id}_{uuid.uuid4().hex}.jpg")
             for q in (90, 80, 70, 60):
                 im.save(dest, "JPEG", quality=q)
                 if dest.stat().st_size <= 2_000_000:
                     break
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
         raise HTTPException(400, "that file isn't an image (use JPG, PNG or WebP)")
+    if bound is not None:
+        _require_queue_editable(item)
+        from .studio import runner as studio_runner
+        from .export_versions import retain
+        p = s.get(type(bound), bound.id)
+        if p.stage_status in ("running", "queued"):
+            dest.unlink(missing_ok=True)
+            raise HTTPException(409, "A step is running on this breakdown; wait for it to finish")
+        retain(s, p)
+        root = studio_runner.project_dir(p.id)
+        p.render = {**p.render, "selected_thumbnail": "custom", "thumbnail": str(dest.relative_to(root)),
+                    "thumbnails_updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        s.commit()
+        _resend_from_studio(s, item, p.id)
+        return queue_thumb_options(item_id, s)
     try:
         _require_queue_editable(item)
         undo.record(s, "queue", f"Thumbnail of #{item.id}", rows=[item])
