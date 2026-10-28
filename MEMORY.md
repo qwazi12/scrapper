@@ -5,6 +5,8 @@ Cause: Studio rows are bound to their approved export and the thumbnail is part 
 buttons but refused. Fix: queue thumbnail pick/upload on a bound LongForm row now sets it on the breakdown, re-approves
 with the one-tap rules (saved rights statement; serious findings still refuse) and resends → same row, new binding
 revision. Countdown/native rows still say to change it at the source. Test test_queue_thumbnail_resend.py; 907 passed.
+Live bug then fixed 66fdd79: the pick path held the queue-edit lock → "database is locked" (HTTP 500). Verified live
+15:21 UTC: #4840 Ted Lasso re-picked "poster" → HTTP 200 in 3.8 s, still Ready, same slot (2026-11-09 01:00 UTC).
 
 ## PLAN — 2026-10-27 — Stuck budget holds (FIX_PLAN step 6, owner: "nothing should be eating the budget") — in progress
 Problem: AI calls reserve a hold before calling; when a call is refused (content filter) or its answer is lost (timeout),
