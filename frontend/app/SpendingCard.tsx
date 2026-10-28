@@ -302,21 +302,40 @@ function DailyCap({ data, saving, onSave, onReload }: { data: CostSummary; savin
   );
 }
 
+const BREAKDOWNS_SHOWN = 5;
+
 function BreakdownCosts({ rows }: { rows: { id: number; title: string; auto: boolean; cost: number }[] }) {
-  const max = Math.max(...rows.map((r) => r.cost), 0.0001);
-  const avg = rows.filter((r) => r.cost > 0).reduce((a, r, _, arr) => a + r.cost / arr.length, 0);
+  // Owner 2026-10-28: a summary and the latest few, not a list that grows all month.
+  const [all, setAll] = useState(false);
+  const paid = rows.filter((r) => r.cost > 0);
+  const total = paid.reduce((a, r) => a + r.cost, 0);
+  const avg = paid.length ? total / paid.length : 0;
+  const top = paid.reduce<typeof paid[number] | null>((a, r) => (!a || r.cost > a.cost ? r : a), null);
+  const max = Math.max(...paid.map((r) => r.cost), 0.0001);
+  const shown = all ? paid : paid.slice(0, BREAKDOWNS_SHOWN);
   return (
     <div style={{ marginBottom: 14, fontSize: 11 }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>Cost per breakdown this month <span style={{ color: "var(--muted)", fontWeight: 400 }}>(avg {usd(avg)})</span></div>
-      {rows.map((r) => (
-        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "minmax(90px, 160px) 1fr 60px", gap: 6, alignItems: "center", marginBottom: 3 }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.title}>{r.auto ? "🤖 " : ""}{r.title}</span>
-          <div style={{ background: "var(--row)", borderRadius: 3, height: 10 }}>
-            <div style={{ width: `${(r.cost / max) * 100}%`, background: "var(--accent)", height: 10, borderRadius: 3 }} />
+      <div style={{ fontWeight: 700, marginBottom: 2 }}>Cost per breakdown this month</div>
+      <div style={{ color: "var(--muted)", marginBottom: 6 }}>
+        {paid.length} breakdown{paid.length === 1 ? "" : "s"} · {usd(total)} total · avg {usd(avg)}
+        {top ? <> · highest {usd(top.cost)} ({top.title})</> : null}
+      </div>
+      <div style={all ? { maxHeight: 220, overflowY: "auto", paddingRight: 4 } : undefined}>
+        {shown.map((r) => (
+          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "minmax(90px, 160px) 1fr 60px", gap: 6, alignItems: "center", marginBottom: 3 }}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.title}>{r.auto ? "🤖 " : ""}{r.title}</span>
+            <div style={{ background: "var(--row)", borderRadius: 3, height: 10 }}>
+              <div style={{ width: `${(r.cost / max) * 100}%`, background: "var(--accent)", height: 10, borderRadius: 3 }} />
+            </div>
+            <span style={{ textAlign: "right" }}>{usd(r.cost)}</span>
           </div>
-          <span style={{ textAlign: "right" }}>{usd(r.cost)}</span>
-        </div>
-      ))}
+        ))}
+      </div>
+      {paid.length > BREAKDOWNS_SHOWN && (
+        <button style={{ fontSize: 11, padding: "2px 8px", marginTop: 4 }} onClick={() => setAll(!all)}>
+          {all ? "Show latest only" : `Show all ${paid.length}`}
+        </button>
+      )}
     </div>
   );
 }
