@@ -1071,6 +1071,7 @@ def _resend_from_studio(s: Session, item: QueueItem, project_id: int) -> None:
     and send it again, which updates this same queue row and its slot."""
     from .studio import routes as studio_routes
     from .studio.export_acceptance import QuickIn, view
+    s.commit()   # release the queue-edit lock: approval and send open their own sessions (else "database is locked")
     project = s.get(studio_routes.StudioProject, project_id)
     s.refresh(project)
     try:

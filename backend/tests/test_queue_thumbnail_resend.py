@@ -48,3 +48,32 @@ def test_uploaded_thumbnail_on_a_bound_longform_row_is_reapproved_and_resent(rev
             queue_sources.verify(s, item)                                          # and it verifies for posting
     finally:
         _rights(None)
+
+
+def test_picking_a_breakdown_option_on_a_bound_row_resends_without_locking(reviewed_source, monkeypatch):
+    # Live 2026-10-28: the pick path still held the queue-edit lock when approval opened its own session
+    # → "database is locked" after 30 s. The fake option keeps the test off thumbnail drawing.
+    from backend.app.studio import duration_intent, runner, stage_render
+    from backend.app.db import SessionLocal as SL
+    from backend.app.models import StudioProject
+    monkeypatch.setattr(duration_intent, "comparison", lambda project: None)
+    client, pid, original, qa = reviewed_source()
+    r = client.post(f"/api/studio/projects/{pid}/publish"); assert r.status_code == 200, r.text
+    qid = r.json()["queue_item_id"]
+
+    def pick(project_id, option):
+        root = runner.project_dir(project_id); (root / f"thumbnail_{option}.jpg").write_bytes(png())
+        with SL() as s:
+            p = s.get(StudioProject, project_id)
+            p.render = {**p.render, "selected_thumbnail": option, "thumbnail": f"thumbnail_{option}.jpg"}; s.commit()
+    monkeypatch.setattr(stage_render, "select_project_thumbnail", pick)
+    _rights("Original commentary and review using short excerpts for criticism (fair use).")
+    try:
+        with SessionLocal() as s:
+            rev = queue_sources.head(s, s.get(QueueItem, qid)).revision
+        ok = client.post(f"/api/queue/{qid}/thumbnail/studio", json={"option": "shot1"})
+        assert ok.status_code == 200, ok.text
+        with SessionLocal() as s:
+            assert queue_sources.head(s, s.get(QueueItem, qid)).revision == rev + 1
+    finally:
+        _rights(None)
