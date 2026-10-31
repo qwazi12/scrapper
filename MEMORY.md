@@ -1,5 +1,21 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-31 — "The ICK Room" section (own Facebook) + Shorts 8 a day (owner asked; in progress)
+Facts (live, 2026-10-31): Upload-Post profile `TheIckRoom` has Facebook connected (`TheIckRoom:facebook`, nickname
+"Qwazi Qwazi" — the same name as Cinama's Facebook; the owner should confirm it is the Ick Room Page). New queue rows default
+to EVERY connected profile except mk → from now on new Movie Clips/LongForm/Countdown rows would ALSO post to the Ick Room
+Facebook. No row targets it yet (checked all 4,063). Movie Clips today: FB/IG 6/day (08,11,13,15,19,22), YT 4/day (09,13,17,22).
+1. Keep the accounts apart: `TheIckRoom` is never a default destination; only "The ICK Room" rows post there and those rows
+   post only there (enforced on create, edit, bulk and at posting time, like the mk rule).
+2. "🤢 The ICK Room" tab in SocialPilot (like the old poster's pipeline): its own queue (pipeline "The ICK Room"), own
+   schedule button, left out of the Posting Queue. Schedule starts at the 1-a-day default until the owner sets times.
+3. Import the Drive folder "The Ick Room" (TikTok @loveunfilteredroom archive, 1Gv9uGEWKnxO_EVEUU573qQrG1xNh04ow) into it
+   as Needs Review → TheIckRoom:facebook. Re-import is safe (skips existing) once the archive run finishes all 38.
+4. Shorts 8 a day on every Cinama account (YouTube, Facebook, Instagram): 08,10,11,13,15,17,19,22 ET. Live config change;
+   undo = Undo button or scratchpad schedule_before_8aday.json. Risk: YouTube then gets 8 + 2 LongForm + 1 Countdown = 11/day;
+   on 2026-10-03 YouTube's rolling daily limit refused uploads after ~12.
+Tests → full suite → commit → push when idle → verify live → log here.
+
 ## 2026-10-28 — Queue thumbnails on Ready LongForm rows (owner: "409 Studio source: content is bound…")
 Cause: Studio rows are bound to their approved export and the thumbnail is part of it; the queue offered thumbnail
 buttons but refused. Fix: queue thumbnail pick/upload on a bound LongForm row now sets it on the breakdown, re-approves
