@@ -1,5 +1,41 @@
 # Scrapper Memory
 
+## Holding-space routing preference; Tonight's Conversation moved — Oct31 19:24 ET
+
+STANDING OWNER PREFERENCE: Movie Clips and The Ick Room are separate account /
+holding-space destinations. Owner will specify which receives each new source.
+Honor that explicit destination, preserve source organization underneath it, and
+ask when an otherwise unspecified destination cannot be inferred from the task.
+Do not treat a holding-space label as permission to queue, schedule or publish.
+Both @loveunfilteredroom TikTok and @TonightsConversation YouTube currently belong
+to THE ICK ROOM, not Movie Clips.
+
+The Ick Room: https://drive.google.com/drive/folders/1Gv9uGEWKnxO_EVEUU573qQrG1xNh04ow
+Moved the entire existing Tonight's Conversation source folder into The Ick Room:
+https://drive.google.com/drive/folders/1hju6CJF0hEfHVexZRhYNShgdCgHfkFjJ
+Fresh Drive metadata confirms its sole parent is The Ick Room, within the same
+Shared Drive. Its folder ID, 18 completed video IDs, sizes and MD5s are preserved;
+no copies, deletions or redownloads. At19:24:23ET,18of979uploaded,961remaining,
+864,102,222bytes verified,0failures. Exact owned worker52158 remains alive/running
+with both lanes active and keeps writing to the SAME moved source folder ID.
+No restart or in-flight RAM transfer loss was needed. No sharing, account setting,
+queue, scheduling, publication or unrelated process changes.
+
+The already-running worker cached the old Shared Drive root as parent_id at
+startup. Do not edit its active ledger in competition with its checkpoints: that
+historical cached field may remain in ledger/manifest until the next restart.
+Actual Drive hierarchy plus destination.json and folder-move-verification.json
+are authoritative for the current holding space. Added a matching-source,
+matching-folder destination override for future resumes; it updates the expected
+parent and still verifies actual Drive identity/parent before transfers, preserving
+all completed IDs. Seven focused tests pass, including relocation compatibility
+and rejection of a different source folder. Current run code remains loaded in
+memory; its media/folder-ID behavior is unaffected by the parent-only move.
+
+Private evidence under artifacts/tonights-conversation-20261031:
+folder-move-intent.json, folder-move-verification.json, destination.json and
+latest-run.json. No broad roadmap completion or all979downloaded claim.
+
 ## Tonight's Conversation actual Drive smoke passed; two lanes active — Oct31 19:02 ET
 
 Actual first source YR3IL7qMuyQ passed complete packet-duration and full decode

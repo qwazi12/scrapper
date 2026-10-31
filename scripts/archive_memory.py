@@ -53,6 +53,27 @@ def atomic_json(path, data):
     tmp.replace(path)
 
 
+def apply_destination(state, args, channel, root):
+    """Honor an owner-requested, verified folder relocation on the next resume.
+
+    An active worker retains the same child folder ID while its parent is moved.
+    Keep the override outside its mutable ledger so a checkpoint cannot undo it.
+    The normal Drive folder identity/parent check still runs before transfers.
+    """
+    path = root / 'destination.json'
+    if not path.exists():
+        return
+    destination = json.loads(path.read_text())
+    if (destination.get('channel_id') != channel or state.get('channel_id') != channel or
+            not state.get('folder_id') or destination.get('folder_id') != state['folder_id'] or
+            not destination.get('verified_at') or
+            not re.fullmatch(r'[A-Za-z0-9_-]{10,128}', destination.get('parent_id', ''))):
+        raise ValueError('Destination relocation does not match this archive')
+    args.parent_id = destination['parent_id']
+    state['parent_id'] = destination['parent_id']
+    state['holding_space'] = destination.get('holding_space')
+
+
 def collect_pipe(command, payload, bound, stop, timeout=900, progress=None):
     """Read subprocess media into RAM with a hard cap; never spool to disk."""
     child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -256,6 +277,7 @@ class Archive:
             'items': {e['id']: {'video_id': e['id'], 'title': e['title'],
                        'original_url': 'https://www.youtube.com/shorts/' + e['id'],
                        'status': 'discovered'} for e in inventory['items']}}
+        apply_destination(self.state, args, self.channel, self.root)
         if self.state['channel_id'] != self.channel or self.state['parent_id'] != args.parent_id:
             raise ValueError('Ledger does not match requested channel/parent')
         for e in inventory['items']:

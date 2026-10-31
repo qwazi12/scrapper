@@ -1,14 +1,32 @@
 """Focused diskless transfer bounds, complete decoding and same-ID recovery tests."""
 import hashlib
 import io
+import json
 import subprocess
 import sys
 import threading
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 import pytest
 
 from scripts import archive_memory as archive
+
+
+def test_verified_relocation_survives_old_live_worker_ledger(tmp_path):
+    state = {'channel_id': 'channel', 'folder_id': 'source-folder', 'parent_id': 'old-parent'}
+    destination = {'channel_id': 'channel', 'folder_id': 'source-folder',
+                   'parent_id': 'holding-space-123', 'holding_space': 'The Ick Room',
+                   'verified_at': '2026-10-31T23:20:00Z'}
+    (tmp_path / 'destination.json').write_text(json.dumps(destination))
+    args = SimpleNamespace(parent_id='old-parent')
+    archive.apply_destination(state, args, 'channel', tmp_path)
+    assert state['folder_id'] == 'source-folder'
+    assert state['parent_id'] == args.parent_id == 'holding-space-123'
+    destination['folder_id'] = 'another-source'
+    (tmp_path / 'destination.json').write_text(json.dumps(destination))
+    with pytest.raises(ValueError, match='does not match'):
+        archive.apply_destination(state, args, 'channel', tmp_path)
 
 
 def test_pipe_bounds_and_cancellation():
