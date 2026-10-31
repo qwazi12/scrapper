@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-31 (night) — AI SEO for The ICK Room, styled on @TonightsConversation (owner asked; in progress)
+Today Ick Room rows have filename titles + "#shorts #movieclips"; the AI SEO path looks clips up on TMDB (movies) — wrong here.
+Style read from youtube.com/@TonightsConversation (40 videos + 40 Shorts, top 3.7M views): story hook in plain words → "…"
+cliffhanger → 😬/😳 → often a closing question to the viewer ("Should she…?", "Was he wrong…?"); long videos add a 2–3
+paragraph summary (the dilemma, how the debate splits, a question for the comments). Style only — never their name/brand.
+1. `social/ick_room_seo.py`: Gemini writes title + caption + 5–8 relationship hashtags from the video's own title/filename
+   in that style; the AI SEO button (single + bulk) uses it for Ick Room rows instead of TMDB. Marked research.kind="ick_room"
+   (the row shows "✍ Ick Room SEO", not a TMDB badge).
+2. Future videos: the scheduler tick starts AI SEO for Ick Room rows that have none (when no bulk AI job is running; a
+   failed row waits 24 h before another try). Same $ daily cap; ~$0.001 per video.
+3. Run it now on the 22 current rows; spot-check; they stay in Needs Review for the owner.
+Tests → full suite → commit → push when idle → verify live → log here.
+
 ## PLAN — 2026-10-31 — "The ICK Room" section (own Facebook) + Shorts 8 a day (owner asked; in progress)
 Facts (live, 2026-10-31): Upload-Post profile `TheIckRoom` has Facebook connected (`TheIckRoom:facebook`, nickname
 "Qwazi Qwazi" — the same name as Cinama's Facebook; the owner should confirm it is the Ick Room Page). New queue rows default
