@@ -15,6 +15,15 @@ Studio Drive/Gemini uploads, media streaming). Railway disk 14.2 GB used of 18.2
 6. Move the backend to the Mac (≈$0): copy the volume (SQLite + media) to the Mac, run uvicorn + scheduler under launchd,
    reach it from the Vercel site through a tunnel, then stop Railway. Posting stops when the Mac sleeps/offline (owner accepted).
    Cut-over steps and owner decisions (tunnel/domain, Railway kept paused as fallback?) are confirmed before Railway is stopped.
+Progress 2026-10-31:
+- 1 DONE 23cfeb7: verified live — repeat queue request with its ETag → 304, 0 bytes (full list first time 1.83 MB gzip).
+- 2 DONE 5377e36: railway.json watchPatterns (backend/**, scrape.py, compile.py, railway.json). Railway warns Config-as-Code is
+  deprecated; existing files keep working until 2026-12-01 → migrate before then (or moot after step 6).
+- 4 DRY RUN only (nothing deleted): /data = studio 12 GB, export_history 2.8 GB (immutable history — keep), backups 318 MB,
+  db 99 MB. Studio: 36 listed projects; ~100 folders have no listed project (countdowns / deleted projects — unverified).
+  If step 6 happens the whole volume moves to the Mac, so Railway clean-up is moot; owner to decide.
+- 5/6 waiting on owner: Mac → public HTTPS needs a tunnel; nodepilot.dev DNS is on Vercel (not Cloudflare); no cloudflared or
+  tailscale installed. Mac: 125 GB free, sleep already prevented, Docker installed.
 
 ## PLAN — 2026-10-31 (night) — AI SEO for The ICK Room, styled on @TonightsConversation (owner asked; in progress)
 Today Ick Room rows have filename titles + "#shorts #movieclips"; the AI SEO path looks clips up on TMDB (movies) — wrong here.
