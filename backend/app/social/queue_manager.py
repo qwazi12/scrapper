@@ -727,6 +727,30 @@ async def auto_seo(item: QueueItem, s: Session) -> bool:
     return True
 
 
+def start_ick_room_seo(s: Session) -> int:
+    """New Ick Room videos get their AI SEO without anyone pressing a button (owner, 2026-10-31):
+    starts a bulk AI run for the unposted rows that have none, when no bulk AI run is going."""
+    from . import ai_bulk, ick_room_seo
+    if ai_bulk.status.get("running"):
+        return 0
+    rows = (s.query(QueueItem).filter(QueueItem.pipeline == ICK_ROOM,
+                                      QueueItem.status.in_(["review", "ready", "retry"]))
+            .order_by(QueueItem.id).all())
+    todo = [it for it in rows if ick_room_seo.needs_seo(it)]
+    ids = [it.id for it in todo]
+    if not ids:
+        return 0
+    from .. import undo
+    undo.record(s, "queue", f"Ick Room AI SEO of {len(ids)} video(s)", rows=todo)
+    s.commit()   # the undo point exists before the job touches anything
+    try:
+        ai_bulk.start(ids)
+    except RuntimeError:
+        return 0
+    logbus.log("info", "ick_room_seo_started", f"AI SEO started for {len(ids)} Ick Room video(s)")
+    return len(ids)
+
+
 # Upload-Post profiles the Posting Queue and LongForm may NEVER post to
 # (owner rule 2026-10-04: profile "mk" = Flamingo Remix is not for these videos).
 BLOCKED_PROFILES = {"mk"}
@@ -1360,6 +1384,10 @@ def run_scheduler_tick():
             fill_destinations(s)
         except Exception as exc:
             logger.error("Error filling queue destinations: %s", exc)
+        try:
+            start_ick_room_seo(s)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error starting Ick Room SEO: %s", exc)
         plan_schedule(s, now)
 
         due = (

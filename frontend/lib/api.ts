@@ -186,6 +186,7 @@ export type QueueItem = {
     native_export_id?: string; approval_fingerprint?: string;
     matched?: boolean; title?: string; year?: string | null; confidence?: number; reason?: string;
     guess?: string; source?: string; cast?: { actor: string; character: string }[]; keywords?: string[];
+    kind?: string; from?: string;     // kind "ick_room": Ick Room SEO, written from the video's own title
   } | null;
   scheduled_at: string | null;
   pinned_at?: string | null;          // owner-pinned post time (never re-planned)

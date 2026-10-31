@@ -65,9 +65,10 @@ async def ai_for(item: QueueItem, s, cache: dict | None = None) -> tuple[dict[st
     if item.compilation_id:
         return await metadata.generate_social_metadata(ai_inputs(item, s), strict=True), None
     from ..studio import gemini as sgem, tmdb
-    from . import clip_research
+    from . import clip_research, ick_room_seo, queue_manager
+    gen = ick_room_seo.generate if queue_manager.pipeline_group(item) == queue_manager.ICK_ROOM else clip_research.generate
     try:
-        return await asyncio.to_thread(clip_research.generate, item, cache)
+        return await asyncio.to_thread(gen, item, cache)
     except (sgem.GeminiError, tmdb.TMDBError) as exc:
         raise metadata.MetadataError(str(exc)) from exc
 
