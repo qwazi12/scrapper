@@ -1,5 +1,40 @@
 # Scrapper Memory
 
+## TikTok The Ick Room completed and independently verified — Oct 31, 18:53 ET
+
+All 38 @loveunfilteredroom videos are actual verified Google Drive video files:
+2,030,378,736 bytes (2.03 GB), zero failures/remaining, 38 distinct Drive IDs.
+Folder: https://drive.google.com/drive/folders/1Gv9uGEWKnxO_EVEUU573qQrG1xNh04ow
+The final source browser recheck independently enumerated the same 38 IDs via
+fresh normal signed-in pagination (16/32/38), with no new IDs. A separate late
+extractor API refresh was unavailable (empty JSON response), not evidence of an
+empty library; original complete extractor and both browser inventories match.
+
+Final independent Drive listing verified all 38 sizes, MD5 and SHA256 checksums,
+correct source identities/parents, full local decode receipts and duration
+matches. Cloud archive-manifest.json checksum/content matches the complete ledger.
+No temporary video or partial files remain in this managed operation on the Mac.
+Actual total media duration 15,582.80 seconds; about 137.46 GB Mac free at check.
+An actual completed-run resume changed neither counts nor Drive IDs, downloaded
+nothing and created no duplicates. Five retry safety tests and one challenge-hook
+guard test are simulated; the 38 cloud checks and no-op resume are actual tests.
+
+Last background PID46469 completed at18:48:15ET. Its last file needed two transient
+network timeout retries and succeeded on the third bounded attempt to the same
+reserved Drive ID, with no source redownload. All earlier stopped runs are history.
+Local ignored evidence: artifacts/tiktok-archive-20261031/final-verification.json,
+noop-resume-verification.json, final-browser-source-check.json, latest-run.json,
+ledger.json and per-video verified receipts. Only operational helpers changed;
+no application deployment, queue import, Ready, scheduling or publication occurred.
+Existing unrelated worker and paused YouTube monitor were left unchanged.
+
+Owner now additionally requested @TonightsConversation/shorts and concurrent
+transfers, with no video files saved on the Mac. This is a new archive-only source;
+its inventory/preflight is underway. Keep video data in bounded memory for this
+new operation, persist only metadata/progress receipts, and do not claim its
+completion from the completed TikTok counts above. No background source job has
+been launched yet for Tonight's Conversation.
+
 ## TikTok metadata response recovered; continued remaining20 — Oct31 18:38 ET
 
 Run42053 reached18actual verified files /981,330,733bytes, then stopped on a
@@ -74,7 +109,8 @@ Initially enumerated 38 public DOM video links via normal profile scrolling,
 then cross-checked Oldest order. TikTok required normal login/birthday verification
 before playback. Asked owner to sign in in Brave Personal; owner replied Signed
 in. Independently verified authenticated playback. No invented birth date, CAPTCHA,
-ToS acceptance, credential collection, cookie export, proxy or challenge bypass.
+ToS acceptance, credential collection, cookie export or proxy. See the later
+dependency-audit note for the automatic challenge-hook limitations.
 An informational TikTok Terms update banner was not accepted by the agent and did
 not prevent normal playback. Owner-selected Brave authentication stays on Mac.
 
