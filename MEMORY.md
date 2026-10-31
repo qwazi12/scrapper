@@ -1,5 +1,71 @@
 # Scrapper Memory
 
+## TikTok archive: The Ick Room started — Oct 31, 18:20 ET
+
+Owner requested all videos from @loveunfilteredroom in a Drive folder named
+The Ick Room. This is archive-only: no SocialPilot import, Ready, scheduling or
+publication for this source. Created and independently verified the writable
+folder at https://drive.google.com/drive/folders/1Gv9uGEWKnxO_EVEUU573qQrG1xNh04ow
+in the existing working LongForm Shared Drive root (outside Movie Clips).
+Persisted its pre-generated ID before creation, avoiding uncertain duplicate
+folder creation. Shared Drive pooled free capacity remains unavailable through
+service-account user quota; actual first upload succeeded. Mac free about 140 GB.
+
+Initially enumerated 38 public DOM video links via normal profile scrolling,
+then cross-checked Oldest order. TikTok required normal login/birthday verification
+before playback. Asked owner to sign in in Brave Personal; owner replied Signed
+in. Independently verified authenticated playback. No invented birth date, CAPTCHA,
+ToS acceptance, credential collection, cookie export, proxy or challenge bypass.
+An informational TikTok Terms update banner was not accepted by the agent and did
+not prevent normal playback. Owner-selected Brave authentication stays on Mac.
+
+The primary yt-dlp 2026.08.19 and then isolated current client initially failed
+profile/webpage parsing. Installed official yt-dlp 2026.10.26 with default and
+supported curl-cffi dependencies in this operation's isolated venv. Certificate
+validation remains enabled; certifi fixed the fresh venv trust store. Stock
+signed-in extractor now works. Existing Scrapper environment, application source,
+deployed services, account settings and unrelated local worker 5806 unchanged.
+Browser blob-download/export is unsupported here and was not represented as a
+successful download; the actual media came through the standard extractor.
+
+Completed the full signed-in profile pagination: exactly 38 video IDs, matching
+the independent browser inventory, no warnings. Canonical public account UID
+7596366518633169933; secUID
+MS4wLjABAAAA1gF2xpXrtzWN7yRRG-rFuyV6-VmhFTUr2H-TCmx5YAX6K1gy1st6UGF9a-cmU8Fk.
+Every inventory row matches that UID/secUID. Runtime 15,564 seconds (4h19m24s).
+Sample extrapolated storage about 2.14 GB; this is an estimate until all files
+are transferred, not an actual consumption report.
+
+First real file 7702842546774494477 passed ffprobe/full ffmpeg decode and size/
+SHA256/MD5 checks: 52,080,981 bytes, 378.019002 seconds. An estimate calculation
+failed after validation; corrected that calculation without representing the
+failure as a download/validation failure. Uploaded to The Ick Room using the
+existing Drive client, verified identity/size/MD5 independently with a new client,
+verified manifest count 1, then removed only the verified temporary Mac video.
+Actual source metadata was minimized to resume fields; signed media URLs and
+browser session values are not retained in manifests or committed.
+
+Started detached, sleep-protected owned process 40818 at18:20:41 ET for the
+remaining 37, maximum two transfers and 256 MiB per file, about1.34GB Mac reserve.
+A local flock prevents overlapping runs; source errors stop both workers, partial
+files and durable IDs survive. Exact completed basenames exclude format fragments.
+Each Drive file ID is generated and fsynced in the persistent ledger BEFORE
+metadata creation; resumable media updates use that same ID. Existing remote
+nonempty files must match identity/size/MD5 and are never overwritten on mismatch.
+Verified ledger entries are excluded from subsequent source downloads. Each file
+gets a receipt, descriptive filename including original ID, and manifest update.
+Temporary videos are removed only after cloud verification and a durable receipt.
+
+Current artifacts under artifacts/tiktok-archive-20261031/: context.json,
+launch.json, ledger.json, archive.log, inventory.json, browser-inventory.json,
+validated-preflight.json, first-live-verification.json, and per-video receipts.
+Cloud archive-manifest.json contains the current source ledger/progress. Read
+ledger/status and exact owned process before reporting later counts. The launch
+checkpoint was 1 uploaded / 37 remaining / 0 failures, not completion of all38.
+Source archive helper and isolated runtime are private operation artifacts, not a
+new deployed Scrapper TikTok-profile feature. Existing YouTube monitor remains
+PAUSED; no new recurring automation was created. Preserve all YouTube archives.
+
 ## Known Shorts inventory finished and verified — Oct 25, 14:52 ET
 
 CURRENT OUTCOME: 4,052 discovered / downloaded / uploaded and independently
