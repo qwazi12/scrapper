@@ -1309,7 +1309,8 @@ export const api = {
     if (pipeline && pipeline !== "all") params.set("pipeline", pipeline);
     if (status && status !== "all") params.set("status", status);
     const qs = params.toString() ? `?${params.toString()}` : "";
-    return req<QueueItem[]>(`/api/queue${qs}`, { headers: headers(false) });
+    // "no-cache": the browser re-checks with the server, which answers "unchanged" (304, no body) when it is.
+    return req<QueueItem[]>(`/api/queue${qs}`, { headers: headers(false), cache: "no-cache" });
   },
 
   queueCounts: (pipeline?: string) => {

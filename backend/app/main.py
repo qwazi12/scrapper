@@ -13,7 +13,8 @@ import pathlib
 import queue
 import time
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from .file_response import FileResponse
@@ -654,10 +655,11 @@ def _enrich_queue_item(it: QueueItem, s: Session | None = None) -> QueueItem:
 
 @app.get("/api/queue", response_model=list[QueueItemOut], dependencies=_AUTH)
 def list_queue(
+    request: Request,
     pipeline: str | None = None,
     status: str | None = None,
     s: Session = Depends(get_session),
-) -> list[QueueItem]:
+):
     q = s.query(QueueItem)
     if pipeline and pipeline != "all":
         if pipeline.lower() in ("movie clips", "movie_clips"):
@@ -681,7 +683,16 @@ def list_queue(
     rows = q.order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
     for it in rows:                       # lets the page show CURRENT thumbnail + momentum tracker
         _enrich_queue_item(it, s)
-    return rows
+    # The page re-asks for this list in the background; when nothing changed it gets an empty
+    # "304 Not Modified" instead of the whole list again (owner, 2026-10-31: Railway egress cost).
+    import hashlib
+    body = json.dumps(jsonable_encoder([QueueItemOut.model_validate(it) for it in rows]),
+                      separators=(",", ":")).encode()
+    etag = '"' + hashlib.sha256(body).hexdigest()[:32] + '"'
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if etag in [t.strip() for t in request.headers.get("if-none-match", "").split(",")]:
+        return Response(status_code=304, headers=headers)
+    return Response(body, media_type="application/json", headers=headers)
 
 
 @app.get("/api/queue/counts", dependencies=_AUTH)

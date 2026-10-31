@@ -243,11 +243,11 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       })
       .catch(() => {});
 
-    // Background refresh every 20 s, only while the page is visible (it was every 4 s,
-    // always: ~2.5 MB a minute on a phone). Your own actions refresh at once.
+    // Background refresh every 2 min, only while the page is visible (was 20 s: the whole list,
+    // ~330 MB an hour of Railway egress — owner, 2026-10-31). Your own actions refresh at once.
     const timer = setInterval(() => {
       if (!document.hidden) loadQueue(true);
-    }, 20000);
+    }, 120000);
     const onShow = () => { if (!document.hidden) loadQueue(true); };
     document.addEventListener("visibilitychange", onShow);
 

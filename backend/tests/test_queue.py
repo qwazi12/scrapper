@@ -1219,3 +1219,17 @@ def test_any_movie_clips_drive_subfolder_posts_on_the_shorts_schedule():
     assert qm.pipeline_group(it) == "Movie Clips"
     assert qm.pipeline_group(QueueItem(pipeline="LongForm", source="Movie Clips / x")) == "LongForm"
     assert qm.pipeline_group(QueueItem(pipeline="Abyss", source="Abyss / @x")) == "Abyss"
+
+
+# --- the queue list answers "unchanged" with no body (owner, 2026-10-31: Railway egress) ---
+def test_queue_list_returns_304_when_nothing_changed(session, client):
+    (it,) = add(session, 1)
+    r = client.get("/api/queue")
+    assert r.status_code == 200 and r.json()[0]["id"] == it.id
+    etag = r.headers["etag"]
+    again = client.get("/api/queue", headers={"If-None-Match": etag})
+    assert again.status_code == 304 and again.content == b""
+    it.title = "changed"
+    session.commit()
+    changed = client.get("/api/queue", headers={"If-None-Match": etag})
+    assert changed.status_code == 200 and changed.headers["etag"] != etag
