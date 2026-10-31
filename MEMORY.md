@@ -1,5 +1,33 @@
 # Scrapper Memory
 
+## Tonight's Conversation actual Drive smoke passed; two lanes active — Oct31 19:02 ET
+
+Actual first source YR3IL7qMuyQ passed complete packet-duration and full decode
+validation at1080x1920,169.8seconds,47,192,825bytes. Fresh independent Drive
+read verified identical size,MD5,SHA256 and source identity. Cloud manifest counts
+match. Original video DriveID1IJGG4cH4_njbBVihFfCTc_SlIpJ2xcyA is preserved;
+no source video, audio, partial or temporary media file exists in this operation
+on the Mac. First-sample extrapolation for979videos is46,201,775,675bytes; actual
+total will vary. Shared Drive pool free space is not exposed through this service
+account's user quota, so do not invent a capacity number; actual writes succeed.
+
+Started the full remaining978-source batch at19:00:26ET, exact ownedPID52158,
+two concurrent transfers,256MiB per-video RAM bound; owned caffeinatePID52159
+prevents idle sleep only while that process lives. At checkpoint 2026-10-31T19:01:24.232956-04:00,
+1uploaded/978remaining,0currentfailures; both disjoint source lanes are active.
+Only progress/manifest metadata persists locally. Existing successes are skipped,
+uncertain uploads reconcile their durable sameID before retry, and any source or
+Drive error stops both lanes. No bot-check avoidance, proxy or account rotation.
+No queue,Ready,scheduling,publishing or unrelated worker/monitor changes.
+
+Current authoritative state: artifacts/tonights-conversation-20261031/ledger.json,
+latest-run.json, archive-two-lane.log and parallel-checkpoint.json. Actual first
+cloud proof: first-live-verification.json. Current batch is RUNNING, not complete.
+Read exact owned process and latest ledger for any status request. The prior
+single-source smoke runs are history. Six focused RAM/validation/retry tests pass;
+script and tests were committed/pushed as e97e8e4. This CLI operation requires no
+application deployment and does not certify the unrelated full roadmap complete.
+
 ## Tonight's Conversation: memory-only archive preflight — Oct 31, 18:58 ET
 
 Owner requested concurrent transfers and all @TonightsConversation Shorts, with
