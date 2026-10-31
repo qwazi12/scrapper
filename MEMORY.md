@@ -1,5 +1,21 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
+memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
+Measured: full queue list = 9.2 MB (1.8 MB gzip) per reload, reloaded every 20 s while the page is visible (~330 MB/h).
+Railway keeps HTTP logs only for the live deployment, so the rest of the egress split is not measurable (posting uploads,
+Studio Drive/Gemini uploads, media streaming). Railway disk 14.2 GB used of 18.25. One service; DB = SQLite on the volume.
+1. Queue list: ETag + "304 Not Modified" when nothing changed (no body); background reload every 2 min (was 20 s); own
+   actions still reload at once.
+2. railway.json watchPatterns: Railway rebuilds only for backend/, scrape.py, compile.py, railway.json changes (6 rebuilds today
+   were mostly docs/frontend).
+4. Railway disk clean-up: DRY RUN first — list rendered/old files already safely in Drive, with sizes; owner approves the list;
+   only then delete.
+5. Turn off Railway volume backups (owner chose it; against my advice) — replace with a local copy on the Mac (step 6).
+6. Move the backend to the Mac (≈$0): copy the volume (SQLite + media) to the Mac, run uvicorn + scheduler under launchd,
+   reach it from the Vercel site through a tunnel, then stop Railway. Posting stops when the Mac sleeps/offline (owner accepted).
+   Cut-over steps and owner decisions (tunnel/domain, Railway kept paused as fallback?) are confirmed before Railway is stopped.
+
 ## PLAN — 2026-10-31 (night) — AI SEO for The ICK Room, styled on @TonightsConversation (owner asked; in progress)
 Today Ick Room rows have filename titles + "#shorts #movieclips"; the AI SEO path looks clips up on TMDB (movies) — wrong here.
 Style read from youtube.com/@TonightsConversation (40 videos + 40 Shorts, top 3.7M views): story hook in plain words → "…"
