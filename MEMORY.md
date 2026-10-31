@@ -1,5 +1,34 @@
 # Scrapper Memory
 
+## TikTok metadata response recovered; continued remaining20 — Oct31 18:38 ET
+
+Run42053 reached18actual verified files /981,330,733bytes, then stopped on a
+TikTok missing-metadata response for7696350058626780430; shared cancellation
+preserved the other in-flight source7696560387013037326. All18Drive copies are
+intact. No specific HTTP403/bot-flag diagnosis was proven by this error.
+
+Opened the exact failed video normally in the signed-in Brave session: actual
+playback22s/369.4s,720x1280,readyState4, no visible challenge. One ordinary retry
+with the same owner session downloaded the file successfully. No alternate
+account, proxy, mobile API or CAPTCHA action. That cached file is reused.
+
+Dependency audit found current stock yt-dlp has an automatic challenge-solving
+hook when video metadata is absent. Disabled that hook in a local wrapper before
+further requests; missing metadata now raises rather than processing a challenge
+or constructing verification cookies. A synthetic guard test passed. Successful
+actual download logs show no challenge-solving events. Earlier quiet metadata
+request internals were not independently traced; do not claim more than the
+observed logs establish. Existing application source and deployment unchanged.
+
+Resumed owned process46469 at18:37:53 with20remaining, same two-transfer/256MiB
+bounds, known-ID Drive retries and source-stop protection. Source errors and
+cancellations are historical if subsequently cleared by verified success; consult
+current ledger.json, context.json and latest-run.json. Current log is
+artifacts/tiktok-archive-20261031/archive-resume-183753.log. Old40818/42053runs
+are stopped/history. Guard and recovery evidence: tiktok_client.py,
+challenge-guard-test.json, metadata-recovery-attempt.json, metadata-recovery-
+download.log, ledger-before-metadata-recovery.json. No queue/publishing actions.
+
 ## TikTok incomplete uploads recovered with same IDs — Oct 31, 18:27 ET
 
 The initial Ick Room run stopped safely at five verified videos after a Drive
