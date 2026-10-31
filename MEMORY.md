@@ -1,5 +1,35 @@
 # Scrapper Memory
 
+## TikTok incomplete uploads recovered with same IDs — Oct 31, 18:27 ET
+
+The initial Ick Room run stopped safely at five verified videos after a Drive
+upload exception left 7702111765059947789 as an empty owned placeholder; shared
+cancellation also left 7701767153187310862 empty. Both complete validated local
+files were retained. Independent Drive read confirmed both remote sizes were0,
+with correct identity/parent and empty-file MD5, not corrupt completed videos.
+The initial exception handler masked the original exception with the receipt
+mismatch, so the exact first transport/service cause remains unproven.
+
+Added bounded same-ID media retries to the private operation helper, reconciling
+a readable Drive receipt before every resend. Lost successful responses return
+verified without resending; nonempty mismatch/identity/access/quota failures stop;
+only transient408/5xx/network errors retry, at most three same-ID attempts. Original
+errors are preserved. Five isolated safety tests passed0.22s (simulated outcomes,
+not actual TikTok/Drive uploads): lost reply,503 recovery, nonempty mismatch,
+403 no-retry and wrong identity no-send. No application/deployment change.
+
+Restarted exact owned process42053 at18:26:01, same two-transfer/256MiB bounds.
+Actual both-file recovery completed by18:26:49 using the original IDs and original
+SHA256/local bytes, no source redownload. Fresh independent remote size/MD5 and
+available SHA256 matched both receipts. Seven of38 verified,31remaining,0current
+failures at18:27; subsequent source files downloading/uploading normally. Prior
+PID40818 is stopped/history, not the active worker. Current pointer latest-run.json
+and log archive-resume-182601.log under artifacts/tiktok-archive-20261031; ledger.json
+and context.json are authoritative current progress. Initial launch.json remains
+historical. Evidence upload-error-reconciliation.json, ledger-before-retry.json,
+retry-live-verification.json and five-test source/results kept locally. No queue,
+Ready, scheduling, publication or unrelated worker changes. Continue to completion.
+
 ## TikTok archive: The Ick Room started — Oct 31, 18:20 ET
 
 Owner requested all videos from @loveunfilteredroom in a Drive folder named
