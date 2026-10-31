@@ -1,5 +1,50 @@
 # Scrapper Memory
 
+## Current Ick Room layout and four-worker recovery run — Oct 31, 19:40 ET
+
+Each account/source has its own folder inside the selected holding space:
+- The Ick Room / loveunfilteredroom: 38 verified TikTok videos, 2,030,378,736 bytes.
+  https://drive.google.com/drive/folders/1lMxPNVWufvIUEtgHL4ZTFGQPzvJCpFiO
+- The Ick Room / Tonight's Conversation: YouTube Shorts archive, 979 discovered.
+  https://drive.google.com/drive/folders/1hju6CJF0hEfHVexZRhYNShgdCgHfkFjJ
+A fresh root listing contains these two source folders and no loose videos.
+Future sources must follow the owner's specified Movie Clips / The Ick Room
+holding-space selection, with a separate folder per source. This is organization,
+not authorization to import a queue, mark Ready, schedule or publish.
+
+Final recovery code is committed/pushed as 133470a. Current owned worker PID63531
+started at 19:39:48 ET, caffeinate PID63532. Maximum four transfers, 256 MiB per
+video, enforced aggregate raw video-buffer limit of 1 GiB. Video data uses RAM
+and pipes; only metadata/progress receipts persist. At 2026-10-31T19:40:33.151348-04:00, live
+counts were {'discovered': 979, 'downloaded': 31, 'uploaded': 31, 'failed': 0, 'remaining': 948, 'uploaded_bytes': 1484322522}. Fresh independent Drive checks verified all 31
+completed files' sizes, MD5 and SHA256; all previous completed IDs are preserved.
+No local video/audio/partial files exist in this operation. Current parent_id now
+correctly points to The Ick Room after the destination-aware restart.
+
+Automatic recovery is inside the Python worker, not an AI monitor or paid API:
+network timeout/408/5xx backoff 1, 3, 9 minutes; plain 429 backoff at least 15, 30,
+60 minutes. Any longer server Retry-After takes precedence. Recovery reduces to
+two workers after a timeout or one after a plain rate limit; a clean 25-item batch
+restores the requested four. Three automatic resumes per failed item maximum.
+A persisted next_retry_at is honored on restart; owner cancellation prevents
+automatic resume. Authentication/CAPTCHA/bot-check responses, 401/403, quota or
+access failures, invalid/corrupt media and identity/checksum mismatches block.
+Startup/final-manifest network faults also have bounded cooldown recovery.
+No proxy/account rotation, challenge bypass or evasion. Twenty-five focused
+checks pass; cooldown faults/time are simulated, while synthetic media decoding
+and the live cloud verifications are actual checks. No outage was deliberately
+induced against the real source or Drive.
+
+Historical PID52158 was stopped for the approved upgrade with 27 successes intact.
+PID62769 then demonstrated four simultaneous source transfers, uploaded four more,
+and gracefully drained to 31 successes with zero discarded RAM buffers. It exited
+normally for the final code reload; that stopped state is historical, not a current
+failure. Latest active run is PID63531 and must be checked via current artifacts:
+artifacts/tonights-conversation-20261031/latest-run.json, ledger.json,
+archive-four-auto-193948.log, recovery-run-baseline.json and four-auto-verification.json.
+The run continues unattended; do not claim all 979 completed. No unrelated workers,
+paused Codex automation, application deployment, queue or publication were changed.
+
 ## Source folders and four-worker cooldown upgrade — Oct31 19:38 ET
 
 STANDING ROUTING RULE: each source account gets its own folder INSIDE the
