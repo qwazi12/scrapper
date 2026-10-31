@@ -799,7 +799,7 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
         title=req.title or video_name,
         description=req.description,
         tags=req.tags,
-        accounts=[a for a in (req.accounts or []) if a not in queue_manager.blocked_accounts(req.accounts)] if req.accounts else req.accounts,
+        accounts=[a for a in (req.accounts or []) if a not in queue_manager.blocked_accounts(req.accounts, req.pipeline)] if req.accounts else req.accounts,
         status=req.status or "review",
         scheduled_at=sched_dt,
         position=(s.query(func.max(QueueItem.position)).scalar() or 0) + 1,
@@ -820,11 +820,15 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
     return item
 
 
-def _refuse_blocked(accounts: list[str] | None) -> None:
-    bad = queue_manager.blocked_accounts(accounts)
+def _refuse_blocked(accounts: list[str] | None, pipeline: str | None = None) -> None:
+    bad = queue_manager.blocked_accounts(accounts, pipeline)
     if bad:
-        raise HTTPException(400, f"Profile {', '.join(sorted(queue_manager.BLOCKED_PROFILES))} is never used for "
-                                 f"Posting Queue or LongForm videos (refused: {', '.join(bad)}).")
+        if pipeline == queue_manager.ICK_ROOM:
+            raise HTTPException(400, f"The ICK Room posts only to its own profile "
+                                     f"({', '.join(sorted(queue_manager.ICK_ROOM_PROFILES))}) (refused: {', '.join(bad)}).")
+        raise HTTPException(400, f"Profiles {', '.join(sorted(queue_manager.BLOCKED_PROFILES | queue_manager.ICK_ROOM_PROFILES))} "
+                                 f"are never used for these videos — the Ick Room profile is only for The ICK Room "
+                                 f"(refused: {', '.join(bad)}).")
 
 
 def _require_queue_editable(item) -> None:
@@ -866,13 +870,15 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         item.drive_link = req.drive_link
     if req.pipeline is not None:
         item.pipeline = req.pipeline
+        if req.accounts is None:
+            queue_manager.fit_destination(item)   # moved into/out of The ICK Room: its destinations follow
     if req.status is not None:
         if req.status == "ready" and not queue_manager.has_video_source(item):
             raise HTTPException(400, "This row has no video yet — it can be Ready to Post once its video exists.")
         item.status = req.status
         _mark_published(item, req.status)
     if req.accounts is not None:
-        _refuse_blocked(req.accounts)
+        _refuse_blocked(req.accounts, queue_manager.pipeline_group(item))
         item.accounts = req.accounts
     if req.notes is not None:
         item.notes = req.notes
@@ -1206,11 +1212,11 @@ def delete_queue_item(item_id: int, s: Session = Depends(get_session)) -> dict:
 
 @app.post("/api/queue/bulk-action", dependencies=_AUTH)
 def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -> dict:
-    if req.action == "set_accounts":
-        _refuse_blocked(req.accounts)       # checked before anything (incl. the undo point) is written
     items = s.query(QueueItem).filter(QueueItem.id.in_(req.ids)).all()
     for item in items:
         _require_queue_editable(item)
+        if req.action == "set_accounts":   # checked before anything (incl. the undo point) is written
+            _refuse_blocked(req.accounts, queue_manager.pipeline_group(item))
         if req.action=='edit' and any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','pipeline')):
             from . import queue_sources
             queue_sources.require_copy_editable(s,item)
@@ -1267,6 +1273,8 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
             # Keep the "<pipeline> / @channel" label in step with a pipeline move.
             if "pipeline" in fields and it.source and " / " in it.source:
                 it.source = f"{fields['pipeline']} / {it.source.split(' / ', 1)[1]}"
+            if "pipeline" in fields:
+                queue_manager.fit_destination(it)   # into/out of The ICK Room: its destinations follow
         s.commit()
         logbus.log("info", "queue_bulk_edit", f"Edited {', '.join(fields)} on {count} items",
                    ids=[it.id for it in items])
@@ -1305,8 +1313,8 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
         else:
             q = q.filter(QueueItem.pipeline == req.pipeline)
     else:
-        # LongForm and Countdowns have their own sections; "all" means all clips
-        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns"]))
+        # LongForm, Countdowns and The ICK Room have their own sections; "all" means all clips
+        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns", queue_manager.ICK_ROOM]))
     if req.status and req.status != "all":
         q = q.filter(QueueItem.status == req.status)
 
@@ -1842,7 +1850,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
     per_day = queue_manager.slots_per_day()
     pacing_summary = {
         name: queue_manager.slots_per_day(pipeline=name)
-        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns"]
+        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM]
     }
     return {
         "timezone": cfg["timezone"],
@@ -1855,7 +1863,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "pipeline_slots_per_day": pacing_summary,
         # Each queue's own next post times (Posting Queue = "Movie Clips", LongForm).
         "pipeline_next_slots": {name: queue_manager.slots_after(now, 5, pipeline=name)
-                                for name in ("Movie Clips", "LongForm", "Countdowns")},
+                                for name in ("Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM)},
         "defaults": queue_manager.default_schedule(),
         "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,

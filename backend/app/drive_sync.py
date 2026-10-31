@@ -28,11 +28,11 @@ LOCAL_KEY_CANDIDATES = [
 DEFAULT_PARENT_FOLDER = "1kuOKRQQRL0ws5aOVqwkdUzdnfj5KQGjo"  # Movie Clips
 
 
-def _default_destination() -> list:
+def _default_destination(pipeline: Optional[str] = None) -> list:
     """The connected Upload-Post channels new Shorts post to (empty if Upload-Post is unreachable;
-    the scheduler fills it in later)."""
+    the scheduler fills it in later). The Ick Room gets its own profile."""
     from .social import queue_manager
-    return queue_manager.default_destination()
+    return queue_manager.default_destination(pipeline=pipeline)
 
 
 def extract_folder_id(url_or_id: str) -> str:
@@ -368,7 +368,7 @@ def sync_drive_to_queue(
                   tags=tags,
                   status=item_status,
                   position=next_position,
-                  accounts=_default_destination(),   # owner (2026-10-14): new Shorts post to the connected channels
+                  accounts=_default_destination(channel_name),   # owner (2026-10-14): new Shorts post to the connected channels
               )
               db_session.add(new_item)
               new_rows.append(new_item)

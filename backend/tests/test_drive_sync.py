@@ -30,7 +30,7 @@ class ChannelDrive:
 
 def test_channel_sync_imports_all_pages_as_review_and_deduplicates(session, monkeypatch):
     monkeypatch.setattr(drive_sync, 'get_drive_service', ChannelDrive)
-    monkeypatch.setattr(drive_sync, '_default_destination', lambda: ['Cinama:youtube'])
+    monkeypatch.setattr(drive_sync, '_default_destination', lambda pipeline=None: ['Cinama:youtube'])
 
     result = drive_sync.sync_drive_to_queue('parent', 'Movie Clips', False, session)
     assert result['ok'] and result['added'] == 2 and result['total_scanned'] == 2

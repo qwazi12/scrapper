@@ -63,7 +63,7 @@ def pipeline_group(item: QueueItem) -> str:
     # Anything imported from the Movie Clips Drive folder is a Short, whatever its channel subfolder is
     # called (2026-10-20: archived channels named "AfridiAE — UC…" each became their own queue on the
     # 1-a-day default, all firing at 10:00 together).
-    if (item.source or "").startswith("Movie Clips / ") and item.pipeline not in ("LongForm", "Countdowns"):
+    if (item.source or "").startswith("Movie Clips / ") and item.pipeline not in ("LongForm", "Countdowns", ICK_ROOM):
         return "Movie Clips"
     if item.pipeline and not item.pipeline.startswith("@"):
         return item.pipeline
@@ -732,9 +732,33 @@ async def auto_seo(item: QueueItem, s: Session) -> bool:
 BLOCKED_PROFILES = {"mk"}
 
 
-def blocked_accounts(accounts: list[str] | None) -> list[str]:
-    """The destinations in this list that belong to a blocked profile."""
-    return [a for a in (accounts or []) if str(a).split(":", 1)[0].strip() in BLOCKED_PROFILES]
+# "The ICK Room" posts to its own Upload-Post profile (owner, 2026-10-31: another Facebook account).
+# That profile is never a default for any other queue, and Ick Room rows post nowhere else.
+ICK_ROOM = "The ICK Room"
+ICK_ROOM_PROFILES = {"TheIckRoom"}
+
+
+def _profile(account: Any) -> str:
+    return str(account).split(":", 1)[0].strip()
+
+
+def blocked_accounts(accounts: list[str] | None, pipeline: str | None = None) -> list[str]:
+    """The destinations in this list that a row of this pipeline may not post to: a blocked profile,
+    the Ick Room profile for any other queue, or any other profile for the Ick Room."""
+    ick = pipeline == ICK_ROOM
+    return [a for a in (accounts or []) if _profile(a) in BLOCKED_PROFILES
+            or (_profile(a) not in ICK_ROOM_PROFILES if ick else _profile(a) in ICK_ROOM_PROFILES)]
+
+
+def fit_destination(item: QueueItem) -> bool:
+    """After a pipeline move: drop destinations the row's queue may not use; if none are left, give it
+    that queue's default. True if the row's destinations changed."""
+    group = pipeline_group(item)
+    bad = blocked_accounts(item.accounts, group)
+    if not bad:
+        return False
+    item.accounts = [a for a in item.accounts if a not in bad] or default_destination(pipeline=group)
+    return True
 
 
 # Default "Posts To" (owner, 2026-10-14): every connected Upload-Post profile except blocked ones
@@ -761,29 +785,37 @@ def connected_profiles() -> list[str] | None:
     return profiles
 
 
-def default_destination(fallback: list[str] | None = None) -> list[str]:
-    profiles = connected_profiles()
+def _profiles_for(profiles: list[str] | None, pipeline: str | None) -> list[str]:
+    ick = pipeline == ICK_ROOM
+    return [p for p in (profiles or []) if (p in ICK_ROOM_PROFILES) == ick]
+
+
+def default_destination(fallback: list[str] | None = None, pipeline: str | None = None) -> list[str]:
+    profiles = _profiles_for(connected_profiles(), pipeline)
     return [f"{p}:*" for p in profiles] if profiles else list(fallback or [])
 
 
 def fill_destinations(s: Session) -> int:
     """Rows waiting to post with no destination (or only disconnected profiles) get the default."""
-    profiles = connected_profiles()
-    if not profiles:
+    connected = connected_profiles()
+    if not connected:
         return 0
-    dest = [f"{p}:*" for p in profiles]
     changed = 0
     for it in s.query(QueueItem).filter(QueueItem.status.in_(["review", "ready", "retry"])).all():
+        profiles = _profiles_for(connected, pipeline_group(it))
+        if not profiles:
+            continue
         accs = list(it.accounts or [])
         live = [a for a in accs if str(a).partition(":")[0] in profiles]
         if accs and live == accs:
             continue
-        it.accounts = live or dest
+        it.accounts = live or [f"{p}:*" for p in profiles]
         changed += 1
     if changed:
         s.commit()
         logbus.log("info", "queue_destination_filled",
-                   f"{changed} queued video(s) set to post to {', '.join(dest)} (no destination or a disconnected profile)")
+                   f"{changed} queued video(s) set to post to their queue's connected profiles "
+                   f"(no destination or a disconnected profile)")
     return changed
 
 
@@ -804,14 +836,15 @@ def strip_blocked_accounts(s: Session) -> int:
     A row left with no destination simply stays unscheduled until one is picked."""
     changed = 0
     for it in s.query(QueueItem).filter(QueueItem.status.notin_(["posted", "archived"])).all():
-        bad = blocked_accounts(it.accounts)
+        bad = blocked_accounts(it.accounts, pipeline_group(it))
         if bad:
             it.accounts = [a for a in it.accounts if a not in bad]
             changed += 1
     if changed:
         s.commit()
         logbus.log("warning", "queue_blocked_profile_removed",
-                   f"Removed profile {', '.join(sorted(BLOCKED_PROFILES))} from {changed} queue item(s) — never used for the queue")
+                   f"Removed destinations not allowed for their queue (profile {', '.join(sorted(BLOCKED_PROFILES))}, "
+                   f"or the Ick Room's own profile) from {changed} queue item(s)")
     return changed
 
 
@@ -872,13 +905,14 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
             raise upload_post.UploadPostError("Inspect a native image export before submitting photos", status_code=409)
         if any(a.split(":")[-1] not in ("facebook", "instagram") for a in item.accounts):
             raise upload_post.UploadPostError("Choose explicit Instagram/Facebook photo destinations", status_code=400)
-    if blocked_accounts(item.accounts):
-        # Last line of defence: never send to a blocked profile, even if a row slipped through.
-        item.accounts = [a for a in item.accounts if a not in blocked_accounts(item.accounts)]
+    bad = blocked_accounts(item.accounts, pipeline_group(item))
+    if bad:
+        # Last line of defence: never send to a blocked profile (or across the Ick Room line), even if a row slipped through.
+        item.accounts = [a for a in item.accounts if a not in bad]
         s.commit()
         if not item.accounts:
             raise upload_post.UploadPostError(
-                f"Profile {', '.join(sorted(BLOCKED_PROFILES))} is never used for queue videos — pick another destination.",
+                f"{', '.join(bad)} is never used for this queue's videos — pick another destination.",
                 status_code=400)
 
     # Locate video file

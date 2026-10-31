@@ -1148,6 +1148,72 @@ def test_default_destination_skips_blocked_profiles_and_falls_back(monkeypatch):
     assert qm.default_destination(["x:*"]) == ["x:*"]
 
 
+# --- The ICK Room posts only to its own Facebook profile (owner, 2026-10-31) --------
+def test_ick_room_profile_is_never_a_default_for_other_queues(monkeypatch):
+    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama", "TheIckRoom"])
+    assert qm.default_destination() == ["Cinama:*"]
+    assert qm.default_destination(pipeline="LongForm") == ["Cinama:*"]
+    assert qm.default_destination(pipeline=qm.ICK_ROOM) == ["TheIckRoom:*"]
+
+
+def test_ick_room_rows_and_other_rows_never_cross(session, client, monkeypatch):
+    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama", "TheIckRoom"])
+    (ick,) = add(session, 1, "The ICK Room", accounts=["TheIckRoom:*"])
+    (clip,) = add(session, 1, accounts=["Cinama:*"])
+    r = client.patch(f"/api/queue/{ick.id}", json={"accounts": ["Cinama:facebook"]})
+    assert r.status_code == 400 and "only to its own profile" in r.json()["detail"]
+    r = client.patch(f"/api/queue/{clip.id}", json={"accounts": ["TheIckRoom:facebook"]})
+    assert r.status_code == 400
+    r = client.post("/api/queue/bulk-action", json={"ids": [ick.id, clip.id], "action": "set_accounts",
+                                                   "accounts": ["TheIckRoom:facebook"]})
+    assert r.status_code == 400                       # refused for the clip row before anything is written
+    r = client.post("/api/queue/bulk-action", json={"ids": [ick.id], "action": "set_accounts",
+                                                   "accounts": ["TheIckRoom:facebook"]})
+    assert r.status_code == 200
+    session.refresh(ick)
+    session.refresh(clip)
+    assert ick.accounts == ["TheIckRoom:facebook"] and clip.accounts == ["Cinama:*"]
+
+
+def test_moving_a_row_into_the_ick_room_moves_its_destination(session, client, monkeypatch):
+    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama", "TheIckRoom"])
+    (a,) = add(session, 1, accounts=["Cinama:*"])
+    (b,) = add(session, 1, accounts=["Cinama:*"])
+    assert client.patch(f"/api/queue/{a.id}", json={"pipeline": qm.ICK_ROOM}).status_code == 200
+    r = client.post("/api/queue/bulk-action", json={"ids": [b.id], "action": "edit", "pipeline": qm.ICK_ROOM})
+    assert r.status_code == 200
+    session.refresh(a)
+    session.refresh(b)
+    assert a.accounts == ["TheIckRoom:*"] and b.accounts == ["TheIckRoom:*"]
+    r = client.post("/api/queue/bulk-action", json={"ids": [b.id], "action": "edit", "pipeline": "Movie Clips"})
+    session.refresh(b)
+    assert b.accounts == ["Cinama:*"]
+
+
+def test_fill_and_strip_keep_the_ick_room_apart(session, monkeypatch):
+    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama", "TheIckRoom"])
+    (ick,) = add(session, 1, "The ICK Room", accounts=[])
+    (clip,) = add(session, 1, accounts=[])
+    assert qm.fill_destinations(session) == 2
+    assert ick.accounts == ["TheIckRoom:*"] and clip.accounts == ["Cinama:*"]
+    ick.accounts = ["TheIckRoom:*", "Cinama:youtube"]
+    clip.accounts = ["Cinama:*", "TheIckRoom:facebook"]
+    session.commit()
+    assert qm.strip_blocked_accounts(session) == 2
+    assert ick.accounts == ["TheIckRoom:*"] and clip.accounts == ["Cinama:*"]
+    clip.accounts = ["TheIckRoom:facebook"]          # slipped in somehow
+    session.commit()
+    with pytest.raises(upload_post.UploadPostError, match="never used"):
+        asyncio.run(qm.publish_queue_item(clip.id, session))
+
+
+def test_ick_room_is_its_own_queue_with_its_own_schedule(session, client):
+    add(session, 1, "The ICK Room", accounts=["TheIckRoom:*"])
+    sched = client.get("/api/schedule").json()
+    assert qm.ICK_ROOM in sched["pipeline_next_slots"] and qm.ICK_ROOM in sched["pipeline_slots_per_day"]
+    assert qm.pipeline_group(QueueItem(pipeline=qm.ICK_ROOM, source="The Ick Room / The ICK Room")) == qm.ICK_ROOM
+
+
 def test_any_movie_clips_drive_subfolder_posts_on_the_shorts_schedule():
     it = QueueItem(pipeline="AfridiAE — UCKdzRZbkyT--dJcVvOhIK_w", source="Movie Clips / AfridiAE — UCKdzRZbkyT--dJcVvOhIK_w")
     assert qm.pipeline_group(it) == "Movie Clips"

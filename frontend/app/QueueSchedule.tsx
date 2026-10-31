@@ -8,8 +8,9 @@ import { notify } from "../lib/dialogs";
 // ("Movie Clips") and LongForm each get posts/day + hours, or exact times —
 // editing one never changes the other.
 
-type Queue = "Movie Clips" | "LongForm" | "Countdowns";
-const LABEL: Record<Queue, string> = { "Movie Clips": "Posting Queue", LongForm: "LongForm", Countdowns: "Countdowns" };
+type Queue = "Movie Clips" | "LongForm" | "Countdowns" | "The ICK Room";
+const LABEL: Record<Queue, string> = { "Movie Clips": "Posting Queue", LongForm: "LongForm", Countdowns: "Countdowns",
+                                       "The ICK Room": "The ICK Room" };
 
 // Owner (2026-10-13): post more on Facebook/Instagram, less on YouTube.
 const PLATFORMS: [string, string][] = [["youtube", "YouTube"], ["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"]];
