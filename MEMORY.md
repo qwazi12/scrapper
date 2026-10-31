@@ -12,6 +12,11 @@ paragraph summary (the dilemma, how the debate splits, a question for the commen
    failed row waits 24 h before another try). Same $ daily cap; ~$0.001 per video.
 3. Run it now on the 22 current rows; spot-check; they stay in Needs Review for the owner.
 Tests → full suite → commit → push when idle → verify live → log here.
+DONE 2026-10-31 (3edfc9d, live on Railway + Vercel): +3 tests, full suite 916 passed / 1 skipped, tsc clean.
+After deploy the scheduler tick started it by itself: 22/22 Ick Room rows SEO'd, 0 failed (undo point "Ick Room AI SEO of
+22 video(s)"). Spot-checked 6: hooks like "She made him wait 6 months for sex… 😳 then he chose another girl…", 3-paragraph
+captions ending in a comment question, relationship hashtags, no show names. All still Needs Review → TheIckRoom:* only.
+Future imports: re-run the Drive import (archive at 22 of 38) → the next tick SEOs the new rows.
 
 ## PLAN — 2026-10-31 — "The ICK Room" section (own Facebook) + Shorts 8 a day (owner asked; in progress)
 Facts (live, 2026-10-31): Upload-Post profile `TheIckRoom` has Facebook connected (`TheIckRoom:facebook`, nickname
