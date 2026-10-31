@@ -1,5 +1,58 @@
 # Scrapper Memory
 
+## Source folders and four-worker cooldown upgrade — Oct31 19:38 ET
+
+STANDING ROUTING RULE: each source account gets its own folder INSIDE the
+owner-specified holding space (Movie Clips or The Ick Room). Do not place source
+videos loose in a holding-space root. Existing Ick Room structure is now:
+- loveunfilteredroom (TikTok): https://drive.google.com/drive/folders/1lMxPNVWufvIUEtgHL4ZTFGQPzvJCpFiO
+- Tonight's Conversation (YouTube): https://drive.google.com/drive/folders/1hju6CJF0hEfHVexZRhYNShgdCgHfkFjJ
+Both are children of The Ick Room1Gv9uGEWKnxO_EVEUU573qQrG1xNh04ow.
+
+Moved all38original TikTok video files and their manifest into loveunfilteredroom.
+All original Drive IDs, sizes,MD5,SHA256 preserved; no copy/redownload/deletion.
+Updated completed TikTok context,ledger,current pointer and cloud manifest while
+holding its operation lock. Independent post-move verification again passes all
+38video MD5/SHA256, full-decode receipts, durations and cloud-manifest match.
+No local managed TikTok media remains. Evidence: source-folder-relocation.json
+and final-verification.json under artifacts/tiktok-archive-20261031.
+
+Owner requested maximum practical parallelism and automatic restart after cooloff.
+Mac has10CPU/16GiB RAM, about33% memory free at preflight. Extended the memory-only
+archiver to four concurrent transfers,256MiB per video, enforced aggregate raw
+media cap1GiB; no media files on the Mac. Completed Drive IDs are excluded and
+uncertain uploads reconcile the same reserved ID. No concurrency above four.
+
+Added persistent self-managed recovery (no recurring AI/paid API calls): ordinary
+network timeouts/408/5xx retry after60,180,540seconds, honoring any longer server
+Retry-After. Plain429rate limits wait at least900,1800,3600seconds and reduce to
+one worker; timeout recovery reduces to two. After a clean25-item batch, requested
+parallelism is restored. At most three automatic resumes per failed source before
+blocking. Setup and final-manifest timeouts use the same bounded recovery. A saved
+next_retry_at is honored on process resume; cooldown waits make no requests.
+Authentication/CAPTCHA/bot-check text,401/403,DRM,quota/access failures, integrity
+or identity mismatch and owner stop never trigger automatic source restarts.
+Owner SIGTERM stops/cancels immediately; SIGUSR1 gracefully finishes active RAM
+transfers before stopping. No proxy rotation or restriction bypass.
+
+25focused checks pass: real synthetic fragmented-MP4 packet/full-decode tests;
+RAM bounds/cancellation; same-ID upload recovery/no overwrite; routing; actual
+four-thread scheduling; simulated elapsed cooldowns/automatic resume; increasing
+backoff/exhaustion; owner cancellation; authentication no-retry; Retry-After;
+rate-limit downgrade; setup recovery; source subprocess success with timeout logs
+classified as interrupted instead of corrupt media. These recovery tests use
+mock services/time, not deliberately induced real YouTube/Drive failures.
+
+Old two-lane PID52158 was intentionally stopped for this owner-authorized upgrade,
+27verified uploads preserved; only incomplete RAM transfers needed retransferring.
+Four-lane PID62769 launched19:36:32ET and independently shows four simultaneous
+source streams. It is currently gracefully draining those active transfers so the
+final transport-interruption/rate-limit recovery patch can load without discarding
+those RAM buffers. New final-run pointer will be recorded after that drain.
+Current observed counts: {'discovered': 979, 'downloaded': 31, 'uploaded': 27, 'failed': 0, 'remaining': 952, 'uploaded_bytes': 1282858290}. No979complete claim; latest-run.json and
+live ledger/process remain authoritative. Existing unrelated workers and paused
+Codex monitor unchanged. No queue, scheduling, publication or application deploy.
+
 ## Holding-space routing preference; Tonight's Conversation moved — Oct31 19:24 ET
 
 STANDING OWNER PREFERENCE: Movie Clips and The Ick Room are separate account /

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import datetime as dt
+import email.utils
 import fcntl
 import hashlib
 import io
@@ -117,9 +118,15 @@ def collect_pipe(command, payload, bound, stop, timeout=900, progress=None):
                 last_progress = time.monotonic()
         code = child.wait(timeout=10)
         error_thread.join(timeout=2)
+        error_text = errors.decode(errors='replace')
         if code:
-            raise RuntimeError(safe_error(errors.decode(errors='replace')) or
+            raise RuntimeError(safe_error(error_text) or
                                f'Media subprocess exited {code}')
+        # ffmpeg can return success after a transport interruption and a short
+        # fragment. Preserve the timeout classification before validation, so
+        # the bounded cooldown can retry instead of mislabeling it as bad media.
+        if error_text and failure_kind(RuntimeError(error_text)) == 'transient':
+            raise TimeoutError('Source transport interrupted: ' + safe_error(error_text))
         if not buffer.tell():
             raise ValueError('Empty source video')
         buffer.seek(0)
@@ -219,6 +226,60 @@ def retryable(exc):
             isinstance(exc, (OSError, TimeoutError, httplib2.HttpLib2Error, TransportError)))
 
 
+class TransferFailure(RuntimeError):
+    def __init__(self, original, kind):
+        super().__init__(safe_error(original))
+        self.kind = kind
+        self.original = original
+
+
+def failure_kind(exc):
+    """Retry ordinary transport failures, never authentication or integrity failures."""
+    if isinstance(exc, TransferFailure):
+        return exc.kind
+    text = str(exc).lower()
+    if any(s in text for s in ('shared cancellation', 'owner/shared cancellation', 'archive cancelled')):
+        return 'cancelled'
+    if isinstance(exc, FileNotFoundError) or any(s in text for s in (
+            'captcha', 'not a bot', 'sign in', 'log in', 'login required', 'age-restrict',
+            'drm', 'checksum', 'identity mismatch', 'quota', 'permission', 'access denied',
+            'http error 401', 'http error 403', 'duration differ',
+            'decode failed', 'in-memory size bound')):
+        return 'manual'
+    if isinstance(exc, HttpError):
+        if exc.resp.status == 429:
+            return 'rate_limited'
+        return 'transient' if exc.resp.status in (408, 500, 502, 503, 504) else 'manual'
+    if 'http error 429' in text or 'server returned 429' in text:
+        return 'rate_limited'
+    if isinstance(exc, (TimeoutError, ConnectionError, subprocess.TimeoutExpired)):
+        return 'transient'
+    if any(s in text for s in ('timed out', 'timeout', 'connection reset', 'connection aborted',
+                              'connection refused', 'remote end closed', 'temporary failure',
+                              'input/output error',
+                              'http error 408', 'http error 500', 'http error 502',
+                              'http error 503', 'http error 504', 'server returned 5',
+                              'page needs to be reloaded')):
+        return 'transient'
+    return 'manual'
+
+
+def retry_after_seconds(exc):
+    if isinstance(exc, TransferFailure):
+        exc = exc.original
+    if not isinstance(exc, HttpError):
+        return 0
+    value = exc.resp.get('retry-after', '')
+    try:
+        return max(0, int(value))
+    except (ValueError, TypeError):
+        try:
+            date = email.utils.parsedate_to_datetime(value)
+            return max(0, (date - dt.datetime.now(dt.timezone.utc)).total_seconds())
+        except (ValueError, TypeError, AttributeError):
+            return 0
+
+
 def upload_buffer(service, fid, buffer, row, parent, props, stop):
     """Every retry reconciles the same durable ID; never create duplicate copies."""
     for attempt in range(3):
@@ -261,6 +322,7 @@ class Archive:
         self.lock_file = (self.root / 'archive.lock').open('a')
         fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.lock, self.manifest_lock, self.stop = threading.RLock(), threading.Lock(), threading.Event()
+        self.owner_stop = threading.Event()
         inventory = json.loads(args.inventory.read_text())
         self.channel = inventory['channel_id']
         if not inventory.get('complete') or not re.fullmatch(r'UC[\w-]{22}', self.channel):
@@ -383,15 +445,15 @@ class Archive:
         return info
 
     def process(self, vid):
-        if self.stop.is_set():
+        if self.stop.is_set() or self.owner_stop.is_set():
             return
-        service = get_drive_service()
-        # Allow slow chunk responses without reducing TLS/security checks.
-        http = getattr(service._http, 'http', None)
-        if http is not None:
-            http.timeout = 180
         buffer = None
         try:
+            service = get_drive_service()
+            # Allow slow chunk responses without reducing TLS/security checks.
+            http = getattr(service._http, 'http', None)
+            if http is not None:
+                http.timeout = 180
             row = dict(self.state['items'][vid])
             fid = row.get('drive_file_id')
             if fid:
@@ -449,47 +511,143 @@ class Archive:
             self.patch(vid, status='uploading')
             receipt = upload_buffer(service, fid, buffer, row, self.state['folder_id'], self.props(vid), self.stop)
             self.patch(vid, status='uploaded', error=None, verified_at=now(),
+                       transient_attempts=0,
                        remote_sha256_verified=receipt.get('sha256Checksum') == row['sha256'])
             buffer.close()
             buffer = None
             self.manifest(service)
             print(json.dumps({'verified_video_id': vid, 'counts': self.counts()}), flush=True)
         except Exception as exc:
+            kind = failure_kind(exc)
             self.stop.set()
-            self.patch(vid, status='failed' if self.state['items'][vid]['status'] != 'uploaded' else 'uploaded',
-                       error=safe_error(exc))
+            values = {'error': safe_error(exc), 'recovery': kind}
+            if kind in ('transient', 'rate_limited'):
+                values['transient_attempts'] = self.state['items'][vid].get('transient_attempts', 0) + 1
+            if self.state['items'][vid]['status'] != 'uploaded':
+                values['status'] = 'interrupted' if kind == 'cancelled' else 'failed'
+            self.patch(vid, **values)
             with self.lock:
-                self.state['error'] = safe_error(exc)
+                if kind != 'cancelled' or not self.state.get('error'):
+                    self.state['error'] = safe_error(exc)
                 self.save()
-            print(json.dumps({'error_video_id': vid, 'error': safe_error(exc)}), flush=True)
-            raise
+            print(json.dumps({'error_video_id': vid, 'error': safe_error(exc), 'recovery': kind}), flush=True)
+            raise TransferFailure(exc, kind) from exc
         finally:
             if buffer is not None:
                 buffer.close()
 
+    def wait_cooldown(self, seconds, reason):
+        deadline = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=seconds)
+        self.state.update(status='cooldown', next_retry_at=deadline.isoformat(),
+                          cooldown_reason=reason, cooldown_seconds=seconds)
+        self.save()
+        print(json.dumps({'status': 'cooldown', 'retry_at': deadline.isoformat(),
+                          'seconds': seconds, 'reason': reason}), flush=True)
+        # The shared failure event is already set; only owner cancellation may
+        # interrupt this wait. No network requests occur during the cooldown.
+        if self.owner_stop.wait(seconds):
+            return False
+        self.stop.clear()
+        self.state.update(status='running', next_retry_at=None, error=None)
+        self.save()
+        return True
+
+    def recover_call(self, callback, stage):
+        """Apply the same bounded cooldown to setup and final manifest writes."""
+        for attempt in range(self.args.resume_retries + 1):
+            try:
+                return callback()
+            except Exception as exc:
+                kind = failure_kind(exc)
+                if (kind not in ('transient', 'rate_limited') or attempt == self.args.resume_retries or
+                        self.owner_stop.is_set()):
+                    raise
+                seconds = max(self.args.cooldown_seconds * 3 ** attempt, retry_after_seconds(exc))
+                if kind == 'rate_limited':
+                    seconds = max(seconds, self.args.rate_cooldown_seconds * 2 ** attempt)
+                self.state['recovery_stage'] = stage
+                if not self.wait_cooldown(seconds, safe_error(exc)):
+                    raise TransferFailure(RuntimeError('Shared cancellation during cooldown'), 'cancelled') from exc
+
+    def drain(self, target):
+        """Bounded batches permit adaptive concurrency and resumable cooldowns."""
+        concurrency = self.args.concurrency
+        while not self.owner_stop.is_set():
+            pending = [vid for vid in target if self.state['items'][vid]['status'] != 'uploaded']
+            if not pending:
+                return []
+            self.state.update(active_concurrency=concurrency, status='running')
+            self.save()
+            errors = []
+            batch = pending[:max(25, concurrency)]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {pool.submit(self.process, vid): vid for vid in batch}
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        errors.append((futures[future], exc))
+            if self.owner_stop.is_set():
+                return []
+            if not errors:
+                # Restore the requested cap after a clean lower-concurrency batch.
+                concurrency = self.args.concurrency
+                continue
+            hard = [(vid, exc) for vid, exc in errors if failure_kind(exc) not in ('transient', 'rate_limited', 'cancelled')]
+            recoverable = [(vid, exc) for vid, exc in errors if failure_kind(exc) in ('transient', 'rate_limited')]
+            exhausted = [vid for vid, _ in recoverable
+                         if self.state['items'][vid].get('transient_attempts', 0) > self.args.resume_retries]
+            if hard or not recoverable or exhausted:
+                return [safe_error(exc) for _, exc in errors]
+            attempt = max(self.state['items'][vid].get('transient_attempts', 1) for vid, _ in recoverable)
+            seconds = max(self.args.cooldown_seconds * 3 ** (attempt - 1),
+                          max(retry_after_seconds(exc) for _, exc in recoverable))
+            concurrency = min(concurrency, 2)
+            if any(failure_kind(exc) == 'rate_limited' for _, exc in recoverable):
+                seconds = max(seconds, self.args.rate_cooldown_seconds * 2 ** (attempt - 1))
+                concurrency = 1
+            self.state['resume_concurrency'] = concurrency
+            self.state['cooldown_restarts'] = self.state.get('cooldown_restarts', 0) + 1
+            if not self.wait_cooldown(seconds, '; '.join(safe_error(exc) for _, exc in recoverable)):
+                return []
+        return []
+
     def run(self):
-        service = get_drive_service()
-        self.folder(service)
         pending = [vid for vid, row in self.state['items'].items() if row['status'] != 'uploaded']
         if self.args.max_videos:
             pending = pending[:self.args.max_videos]
         self.state.update(status='running', started_at=now())
         self.save()
-        self.manifest(service)
-        errors = []
-        signal.signal(signal.SIGTERM, lambda *_: self.stop.set())
-        signal.signal(signal.SIGINT, lambda *_: self.stop.set())
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.args.concurrency) as pool:
-            futures = [pool.submit(self.process, vid) for vid in pending]
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    future.result()
-                except Exception as exc:
-                    errors.append(safe_error(exc))
-        self.state.update(status='blocked' if errors else ('complete' if not self.counts()['remaining'] else
-                          'stopped' if self.stop.is_set() else 'partial'), finished_at=now())
-        self.save()
-        self.manifest(service)
+        def cancel(*_):
+            self.owner_stop.set()
+            self.stop.set()
+        signal.signal(signal.SIGTERM, cancel)
+        signal.signal(signal.SIGINT, cancel)
+        # SIGUSR1 drains active transfers without discarding their RAM buffers.
+        signal.signal(signal.SIGUSR1, lambda *_: self.owner_stop.set())
+        retry_at = self.state.get('next_retry_at')
+        if retry_at:
+            remaining = (dt.datetime.fromisoformat(retry_at) - dt.datetime.now(dt.timezone.utc)).total_seconds()
+            if remaining > 0:
+                self.wait_cooldown(remaining, 'Honoring persisted cooldown before resume')
+        def prepare():
+            service = get_drive_service()
+            self.folder(service)
+            self.manifest(service)
+            return service
+        if self.owner_stop.is_set():
+            self.state.update(status='stopped', finished_at=now())
+            self.save()
+            return 0
+        service = self.recover_call(prepare, 'Drive setup')
+        errors = self.drain(pending)
+        final_status = 'blocked' if errors else ('complete' if not self.counts()['remaining'] else
+                       'stopped' if self.owner_stop.is_set() else 'partial')
+        def finalize():
+            self.state.update(status=final_status, finished_at=now())
+            self.save()
+            self.manifest(service)
+        self.recover_call(finalize, 'final manifest')
         print(json.dumps({k: self.state[k] for k in ('status', 'counts', 'folder_url', 'error')}), flush=True)
         return 2 if errors else 0
 
@@ -503,16 +661,36 @@ def main():
     parser.add_argument('--folder-name', required=True)
     parser.add_argument('--ytdlp-python', type=Path, required=True)
     parser.add_argument('--brave-profile', type=Path)
-    parser.add_argument('--concurrency', type=int, choices=(1, 2), default=2)
+    parser.add_argument('--concurrency', type=int, choices=(1, 2, 3, 4), default=2)
     parser.add_argument('--max-video-bytes', type=int, default=256 * 1024 * 1024)
+    parser.add_argument('--ram-budget-mib', type=int, default=1024)
+    parser.add_argument('--cooldown-seconds', type=int, default=60)
+    parser.add_argument('--rate-cooldown-seconds', type=int, default=900)
+    parser.add_argument('--resume-retries', type=int, default=3)
     parser.add_argument('--max-videos', type=int)
     args = parser.parse_args()
     if not 1024 <= args.max_video_bytes <= 256 * 1024 * 1024 or args.max_videos is not None and args.max_videos < 1:
         parser.error('Use a positive video count and a media RAM cap between 1 KiB and 256 MiB')
+    if (not 1 <= args.ram_budget_mib <= 1024 or
+            args.max_video_bytes * args.concurrency > args.ram_budget_mib * 1024 * 1024):
+        parser.error('Concurrent media buffers must fit the configured RAM budget (at most 1 GiB)')
+    if not 30 <= args.cooldown_seconds <= 600 or not 0 <= args.resume_retries <= 3:
+        parser.error('Use 30–600 seconds for base cooldown and at most three automatic resumes per item')
+    if not 300 <= args.rate_cooldown_seconds <= 3600:
+        parser.error('Use at least 5 minutes for rate-limit cooldowns (default 15 minutes)')
     # Preserve the venv launcher symlink: resolving it selects the global Python
     # and can silently load a different downloader/dependency installation.
     args.ytdlp_python = Path(os.path.abspath(args.ytdlp_python))
-    return Archive(args).run()
+    archive = Archive(args)
+    try:
+        return archive.run()
+    except Exception as exc:
+        archive.stop.set()
+        archive.state.update(status='stopped' if archive.owner_stop.is_set() else 'blocked',
+                             error=safe_error(exc), finished_at=now())
+        archive.save()
+        print(json.dumps({'status': archive.state['status'], 'error': safe_error(exc)}), flush=True)
+        return 0 if archive.owner_stop.is_set() else 2
 
 
 if __name__ == '__main__':
