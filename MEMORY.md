@@ -1,5 +1,41 @@
 # Scrapper Memory
 
+## Tonight's Conversation: memory-only archive preflight — Oct 31, 18:58 ET
+
+Owner requested concurrent transfers and all @TonightsConversation Shorts, with
+no video files saved on the Mac. Complete normal signed-in enumeration found
+979 unique Shorts, canonical channel UC-GbqnkAfJ2spqZkXtyEabw. Inventory is
+artifacts/tonights-conversation-20261031/inventory.json. Created/reconciled a
+source-marked folder in the existing working Shared Drive root:
+https://drive.google.com/drive/folders/1hju6CJF0hEfHVexZRhYNShgdCgHfkFjJ
+This source is archive-only; no queue import, Ready, scheduling or publishing.
+
+Added scripts/archive_memory.py: maximum two concurrent bounded 256 MiB media
+buffers, official downloader stdout/ffmpeg pipes, fragmented MP4, complete packet
+and decode validation, SHA256/MD5, existing Scrapper Drive connection, persistent
+metadata ledger, fsynced pre-generated Drive IDs and same-ID upload retries.
+Media never uses a local video/partial/temp file; only metadata/receipts persist.
+Process exit discards an unfinished RAM buffer, so only an incomplete source may
+need retransferring; successful ledger/Drive identities are excluded/reconciled.
+Core dumps disabled. TLS checks stay enabled, no proxy/account rotation/manual
+challenge handling. Existing unrelated workers and paused monitor remain untouched.
+
+Six focused tests pass, including real synthetic MP4 generation/full decode in
+pipes, truncation rejection, RAM cap/cancellation, lost upload reply reconciliation
+and no overwrite on remote identity/checksum mismatch. These tests are separate
+from actual source/Drive uploads. Current live first-file smoke is still running;
+no claim of 979 completed files. See live ledger for authoritative counts.
+
+Initial launcher resolved a venv symlink and inadvertently selected the global
+Python/dependency set; corrected by preserving the venv launcher path. No media
+was uploaded from that failure. Next streamed file was rejected by the original
+non-seekable MP4 header-duration check. Fixed validation to read packet timestamps
+to EOF and validate both audio/video durations, then fully decode. The rejected
+RAM buffer was discarded, never saved/uploaded or falsely counted. Isolated
+runtime yt-dlp2026.10.26/ejs0.8.0 verified. Current first-file run uses this fix,
+explicit ffmpeg network read timeouts, and 5-second RAM byte progress checkpoints.
+Full two-lane batch will start after a verified actual Drive smoke upload.
+
 ## TikTok The Ick Room completed and independently verified — Oct 31, 18:53 ET
 
 All 38 @loveunfilteredroom videos are actual verified Google Drive video files:
