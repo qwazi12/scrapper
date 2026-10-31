@@ -15,6 +15,15 @@ Facebook. No row targets it yet (checked all 4,063). Movie Clips today: FB/IG 6/
    undo = Undo button or scratchpad schedule_before_8aday.json. Risk: YouTube then gets 8 + 2 LongForm + 1 Countdown = 11/day;
    on 2026-10-03 YouTube's rolling daily limit refused uploads after ~12.
 Tests → full suite → commit → push when idle → verify live → log here.
+DONE 2026-10-31 (a05d1ee, live on Railway + Vercel):
+- 4: Movie Clips YT/FB/IG at 08,10,11,13,15,17,19,22 ET (8/day each) — set live, verified next slots (Nov 1 DST handled).
+- 1+2: `queue_manager.ICK_ROOM`/`ICK_ROOM_PROFILES`; pipeline-aware `blocked_accounts`, `default_destination(pipeline=)`,
+  `fit_destination` on pipeline moves; "🤢 The ICK Room" SocialPilot tab + own schedule (1/day default, next 2026-11-01 10:00 ET).
+  +5 tests; full suite 913 passed / 1 skipped; tsc clean.
+- 3: Drive import → 22 Ick Room rows in Needs Review, all → TheIckRoom:* only. Verified live: 0 other rows target TheIckRoom,
+  0 Ick rows target anything else. Archive run still downloading (22 of 38 in Drive) — re-run the import later (skips existing).
+- Owner to do: confirm TheIckRoom's Facebook is the Ick Room Page (nickname "Qwazi Qwazi", same as Cinama's); review/approve
+  the 22 rows; set the Ick Room's posts/day (🗓 schedule button in its tab). Not verified: an actual post to that account.
 
 ## 2026-10-28 — Queue thumbnails on Ready LongForm rows (owner: "409 Studio source: content is bound…")
 Cause: Studio rows are bound to their approved export and the thumbnail is part of it; the queue offered thumbnail
