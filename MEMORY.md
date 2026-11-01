@@ -1,5 +1,115 @@
 # Scrapper Memory
 
+## DramaRama audio-tail blocker fixed; resumed — November 1, 08:10 EST
+
+Owner requested recheck, repair and more downloads. The authoritative stopped
+ledger belonged to PID94774, not the historical PID43939 in latest-run.json.
+It had1,374uploaded,55aliased and one duration failure on7692319483742014740,
+episode48 of Reborn as My Daughter’s Shield. Tonight’s Conversation is now
+COMPLETE979/979,29,157,208,447bytes; do not restart its historical PID63531.
+
+Live independent probes of the failed episode show the original source itself
+has31.967s video and37.708s audio despite31s metadata. Both advertised HEVC and
+H.264 variants have that discrepancy. The downloaded HEVC contains every original
+packet:959video and812audio, identical ordered SHA256 payload hashes. It fully
+decodes. The problem was source metadata/audio length, not missing download bytes.
+
+Added a narrowly scoped TikTok-series exception: video must still match the
+existing declared-duration threshold; a longer audio tail requires an independent
+read-only HTTPS source probe proving identical codecs, every ordered packet
+payload/count, preserved track timing and A/V offset within250ms. Missing/changed
+packets, truncated video/audio, source access errors and decode failures still
+block. No trimming, padding, broader duration tolerance or challenge bypass.
+Packet evidence contains hashes/times, never signed URLs or credentials.
+76focused tests passed, including generated signals and simulated source tests;
+the real failed episode independently passed exact packet proof and full decode.
+Preserved the prior uncommitted exact-content dedup guard and its tests; include
+them with this fix when committing. The separate production queue-conflict patch
+remains outside this worktree and is not deployed or applied here.
+
+Resumed actual archive PID21504, caffeinate21505, two workers/128MiB per media
+buffer/256MiB configured aggregate. New authoritative latest-run.json points to
+archive-source-packet-fix-20261101-080841.log. At13:10:03UTC(08:10EST):RUNNING,
+1,385uploaded physical files,55aliased sources,1,440completed sources,
+10,731remaining,zero failures.11new actual uploads since resume. Every one of the
+1,429previous completed source receipts retains its status, Drive/canonical IDs,
+hashes and sizes. Counts continue advancing; this is not an all-complete claim.
+
+Recovered episode Drive file1MJrkNtERu3XtggtpyjyOSR32C6_Opvnn is1,145,445bytes,
+SHA2569b7fb80168fe17792ecc93b576ebb4a083941955173530fa0ac423dc372ba7ff.
+Three fresh independent Drive reads verify the recovered episode and two more
+new uploads by parent/source identity,size,MD5 andSHA256. Standalone DramaRama
+folder10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b remains under Shared Drive root,
+not The Ick Room. Existing duplicate files/queue references were not removed.
+All media remains in RAM/pipes; only metadata/logs/receipts persist locally.
+No publishing, queue mutation or deployment. Normal bounded network cooldowns
+remain enabled; integrity/authentication failures still stop for review.
+
+Evidence:artifacts/archive-duration-recheck-20261101/{packet-proof.log,
+fixed-live-validation.log,resume-baseline.json,independent-drive-verification.json,
+launch.json}. Durable explanation:docs/implementation/ARCHIVE_SOURCE_AUDIO_TAIL_20261101.md.
+
+## Episode content duplicate guard active; cleanup blocked — November 1
+
+Queue cleanup blocker diagnosed read-only at05:01UTC using Railway runtime logs:
+PATCH5246 conflicts with canonical queue5080 under SQLite unique index
+ux_queue_items_drive_link (UNIQUE constraint failed: queue_items.drive_link).
+This is deterministic; do NOT retry or vary URL parameters to bypass it. The
+running backend is commitbd4bc3d, deployment16b32bac-018c-47f2-a3c2-256a23cc4d64.
+Isolated exact-production-base fix returns409 with canonical_queue_id, rolls
+back raced metadata/undo changes, and preserves the unique index.122queue,
+source-binding and publication-integrity tests passed. Patch is only in
+/Users/kwasiyeboah/Documents/Codex/2026-11-01/task/evidence/queue-drive-link-conflict.patch;
+not deployed and does NOT itself implement queue aliases. Safely retaining both
+rows while sharing canonical media requires a supported alias/consolidation
+workflow and related production deployment approval. No direct DB writes,
+index removal, URL uniqueness bypass, deletion or further API mutation occurred.
+Full diagnosis/guard details/current runtime: task evidence/final-handoff.json.
+At05:01UTC Drama43939 has548uploaded/477unique fingerprints,71existing
+redundant files retained; Tonight63531has484verified. Both running without
+current errors, same2+4caps. Confirmed mappings71; active aliased rows0;removed0.
+
+Dedicated duplicate-maintenance task reconciled benchmark ownership and paused only
+DramaRama. Final runtime PID43939, two lanes/256MiB; Tonight PID63531 four lanes
+was unchanged. Existing root/folder identities and all prior518 Drive files kept.
+Inventory208 source series/12,171 source IDs does NOT prove unique stories.
+Independent Drive SHA256+MD5+size checks found71 exact redundant episode files
+between Divorced Today series7701338155156542485 and7702915133831566344; every
+one of71 members matched at episode level. One fully confirmed duplicate story
+pair;32 other repeated-title groups remain review-only. Redundant active bytes
+417,383,066; actual removed files/folders/bytes ZERO.
+
+All71 duplicate copies are queue-referenced. First scoped drive_link-only PATCH
+for queue5246 returnedHTTP500; a fresh GET proved it did NOT apply. No further
+queue writes and NO Trash occurred. Cleanup must wait until these references
+can safely relink while preserving metadata/status/routing. Do not trash those
+files or folder based solely on a duplicate report. Snapshots, exact content map,
+dry-run, request outcome and rollback helper live under
+/Users/kwasiyeboah/Documents/Codex/2026-11-01/task/evidence and scripts.
+
+scripts/archive_memory.py now reserves concurrent sources, serializes exact
+validated fingerprints, checks known exact content before source work, reconciles
+saved Drive IDs before download, retains empty reserved IDs while aliasing to
+verified canonical media, and verifies aliases on resume. Unknown cross-ID
+content still needs a first download; title/thumbnail/first-episode matches never
+collapse a series. Aliased sources have statusaliased and canonical_* references;
+counts expose uploaded physical source files, aliased provenance entries,
+completed_sources, unique_verified_content and duplicate_bytes_avoided. Existing
+71 physical duplicates remain statusuploaded pending safe cleanup. Confirmed
+mapping is in ledger/manifest confirmed_content_aliases, with cleanup blocker.
+No quality/cap increase, publish, queue approval, routing change, push or deployment.
+
+Final source SHA259b591b0f6bfedaf51b3ff0b8ddd0eda24b7c89d6df2ba9ecbbac81b09a6367.
+63focused checks passed, including partial overlaps, false positives, concurrent
+identical buffers, interrupted/resumed uploads, cancellation and exclusive locks.
+At04:55:33UTC final guard had5new verified transfers:537total uploaded,
+466unique verified fingerprints,11,634remaining, zero errors. These counts change;
+ledger/receipts and latest-run.json stay authoritative. Read-only cloud proof and
+a live-canonical alias-path proof (captured patch; zero source/upload operations)
+are in evidence/runtime-verification.json. Code/tests are local uncommitted edits;
+do not overwrite them during monitor recovery. Maintenance pause is cleared.
+
+
 ## Real 7/8-worker benchmark complete: keep6 — November 1 (latest)
 
 Owner requested actual7and8tests and selection of the best. Completed two equal

@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app.drive_sync import get_drive_service
@@ -200,11 +201,80 @@ def collect_pipe(command, payload, bound, stop, timeout=900, progress=None):
         error_thread.join(timeout=2)
 
 
-def validate_buffer(buffer, declared_duration):
+def packet_tracks(info):
+    """Summarize ordered packet payloads and timing, without retaining media URLs."""
+    tracks = {}
+    for stream in info['streams']:
+        kind = stream['codec_type']
+        if kind not in ('video', 'audio'):
+            continue
+        if kind in tracks:
+            raise ValueError('Ambiguous source packet tracks')
+        packets = [p for p in info['packets'] if p['stream_index'] == stream['index']]
+        if not packets or any('pts_time' not in p or not re.fullmatch(
+                r'SHA256:[a-fA-F0-9]{64}', p.get('data_hash', '')) for p in packets):
+            raise ValueError('Incomplete source packet evidence')
+        start = min(float(p['pts_time']) for p in packets)
+        end = max(float(p['pts_time']) + float(p.get('duration_time', 0)) for p in packets)
+        tracks[kind] = {'codec': stream['codec_name'], 'start': start,
+                        'duration': end - start, 'packets': packets}
+    if set(tracks) != {'video', 'audio'}:
+        raise ValueError('Missing source packet track')
+    return tracks
+
+
+def verify_source_audio_overrun(output, original, declared_duration):
+    """Accept an original audio tail only with every source packet preserved.
+
+    This never excuses short/mismatched video, missing audio packets, changed
+    payloads or altered timing. Metadata duration still bounds the video track.
+    """
+    actual, source = packet_tracks(output), packet_tracks(original)
+    tolerance = max(2, declared_duration * .01)
+    if (any(abs(t['video']['duration'] - declared_duration) > tolerance
+            for t in (actual, source)) or
+            any(t['audio']['duration'] <= declared_duration + tolerance
+                for t in (actual, source))):
+        raise ValueError('Source duration differs without a proven original audio tail')
+    proof = {}
+    for kind in ('video', 'audio'):
+        a, s = actual[kind], source[kind]
+        hashes = [p['data_hash'] for p in s['packets']]
+        if (a['codec'] != s['codec'] or
+                [p['data_hash'] for p in a['packets']] != hashes or
+                abs(a['duration'] - s['duration']) > .25 or
+                any(abs((float(p['pts_time']) - a['start']) -
+                        (float(q['pts_time']) - s['start'])) > .25
+                    for p, q in zip(a['packets'], s['packets']))):
+            raise ValueError('Source packet integrity mismatch; refuse incomplete upload')
+        proof[kind] = {'source_duration': s['duration'], 'output_duration': a['duration'],
+                       'packet_count': len(hashes),
+                       'ordered_payload_sha256': hashlib.sha256('\n'.join(hashes).encode()).hexdigest()}
+    if abs((actual['audio']['start'] - actual['video']['start']) -
+           (source['audio']['start'] - source['video']['start'])) > .25:
+        raise ValueError('Source packet synchronization mismatch')
+    return {'reason': 'original_audio_tail_preserved', 'verified_at': now(), 'tracks': proof}
+
+
+def probe_original_packets(source_url):
+    if urlsplit(source_url).scheme != 'https' or not urlsplit(source_url).hostname:
+        raise ValueError('Original packet proof requires an HTTPS media source')
+    # Read-only, bounded metadata output. The signed media URL is never persisted
+    # in a ledger, log or exception. Failed/authenticated requests still block.
+    command = ['ffprobe', '-v', 'error', '-rw_timeout', '25000000',
+               '-protocol_whitelist', 'https,tls,tcp', '-show_packets', '-show_streams',
+               '-show_data_hash', 'sha256', '-show_entries',
+               'packet=pts_time,duration_time,stream_index,data_hash:stream=index,codec_type,codec_name',
+               '-of', 'json', source_url]
+    with collect_pipe(command, b'', 16 * 1024 ** 2, threading.Event(), timeout=90) as evidence:
+        return json.loads(evidence.getvalue())
+
+
+def validate_buffer(buffer, declared_duration, source_url=None):
     with buffer.getbuffer() as data:
         probe = subprocess.run(['ffprobe', '-v', 'error', '-show_streams', '-show_format',
-                                '-show_packets', '-show_entries',
-                                'packet=pts_time,duration_time,stream_index:stream=index,codec_type,width,height:format=duration',
+                                '-show_packets', '-show_data_hash', 'sha256', '-show_entries',
+                                'packet=pts_time,duration_time,stream_index,data_hash:stream=index,codec_name,codec_type,width,height:format=duration',
                                 '-of', 'json', 'pipe:0'], input=data, capture_output=True,
                                timeout=45)
         if probe.returncode:
@@ -226,17 +296,24 @@ def validate_buffer(buffer, declared_duration):
             end = max(float(p['pts_time']) + float(p.get('duration_time', 0)) for p in packets)
             durations[stream['codec_type']] = end - start
         duration = durations['video']
+        source_proof = None
         if any(value <= 0 or abs(value - declared_duration) > max(2, declared_duration * .01)
                for value in durations.values()):
-            raise ValueError(f'Source and output duration differ: source={declared_duration}, '
-                             f'tracks={durations}; refuse truncated upload')
+            if (source_url and abs(duration - declared_duration) <= max(2, declared_duration * .01)
+                    and durations.get('audio', 0) > declared_duration + max(2, declared_duration * .01)):
+                source_proof = verify_source_audio_overrun(
+                    info, probe_original_packets(source_url), declared_duration)
+            else:
+                raise ValueError(f'Source and output duration differ: source={declared_duration}, '
+                                 f'tracks={durations}; refuse truncated upload')
         decoded = subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-err_detect', 'explode',
                                   '-threads', '2', '-i', 'pipe:0', '-map', '0:v:0',
                                   '-map', '0:a:0', '-f', 'null', '-'], input=data,
                                  capture_output=True, timeout=180)
         if decoded.returncode:
             raise ValueError('Full in-memory decode failed: ' + safe_error(decoded.stderr.decode()))
-        return {'file_size': len(data), 'md5': hashlib.md5(data).hexdigest(),
+        return {**({'source_packet_proof': source_proof} if source_proof else {}),
+                'file_size': len(data), 'md5': hashlib.md5(data).hexdigest(),
                 'sha256': hashlib.sha256(data).hexdigest(), 'duration': duration,
                 'width': video['width'], 'height': video['height'],
                 'track_durations': durations, 'full_decode_passed': True, 'file_format': 'mp4'}
@@ -363,6 +440,8 @@ class Archive:
         fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.lock, self.manifest_lock, self.stop = threading.RLock(), threading.Lock(), threading.Event()
         self.owner_stop = threading.Event()
+        self.reserved_sources = set()
+        self.content_locks = {}
         inventory = json.loads(args.inventory.read_text())
         self.channel = inventory['channel_id']
         self.platform = source_contract(inventory)
@@ -407,10 +486,15 @@ class Archive:
     def counts(self):
         items = list(self.state['items'].values())
         uploaded = [r for r in items if r['status'] == 'uploaded']
+        aliased = [r for r in items if r['status'] == 'aliased']
         skipped = sum(r['status'] == 'unavailable' for r in items)
         return {'discovered': len(items), 'downloaded': sum(bool(r.get('sha256')) for r in items),
-                'uploaded': len(uploaded), 'failed': sum(r['status'] == 'failed' for r in items),
-                'skipped': skipped, 'remaining': len(items) - len(uploaded) - skipped,
+                'uploaded': len(uploaded), 'aliased': len(aliased),
+                'completed_sources': len(uploaded) + len(aliased),
+                'unique_verified_content': len({(r.get('sha256'), r.get('file_size')) for r in uploaded}),
+                'duplicate_bytes_avoided': sum(r.get('file_size', 0) for r in aliased),
+                'failed': sum(r['status'] == 'failed' for r in items),
+                'skipped': skipped, 'remaining': len(items) - len(uploaded) - len(aliased) - skipped,
                 'uploaded_bytes': sum(r.get('file_size', 0) for r in uploaded)}
 
     def save(self, force=True):
@@ -573,10 +657,67 @@ class Archive:
         cmd += [row['original_url']]
         return cmd
 
+    def exact_canonical(self, row):
+        """Only complete, decoded content fingerprints authorize cross-ID reuse.
+
+        Titles, episode positions and first-episode matches are review hints only.
+        An unknown source under another ID still needs one download to prove it.
+        """
+        if not row.get('full_decode_passed') or not row.get('sha256') or not row.get('file_size'):
+            return None
+        for candidate in self.state['items'].values():
+            if (candidate['video_id'] != row['video_id'] and
+                    candidate['status'] == 'uploaded' and candidate.get('full_decode_passed') and
+                    candidate.get('verified_at') and candidate.get('remote_sha256_verified') and
+                    candidate.get('drive_file_id') and
+                    all(candidate.get(k) == row.get(k) for k in ('sha256', 'md5', 'file_size'))):
+                return dict(candidate)
+        return None
+
+    def alias_to(self, service, vid, canonical, reserved_id=None):
+        meta = remote(service, canonical['drive_file_id'])
+        verify_receipt(meta, canonical, canonical['drive_parent_id'], self.props(canonical['video_id']))
+        if meta.get('sha256Checksum') != canonical['sha256']:
+            raise ValueError('Canonical remote SHA256 required for exact alias')
+        reservation = ({'drive_file_id': None, 'retained_reserved_drive_file_id': reserved_id,
+                        'reservation_review': 'empty_reserved_file_retained_no_resend'}
+                       if reserved_id else {})
+        self.patch(vid, **reservation, status='aliased', canonical_video_id=canonical['video_id'],
+                   canonical_drive_file_id=canonical['drive_file_id'],
+                   canonical_drive_parent_id=canonical['drive_parent_id'],
+                   alias_evidence='full_decode_and_exact_sha256_md5_size',
+                   alias_verified_at=now(), error=None)
+
+    def verify_aliases(self, service):
+        for vid, row in self.state['items'].items():
+            if row['status'] != 'aliased':
+                continue
+            canonical = self.state['items'].get(row.get('canonical_video_id'), {})
+            if (canonical.get('status') != 'uploaded' or
+                    canonical.get('drive_file_id') != row.get('canonical_drive_file_id') or
+                    not row.get('full_decode_passed') or
+                    any(row.get(k) != canonical.get(k) for k in ('sha256', 'md5', 'file_size'))):
+                raise ValueError('Exact alias provenance mismatch')
+            self.alias_to(service, vid, canonical)
+
     def process(self, vid):
+        # archive.lock excludes another process using this state directory; this
+        # atomic reservation excludes duplicate submissions by concurrent lanes.
+        with self.lock:
+            if vid in self.reserved_sources:
+                return
+            self.reserved_sources.add(vid)
+        try:
+            return self._process(vid)
+        finally:
+            with self.lock:
+                self.reserved_sources.remove(vid)
+
+    def _process(self, vid):
         if self.stop.is_set() or self.owner_stop.is_set():
             return
         buffer = None
+        content_lock = None
         try:
             service = get_drive_service()
             # Allow slow chunk responses without reducing TLS/security checks.
@@ -584,11 +725,33 @@ class Archive:
             if http is not None:
                 http.timeout = 180
             row = dict(self.state['items'][vid])
+            if row['status'] == 'aliased':
+                self.alias_to(service, vid, self.state['items'][row['canonical_video_id']])
+                return
+            # Reuse already proven content before any source request. Never
+            # abandon a reserved/in-flight Drive ID; reconcile it first.
+            canonical = self.exact_canonical(row)
+            if canonical and not row.get('drive_file_id'):
+                self.alias_to(service, vid, canonical)
+                return
             if row.get('restricted'):
                 raise SourceUnavailable('Inventory marks this episode restricted; no access attempt')
             parent = self.media_folder(service, row)
             self.patch(vid, drive_parent_id=parent)
             fid = row.get('drive_file_id')
+            if not fid:
+                # A receipt may have been interrupted before ledger adoption.
+                q = ("'" + parent + "' in parents and trashed=false and "
+                     "appProperties has { key='scrapper_account' and value='" + self.channel + "' } and "
+                     "appProperties has { key='scrapper_video' and value='" + vid + "' }")
+                found = service.files().list(q=q, pageSize=100,
+                    fields='incompleteSearch,nextPageToken,files(id)',
+                    includeItemsFromAllDrives=True, **ALL).execute()
+                if found.get('incompleteSearch') or found.get('nextPageToken') or len(found.get('files', [])) > 1:
+                    raise ValueError('Ambiguous video identity search')
+                if found.get('files'):
+                    fid = found['files'][0]['id']
+                    self.patch(vid, drive_file_id=fid)
             if fid:
                 try:
                     meta = remote(service, fid)
@@ -599,7 +762,13 @@ class Archive:
                     verify_identity(meta, parent, self.props(vid))
                     if int(meta.get('size', 0)):
                         verify_receipt(meta, row, parent, self.props(vid))
-                        self.patch(vid, status='uploaded', error=None, verified_at=now())
+                        self.patch(vid, status='uploaded', error=None, verified_at=now(),
+                                   remote_sha256_verified=meta.get('sha256Checksum') == row.get('sha256'))
+                        return
+                    # A durable empty reservation survives interruption. Keep
+                    # it for reconciliation, but do not resend proven content.
+                    if canonical:
+                        self.alias_to(service, vid, canonical, reserved_id=fid)
                         return
             self.patch(vid, status='extracting', error=None)
             info = self.metadata(row)
@@ -617,9 +786,27 @@ class Archive:
             buffer = collect_pipe(cmd, json.dumps(info).encode(), self.args.max_video_bytes, self.stop,
                                   progress=lambda size: self.patch(vid, in_memory_bytes=size,
                                                                   transfer_updated_at=now()))
-            validation = validate_buffer(buffer, float(info['duration']))
+            # Only identity-checked TikTok series may prove a source audio tail.
+            # YouTube and ordinary source duration failures retain the strict gate.
+            source_url = info.get('url') if self.platform == 'tiktok' and row.get('series_id') else None
+            validation = validate_buffer(buffer, float(info['duration']), source_url)
             self.patch(vid, status='validated', **validation)
             row = dict(self.state['items'][vid])
+            # Serialize identical validated buffers until the canonical upload
+            # has a verified receipt; different content keeps parallel lanes.
+            with self.lock:
+                content_lock = self.content_locks.setdefault(
+                    (row['sha256'], row['file_size']), threading.Lock())
+            content_lock.acquire()
+            if self.stop.is_set():
+                return
+            canonical = self.exact_canonical(row)
+            if canonical:
+                # A saved ID was checked as empty above, and this process owns
+                # the archive lock. Retain its provenance without another send.
+                self.alias_to(service, vid, canonical, reserved_id=fid)
+                self.manifest(service, force=False)
+                return
             if not fid:
                 # Reconcile identity-marked files before reserving a new ID.
                 q = ("'" + parent + "' in parents and trashed=false and "
@@ -661,7 +848,7 @@ class Archive:
             values = {'error': safe_error(exc), 'recovery': kind}
             if kind in ('transient', 'rate_limited'):
                 values['transient_attempts'] = self.state['items'][vid].get('transient_attempts', 0) + 1
-            if self.state['items'][vid]['status'] != 'uploaded':
+            if self.state['items'][vid]['status'] not in ('uploaded', 'aliased'):
                 values['status'] = 'interrupted' if kind == 'cancelled' else 'failed'
             self.patch(vid, **values)
             with self.lock:
@@ -673,6 +860,8 @@ class Archive:
         finally:
             if buffer is not None:
                 buffer.close()
+            if content_lock is not None:
+                content_lock.release()
 
     def wait_cooldown(self, seconds, reason):
         deadline = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=seconds)
@@ -711,7 +900,7 @@ class Archive:
         """Bounded batches permit adaptive concurrency and resumable cooldowns."""
         concurrency = self.args.concurrency
         while not self.owner_stop.is_set():
-            pending = [vid for vid in target if self.state['items'][vid]['status'] not in ('uploaded', 'unavailable')]
+            pending = [vid for vid in target if self.state['items'][vid]['status'] not in ('uploaded', 'aliased', 'unavailable')]
             if not pending:
                 return []
             self.state.update(active_concurrency=concurrency, status='running')
@@ -751,7 +940,7 @@ class Archive:
         return []
 
     def run(self):
-        pending = [vid for vid, row in self.state['items'].items() if row['status'] not in ('uploaded', 'unavailable')]
+        pending = [vid for vid, row in self.state['items'].items() if row['status'] not in ('uploaded', 'aliased', 'unavailable')]
         if self.args.max_videos:
             pending = pending[:self.args.max_videos]
         self.state.update(status='running', started_at=now())
@@ -771,6 +960,7 @@ class Archive:
         def prepare():
             service = get_drive_service()
             self.folder(service)
+            self.verify_aliases(service)
             self.manifest(service)
             return service
         if self.owner_stop.is_set():
