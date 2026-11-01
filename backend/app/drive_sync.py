@@ -282,6 +282,11 @@ def sync_drive_to_queue(
     else:
         targets.append((folder_id, default_pipeline or parent_name))
 
+    # A section with its own profile (DramaRama, The ICK Room): every video in its folder, series
+    # subfolders included, goes to that section's queue and schedule (owner, 2026-11-01).
+    from .social.queue_manager import OWN_PROFILES
+    section = next((name for name in OWN_PROFILES if name.lower() == parent_name.strip().lower()), None)
+
     from sqlalchemy import func
     # New imports go to the back of the posting order.
     next_position = db_session.query(func.max(QueueItem.position)).scalar() or 0
@@ -298,6 +303,7 @@ def sync_drive_to_queue(
       for fid, channel_name in targets:
           control.check()
           control.progress(f"scanning {channel_name}")
+          pipeline = section or channel_name
           video_query = (
               f"'{fid}' in parents and trashed = false and "
               f"(mimeType contains 'video/' or name contains '.mp4' or name contains '.mov' or name contains '.webm')"
@@ -340,7 +346,7 @@ def sync_drive_to_queue(
                   db_session.query(QueueItem)
                   .filter(
                       (QueueItem.drive_link == web_link) |
-                      ((QueueItem.video_name == name) & (QueueItem.pipeline == channel_name))
+                      ((QueueItem.video_name == name) & (QueueItem.pipeline == pipeline))
                   )
                   .first()
               )
@@ -358,7 +364,7 @@ def sync_drive_to_queue(
               next_position += 1
 
               new_item = QueueItem(
-                  pipeline=channel_name,
+                  pipeline=pipeline,
                   video_name=name,
                   drive_link=web_link,
                   thumb_path=thumb,
@@ -368,7 +374,7 @@ def sync_drive_to_queue(
                   tags=tags,
                   status=item_status,
                   position=next_position,
-                  accounts=_default_destination(channel_name),   # owner (2026-10-14): new Shorts post to the connected channels
+                  accounts=_default_destination(pipeline),   # owner (2026-10-14): new Shorts post to the connected channels
               )
               db_session.add(new_item)
               new_rows.append(new_item)

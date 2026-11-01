@@ -48,3 +48,20 @@ def test_channel_sync_imports_all_pages_as_review_and_deduplicates(session, monk
     repeated = drive_sync.sync_drive_to_queue('parent', 'Movie Clips', False, session)
     assert repeated['added'] == 0 and repeated['skipped'] == 2
     assert [row.id for row in session.query(QueueItem).order_by(QueueItem.position)] == ids
+
+
+class DramaRamaDrive(ChannelDrive):
+    def get(self, **kwargs):
+        return Reply(lambda: {'name': 'DramaRama'})
+
+
+def test_every_video_in_the_dramarama_folder_goes_to_dramarama(session, monkeypatch):
+    monkeypatch.setattr(drive_sync, 'get_drive_service', DramaRamaDrive)
+    monkeypatch.setattr(drive_sync, '_default_destination',
+                        lambda pipeline=None: ['Dramarama:*'] if pipeline == 'DramaRama' else ['Cinama:*'])
+    result = drive_sync.sync_drive_to_queue('parent', None, False, session)
+    assert result['added'] == 2
+    rows = session.query(QueueItem).all()
+    assert all(r.pipeline == 'DramaRama' and r.accounts == ['Dramarama:*'] and r.status == 'review' for r in rows)
+    assert all(r.source == 'DramaRama / Fixture channel' for r in rows)        # the series name is kept
+    assert drive_sync.sync_drive_to_queue('parent', None, False, session)['added'] == 0
