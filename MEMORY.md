@@ -25,6 +25,14 @@ AI SEO button on a DramaRama row would today use the movie-clip/TMDB recipe).
   not touched). Re-import verified live: +137 new (folder still filling: new series "The Wife They Cast Aside" 52, Christmas
   Home for Dad +85), 381 skipped, 0 duplicates → 518 rows, all DramaRama / Needs Review / Dramarama:*.
   Still open: no automatic Drive re-import exists (imports run when started); approval to post; titles; episode order.
+- 2026-11-01 sync check (owner: "make sure all social pilot posters are in sync"): re-imported the 3 source folders.
+  Shorts = Shared Drive 1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY (confirmed: 4035 skipped) → +17 new (Needs Review). CONFIG.md's
+  1_VLh… and DrivePanel's default 1kuOKRQQ… are NOT the live Shorts folder (doc/UI drift, not fixed yet).
+  Ick Room 1Gv9u… → +979 from a NEW subfolder "TonightsConversation" (full TC YouTube videos, 2022+), ids 5417–6395, all
+  The ICK Room / Needs Review / TheIckRoom:* — owner to confirm they belong; the scheduler will auto-start Ick Room SEO
+  on them (~$1). DramaRama: 518, 8 series, episodes parse cleanly (EPnnn); the 2nd "Divorced Today" folder looks like a
+  re-upload of the same series (EP02–71, other Spanish title). Server import history read was denied (prod-read rule).
+  Proposed (awaiting owner): auto-import every 2 days in the app scheduler; DramaRama series posting plan.
 
 ## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
 memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
