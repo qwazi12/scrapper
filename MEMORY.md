@@ -1,5 +1,38 @@
 # Scrapper Memory
 
+## Full episodic archive running — Oct 31 (latest)
+
+The entire accessible catalogue is now inventoried:208series,12,171unique
+canonical video IDs, zero duplicate IDs and zero missing episode slots. Fresh
+independent per-series checkpoint checks confirm exact1..Nepisode coverage for
+all208series. No content-access restrictions were marked by the inventory;
+individual later source/transfer access can still fail and must remain explicit.
+
+Actual two-worker archive is RUNNING: PID77089, caffeinate77090, archive runtime
+commit22bfec2. Inventory PID75429 finished normally; the one-shot handoff validated
+full identity/coverage and executed the worker. Source folder10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b
+is under The Ick Room, with independently identified series subfolders. First
+sample: Divorced Today, Heir to Billions, episode1of71, Spanish version titled
+Divorciada hoy, heredera de millones EP01. Source series7702915133831566344,
+video7702925760046042388. Pilot upload is adopted as already uploaded; the bulk
+worker started with that one success and downloaded other IDs, not the pilot.
+
+Live snapshot 2026-11-01T01:03:29.995173+00:00: {'discovered': 12171, 'downloaded': 12, 'uploaded': 11, 'failed': 0, 'skipped': 0, 'remaining': 12160, 'uploaded_bytes': 65013521}; status=running, errors=None. These are time-specific progress counts, not completion.
+Independent fresh cloud checks of the pilot and four bulk-uploaded episodes verify
+actual Drive parent/series/video identity, byte size, MD5 and SHA256. The actual
+root manifest is uploaded (5857289bytes) and holds the complete inventory;
+worker writes verify its checksum. Current source contains zero local video,
+audio or partial media files. Existing Tonight's Conversation worker63531 was
+not restarted or interrupted.
+
+Archive configuration remains2workers/128MiB each (256MiB raw media cap), with
+bounded automatic timeout/plain-rate-limit recovery and no verification/DRM/
+quota/access bypass. Authoritative progress is ledger.json plus durable receipts;
+pipeline-state now confirms bulk_running, not the earlier waiting state. All
+metadata/runtime receipts are private ignored artifacts. MEMORY/code/tests are
+committed and pushed; no app deployment, queue, Ready, scheduling or publishing.
+No all-videos-uploaded claim: the remaining files continue in the background.
+
 ## Episodic grouping confirmed; actual Drive pilot verified — Oct 31
 
 Owner clarified that @dramamodeonxprime_mx is organized as series with episodes.
