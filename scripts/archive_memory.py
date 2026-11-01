@@ -527,19 +527,16 @@ class Archive:
             return fid
 
     def metadata(self, row):
-        client = ([str(Path(__file__).with_name('tiktok_access.py'))] if self.platform == 'tiktok'
-                  else ['-m', 'yt_dlp'])
-        cmd = [str(self.args.ytdlp_python), *client, '--ignore-config', '--no-cache-dir',
-               '--no-playlist', '--dump-single-json', '--skip-download', '--no-progress',
-               '--socket-timeout', '25', '--extractor-retries', '0', '--retries', '1',
-               '--sleep-requests', '1', '--format', self.format, '--format-sort', 'res:1080']
-        if self.args.brave_profile:
-            cmd += ['--cookies-from-browser', 'brave:' + str(self.args.brave_profile)]
-        for name in ('deno', 'node', 'bun'):
-            if shutil.which(name):
-                cmd += ['--js-runtimes', name + ':' + shutil.which(name)]
-                break
-        cmd += [row['original_url']]
+        if self.platform == 'tiktok' and row.get('series_id'):
+            if not self.args.brave_profile:
+                raise ValueError('Normal owner browser profile is required for this series archive')
+            cmd = [str(self.args.ytdlp_python), str(Path(__file__).with_name('tiktok_drama_metadata.py')),
+                   '--video-id', row['video_id'], '--series-id', row['series_id'],
+                   '--episode-number', str(row['episode_number']), '--uid', self.account_id,
+                   '--channel-id', self.channel, '--handle', self.handle,
+                   '--brave-profile', str(self.args.brave_profile)]
+        else:
+            cmd = self.page_metadata_command(row)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
         if result.returncode:
             if self.platform == 'tiktok' and any(t in result.stderr.lower() for t in (
@@ -559,6 +556,22 @@ class Archive:
         if info.get('has_drm'):
             raise ValueError('DRM content cannot be archived')
         return info
+
+    def page_metadata_command(self, row):
+        client = ([str(Path(__file__).with_name('tiktok_access.py'))] if self.platform == 'tiktok'
+                  else ['-m', 'yt_dlp'])
+        cmd = [str(self.args.ytdlp_python), *client, '--ignore-config', '--no-cache-dir',
+               '--no-playlist', '--dump-single-json', '--skip-download', '--no-progress',
+               '--socket-timeout', '25', '--extractor-retries', '0', '--retries', '1',
+               '--sleep-requests', '1', '--format', self.format, '--format-sort', 'res:1080']
+        if self.args.brave_profile:
+            cmd += ['--cookies-from-browser', 'brave:' + str(self.args.brave_profile)]
+        for name in ('deno', 'node', 'bun'):
+            if shutil.which(name):
+                cmd += ['--js-runtimes', name + ':' + shutil.which(name)]
+                break
+        cmd += [row['original_url']]
+        return cmd
 
     def process(self, vid):
         if self.stop.is_set() or self.owner_stop.is_set():

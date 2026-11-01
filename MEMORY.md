@@ -1,5 +1,41 @@
 # Scrapper Memory
 
+## DramaRama relocation verified; series-player metadata repair — Oct 31
+
+The owner-renamed/moved DramaRama folder remains10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b,
+now directly under shared Drive root0AJrfdFAM4T9iUk9PVA. Destination overrides,
+ledger and launch arguments preserve this standalone location and actual name;
+do not restore the old Ick Room parent. Series/episode grouping stays intact.
+
+Controlled resume actually uploaded and verified both interrupted Sunblade
+episodes32and35. All154prior completed ledger IDs stayed uploaded; total156,
+800,793,884bytes. Full continuation PID96526 then stopped on the existing
+verification-or-missing-page-metadata guard for episode36. Do not call this
+confirmed bot detection: normal owner Brave playback independently worked at
+00:03/01:06 with no login/CAPTCHA/purchase prompt. Canonical video URLs can redirect
+to TikTok's Short dramas player, whose metadata the regular video-page parser
+cannot read. No challenge was solved and no access protection was disabled.
+
+The same normal web episode API already used for complete inventory returned
+that exact episode, UID/secUID, series ID and episode number, status0. Added a
+series-specific metadata client using that endpoint as its normal source route;
+ordinary posts keep the challenge-disabled page client. API access/unknown/risk
+statuses, wrong author/video/series/episode, private/paid/DRM entries stop.
+Normal yt-dlp web-format parsing selects available source formats; actual output
+resolution is recorded, not presumed1080p. The episode36metadata proof selected
+576x1024/66s; full-media validation/upload remains required before success.
+Signed media URLs remain only in RAM/stdout pipes, never in saved manifests.
+Forty-four focused checks pass, including source command dispatch and refusal
+of verification/unknown status, mismatched identity/sequence and paid content.
+Tests use mocked external services; normal browser/API proof is separate actual
+read-only evidence at normal-drama-api-metadata-proof.json.
+
+Next controlled resume uses two pending episodes with this series-aware route,
+then continues the full archive only if both uploads validate and all156prior
+completed IDs remain successful. No user login action is currently indicated by
+the normal browser; if the real endpoint refuses later, stop and report it.
+No unrelated worker, app deployment, queue or publication change.
+
 ## Owner moved archive to standalone DramaRama — Oct 31 (latest)
 
 Owner moved the existing drama source folder OUT of The Ick Room and renamed it

@@ -9,6 +9,7 @@ import pytest
 from scripts import archive_memory as archive
 from scripts.inventory_tiktok_drama import coverage, episode
 from scripts import inventory_tiktok_drama as drama_inventory
+from scripts.tiktok_drama_metadata import checked_episode
 
 UID = '7641470747051525128'
 SEC = 'MS4wLjABAAAA' + 'a' * 65
@@ -122,19 +123,61 @@ def test_restricted_episode_skipped_without_source_request(tmp_path, monkeypatch
 
 def test_guarded_client_and_source_identity_checked(tmp_path, monkeypatch):
     task = job(tmp_path)
+    row = dict(task.state['items'][VID])
+    row.pop('series_id')  # ordinary TikTok posts retain the guarded page client
     info = {'id': VID, 'channel_id': SEC, 'uploader_id': UID, 'uploader': HANDLE,
             'duration': 90}
     run = MagicMock(return_value=SimpleNamespace(returncode=0, stdout=json.dumps(info)))
     monkeypatch.setattr(archive.subprocess, 'run', run)
-    assert task.metadata(task.state['items'][VID])['id'] == VID
+    assert task.metadata(row)['id'] == VID
     command = run.call_args.args[0]
     assert command[0] == '/venv/bin/python' and command[1].endswith('/tiktok_access.py')
     assert 'b[ext=mp4]/b' in command and '--no-cache-dir' in command
     info['uploader_id'] = '7650000000000000000'
     run.return_value.stdout = json.dumps(info)
     with pytest.raises(ValueError, match='uploader identity'):
-        task.metadata(task.state['items'][VID])
+        task.metadata(row)
     task.lock_file.close()
+
+
+def test_series_metadata_uses_normal_episode_api_command(tmp_path, monkeypatch):
+    task = job(tmp_path)
+    task.args.brave_profile = '/test-owner-profile'
+    info = {'id': VID, 'channel_id': SEC, 'uploader_id': UID, 'uploader': HANDLE, 'duration': 90}
+    run = MagicMock(return_value=SimpleNamespace(returncode=0, stdout=json.dumps(info)))
+    monkeypatch.setattr(archive.subprocess, 'run', run)
+    assert task.metadata(task.state['items'][VID])['id'] == VID
+    cmd = run.call_args.args[0]
+    assert cmd[1].endswith('/tiktok_drama_metadata.py')
+    assert cmd[cmd.index('--series-id') + 1] == SERIES['id']
+    assert cmd[cmd.index('--episode-number') + 1] == '1'
+    assert cmd[cmd.index('--brave-profile') + 1] == '/test-owner-profile'
+    task.lock_file.close()
+
+
+def test_normal_episode_api_refuses_access_status_wrong_identity_and_paid_content():
+    source = SimpleNamespace(video_id=VID, series_id=SERIES['id'], episode_number=1,
+                             uid=UID, channel_id=SEC, handle=HANDLE)
+    raw = {'id': VID, 'author': {'id': UID, 'secUid': SEC, 'uniqueId': HANDLE},
+           'dramaInfo': {'dramaID': SERIES['id'], 'authorUID': UID,
+                         'DramaVideoData': {'EpisodeNumber': 1}}, 'video': {'duration': 90}}
+    assert checked_episode({'statusCode': 0, 'itemList': [raw]}, source) is raw
+    for status in (10113, 10114, 401, 403, 10101):
+        with pytest.raises(ValueError, match='refused'):
+            checked_episode({'statusCode': status, 'itemList': [raw]}, source)
+    with pytest.raises(ValueError, match='identity'):
+        checked_episode({'statusCode': 0, 'itemList': []}, source)
+    raw['isPaidContent'] = True
+    with pytest.raises(ValueError, match='Paid/DRM'):
+        checked_episode({'statusCode': 0, 'itemList': [raw]}, source)
+    raw.pop('isPaidContent')
+    raw['dramaInfo']['DramaVideoData']['EpisodeNumber'] = 2
+    with pytest.raises(ValueError, match='sequence'):
+        checked_episode({'statusCode': 0, 'itemList': [raw]}, source)
+    raw['dramaInfo']['DramaVideoData']['EpisodeNumber'] = 1
+    raw['author']['id'] = 'wrong-source'
+    with pytest.raises(ValueError, match='identity'):
+        checked_episode({'statusCode': 0, 'itemList': [raw]}, source)
 
 
 def test_episode_inventory_whitelists_metadata_and_checks_coverage():
