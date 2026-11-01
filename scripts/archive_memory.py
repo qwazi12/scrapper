@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Archive an inventoried YouTube Shorts channel using bounded RAM, not media files.
+"""Archive an inventoried YouTube/TikTok source using bounded RAM, not media files.
 
 Uses the existing Drive credential. No queue, scheduling or publishing APIs.
 Only metadata/receipts are persisted. Completed Drive IDs survive interruptions;
@@ -52,6 +52,46 @@ def atomic_json(path, data):
         os.fsync(f.fileno())
     tmp.chmod(0o600)
     tmp.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+class SourceUnavailable(ValueError):
+    """A specific removed/private/paid source; log and continue without unlocking."""
+
+
+def source_contract(inventory):
+    platform = inventory.get('platform', 'youtube')
+    channel = inventory['channel_id']
+    if platform == 'youtube':
+        valid = bool(re.fullmatch(r'UC[\w-]{22}', channel))
+        pattern = r'[\w-]{11}'
+    elif platform == 'tiktok':
+        valid = (bool(re.fullmatch(r'MS4wLjABAAAA[A-Za-z0-9_-]{20,150}', channel)) and
+                 bool(re.fullmatch(r'\d{19}', inventory.get('account_id', ''))) and
+                 bool(re.fullmatch(r'[A-Za-z0-9_.]{1,30}', inventory.get('handle', ''))))
+        pattern = r'\d{19}'
+    else:
+        raise ValueError('Unsupported archive platform')
+    if not inventory.get('complete') or not valid:
+        raise ValueError('A complete canonical channel inventory is required')
+    ids = [e['id'] for e in inventory['items']]
+    if not ids or len(ids) != len(set(ids)) or any(not re.fullmatch(pattern, v) for v in ids):
+        raise ValueError('Invalid or duplicate inventory IDs')
+    return platform
+
+
+def source_row(inventory, entry, platform):
+    vid = entry['id']
+    url = ('https://www.youtube.com/shorts/' + vid if platform == 'youtube' else
+           f"https://www.tiktok.com/@{inventory['handle']}/video/{vid}")
+    return {**{k: entry[k] for k in ('series_id', 'series_title', 'episode_number',
+                                     'source_preview_flag', 'source_limited_free_flag',
+                                     'restricted') if k in entry},
+            'video_id': vid, 'title': entry['title'], 'original_url': url, 'status': 'discovered'}
 
 
 def apply_destination(state, args, channel, root):
@@ -325,26 +365,41 @@ class Archive:
         self.owner_stop = threading.Event()
         inventory = json.loads(args.inventory.read_text())
         self.channel = inventory['channel_id']
-        if not inventory.get('complete') or not re.fullmatch(r'UC[\w-]{22}', self.channel):
-            raise ValueError('A complete canonical channel inventory is required')
-        ids = [e['id'] for e in inventory['items']]
-        if not ids or len(ids) != len(set(ids)) or any(not re.fullmatch(r'[\w-]{11}', v) for v in ids):
-            raise ValueError('Invalid or duplicate inventory IDs')
+        self.platform = source_contract(inventory)
+        self.account_id, self.handle = inventory.get('account_id'), inventory.get('handle')
+        self.format = 'b[ext=mp4]/b' if self.platform == 'tiktok' else FORMAT
+        self.last_snapshot, self.last_manifest = 0, 0
+        self.rows_root = self.root / 'receipts'
+        self.journal = len(inventory['items']) >= 1000 or self.rows_root.exists()
+        if self.journal:
+            self.rows_root.mkdir(mode=0o700, exist_ok=True)
         path = self.root / 'ledger.json'
         self.state = json.loads(path.read_text()) if path.exists() else {
             'created_at': now(), 'source_url': inventory['webpage_url'],
-            'channel_id': self.channel, 'inventory_complete': True, 'folder_name': args.folder_name,
+            'channel_id': self.channel, 'platform': self.platform,
+            'account_id': self.account_id, 'handle': self.handle,
+            'inventory_complete': True, 'folder_name': args.folder_name,
+            'inventory_coverage': {k: inventory[k] for k in ('series_count', 'listed_episode_slots',
+                'missing_episode_slots', 'all_episode_slots_present', 'cross_series_duplicate_ids') if k in inventory},
             'parent_id': args.parent_id, 'scope': 'Archive only; no queue, scheduling or publishing',
             'media_storage': 'Bounded memory and pipes only; no local media files',
-            'items': {e['id']: {'video_id': e['id'], 'title': e['title'],
-                       'original_url': 'https://www.youtube.com/shorts/' + e['id'],
-                       'status': 'discovered'} for e in inventory['items']}}
+            'items': {e['id']: source_row(inventory, e, self.platform) for e in inventory['items']}}
         apply_destination(self.state, args, self.channel, self.root)
-        if self.state['channel_id'] != self.channel or self.state['parent_id'] != args.parent_id:
+        if (self.state['channel_id'] != self.channel or self.state['parent_id'] != args.parent_id or
+                self.state.get('platform', 'youtube') != self.platform or
+                self.state.get('account_id') != self.account_id):
             raise ValueError('Ledger does not match requested channel/parent')
         for e in inventory['items']:
-            self.state['items'].setdefault(e['id'], {'video_id': e['id'], 'title': e['title'],
-                'original_url': 'https://www.youtube.com/shorts/' + e['id'], 'status': 'discovered'})
+            self.state['items'].setdefault(e['id'], source_row(inventory, e, self.platform))
+        if self.journal:
+            for receipt in self.rows_root.glob('*.json'):
+                data = json.loads(receipt.read_text())
+                vid, row = receipt.stem, data['row']
+                if (data['channel_id'] != self.channel or data['platform'] != self.platform or
+                        vid not in self.state['items'] or row.get('video_id') != vid or
+                        row.get('original_url') != self.state['items'][vid]['original_url']):
+                    raise ValueError('Durable row receipt identity mismatch')
+                self.state['items'][vid] = row
         self.state.update(pid=os.getpid(), status='preflight', error=None,
                           concurrency=args.concurrency, max_video_bytes=args.max_video_bytes)
         self.save()
@@ -352,22 +407,30 @@ class Archive:
     def counts(self):
         items = list(self.state['items'].values())
         uploaded = [r for r in items if r['status'] == 'uploaded']
+        skipped = sum(r['status'] == 'unavailable' for r in items)
         return {'discovered': len(items), 'downloaded': sum(bool(r.get('sha256')) for r in items),
                 'uploaded': len(uploaded), 'failed': sum(r['status'] == 'failed' for r in items),
-                'remaining': len(items) - len(uploaded),
+                'skipped': skipped, 'remaining': len(items) - len(uploaded) - skipped,
                 'uploaded_bytes': sum(r.get('file_size', 0) for r in uploaded)}
 
-    def save(self):
+    def save(self, force=True):
         self.state.update(counts=self.counts(), updated_at=now())
+        if getattr(self, 'journal', False) and not force and time.monotonic() - self.last_snapshot < 10:
+            return
         atomic_json(self.root / 'ledger.json', self.state)
+        self.last_snapshot = time.monotonic()
 
     def patch(self, vid, **values):
         with self.lock:
             self.state['items'][vid].update(values)
-            self.save()
+            if getattr(self, 'journal', False):
+                atomic_json(self.rows_root / (vid + '.json'), {
+                    'channel_id': self.channel, 'platform': self.platform,
+                    'row': self.state['items'][vid]})
+            self.save(force=False)
 
     def props(self, vid):
-        return {'scrapper_platform': 'youtube', 'scrapper_account': self.channel, 'scrapper_video': vid}
+        return {'scrapper_platform': self.platform, 'scrapper_account': self.channel, 'scrapper_video': vid}
 
     def folder(self, service):
         if not self.state.get('folder_id'):
@@ -395,15 +458,17 @@ class Archive:
         self.state['folder_url'] = 'https://drive.google.com/drive/folders/' + fid
         self.save()
 
-    def manifest(self, service):
+    def manifest(self, service, force=True):
         with self.manifest_lock:
+            if self.journal and not force and time.monotonic() - self.last_manifest < 60:
+                return
             with self.lock:
                 if not self.state.get('manifest_id'):
                     self.state['manifest_id'] = service.files().generateIds(count=1, space='drive', type='files').execute()['ids'][0]
                     self.save()
                 mid = self.state['manifest_id']
                 data = json.dumps(self.state, ensure_ascii=False, indent=2).encode()
-            props = {'scrapper_archive_manifest': 'youtube:' + self.channel}
+            props = {'scrapper_archive_manifest': self.platform + ':' + self.channel}
             try:
                 m = remote(service, mid)
             except HttpError as exc:
@@ -419,12 +484,55 @@ class Archive:
             m = remote(service, mid)
             if m.get('md5Checksum') != hashlib.md5(data).hexdigest():
                 raise ValueError('Manifest upload checksum mismatch')
+            self.last_manifest = time.monotonic()
+
+    def media_folder(self, service, row):
+        """Preserve TikTok's series grouping with independently marked folders."""
+        sid = row.get('series_id')
+        if not sid:
+            return self.state['folder_id']
+        if self.platform != 'tiktok' or not re.fullmatch(r'\d{19}', sid):
+            raise ValueError('Invalid series folder identity')
+        props = {'scrapper_archive_channel': self.channel, 'scrapper_archive_series': sid}
+        with self.lock:
+            series = self.state.setdefault('series_folders', {})
+            if sid not in series:
+                q = ("'" + self.state['folder_id'] + "' in parents and trashed=false and "
+                     "appProperties has { key='scrapper_archive_series' and value='" + sid + "' }")
+                result = service.files().list(q=q, pageSize=100,
+                    fields='incompleteSearch,nextPageToken,files(id)',
+                    includeItemsFromAllDrives=True, **ALL).execute()
+                if result.get('incompleteSearch') or result.get('nextPageToken') or len(result.get('files', [])) > 1:
+                    raise ValueError('Ambiguous series folder search')
+                fid = (result['files'][0]['id'] if result.get('files') else
+                       service.files().generateIds(count=1, space='drive', type='files').execute()['ids'][0])
+                name = re.sub(r'[^\w .()-]', '_', row['series_title'])[:140].strip() + ' [' + sid + ']'
+                series[sid] = {'folder_id': fid, 'name': name, 'title': row['series_title']}
+                self.save()  # reserve identity durably before any cloud creation
+            entry = series[sid]
+            fid = entry['folder_id']
+            try:
+                folder = remote(service, fid)
+            except HttpError as exc:
+                if exc.resp.status != 404:
+                    raise
+                service.files().create(body={'id': fid, 'name': entry['name'],
+                    'mimeType': 'application/vnd.google-apps.folder',
+                    'parents': [self.state['folder_id']], 'appProperties': props},
+                    fields='id', **ALL).execute()
+                folder = remote(service, fid)
+            verify_identity(folder, self.state['folder_id'], props)
+            if folder.get('mimeType') != 'application/vnd.google-apps.folder':
+                raise ValueError('Series destination is not a folder')
+            return fid
 
     def metadata(self, row):
-        cmd = [str(self.args.ytdlp_python), '-m', 'yt_dlp', '--ignore-config', '--no-cache-dir',
+        client = ([str(Path(__file__).with_name('tiktok_access.py'))] if self.platform == 'tiktok'
+                  else ['-m', 'yt_dlp'])
+        cmd = [str(self.args.ytdlp_python), *client, '--ignore-config', '--no-cache-dir',
                '--no-playlist', '--dump-single-json', '--skip-download', '--no-progress',
                '--socket-timeout', '25', '--extractor-retries', '0', '--retries', '1',
-               '--sleep-requests', '1', '--format', FORMAT, '--format-sort', 'res:1080']
+               '--sleep-requests', '1', '--format', self.format, '--format-sort', 'res:1080']
         if self.args.brave_profile:
             cmd += ['--cookies-from-browser', 'brave:' + str(self.args.brave_profile)]
         for name in ('deno', 'node', 'bun'):
@@ -434,12 +542,20 @@ class Archive:
         cmd += [row['original_url']]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
         if result.returncode:
+            if self.platform == 'tiktok' and any(t in result.stderr.lower() for t in (
+                    'this video is private', 'video not available', 'video has been removed',
+                    'paid content is not supported')):
+                raise SourceUnavailable(safe_error(result.stderr))
             raise RuntimeError(safe_error(result.stderr))
         info = json.loads(result.stdout)
         if info.get('id') != row['video_id'] or info.get('channel_id') != self.channel:
             raise ValueError('Source identity mismatch')
-        if info.get('is_live') or not 0 < float(info.get('duration') or 0) <= 1200:
-            raise ValueError('Unexpected live/unbounded source in Shorts archive')
+        if self.platform == 'tiktok' and (info.get('uploader_id') != self.account_id or
+                                         info.get('uploader') != self.handle):
+            raise ValueError('TikTok uploader identity mismatch')
+        maximum = 7200 if self.platform == 'tiktok' else 1200
+        if info.get('is_live') or not 0 < float(info.get('duration') or 0) <= maximum:
+            raise ValueError('Unexpected live/unbounded archive source')
         if info.get('has_drm'):
             raise ValueError('DRM content cannot be archived')
         return info
@@ -455,6 +571,10 @@ class Archive:
             if http is not None:
                 http.timeout = 180
             row = dict(self.state['items'][vid])
+            if row.get('restricted'):
+                raise SourceUnavailable('Inventory marks this episode restricted; no access attempt')
+            parent = self.media_folder(service, row)
+            self.patch(vid, drive_parent_id=parent)
             fid = row.get('drive_file_id')
             if fid:
                 try:
@@ -463,9 +583,9 @@ class Archive:
                     if exc.resp.status != 404:
                         raise
                 else:
-                    verify_identity(meta, self.state['folder_id'], self.props(vid))
+                    verify_identity(meta, parent, self.props(vid))
                     if int(meta.get('size', 0)):
-                        verify_receipt(meta, row, self.state['folder_id'], self.props(vid))
+                        verify_receipt(meta, row, parent, self.props(vid))
                         self.patch(vid, status='uploaded', error=None, verified_at=now())
                         return
             self.patch(vid, status='extracting', error=None)
@@ -477,7 +597,7 @@ class Archive:
             cmd = [str(self.args.ytdlp_python), '-m', 'yt_dlp', '--ignore-config', '--no-cache-dir',
                 '--load-info-json', '-', '--no-simulate', '--no-playlist', '--quiet', '--no-progress',
                 '--no-part', '--retries', '1', '--socket-timeout', '25', '--downloader', 'ffmpeg',
-                '--format', FORMAT, '--format-sort', 'res:1080',
+                '--format', self.format, '--format-sort', 'res:1080',
                 '--downloader-args', 'ffmpeg_i:-rw_timeout 25000000',
                 '--downloader-args', 'ffmpeg_o:-f mp4 -movflags frag_keyframe+empty_moov+default_base_moof',
                 '--output', '-']
@@ -489,7 +609,7 @@ class Archive:
             row = dict(self.state['items'][vid])
             if not fid:
                 # Reconcile identity-marked files before reserving a new ID.
-                q = ("'" + self.state['folder_id'] + "' in parents and trashed=false and "
+                q = ("'" + parent + "' in parents and trashed=false and "
                      "appProperties has { key='scrapper_account' and value='" + self.channel + "' } and "
                      "appProperties has { key='scrapper_video' and value='" + vid + "' }")
                 found = service.files().list(q=q, pageSize=100, fields='incompleteSearch,nextPageToken,files(id)',
@@ -504,19 +624,24 @@ class Archive:
             except HttpError as exc:
                 if exc.resp.status != 404:
                     raise
-                name = (info.get('upload_date') or 'undated') + '_' + re.sub(r'[^\w .()-]', '_', info['title'])[:120].strip() + '_' + vid + '.mp4'
+                label = (f"{row['series_title']}_EP{row['episode_number']:03d}_" if row.get('series_id') else '')
+                name = ((info.get('upload_date') or 'undated') + '_' +
+                        re.sub(r'[^\w .()-]', '_', label + info['title'])[:160].strip() + '_' + vid + '.mp4')
                 self.patch(vid, drive_filename=name)
                 service.files().create(body={'id': fid, 'name': name, 'mimeType': 'video/mp4',
-                    'parents': [self.state['folder_id']], 'appProperties': self.props(vid)}, fields='id', **ALL).execute()
+                    'parents': [parent], 'appProperties': self.props(vid)}, fields='id', **ALL).execute()
             self.patch(vid, status='uploading')
-            receipt = upload_buffer(service, fid, buffer, row, self.state['folder_id'], self.props(vid), self.stop)
+            receipt = upload_buffer(service, fid, buffer, row, parent, self.props(vid), self.stop)
             self.patch(vid, status='uploaded', error=None, verified_at=now(),
                        transient_attempts=0,
                        remote_sha256_verified=receipt.get('sha256Checksum') == row['sha256'])
             buffer.close()
             buffer = None
-            self.manifest(service)
+            self.manifest(service, force=False)
             print(json.dumps({'verified_video_id': vid, 'counts': self.counts()}), flush=True)
+        except SourceUnavailable as exc:
+            self.patch(vid, status='unavailable', error=safe_error(exc), recovery='skip_restricted')
+            print(json.dumps({'unavailable_video_id': vid, 'reason': safe_error(exc)}), flush=True)
         except Exception as exc:
             kind = failure_kind(exc)
             self.stop.set()
@@ -573,7 +698,7 @@ class Archive:
         """Bounded batches permit adaptive concurrency and resumable cooldowns."""
         concurrency = self.args.concurrency
         while not self.owner_stop.is_set():
-            pending = [vid for vid in target if self.state['items'][vid]['status'] != 'uploaded']
+            pending = [vid for vid in target if self.state['items'][vid]['status'] not in ('uploaded', 'unavailable')]
             if not pending:
                 return []
             self.state.update(active_concurrency=concurrency, status='running')
@@ -613,7 +738,7 @@ class Archive:
         return []
 
     def run(self):
-        pending = [vid for vid, row in self.state['items'].items() if row['status'] != 'uploaded']
+        pending = [vid for vid, row in self.state['items'].items() if row['status'] not in ('uploaded', 'unavailable')]
         if self.args.max_videos:
             pending = pending[:self.args.max_videos]
         self.state.update(status='running', started_at=now())
@@ -643,6 +768,9 @@ class Archive:
         errors = self.drain(pending)
         final_status = 'blocked' if errors else ('complete' if not self.counts()['remaining'] else
                        'stopped' if self.owner_stop.is_set() else 'partial')
+        if final_status == 'complete' and (self.counts()['skipped'] or
+                self.state.get('inventory_coverage', {}).get('missing_episode_slots')):
+            final_status = 'complete_with_unavailable'
         def finalize():
             self.state.update(status=final_status, finished_at=now())
             self.save()

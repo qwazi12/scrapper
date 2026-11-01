@@ -1,12 +1,51 @@
 # Scrapper Memory
 
-## New @dramamodeonxprime_mx source: verified sample, routing pending — Oct 31, 20:34 ET
+## @dramamodeonxprime_mx: The Ick Room, grouped by series — Oct 31
 
-Owner requested all videos from https://www.tiktok.com/@dramamodeonxprime_mx.
-Asked via asynchronous question which holding space: Movie Clips or The Ick Room.
-No answer yet. Do not claim a bulk archive or Drive upload has started for this
-source: uploaded count is zero, no destination folder created, no worker launched.
-The source's source-folder destination must follow the owner's answer.
+Owner explicitly answered **The Ick Room**, then clarified these are series with
+ordered episodes. Preserve this layout:
+The Ick Room / dramamodeonxprime_mx / series title [canonical series ID] /
+numbered episode + original video ID.mp4. Same-title translations/versions retain
+separate series IDs. Archive only: no queue, Ready, scheduling or publication.
+No local media: bounded RAM and pipes; only metadata, receipts and source code
+persist locally. Existing Tonight's Conversation worker63531 remains running.
+
+Independent visible-browser enumeration found208series/12,171episode slots.
+The ordinary signed-in read-only web catalogue API independently returned the
+same208IDs: sum1597282445069100272820, xor734514817695798, same12,171slots.
+The web client's public source documents drama_list and episode/item_list;
+these normal endpoints now yield canonical episode IDs with original UID,
+secUID, series ID and episode-number verification. No device/signature rotation,
+challenge solver, paywall unlocking or access-control changes. One10101response
+was identified in TikTok's public enum as ServerErrorNot500; another request500
+was a normal server fault. Both recovered through ordinary access. The resumed
+inventory uses bounded1/3/9-minute recovery for server/network faults and longer
+plain429cooldowns; verification/login/risk/unknown responses stop. Source
+metadata flags IsPreview/isLimitedFree are retained without claiming access to
+paid/unserved originals. Missing slots/restricted entries remain explicit.
+
+Inventory is still IN PROGRESS; last observation54series/3,470unique IDs,
+no missing slots among completed series. This is not a download count.
+No new source folder or Drive upload yet. Full inventory and transfer launch
+must be verified before reporting downloading. Private state lives in
+artifacts/dramamodeonxprime-mx-20261031. Current inventory PID75429; exact latest
+launch/progress/log files are authoritative, not this historical snapshot.
+
+Implemented/tested reusable TikTok support in scripts/archive_memory.py:
+challenge-disabled client, uploader+canonical-ID checks, series subfolders,
+per-video durable reserved Drive IDs, size/MD5/SHA256/full-decode validation,
+restricted-item accounting, and no local video files. Large inventories use
+fsynced per-video receipts plus10-second full snapshots, rather than rewriting
+all12Krows on every byte-progress update. Manifest checkpoints at most once per
+minute plus forced startup/final snapshots. Restart merges durable receipts
+before reconciliation; uploaded IDs are never intentionally redownloaded.
+Thirty-eight focused tests pass: cloud faults are mocked; synthetic FFmpeg
+decoding is real. Live source/Drive transfer remains a separate required check.
+Planned new source cap2workers x128MiB=256MiB raw buffers, alongside the existing
+YouTube4x256MiB=1GiB. Mac showed33%memory free/124GiBdisk free; videos still stay
+in RAM. The Ick Room shared Drive folder independently permits children; the
+service-account user quota reports0but shared-pool free capacity is not exposed.
+The single-sample library estimate is about93.1GB, approximate, not a quota claim.
 
 Normal signed-in Brave profile is accessible: DramaModeOnxPrime, about163.7K
 followers/2.5M likes. This is TikTok's Short dramas catalogue. Profile pagination
@@ -44,11 +83,10 @@ validation; no local video file and no Drive upload. First-sample extrapolation
 for12,171slots is about93.1GB, only a rough estimate, not a storage guarantee.
 No metadata URLs with signed CDN query strings/cookies were saved or committed.
 
-Next required work: obtain holding-space answer, map the full catalogue to unique
-canonical video IDs using ordinary accessible links/metadata, retain series/episode
-identity, then reuse memory-only verified/deduplicated uploads. Existing
-scripts/archive_memory.py is currently YouTube-specific; extend/test TikTok
-identity/format handling before reuse rather than feeding episode routes to it.
+Next required work: finish the full episode-ID inventory, independently verify
+coverage, then launch and verify actual series-organized Drive uploads. TikTok
+transfer support is now tested locally; do not feed unsupported episode routes
+to the downloader or claim enumeration means completed uploads.
 Do not bypass DRM, paid episodes, login/CAPTCHA or other restrictions. Do not
 misrepresent the one-item incomplete inventory.json as the complete account.
 
