@@ -1,5 +1,6 @@
 """Source identity, crash recovery and inventory coverage; external services mocked."""
 import json
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -7,6 +8,7 @@ import pytest
 
 from scripts import archive_memory as archive
 from scripts.inventory_tiktok_drama import coverage, episode
+from scripts import inventory_tiktok_drama as drama_inventory
 
 UID = '7641470747051525128'
 SEC = 'MS4wLjABAAAA' + 'a' * 65
@@ -150,3 +152,59 @@ def test_episode_inventory_whitelists_metadata_and_checks_coverage():
     item['author']['id'] = 'wrong-source'
     with pytest.raises(ValueError, match='identity'):
         episode(item, SERIES, UID, SEC, HANDLE)
+
+
+def test_inventory_paginates_recovers_and_reuses_completed_series(tmp_path, monkeypatch):
+    """Fake API/network/time, real durable metadata writes; no live extraction."""
+    calls, sleeps = [], []
+    def item(vid, number):
+        return {'id': vid, 'desc': f'Episode {number}',
+                'author': {'id': UID, 'secUid': SEC, 'uniqueId': HANDLE},
+                'dramaInfo': {'dramaID': SERIES['id'], 'authorUID': UID,
+                              'DramaVideoData': {'EpisodeNumber': number}},
+                'video': {'duration': 90}}
+    def fetch(url, _name, *, query, headers):
+        calls.append((url, query, headers))
+        if 'user/drama_list' in url:
+            return {'statusCode': 0, 'hasMore': False, 'dramaList': [{
+                'dramaID': SERIES['id'], 'dramaName': SERIES['title'], 'numVideos': 2}]}
+        count = sum('episode/item_list' in c[0] for c in calls)
+        if count == 1:
+            return {'statusCode': 10101}  # public ServerErrorNot500
+        if query['cursor'] == '0':
+            return {'statusCode': 0, 'hasMore': True, 'cursor': '1', 'itemList': [item(VID, 1)]}
+        assert query['cursor'] == '1'
+        return {'statusCode': 0, 'hasMore': False, 'cursor': '2',
+                'itemList': [item(str(int(VID) + 1), 2)]}
+    downloader = MagicMock()
+    downloader.__enter__.return_value.get_info_extractor.return_value._download_json.side_effect = fetch
+    monkeypatch.setitem(sys.modules, 'tiktok_access', SimpleNamespace())
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=lambda _: downloader))
+    monkeypatch.setattr(drama_inventory.time, 'sleep', sleeps.append)
+    monkeypatch.setattr(sys, 'argv', ['inventory', '--state-dir', str(tmp_path),
+        '--handle', HANDLE, '--uid', UID, '--sec-uid', SEC, '--brave-profile', '/test-owner-profile'])
+    drama_inventory.main()
+    result = json.loads((tmp_path / 'inventory.json').read_text())
+    assert result['complete'] and result['all_episode_slots_present']
+    assert [i['episode_number'] for i in result['items']] == [1, 2]
+    assert result['listed_episode_slots'] == 2 and 60 in sleeps
+    assert all(c[2]['Referer'] == 'https://www.tiktok.com/@' + HANDLE for c in calls)
+    calls.clear()
+    drama_inventory.main()
+    assert calls == []  # completed series checkpoints do not enumerate again
+
+
+def test_inventory_verification_status_stops_without_auto_retry(tmp_path, monkeypatch):
+    downloader = MagicMock()
+    request = downloader.__enter__.return_value.get_info_extractor.return_value._download_json
+    request.return_value = {'statusCode': 10113}  # SharkSlide, never solve/retry
+    sleeps = []
+    monkeypatch.setitem(sys.modules, 'tiktok_access', SimpleNamespace())
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=lambda _: downloader))
+    monkeypatch.setattr(drama_inventory.time, 'sleep', sleeps.append)
+    monkeypatch.setattr(sys, 'argv', ['inventory', '--state-dir', str(tmp_path),
+        '--handle', HANDLE, '--uid', UID, '--sec-uid', SEC, '--brave-profile', '/test-owner-profile'])
+    with pytest.raises(ValueError, match='10113'):
+        drama_inventory.main()
+    assert request.call_count == 1 and sleeps == [1]
+    assert not (tmp_path / 'inventory.json').exists()
