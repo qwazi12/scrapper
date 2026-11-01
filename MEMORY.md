@@ -8,6 +8,10 @@ Owner answers: own new Upload-Post profile; videos from a Drive folder (link to 
 2. Frontend: tab "🎭 DramaRama" after The ICK Room; own queue view + schedule; target picker shows only DramaRama.
 3. Tests → full suite → tsc → commit → push when idle → verify live → log here.
 Owner: create the Upload-Post profile named exactly `DramaRama` and connect its accounts; send the Drive folder link.
+DONE 2026-10-31 (85bba52, live on Railway + Vercel): +1 test, full suite 918 passed / 1 skipped, tsc clean.
+Verified live: /api/schedule lists DramaRama (default 1/day); trying to point an Ick Room row at DramaRama:facebook → 400.
+Pending: owner creates profile `DramaRama` on Upload-Post + sends the Drive folder; SEO style still to decide (the manual
+AI SEO button on a DramaRama row would today use the movie-clip/TMDB recipe).
 
 ## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
 memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
