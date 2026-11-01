@@ -1217,20 +1217,20 @@ def test_ick_room_is_its_own_queue_with_its_own_schedule(session, client):
 
 # --- DramaRama posts only to its own profile, like The ICK Room (owner, 2026-10-31) --------
 def test_dramarama_ick_room_and_clips_never_share_profiles(session, client, monkeypatch):
-    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama", "DramaRama", "TheIckRoom"])
+    monkeypatch.setattr(qm, "connected_profiles", lambda: ["Cinama", "Dramarama", "TheIckRoom"])
     assert qm.default_destination() == ["Cinama:*"]
-    assert qm.default_destination(pipeline=qm.DRAMARAMA) == ["DramaRama:*"]
+    assert qm.default_destination(pipeline=qm.DRAMARAMA) == ["Dramarama:*"]
     assert qm.default_destination(pipeline=qm.ICK_ROOM) == ["TheIckRoom:*"]
-    (drama,) = add(session, 1, "Movie Clips / DramaRama", accounts=["DramaRama:*"])
+    (drama,) = add(session, 1, "Movie Clips / DramaRama", accounts=["Dramarama:*"])
     (clip,) = add(session, 1, accounts=["Cinama:*"])
     for bad in (["TheIckRoom:facebook"], ["Cinama:youtube"]):
         r = client.patch(f"/api/queue/{drama.id}", json={"accounts": bad})
         assert r.status_code == 400 and "DramaRama posts only to its own profile" in r.json()["detail"]
-    assert client.patch(f"/api/queue/{clip.id}", json={"accounts": ["DramaRama:facebook"]}).status_code == 400
+    assert client.patch(f"/api/queue/{clip.id}", json={"accounts": ["Dramarama:facebook"]}).status_code == 400
     assert qm.pipeline_group(drama) == qm.DRAMARAMA
     assert client.patch(f"/api/queue/{clip.id}", json={"pipeline": qm.DRAMARAMA}).status_code == 200
     session.refresh(clip)
-    assert clip.accounts == ["DramaRama:*"]
+    assert clip.accounts == ["Dramarama:*"]
     sched = client.get("/api/schedule").json()
     assert qm.DRAMARAMA in sched["pipeline_next_slots"] and qm.DRAMARAMA in sched["pipeline_slots_per_day"]
 

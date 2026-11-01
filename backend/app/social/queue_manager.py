@@ -762,7 +762,7 @@ ICK_ROOM = "The ICK Room"
 ICK_ROOM_PROFILES = {"TheIckRoom"}
 # "DramaRama" works the same way with its own profile (owner, 2026-10-31).
 DRAMARAMA = "DramaRama"
-DRAMARAMA_PROFILES = {"DramaRama"}
+DRAMARAMA_PROFILES = {"Dramarama"}   # the Upload-Post profile name, exactly
 OWN_PROFILES = {ICK_ROOM: ICK_ROOM_PROFILES, DRAMARAMA: DRAMARAMA_PROFILES}   # section -> the only profiles it uses
 LOCKED_PROFILES = ICK_ROOM_PROFILES | DRAMARAMA_PROFILES                     # never used by any other queue
 

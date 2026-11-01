@@ -13,7 +13,7 @@ import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 const QUEUE_BLOCKED_PROFILES = ["mk"];
 // The ICK Room posts only to its own profile, and nothing else posts there (owner, 2026-10-31).
 const ICK_ROOM_PROFILES = ["TheIckRoom"];
-const DRAMARAMA_PROFILES = ["DramaRama"];   // DramaRama works the same way (owner, 2026-10-31)
+const DRAMARAMA_PROFILES = ["Dramarama"];     // DramaRama works the same way (owner, 2026-10-31)
 // Posted videos: shown together in "✓ Posted Archive", never in "All Items".
 const DONE = ["posted", "archived"];
 import { UndoButton } from "./UndoButton";
