@@ -1,5 +1,65 @@
 # Scrapper Memory
 
+## New @dramamodeonxprime_mx source: verified sample, routing pending — Oct 31, 20:34 ET
+
+Owner requested all videos from https://www.tiktok.com/@dramamodeonxprime_mx.
+Asked via asynchronous question which holding space: Movie Clips or The Ick Room.
+No answer yet. Do not claim a bulk archive or Drive upload has started for this
+source: uploaded count is zero, no destination folder created, no worker launched.
+The source's source-folder destination must follow the owner's answer.
+
+Normal signed-in Brave profile is accessible: DramaModeOnxPrime, about163.7K
+followers/2.5M likes. This is TikTok's Short dramas catalogue. Profile pagination
+through the visible Short dramas tab reached208series cards totaling12,171listed
+episode slots and stayed at208on repeated bottom scroll. These are visible card
+and slot counts, NOT deduplicated canonical video IDs; language versions and
+similarly named series must be resolved. Full canonical episode inventory is
+INCOMPLETE. Retained Brave source tab1253640247 at catalogue bottom; CUA runtime
+finalDramaSeries has208public title/count rows, dramaObserved has first15episode
+URLs. Browser tab marked for workflow handoff. Temporary episode tab0248 closed.
+
+The stock handle extractor incorrectly reports no posted videos; the stock
+shortdrama episode URL is unsupported, consistent with open upstream issues
+https://github.com/yt-dlp/yt-dlp/issues/17725 and /17207. A normal stock
+`tiktokuser:channel_id` attempt using the identified source ID returned empty JSON;
+no repeated API probing, device/account rotation or access bypass. Public oEmbed
+also rejects the shortdrama URL with400. Standard HTTPS verification stayed on;
+certifi was used for the standalone oEmbed request. No new auth grants/purchases.
+
+Working path independently VERIFIED: normal browser Share -> Embed exposes the
+canonical ordinary video URL for the currently displayed episode. Reading the
+embed code is not embedding/publishing it or accepting its embedding terms.
+Episode1 of series7702915133831566344 is actual video7702925760046042388:
+https://www.tiktok.com/@dramamodeonxprime_mx/video/7702925760046042388
+Account UID7641470747051525128; secUID
+MS4wLjABAAAA0EwRXSbSv0u2_fP_qadEAOBfcAM9UF-NN8fNZWgxQqr8NoR-aYfFuL7mBZoIRl_1.
+Normal signed-in playback of episodes1 and71 was verified; episode71 played
+33.4s/85.3s, no observed purchase or verification prompt. This proves those two
+samples' access, not access or rights for every episode in the catalogue.
+
+Actual sample download succeeded through the existing challenge-disabled TikTok
+client and memory-only ffmpeg pipe:7,652,297bytes,1080x1920,video92.75s/audio92.924s,
+complete decode passed; SHA256ad85434c9a2ec79f0b2e63d8f359c3dd629f2753ed76e40d44ff9ce160ed5bc0. RAM buffer was discarded after
+validation; no local video file and no Drive upload. First-sample extrapolation
+for12,171slots is about93.1GB, only a rough estimate, not a storage guarantee.
+No metadata URLs with signed CDN query strings/cookies were saved or committed.
+
+Next required work: obtain holding-space answer, map the full catalogue to unique
+canonical video IDs using ordinary accessible links/metadata, retain series/episode
+identity, then reuse memory-only verified/deduplicated uploads. Existing
+scripts/archive_memory.py is currently YouTube-specific; extend/test TikTok
+identity/format handling before reuse rather than feeding episode routes to it.
+Do not bypass DRM, paid episodes, login/CAPTCHA or other restrictions. Do not
+misrepresent the one-item incomplete inventory.json as the complete account.
+
+Private metadata evidence: artifacts/dramamodeonxprime-mx-20261031/context.json,
+catalog-summary.json, inventory.json (complete=false), inventory-attempt.json,
+episode-extractor-preflight.json, canonical-video-preflight.json,
+canonical-inventory-attempt.json and actual-memory-transfer-preflight.json.
+Existing Tonight's Conversation worker63531 was left untouched. At2026-10-31T20:34:29.442823-04:00 it was
+alive=True,status=running,counts={'discovered': 979, 'downloaded': 102, 'uploaded': 102, 'failed': 0, 'remaining': 877, 'uploaded_bytes': 5111390431},error=None.
+No application source/deploy/queue/publication changes in this new-source preflight.
+
 ## Current Ick Room layout and four-worker recovery run — Oct 31, 19:40 ET
 
 Each account/source has its own folder inside the selected holding space:
