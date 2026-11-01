@@ -24,6 +24,12 @@ Progress 2026-10-31:
   If step 6 happens the whole volume moves to the Mac, so Railway clean-up is moot; owner to decide.
 - 5/6 waiting on owner: Mac → public HTTPS needs a tunnel; nodepilot.dev DNS is on Vercel (not Cloudflare); no cloudflared or
   tailscale installed. Mac: 125 GB free, sleep already prevented, Docker installed.
+- 6 DROPPED by owner (2026-10-31). Owner's alternative "post from Drive links" also NOT built: measured posting uploads
+  ≈ 10 GB/month ≈ $0.50 (Shorts ~10 MB×8/day, Ick ~53 MB×1/day, LongForm ~50 MB×2/day, Countdowns ~100 MB×1/day est.)
+  — ~5% of the 182 GB; not worth making files public-by-link. Likely cause of egress = old 20 s queue reload (fixed in 1).
+- PENDING CHECK 2026-11-02/03: measure egress since deployment 4c9218a3 (live 2026-10-31 23:29 UTC; it keeps HTTP logs):
+  Railway egress graph flat? which endpoints send the most bytes? Report numbers to owner, then fix what's left.
+  Steps 4 (actual deletion) and 5 (backups off) were tied to the Mac move — re-confirm with owner before doing either.
 
 ## PLAN — 2026-10-31 (night) — AI SEO for The ICK Room, styled on @TonightsConversation (owner asked; in progress)
 Today Ick Room rows have filename titles + "#shorts #movieclips"; the AI SEO path looks clips up on TMDB (movies) — wrong here.
