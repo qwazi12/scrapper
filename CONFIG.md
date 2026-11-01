@@ -96,6 +96,7 @@ This document defines all configuration options, environment variables, default 
 | `studio_projects.review` | DB column | — | `{auto, reviewed_at, score}` |
 | Check thresholds | `studio/candidates.py` constants | release: current month forward, ≤15 days ago, ≤90 days ahead; popularity 20 / 100K views / IMDb rank 1000 |
 | The ICK Room queue | `queue_manager.ICK_ROOM` / `ICK_ROOM_PROFILES` | pipeline "The ICK Room" → profile `TheIckRoom` | Own SocialPilot tab + schedule; its rows post only to `TheIckRoom`, and that profile is never a default or allowed for any other queue (refused on edit/bulk, stripped at startup and at posting) |
+| Cinama 8/day | `queue_manager.SHARED_SLOTS` = `{"Movie Clips": "Countdowns"}` | Shorts 08/10/12/17/19/22 ET, Countdowns 12, LongForm 15/20 | A Shorts slot at the time a countdown holds is left to the countdown: 6 Shorts + 2 LongForm, or 5 + 2 + 1 countdown |
 | DramaRama queue | `queue_manager.DRAMARAMA` / `DRAMARAMA_PROFILES` (`OWN_PROFILES`) | pipeline "DramaRama" → profile `Dramarama` | Own SocialPilot tab + schedule, locked exactly like The ICK Room; no automatic SEO (owner: decide later) |
 | Studio Architecture | `StudioPanel.tsx` vs `CountdownsStudioPanel.tsx` | LongForm Studio (Trailer Breakdowns) and Countdowns Studio (Top 5 / Top 10) are separate standalone studios |
 | Auto steps | `runner.start(..., until="plan")` | steps 1–5 | Stops before render for review |

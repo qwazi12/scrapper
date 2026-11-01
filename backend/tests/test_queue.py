@@ -1018,6 +1018,24 @@ def test_per_platform_daily_numbers(session, reset_schedule, monkeypatch, tmp_pa
     assert sent[-3:] == [["youtube"], ["facebook"], ["instagram"]]
 
 
+def test_a_countdown_takes_the_shorts_slot_at_its_time(session, reset_schedule, monkeypatch):
+    """Owner, 2026-11-01: Cinama posts 8 a day — 6 Shorts + 2 LongForm, or 5 Shorts + 2 LongForm + 1 countdown."""
+    cfg = qm.load_schedule(session)
+    shorts = ["08:00", "10:00", "12:00", "17:00", "19:00", "22:00"]
+    qm.save_schedule(session, {**cfg, "timezone": "America/New_York", "pipelines": {
+        "Movie Clips": {"platforms": {n: shorts for n in ("youtube", "facebook", "instagram")}},
+        "Countdowns": {"times": ["12:00"], "platforms": {n: ["12:00"] for n in ("youtube", "facebook", "instagram")}}}})
+    now = et(2026, 11, 2, 7)
+    clips = add(session, 6, accounts=["Cinama:*"])
+    qm.plan_schedule(session, now)
+    assert [c.scheduled_at.replace(tzinfo=UTC).astimezone(ET).hour for c in clips] == [8, 10, 12, 17, 19, 22]
+    (cd,) = add(session, 1, source="Countdowns", accounts=["Cinama:*"])
+    qm.plan_schedule(session, now)
+    assert cd.scheduled_at.replace(tzinfo=UTC).astimezone(ET) == et(2026, 11, 2, 12)
+    hours = [(c.scheduled_at.replace(tzinfo=UTC).astimezone(ET).day, c.scheduled_at.replace(tzinfo=UTC).astimezone(ET).hour)
+             for c in clips]
+    assert hours == [(2, 8), (2, 10), (2, 17), (2, 19), (2, 22), (3, 8)]     # 12:00 left to the countdown
+
 def test_platforms_with_their_own_times(session, reset_schedule, monkeypatch, tmp_path):
     """YouTube keeps 11:00 and 19:00; Facebook/Instagram post at 8:00, 12:40, 17:20, 22:00."""
     import asyncio

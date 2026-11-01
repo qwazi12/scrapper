@@ -505,6 +505,11 @@ def has_video_source(item: QueueItem) -> bool:
     return bool(item.video_path or item.media_files or item.compilation_id or item.clip_id or item.drive_link or item.media_url)
 
 
+# Cinama gets 8 posts a day in all (owner, 2026-11-01): 6 Shorts + 2 LongForm, or 5 Shorts + 2 LongForm + 1 countdown
+# on a day a countdown is ready. A Shorts slot at the same time as a slot a countdown holds is left to the countdown.
+SHARED_SLOTS = {"Movie Clips": "Countdowns"}   # queue -> the queue that takes its slot when both want it
+
+
 def plan_schedule(s: Session, now: datetime.datetime) -> int:
     """Give every Ready item a slot: per pipeline, in posting order, one item
     per slot. Items already due keep their slot; items with no accounts picked
@@ -570,7 +575,16 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             return (3, abs(days), pos)
         return (2, pos)
 
-    for group, items in groups.items():
+    def taken_by(owner: str) -> set:
+        """Slots the owner queue holds (a planned, posting or posted video)."""
+        s.flush()                                  # the owner's slots planned just above
+        return {_aware(at) for (at,) in s.query(QueueItem.scheduled_at)
+                .filter(QueueItem.pipeline == owner, QueueItem.scheduled_at.isnot(None))
+                .filter(QueueItem.status.in_(["ready", "posting", "posted", "retry", "error", "archived"]))}
+
+    # Queues that give way to another plan last, once the other's slots are known.
+    for group, items in sorted(groups.items(), key=lambda g: g[0] in SHARED_SLOTS):
+        taken = taken_by(SHARED_SLOTS[group]) if group in SHARED_SLOTS else set()
         if group == "LongForm" or any(bool(momentum.extract_release_date(it, session=s)) for it in items):
             items.sort(key=_momentum_order_key)
 
@@ -584,6 +598,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             slots = slots_after(now, want, pipeline=group, accounts=primary_accs)
             if cur is not None and group not in due_groups and not slot_used(group, cur):
                 slots = [cur] + slots
+            slots = [x for x in slots if x not in taken]
             left = list(items)
             plan: dict[int, datetime.datetime] = {}
             for slot in slots:
@@ -600,9 +615,10 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
                     it.scheduled_at = slot
                     changed += 1
             continue
-        slots = slots_after(now, len(items), pipeline=group, accounts=primary_accs)
+        slots = slots_after(now, len(items) + len(taken), pipeline=group, accounts=primary_accs)
         if cur is not None and group not in due_groups and not slot_used(group, cur):
             slots = [cur] + slots[:-1] if slots else [cur]
+        slots = [x for x in slots if x not in taken]
         for it, slot in zip(items, slots):
             if _aware(it.scheduled_at) != slot:
                 it.scheduled_at = slot
