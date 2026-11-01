@@ -55,6 +55,7 @@ This document defines all configuration options, environment variables, default 
 |---|---|---|
 | Service Account Credentials | `SERVICE_ACCOUNT_JSON` or `/data/service_account.json` | Google Cloud Service Account for Drive API operations. |
 | LongForm Studio Folder | `14z17C-cYIqUK8teqeOOVtnITx0GHHl8E` (or `LONGFORM_DRIVE_FOLDER_ID`) | Target folder in Google Shared Drive for rendered breakdowns and database backup `.db.gz` files. |
+| LongForm / Countdowns subfolders | `drive_store.LONGFORM_SUBFOLDER` = `LongForm`, `COUNTDOWN_SUBFOLDER` = `Countdowns` (inside LongForm Studio) | Studio saves: breakdowns → LongForm Studio/LongForm; countdown segments → LongForm Studio/Countdowns (with the finished compilations). Found by name, made if missing. |
 | Movie Clips Parent Folder | `1_VLhKfSEYZFyPBXi7kYu4uw94JUronDP` | Parent directory for channel subfolders in SocialPilot Google Drive sync. |
 
 ---

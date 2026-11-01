@@ -23,6 +23,10 @@ from . import runner
 logger = logging.getLogger("scrapper.studio.drive")
 
 FOLDER_NAME = "LongForm Studio"
+# Inside it (owner, 2026-11-01): breakdowns go in "LongForm"; countdown segments go in "Countdowns",
+# beside the finished countdown compilations.
+LONGFORM_SUBFOLDER = "LongForm"
+COUNTDOWN_SUBFOLDER = "Countdowns"
 YOUTUBE_FOLDER = "1_VLhKfSEYZFyPBXi7kYu4uw94JUronDP"  # parent of Movie Clips
 CHUNK = 8 * 1024 * 1024
 ALL = {"supportsAllDrives": True}
@@ -57,6 +61,19 @@ def folder_id(service) -> str:
     made = service.files().create(body={"name": FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder",
                                         "parents": [YOUTUBE_FOLDER]}, fields="id", **ALL).execute()
     logbus.log("info", "longform_drive_folder", f"Created Drive folder '{FOLDER_NAME}'")
+    return made["id"]
+
+
+def subfolder(service, parent: str, name: str) -> str:
+    """The folder `name` inside `parent` (made if missing)."""
+    q = (f"name = '{name}' and '{parent}' in parents and "
+         "mimeType = 'application/vnd.google-apps.folder' and trashed = false")
+    found = service.files().list(q=q, fields="files(id)", includeItemsFromAllDrives=True, **ALL).execute()
+    if found.get("files"):
+        return found["files"][0]["id"]
+    made = service.files().create(body={"name": name, "mimeType": "application/vnd.google-apps.folder",
+                                        "parents": [parent]}, fields="id", **ALL).execute()
+    logbus.log("info", "longform_drive_folder", f"Created Drive folder '{FOLDER_NAME}/{name}'")
     return made["id"]
 
 
@@ -112,6 +129,8 @@ def save(project_id: int) -> dict[str, Any]:
             s.commit()
             title = _safe_name(p.title)
             rendered_at = p.render.get("rendered_at") or ""
+            from .membership import countdown_ids, is_countdown
+            sub = COUNTDOWN_SUBFOLDER if is_countdown(p, countdown_ids(s)) else LONGFORM_SUBFOLDER
             from ..publication_journal import identity
             receipt_resource = f"StudioProject:{identity(p)}"
 
@@ -134,6 +153,7 @@ def save(project_id: int) -> dict[str, Any]:
                     "inside a Shared Drive. Fix: in Google Drive → Shared drives → New, add "
                     "omnistream-bot@manhwa-engine.iam.gserviceaccount.com as Content manager, then move the "
                     "\"LongForm Studio\" folder into it (the folder ID stays the same). Then press Retry.")
+            parent = subfolder(service, parent, sub)
             stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
             from ..delivery_archive import record_transfer, transfer_scope
             with transfer_scope(receipt_resource, project_id):
@@ -169,7 +189,7 @@ def save(project_id: int) -> dict[str, Any]:
             s.commit()
         # Keep prior versions. A successful new render is not a byte-identical
         # alternate copy of an older export, even when no queue row uses it.
-        logbus.log("info", "longform_drive_saved", f"Studio #{project_id}: saved to Drive '{FOLDER_NAME}'",
+        logbus.log("info", "longform_drive_saved", f"Studio #{project_id}: saved to Drive '{FOLDER_NAME}/{sub}'",
                    project=project_id, link=info["link"])
         try:
             from .archive import free_footage

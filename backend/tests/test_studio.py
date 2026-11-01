@@ -466,6 +466,12 @@ class _SharedDriveSvc:
                     def execute(self):
                         return {"name": "LongForm Studio", "driveId": "D"}
                 return R()
+
+            def list(self, q, **kw):
+                class R:
+                    def execute(self):
+                        return {"files": [{"id": q.split("'")[1] + "-in-" + q.split("'")[3]}]}   # "<name>-in-<parent>"
+                return R()
         return F()
 
 
@@ -505,8 +511,29 @@ def test_drive_save_uploads_and_links_queue_item(session, monkeypatch, tmp_path)
     info = drive_store.save(p.id)
     session.expire_all()
     assert info["status"] == "saved" and info["rendered_at"] == "r1" and len(uploaded) == 2
-    assert all(parent == "FOLDER" for parent, _ in uploaded) and uploaded[0][1].startswith("Send Help — Trailer Breakdown")
+    assert all(parent == "LongForm-in-FOLDER" for parent, _ in uploaded) and uploaded[0][1].startswith("Send Help — Trailer Breakdown")
     assert session.get(QueueItem, item.id).drive_link == "https://drive/1"
+    assert info["folder_id"] == "LongForm-in-FOLDER"
+
+
+def test_countdown_segment_saves_into_the_countdowns_folder(session, monkeypatch, tmp_path):
+    """Owner, 2026-11-01: countdown work goes in LongForm Studio/Countdowns, breakdowns in LongForm Studio/LongForm."""
+    from backend.app import drive_sync
+    from backend.app.models import StudioProject
+    from backend.app.studio import drive_store, runner as srunner
+
+    monkeypatch.setattr(srunner, "project_dir", lambda pid: tmp_path)
+    (tmp_path / "final.mp4").write_bytes(b"x" * 10)
+    p = StudioProject(tmdb_id=1, title="Seg", render={"file": "final.mp4", "rendered_at": "r1"},
+                      facts={"origin": "countdown"})
+    session.add(p)
+    session.commit()
+    uploaded = []
+    monkeypatch.setattr(drive_sync, "get_drive_service", lambda: _SharedDriveSvc())
+    monkeypatch.setattr(drive_store, "folder_id", lambda svc: "FOLDER")
+    monkeypatch.setattr(drive_store, "_upload", lambda svc, path, parent, name: (
+        uploaded.append(parent) or {"id": "v", "webViewLink": "https://drive/v", "verification": _copy_proof(path, "v")}))
+    assert drive_store.save(p.id)["folder_id"] == "Countdowns-in-FOLDER" and uploaded == ["Countdowns-in-FOLDER"]
 
 
 def test_drive_save_failure_keeps_reason(session, monkeypatch, tmp_path):
@@ -735,6 +762,9 @@ def test_drive_uploads_to_shared_drive_folder(session, monkeypatch, tmp_path):
                     result={'name':'LongForm Studio','driveId':'SD1'} if kw['fileId']=='F' else {'id':'uploaded_123','size':'1','md5Checksum':'9dd4e461268c8034f5c8564e155c67a6'}
                     return type('R',(),{'execute':lambda self:result})()
 
+                def list(self, **kw):   # the "LongForm" subfolder already exists
+                    return type('R',(),{'execute':lambda self:{'files':[{'id':'LF'}]}})()
+
                 def create(self, **kw):
                     done = (None, {"id": "uploaded_123", "webViewLink": "https://drive.google.com/file/d/uploaded_123"})
                     return type("R", (), {"next_chunk": lambda self: done})()
@@ -744,6 +774,7 @@ def test_drive_uploads_to_shared_drive_folder(session, monkeypatch, tmp_path):
     monkeypatch.setattr(drive_store, "folder_id", lambda svc: "F")
     result = drive_store.save(p.id)
     assert result["link"] == "https://drive.google.com/file/d/uploaded_123"
+    assert result["folder_id"] == "LF"
 
 
 def test_select_and_generate_three_thumbnails(session, tmp_path, monkeypatch):
