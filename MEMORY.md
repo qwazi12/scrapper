@@ -33,6 +33,11 @@ AI SEO button on a DramaRama row would today use the movie-clip/TMDB recipe).
   on them (~$1). DramaRama: 518, 8 series, episodes parse cleanly (EPnnn); the 2nd "Divorced Today" folder looks like a
   re-upload of the same series (EP02–71, other Spanish title). Server import history read was denied (prod-read rule).
   Proposed (awaiting owner): auto-import every 2 days in the app scheduler; DramaRama series posting plan.
+- 2026-11-01 owner: countdown things → the Countdowns folder, LongForm videos → new "LongForm" subfolder. 931971b (live
+  14:07 UTC): drive_store.save puts breakdowns in LongForm Studio/LongForm and countdown segments (membership.is_countdown)
+  in LongForm Studio/Countdowns (compilations already went there). Folders found by name inside LongForm Studio, made if
+  missing — not yet confirmed against the owner's new folder (no Drive access from here). Old files NOT moved (asked).
+  +1 test, suite 920 passed. Pushed after the 979-row Ick Room auto-SEO finished (979/979, 0 failed).
 
 ## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
 memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
