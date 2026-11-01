@@ -77,8 +77,8 @@ def choose(baseline, seven, eight):
                 eight['rates']['total_MB_per_second'] >= seven['rates']['total_MB_per_second'] * .90):
             best = eight
     if (baseline['rates']['total_videos_per_minute'] > 0 and
-            best['rates']['total_videos_per_minute'] < baseline['rates']['total_videos_per_minute'] * .90):
-        return 6, 'Higher concurrency reduced verified throughput against the recent six-worker baseline.'
+            best['rates']['total_videos_per_minute'] < baseline['rates']['total_videos_per_minute'] * 1.10):
+        return 6, 'Higher concurrency did not show a material gain over the recent six-worker baseline; keep fewer workers.'
     return best['total_workers'], ('Eight delivered a clear gain without reducing Tonight throughput or transfer volume.'
                                   if best['total_workers'] == 8 else
                                   'Seven is the healthier/lower-resource result; eight did not show a clear usable gain.')

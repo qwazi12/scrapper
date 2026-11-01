@@ -1,5 +1,42 @@
 # Scrapper Memory
 
+## Real 7/8-worker benchmark complete: keep6 — November 1 (latest)
+
+Owner requested actual7and8tests and selection of the best. Completed two equal
+20-minute prospective windows after 60 s warm-up, advancing the actual archives.
+Recent6-worker retrospective baseline: 80 verified files/20 min,4.00/min, no measured
+recoveries. 7-worker cap: 82 files,4.10/min,2 network/server recoveries.8-worker cap:
+59 files,2.95/min,1 HTTP 500recovery. Seven's 2.5%gain was too small to justify the
+extra worker/recovery; eight was slower. Selected and restored **2 DramaRama + 4 Tonight’s Conversation**.
+Normal adaptive backoff stayed enabled; never bypass access/verification guards.
+Different actual files were used per window; this is an operational comparison,
+not matched-file proof that concurrency caused the server faults.
+
+Controller PID 10020 is complete, NOT an active archive worker. Current verified
+running archive PIDs: Drama25162, Tonight63531.
+At 2026-11-01T04:19:09.837028+00:00: Drama 445/12,171 uploaded,
+Tonight 404/979; both running, zero current errors,
+effective workers 2 and 4. Drama advanced beyond the final trial after restoration.
+Drama standalone folder/root and Tonight's Ick Room subfolder independently
+verified unchanged. All 141new trial IDs remain successful; eight actual cloud
+samples independently match byte size, MD5/SHA256, identity and full-decode receipts.
+No local archive media files.49 focused unit checks pass; mocks are distinguished
+from these actual cloud/transfers. Extra close-result test ensures 6 is retained
+when higher counts offer less than 10%gain. Actual selection is 6 under both rules.
+Whole-Mac swapout deltas:7-worker 3.46 GB,8-worker 5.60 GB; reported memory headroom
+stayed33–47%/32–45%. Metrics include other Mac apps; no causal process claim.
+
+Report: docs/implementation/ARCHIVE_WORKER_BENCHMARK_20261101.md. Private timing,
+logs, decisions, resource samples and fresh cloud proof under
+artifacts/archive-worker-benchmark-20261031/. Authoritative completed controller
+pointer: artifacts/current-worker-benchmark.json. Current archive commands/PIDs:
+each source latest-run.json; live ledger/receipts are authoritative over counts
+in this historical snapshot. Benchmark should not restart itself. Leave the two
+archive workers downloading with their selected caps and existing recovery.
+No app deployment, publishing, queue, unrelated worker or live-account-setting
+changes. Code/tests/report/MEMORY are being committed and pushed to the existing
+codex/shorts-archive-20261019 branch; main remains untouched.
+
 ## Owner-authorized real7/8-worker comparison — Oct31, starting
 
 Owner explicitly requested testing7and8total workers and selecting the best.

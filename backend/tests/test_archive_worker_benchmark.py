@@ -28,6 +28,11 @@ def test_baseline_retained_if_higher_counts_are_unhealthy_or_slower():
     assert choose(baseline, trial(7, 4, 2, 1, False), trial(8, 5, 2, 1, False))[0] == 6
 
 
+def test_close_results_keep_fewer_workers_including_six_worker_baseline():
+    baseline = trial(6, 2.4, 1.6, 1.5)
+    assert choose(baseline, trial(7, 2.5, 1.6, 1.5), trial(8, 2.6, 1.6, 1.5))[0] == 6
+
+
 def test_rates_count_only_new_verified_ids_and_refuse_lost_completions():
     before = {n: {'items': {'old': {'video_id': 'old', 'status': 'uploaded', 'file_size': 100}}}
               for n in (DRAMA, TONIGHT)}
