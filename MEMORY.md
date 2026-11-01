@@ -44,6 +44,10 @@ paragraph summary (the dilemma, how the debate splits, a question for the commen
 3. Run it now on the 22 current rows; spot-check; they stay in Needs Review for the owner.
 Tests → full suite → commit → push when idle → verify live → log here.
 DONE 2026-10-31 (3edfc9d, live on Railway + Vercel): +3 tests, full suite 916 passed / 1 skipped, tsc clean.
+- 2026-10-31 owner: added #tonightsconversation #theickroom to the hashtags of all 37 ready Ick Room rows (ids 4844–4881
+  except the 1 archived), via PATCH; verified live 37/37. Posted description = caption + hashtags, so they show at the end.
+  Before-values saved in the session scratchpad (ick_tags_before.json). Owner overrides "never their name" for these tags.
+  The generator (ick_room_seo.py) does NOT add them yet, so future videos won't get them unless that's changed.
 After deploy the scheduler tick started it by itself: 22/22 Ick Room rows SEO'd, 0 failed (undo point "Ick Room AI SEO of
 22 video(s)"). Spot-checked 6: hooks like "She made him wait 6 months for sex… 😳 then he chose another girl…", 3-paragraph
 captions ending in a comment question, relationship hashtags, no show names. All still Needs Review → TheIckRoom:* only.
