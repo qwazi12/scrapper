@@ -982,7 +982,8 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         try:
             logbus.log("info", "queue_drive_fetch", f"Fetching video #{item.id} from Google Drive...")
             from ..drive_sync import download_drive_file
-            video_path = download_drive_file(item.drive_link)
+            # In a thread: a sync download here froze every request for the whole download (2026-11-01).
+            video_path = await asyncio.to_thread(download_drive_file, item.drive_link)
             is_temp_download = True
         except Exception as exc:
             logger.error("Failed to fetch video from Drive: %s", exc)
