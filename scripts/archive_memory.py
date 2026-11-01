@@ -599,7 +599,7 @@ class Archive:
                 '--no-part', '--retries', '1', '--socket-timeout', '25', '--downloader', 'ffmpeg',
                 '--format', self.format, '--format-sort', 'res:1080',
                 '--downloader-args', 'ffmpeg_i:-rw_timeout 25000000',
-                '--downloader-args', 'ffmpeg_o:-f mp4 -movflags frag_keyframe+empty_moov+default_base_moof',
+                '--downloader-args', 'ffmpeg_o:-loglevel error -f mp4 -movflags frag_keyframe+empty_moov+default_base_moof',
                 '--output', '-']
             buffer = collect_pipe(cmd, json.dumps(info).encode(), self.args.max_video_bytes, self.stop,
                                   progress=lambda size: self.patch(vid, in_memory_bytes=size,

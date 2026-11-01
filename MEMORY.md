@@ -1,5 +1,37 @@
 # Scrapper Memory
 
+## Owner moved archive to standalone DramaRama — Oct 31 (latest)
+
+Owner moved the existing drama source folder OUT of The Ick Room and renamed it
+**DramaRama**. Fresh authenticated Drive reads confirm the same stable folder ID
+10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b, actual name DramaRama, direct parent shared
+Drive root0AJrfdFAM4T9iUk9PVA, source identity markers unchanged, not trashed and
+canAddChildren=true. New layout: DramaRama / series title [canonical series ID] /
+numbered episode + original video ID.mp4. Do not recreate the old Ick Room path
+or move this folder back. Existing series folders/video IDs are preserved.
+Destination override, closed-worker ledger, context and future launch arguments
+now record the verified new parent and name. No cloud file move/rename was done
+by Codex; owner had already performed it. Folder link remains unchanged.
+
+Inspection also found the then-current drama PID87977 already exited, status
+blocked,154verified uploaded/12,171inventoried,793,898,615bytes. EarlierPID77089
+and earlier running snapshots below are historical. The run was blocked by a
+Drive read timeout on Sunblade episode32 and an opaque ffmpeg exit196 on episode35.
+Episode32's reserved Drive file is still size0, so it is not a completed upload.
+A fresh normal, challenge-disabled metadata request for episode35 succeeded and
+verified the expected UID/secUID/video, title La espada solar regresa EP35,63s.
+This is metadata-access proof, not a successful media-transfer claim.
+
+Added ffmpeg error-level diagnostics to the media pipe so a real timeout can be
+classified from evidence. A bare196remains manual/unknown; it is NOT reclassified
+as transient by guessing. New test verifies explicit timeout classification,
+signed-URL redaction and unknown-exit refusal. Focused42checks pass; network/time
+faults in tests are simulated. Existing transferred files/manifest remain intact.
+Next: controlled two-pending-item resume into the same DramaRama folder, then
+resume full inventory only if both are actually verified and all154prior uploaded
+IDs remain successful. Normal access/DRM/quota/integrity guards remain enabled.
+No unrelated worker, queue, scheduling, publication or app deployment changes.
+
 ## Full episodic archive running — Oct 31 (latest)
 
 The entire accessible catalogue is now inventoried:208series,12,171unique

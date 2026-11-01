@@ -53,6 +53,19 @@ def test_success_exit_with_transport_interruption_still_retries():
             b'', 4096, threading.Event())
 
 
+def test_failed_ffmpeg_diagnostics_distinguish_timeout_from_unknown_exit():
+    with pytest.raises(RuntimeError) as timeout:
+        archive.collect_pipe([sys.executable, '-c',
+            'import sys;sys.stderr.write("Error opening input: Connection timed out https://cdn.example/private?token=secret");sys.exit(196)'],
+            b'', 4096, threading.Event())
+    assert archive.failure_kind(timeout.value) == 'transient'
+    assert 'secret' not in str(timeout.value)
+    with pytest.raises(RuntimeError) as unknown:
+        archive.collect_pipe([sys.executable, '-c', 'import sys;sys.exit(196)'],
+                             b'', 4096, threading.Event())
+    assert archive.failure_kind(unknown.value) == 'manual'
+
+
 def test_complete_fragmented_mp4_and_truncation():
     result = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=160x90:r=10',
         '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '3',
