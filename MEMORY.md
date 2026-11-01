@@ -18,6 +18,13 @@ AI SEO button on a DramaRama row would today use the movie-clip/TMDB recipe).
   (one undo point) → verified live: 381 DramaRama / Needs Review / Dramarama:* ; 0 other rows target Dramarama.
   Caveats: a re-import files new videos under the series names again (move them the same way, or teach drive_sync);
   titles are still filenames (SEO undecided); episode order across 7 series not yet decided.
+- 2026-11-01 owner: "All items in Dramarama drive should go to the dramarama scheduller and the poster" → bd4bc3d (live):
+  drive_sync files every video of a folder named after an own-profile section (DramaRama, The ICK Room) into that section,
+  series subfolders included (source keeps "DramaRama / <series>"). +1 test; suite 918 passed, 1 failed = pre-existing
+  test_plus_two_today_only (fails on unchanged code: today is the US DST change, now+24 h is still "today" in ET — test bug,
+  not touched). Re-import verified live: +137 new (folder still filling: new series "The Wife They Cast Aside" 52, Christmas
+  Home for Dad +85), 381 skipped, 0 duplicates → 518 rows, all DramaRama / Needs Review / Dramarama:*.
+  Still open: no automatic Drive re-import exists (imports run when started); approval to post; titles; episode order.
 
 ## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
 memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
