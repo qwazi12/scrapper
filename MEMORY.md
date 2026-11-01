@@ -1,5 +1,36 @@
 # Scrapper Memory
 
+## Standalone DramaRama archive verified and continuing — Oct 31 (current)
+
+Owner's folder move/rename is adopted: **DramaRama** is a standalone folder at
+shared Drive root, ID10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b (same existing folder),
+not under The Ick Room. Series-title/ID subfolders and numbered episodes remain
+inside it. No remote move/rename/duplicate-folder action was performed by Codex.
+Destination.json and current launch/ledger record verified root parent and name;
+future resumes must use this location, never restore the historical Ick Room path.
+
+Controlled runs recovered Sunblade32/35, then series-aware36/37; all four actual
+cloud files independently match size, MD5 and SHA256 and passed full decode.
+All156previously successful IDs are preserved; the normal-series-API continuation
+starts after those successes. Source inventory stays208series/12,171unique IDs.
+Latest actual snapshot 2026-11-01T02:15:20.905658+00:00: {'discovered': 12171, 'downloaded': 162, 'uploaded': 161, 'failed': 0, 'skipped': 0, 'remaining': 12010, 'uploaded_bytes': 819940363}, status=running. Counts continue changing; do not treat this as all-complete.
+
+Current owned archive PID97952, caffeinate97953, two workers,
+128MiB each, RAM/pipes only. No local media files found. Runtimec53883d plus
+per-request metadata-helper correction8b8d20f; focused45checks pass. Helper's
+known server statuses enter bounded cooldown; risk/auth/unknown/DRM/paid/access/
+identity/integrity refusals stop. Ordinary-post page guard stays enabled. No
+CAPTCHA/signature/device/account bypass; actual browser playback and normal
+series API both verified. Prior opaque code196cause remains unproven; fresh
+normal transfers succeeded, and useful ffmpeg error diagnostics are now retained.
+
+Current authoritative files: latest-run.json, ledger.json, receipts/,
+archive-dramarama-series-api.log and dramarama-relocation-final-verification.json
+under artifacts/dramamodeonxprime-mx-20261031. Earlier pipeline/log/PID snapshots
+below are historical. Existing Tonight's Conversation worker was untouched.
+Code/tests/MEMORY are committed/pushed; no app deployment, publication or queue
+changes. The temporary browser playback-check tab was closed.
+
 Series metadata reliability follow-up: public API statuses10101(ServerErrorNot500)
 and10111(NetError) preserve ordinary bounded network cooldown across the child-
 process error boundary. Verification/risk/unknown statuses still stop. Focused45
