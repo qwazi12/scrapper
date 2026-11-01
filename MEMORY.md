@@ -1,5 +1,15 @@
 # Scrapper Memory
 
+## LOG — 2026-11-01 — Ick Room Facebook + "queue unavailable" fix
+- Owner fixed the TheIckRoom Facebook Page in Upload-Post (error was "Page 957497210771010 is not among the Pages this
+  account can manage"). Re-posted the one failed row #4845 → ✓ https://www.facebook.com/reel/28898847116470450.
+  Future Ick Room rows target TheIckRoom:* (expands at post time), so they include Facebook automatically.
+- Audit of all 5,585 unposted rows: every target is a connected account/profile (Cinama:*, TheIckRoom:*, Dramarama:*). Nothing
+  to fix. "no channels connected" on the LongForm rows was the account list failing to load (see next).
+- Cause of "queue unavailable" / "server response could not be confirmed": publish downloaded the Drive video synchronously
+  inside an async route → whole server froze for the download (every request 18–51 s during a 61 s publish, Railway HTTP
+  logs). Fix 640e4c3 (live): asyncio.to_thread(download_drive_file). Suite 921 passed.
+
 ## PLAN — 2026-11-01 — Cinama = 8 posts/day total (owner: "6 shorts 2 LongForm; if a countdown is listing then 5 shorts
 2 LongForm 1 countdown")
 1. Scheduler: a Shorts (Movie Clips) slot at the same time as a taken Countdowns slot is given up (constant SHARED_SLOTS =
