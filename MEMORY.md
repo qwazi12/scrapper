@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## PLAN — 2026-10-31 (night 2) — "DramaRama" section in SocialPilot (owner asked)
+Owner answers: own new Upload-Post profile; videos from a Drive folder (link to come); SEO: decide later.
+1. Backend: pipeline "DramaRama" locked to profile `DramaRama`, the same way The ICK Room is locked to `TheIckRoom`
+   (generalise ICK_ROOM_PROFILES into a section → profiles map; nothing else posts to either profile). Own schedule queue;
+   excluded from the clips queue. No automatic SEO.
+2. Frontend: tab "🎭 DramaRama" after The ICK Room; own queue view + schedule; target picker shows only DramaRama.
+3. Tests → full suite → tsc → commit → push when idle → verify live → log here.
+Owner: create the Upload-Post profile named exactly `DramaRama` and connect its accounts; send the Drive folder link.
+
 ## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
 memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
 Measured: full queue list = 9.2 MB (1.8 MB gzip) per reload, reloaded every 20 s while the page is visible (~330 MB/h).
