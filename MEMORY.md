@@ -1,5 +1,26 @@
 # Scrapper Memory
 
+## Solo DramaRama three/four-worker benchmark started — November 1, 08:15 EST
+
+Owner explicitly requested testing3and4 workers on DramaRama alone. One-shot
+controller PID24737, caffeinate24738. Evidence/state/logs:
+artifacts/drama-worker-benchmark-20261101/; current pointer:
+artifacts/current-drama-worker-benchmark.json. Each trial measures600seconds
+after30seconds warm-up. It gracefully drains only the exact owned Drama process,
+retains source/series folders and durable IDs, increases RAM buffer budget to
+384/512MiB for3/4 workers, and leaves all rate/network/integrity gates enabled.
+Tonight’s Conversation remains complete979/979; its dead historical PID63531 is
+not restarted. Do not use the old dual-source7/8 controller or assume six active
+workers. New controller:scripts/benchmark_drama_workers.py;83focused tests pass.
+
+The benchmark separates real physical uploads from exact-content aliases and
+compares equal elapsed windows, bytes and media duration. Four requires a healthy
+run with at least10%more verified files and at least90%bytes/media throughput;
+otherwise keep three if healthy, or restore two if neither is healthy. Access or
+integrity failure, external process replacement or owner cancellation stops the
+comparison without blindly restarting. Sustained very low memory headroom
+attempts a graceful rollback to two. No selected winner yet; read live state.
+
 ## DramaRama audio-tail blocker fixed; resumed — November 1, 08:10 EST
 
 Owner requested recheck, repair and more downloads. The authoritative stopped

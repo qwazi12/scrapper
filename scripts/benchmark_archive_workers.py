@@ -95,6 +95,8 @@ def machine():
 
 
 class Benchmark:
+    other_workers = 4
+
     def __init__(self, args):
         self.args, self.root, self.out = args, Path.cwd(), args.output.absolute()
         self.out.mkdir(parents=True, exist_ok=True)
@@ -203,7 +205,7 @@ class Benchmark:
                 'folder_id': self.original[DRAMA]['folder_id'], 'folder_name': 'DramaRama',
                 'scope': 'Archive only; no queue/scheduling/publication; RAM media only'}
         atomic_json(self.root / 'artifacts' / DRAMA / 'latest-run.json', plan)
-        self.save(active_drama_pid=child.pid, requested_total_workers=count + 4, active_log=str(log))
+        self.save(active_drama_pid=child.pid, requested_total_workers=count + self.other_workers, active_log=str(log))
         end = time.monotonic() + 300
         while time.monotonic() < end:
             if child.poll() is not None:
