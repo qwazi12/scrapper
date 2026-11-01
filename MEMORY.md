@@ -12,6 +12,12 @@ DONE 2026-10-31 (85bba52, live on Railway + Vercel): +1 test, full suite 918 pas
 Verified live: /api/schedule lists DramaRama (default 1/day); trying to point an Ick Room row at DramaRama:facebook → 400.
 Pending: owner creates profile `DramaRama` on Upload-Post + sends the Drive folder; SEO style still to decide (the manual
 AI SEO button on a DramaRama row would today use the movie-clip/TMDB recipe).
+- 2026-11-01: profile is named `Dramarama` on Upload-Post (lowercase r) → lock renamed (661709a, live). Imported Drive folder
+  10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b: 381 videos in 7 series subfolders (short-drama episodes, EP001…), ids 4882–5262.
+  The sync files each subfolder as its own pipeline (→ Cinama:*), so all 381 were bulk-moved to pipeline "DramaRama"
+  (one undo point) → verified live: 381 DramaRama / Needs Review / Dramarama:* ; 0 other rows target Dramarama.
+  Caveats: a re-import files new videos under the series names again (move them the same way, or teach drive_sync);
+  titles are still filenames (SEO undecided); episode order across 7 series not yet decided.
 
 ## PLAN — 2026-10-31 (late) — Cut Railway cost to the floor (owner: "absolute lowest"; bill $20.47: egress $9.10 / 182 GB,
 memory $7.36, CPU $2.11, volume $1.45, backups $0.45). Owner chose steps 1, 2, 4, 5, 6 (not "slim the queue list").
