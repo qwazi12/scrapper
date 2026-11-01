@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+Series metadata reliability follow-up: public API statuses10101(ServerErrorNot500)
+and10111(NetError) preserve ordinary bounded network cooldown across the child-
+process error boundary. Verification/risk/unknown statuses still stop. Focused45
+checks pass, including server-vs-verification classification; no status guessing
+or challenge retries. This helper is loaded for each metadata request; archive
+runtimec53883d uses this additional helper-only correction on subsequent requests.
+
 ## DramaRama relocation verified; series-player metadata repair — Oct 31
 
 The owner-renamed/moved DramaRama folder remains10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b,

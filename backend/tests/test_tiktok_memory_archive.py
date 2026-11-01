@@ -162,7 +162,7 @@ def test_normal_episode_api_refuses_access_status_wrong_identity_and_paid_conten
            'dramaInfo': {'dramaID': SERIES['id'], 'authorUID': UID,
                          'DramaVideoData': {'EpisodeNumber': 1}}, 'video': {'duration': 90}}
     assert checked_episode({'statusCode': 0, 'itemList': [raw]}, source) is raw
-    for status in (10113, 10114, 401, 403, 10101):
+    for status in (10113, 10114, 401, 403):
         with pytest.raises(ValueError, match='refused'):
             checked_episode({'statusCode': status, 'itemList': [raw]}, source)
     with pytest.raises(ValueError, match='identity'):
@@ -178,6 +178,18 @@ def test_normal_episode_api_refuses_access_status_wrong_identity_and_paid_conten
     raw['author']['id'] = 'wrong-source'
     with pytest.raises(ValueError, match='identity'):
         checked_episode({'statusCode': 0, 'itemList': [raw]}, source)
+
+
+def test_documented_episode_api_server_faults_preserve_bounded_network_recovery():
+    source = SimpleNamespace()
+    for status in (10101, 10111):
+        with pytest.raises(ConnectionError) as caught:
+            checked_episode({'statusCode': status}, source)
+        # CLI stderr becomes RuntimeError in the parent archive process.
+        assert archive.failure_kind(RuntimeError(str(caught.value))) == 'transient'
+    with pytest.raises(ValueError) as refusal:
+        checked_episode({'statusCode': 10113}, source)
+    assert archive.failure_kind(RuntimeError(str(refusal.value))) == 'manual'
 
 
 def test_episode_inventory_whitelists_metadata_and_checks_coverage():

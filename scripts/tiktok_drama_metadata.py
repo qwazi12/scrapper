@@ -17,6 +17,11 @@ from scripts.inventory_tiktok_drama import episode
 
 def checked_episode(payload, source):
     status = payload.get('statusCode', payload.get('status_code'))
+    if status in (10101, 10111):
+        # TikTok's public web enum: ServerErrorNot500 / NetError.
+        # Preserve the ordinary bounded network cooldown across the subprocess
+        # error boundary; no verification/risk status shares this treatment.
+        raise ConnectionError('TikTok episode API temporary failure; status=' + str(status))
     if status != 0:
         raise ValueError('TikTok episode API refused; status=' + str(status))
     rows = payload.get('itemList', [])
