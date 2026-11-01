@@ -1,5 +1,37 @@
 # Scrapper Memory
 
+## Owner-authorized real7/8-worker comparison — Oct31, starting
+
+Owner explicitly requested testing7and8total workers and selecting the best.
+Plan: keep Tonight's Conversation at its existing4workers/PID63531; gracefully
+drain only DramaRama with SIGUSR1, test3Drama+4Tonight for20measured minutes,
+then4Drama+4Tonight for20measured minutes, each after60s warmup. No media is
+redownloaded for benchmarking; all trials advance the real missing-ID archive.
+Same source code/credentials/destinations/validation; Drama RAM budgets become
+384MiB at3workers and512MiB at4(128MiB per video). Tonight stays1GiB raw cap.
+Total maximum raw buffers1.375GiB for7,1.5GiB for8, plus runtime/decoder overhead.
+
+New scripts/benchmark_archive_workers.py records per-stage newly verified files,
+bytes/media duration, per-source completion rates, cooldown/errors, effective
+workers, memory-headroom/load/swapout samples, and preservation of prior IDs.
+Recent20-minute6-worker data is a retrospective baseline, not a new matched-file
+experiment.7and8receive equal prospective20-minute windows. Require8to improve
+combined verified files/min at least10%, retain at least90%of7's Tonight rate
+and transfer-volume rate, and have no new cooldown/errors; otherwise prefer7.
+Retain6if neither higher count is healthy or throughput materially regresses.
+An owner stop, PID replacement, access/quota/integrity failure aborts the trial;
+no guard bypass or blind restart. Sustained very low memory headroom triggers
+controlled rollback. Existing cooldowns are honored before changing concurrency.
+
+48focused checks pass, including benchmark selection/accounting tests; these
+unit checks are simulated and are NOT the real7/8trial results. Actual measured
+results and owned process IDs will be under
+artifacts/archive-worker-benchmark-20261031/state.json and decision.json.
+Authoritative controller launch: artifacts/current-worker-benchmark.json.
+Keep MEMORYupdated with actual outcome; do not claim a winner before trials end.
+All artifacts are private ignored metadata; archive videos stay in RAM/Drive.
+No app deployment, queue, Ready, scheduling, publication or unrelated process changes.
+
 ## Standalone DramaRama archive verified and continuing — Oct 31 (current)
 
 Owner's folder move/rename is adopted: **DramaRama** is a standalone folder at
