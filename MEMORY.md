@@ -7,6 +7,10 @@
 2. Schedule (ET): Shorts 08, 10, 12*, 17, 19, 22 (6; *yields to a countdown) · Countdowns 12 · LongForm 15, 20 →
    8/day max on Cinama YouTube (was up to 11; YouTube refused at ~12 on 2026-10-03). Before-config saved in scratchpad.
 3. Tests → suite → push when idle → set the schedule live → verify next slots → log here.
+DONE 2026-11-01 (d7dbd74, live 14:34 UTC): +1 test, suite 921 passed. Schedule set live (only Movie Clips changed: 6 times
+08/10/12/17/19/22 on YT/FB/IG; LongForm/Countdowns/Ick Room/DramaRama untouched; before-config = scratchpad
+sched_before_ick6.json). Verified planned rows: Mon 11-02 = 8 Cinama posts (6 Shorts + LongForm 15/20). No countdown is
+Ready today (only #749, archived), so 12:00 is a Short until one is approved.
 
 ## PLAN — 2026-10-31 (night 2) — "DramaRama" section in SocialPilot (owner asked)
 Owner answers: own new Upload-Post profile; videos from a Drive folder (link to come); SEO: decide later.
