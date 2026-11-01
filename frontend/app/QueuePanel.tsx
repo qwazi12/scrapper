@@ -13,6 +13,7 @@ import { TargetChip, TargetPicker, targetNames } from "./TargetPicker";
 const QUEUE_BLOCKED_PROFILES = ["mk"];
 // The ICK Room posts only to its own profile, and nothing else posts there (owner, 2026-10-31).
 const ICK_ROOM_PROFILES = ["TheIckRoom"];
+const DRAMARAMA_PROFILES = ["DramaRama"];   // DramaRama works the same way (owner, 2026-10-31)
 // Posted videos: shown together in "✓ Posted Archive", never in "All Items".
 const DONE = ["posted", "archived"];
 import { UndoButton } from "./UndoButton";
@@ -38,7 +39,8 @@ const PIPELINES = ["Movie Clips"];
 const LONGFORM = "LongForm";
 const COUNTDOWNS = "Countdowns";            // Countdowns Studio's own queue (2026-10-12)
 const ICK_ROOM = "The ICK Room";            // its own Facebook account (2026-10-31)
-const OWN_SECTIONS = [LONGFORM, COUNTDOWNS, ICK_ROOM];  // never listed in the clips queue
+const DRAMARAMA = "DramaRama";              // its own profile too (2026-10-31)
+const OWN_SECTIONS = [LONGFORM, COUNTDOWNS, ICK_ROOM, DRAMARAMA];  // never listed in the clips queue
 
 type SortKey = "position" | "id" | "title" | "channel" | "status" | "scheduled";
 const SORT_LABELS: Record<SortKey, string> = {
@@ -69,9 +71,9 @@ function fmtET(iso: string): string {
   }) + " ET";
 }
 
-export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void; mode?: "clips" | "longform" | "countdowns" | "ickroom" }) {
+export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void; mode?: "clips" | "longform" | "countdowns" | "ickroom" | "dramarama" }) {
   // "longform" = a queue with its own section (LongForm, Countdowns or The ICK Room), not the clips queue.
-  const section = mode === "countdowns" ? COUNTDOWNS : mode === "longform" ? LONGFORM : mode === "ickroom" ? ICK_ROOM : null;
+  const section = mode === "countdowns" ? COUNTDOWNS : mode === "longform" ? LONGFORM : mode === "ickroom" ? ICK_ROOM : mode === "dramarama" ? DRAMARAMA : null;
   const longform = section !== null;
   const [allItems, setAllItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -572,6 +574,8 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               ? isNarrow ? "🏆 Countdowns Queue" : "🏆 Countdowns Queue"
               : section === ICK_ROOM
               ? isNarrow ? "🤢 The ICK Room" : "🤢 The ICK Room Queue"
+              : section === DRAMARAMA
+              ? isNarrow ? "🎭 DramaRama" : "🎭 DramaRama Queue"
               : longform
               ? isNarrow ? "🎬 LongForm Queue" : "🎬 LongForm Breakdowns Queue"
               : isNarrow ? "📋 Posting Queue" : "📋 Posting Queue & Content Calendar"}
@@ -797,7 +801,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
           {/* This queue's own schedule: posts/day + hours or exact times (owner, 2026-10-05) */}
           <QueueScheduleButton
-            queue={section === COUNTDOWNS ? "Countdowns" : section === ICK_ROOM ? "The ICK Room" : longform ? "LongForm" : "Movie Clips"}
+            queue={section === COUNTDOWNS ? "Countdowns" : section === ICK_ROOM ? "The ICK Room" : section === DRAMARAMA ? "DramaRama" : longform ? "LongForm" : "Movie Clips"}
             schedInfo={schedInfo}
             isNarrow={isNarrow}
             onSaved={(u) => { setSchedInfo(u); setUndoVersion((v) => v + 1); loadQueue(true); onChange(); }}
@@ -1542,7 +1546,9 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
                 onChange={setSelectedTargetAccountIds}
                 blockedProfiles={section === ICK_ROOM
                   ? profiles.filter((p) => !ICK_ROOM_PROFILES.includes(p))
-                  : [...QUEUE_BLOCKED_PROFILES, ...ICK_ROOM_PROFILES]}
+                  : section === DRAMARAMA
+                  ? profiles.filter((p) => !DRAMARAMA_PROFILES.includes(p))
+                  : [...QUEUE_BLOCKED_PROFILES, ...ICK_ROOM_PROFILES, ...DRAMARAMA_PROFILES]}
               />
             </div>
             {selectedTargetAccountIds.length > 0 && (

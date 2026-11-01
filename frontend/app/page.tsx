@@ -59,7 +59,7 @@ export default function Page() {
   }, []);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
-  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "countdowns" | "ickroom" | "scheduler" | "ingest" | "drive">("queue");
+  const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "countdowns" | "ickroom" | "dramarama" | "scheduler" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   // Phones: the sidebar becomes a slide-out drawer so pages get the full width.
   const [isMobile, setIsMobile] = useState(false);
@@ -118,7 +118,7 @@ export default function Page() {
     const syncHash = async () => {
       if (!await allowNavigation(window.location.hash)) return;
       const [hash, sub] = readHash();
-      const SUBS = ["queue", "longform", "countdowns", "ickroom", "scheduler", "ingest", "drive"];
+      const SUBS = ["queue", "longform", "countdowns", "ickroom", "dramarama", "scheduler", "ingest", "drive"];
       if (["scraper", "socialpilot", "longform", "countdowns", "editorial", "comps", "logs", "settings"].includes(hash)) {
         setActiveTab(hash as NavTab);
         if (hash === "socialpilot" && SUBS.includes(sub)) setSocialPilotTab(sub as typeof socialPilotTab);
@@ -513,6 +513,19 @@ export default function Page() {
                   🤢 The ICK Room
                 </button>
                 <button
+                  onClick={() => setSocialPilotTab("dramarama")}
+                  style={{
+                    background: socialPilotTab === "dramarama" ? "#4c1d95" : "transparent",
+                    color: socialPilotTab === "dramarama" ? "#c4b5fd" : "var(--text)",
+                    border: socialPilotTab === "dramarama" ? "1px solid #7c3aed" : "1px solid transparent",
+                    fontWeight: 600,
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                  }}
+                >
+                  🎭 DramaRama
+                </button>
+                <button
                   onClick={() => setSocialPilotTab("scheduler")}
                   style={{
                     background: socialPilotTab === "scheduler" ? "#0f766e" : "transparent",
@@ -558,6 +571,7 @@ export default function Page() {
             {socialPilotTab === "longform" && <QueuePanel key="longform" mode="longform" onChange={refresh} />}
             {socialPilotTab === "countdowns" && <QueuePanel key="countdowns" mode="countdowns" onChange={refresh} />}
             {socialPilotTab === "ickroom" && <QueuePanel key="ickroom" mode="ickroom" onChange={refresh} />}
+            {socialPilotTab === "dramarama" && <QueuePanel key="dramarama" mode="dramarama" onChange={refresh} />}
             {socialPilotTab === "scheduler" && <SchedulerView onSaved={refresh} />}
             {socialPilotTab === "ingest" && <ChannelIngestPanel onIngested={refresh} />}
             {socialPilotTab === "drive" && <DrivePanel onIngested={refresh} />}

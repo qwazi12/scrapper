@@ -63,7 +63,7 @@ def pipeline_group(item: QueueItem) -> str:
     # Anything imported from the Movie Clips Drive folder is a Short, whatever its channel subfolder is
     # called (2026-10-20: archived channels named "AfridiAE — UC…" each became their own queue on the
     # 1-a-day default, all firing at 10:00 together).
-    if (item.source or "").startswith("Movie Clips / ") and item.pipeline not in ("LongForm", "Countdowns", ICK_ROOM):
+    if (item.source or "").startswith("Movie Clips / ") and item.pipeline not in ("LongForm", "Countdowns", ICK_ROOM, DRAMARAMA):
         return "Movie Clips"
     if item.pipeline and not item.pipeline.startswith("@"):
         return item.pipeline
@@ -760,6 +760,11 @@ BLOCKED_PROFILES = {"mk"}
 # That profile is never a default for any other queue, and Ick Room rows post nowhere else.
 ICK_ROOM = "The ICK Room"
 ICK_ROOM_PROFILES = {"TheIckRoom"}
+# "DramaRama" works the same way with its own profile (owner, 2026-10-31).
+DRAMARAMA = "DramaRama"
+DRAMARAMA_PROFILES = {"DramaRama"}
+OWN_PROFILES = {ICK_ROOM: ICK_ROOM_PROFILES, DRAMARAMA: DRAMARAMA_PROFILES}   # section -> the only profiles it uses
+LOCKED_PROFILES = ICK_ROOM_PROFILES | DRAMARAMA_PROFILES                     # never used by any other queue
 
 
 def _profile(account: Any) -> str:
@@ -768,10 +773,10 @@ def _profile(account: Any) -> str:
 
 def blocked_accounts(accounts: list[str] | None, pipeline: str | None = None) -> list[str]:
     """The destinations in this list that a row of this pipeline may not post to: a blocked profile,
-    the Ick Room profile for any other queue, or any other profile for the Ick Room."""
-    ick = pipeline == ICK_ROOM
+    a section's own profile (Ick Room, DramaRama) for any other queue, or any other profile for that section."""
+    own = OWN_PROFILES.get(pipeline)
     return [a for a in (accounts or []) if _profile(a) in BLOCKED_PROFILES
-            or (_profile(a) not in ICK_ROOM_PROFILES if ick else _profile(a) in ICK_ROOM_PROFILES)]
+            or (_profile(a) not in own if own else _profile(a) in LOCKED_PROFILES)]
 
 
 def fit_destination(item: QueueItem) -> bool:
@@ -810,8 +815,8 @@ def connected_profiles() -> list[str] | None:
 
 
 def _profiles_for(profiles: list[str] | None, pipeline: str | None) -> list[str]:
-    ick = pipeline == ICK_ROOM
-    return [p for p in (profiles or []) if (p in ICK_ROOM_PROFILES) == ick]
+    own = OWN_PROFILES.get(pipeline)
+    return [p for p in (profiles or []) if (p in own if own else p not in LOCKED_PROFILES)]
 
 
 def default_destination(fallback: list[str] | None = None, pipeline: str | None = None) -> list[str]:

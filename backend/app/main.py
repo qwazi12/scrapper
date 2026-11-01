@@ -834,11 +834,11 @@ async def create_queue_item(req: QueueItemCreate, s: Session = Depends(get_sessi
 def _refuse_blocked(accounts: list[str] | None, pipeline: str | None = None) -> None:
     bad = queue_manager.blocked_accounts(accounts, pipeline)
     if bad:
-        if pipeline == queue_manager.ICK_ROOM:
-            raise HTTPException(400, f"The ICK Room posts only to its own profile "
-                                     f"({', '.join(sorted(queue_manager.ICK_ROOM_PROFILES))}) (refused: {', '.join(bad)}).")
-        raise HTTPException(400, f"Profiles {', '.join(sorted(queue_manager.BLOCKED_PROFILES | queue_manager.ICK_ROOM_PROFILES))} "
-                                 f"are never used for these videos — the Ick Room profile is only for The ICK Room "
+        if pipeline in queue_manager.OWN_PROFILES:
+            raise HTTPException(400, f"{pipeline} posts only to its own profile "
+                                     f"({', '.join(sorted(queue_manager.OWN_PROFILES[pipeline]))}) (refused: {', '.join(bad)}).")
+        raise HTTPException(400, f"Profiles {', '.join(sorted(queue_manager.BLOCKED_PROFILES | queue_manager.LOCKED_PROFILES))} "
+                                 f"are never used for these videos — the Ick Room and DramaRama profiles are only for their own sections "
                                  f"(refused: {', '.join(bad)}).")
 
 
@@ -1324,8 +1324,8 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
         else:
             q = q.filter(QueueItem.pipeline == req.pipeline)
     else:
-        # LongForm, Countdowns and The ICK Room have their own sections; "all" means all clips
-        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns", queue_manager.ICK_ROOM]))
+        # LongForm, Countdowns, The ICK Room and DramaRama have their own sections; "all" means all clips
+        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA]))
     if req.status and req.status != "all":
         q = q.filter(QueueItem.status == req.status)
 
@@ -1861,7 +1861,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
     per_day = queue_manager.slots_per_day()
     pacing_summary = {
         name: queue_manager.slots_per_day(pipeline=name)
-        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM]
+        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA]
     }
     return {
         "timezone": cfg["timezone"],
@@ -1874,7 +1874,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "pipeline_slots_per_day": pacing_summary,
         # Each queue's own next post times (Posting Queue = "Movie Clips", LongForm).
         "pipeline_next_slots": {name: queue_manager.slots_after(now, 5, pipeline=name)
-                                for name in ("Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM)},
+                                for name in ("Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA)},
         "defaults": queue_manager.default_schedule(),
         "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,
