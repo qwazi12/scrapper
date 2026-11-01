@@ -1,5 +1,46 @@
 # Scrapper Memory
 
+## Solo three/four-worker trials complete: keep FOUR — November 1, 08:41 EST
+
+Completed both owner-requested solo DramaRama trials. Three-worker cap:
+32real uploads/600.36seconds,3.20files/min,0.444verified MB/s,one60s recovery
+round(TikTok episode APIHTTP500 plus Drive read timeout); automatic recovery
+used two effective workers for12of20samples. Four-worker cap:48real uploads/
+600.27seconds,4.80files/min,0.577verified MB/s,zero recovery rounds;all20samples
+had four effective workers. Four yielded50%more files,~30%more verified byte
+throughput and~42%more media duration in these windows. Different real episodes,
+file sizes, network conditions and other Mac workloads prevent a causal or
+universal speed claim. No source was redownloaded as a benchmark fixture.
+
+Selected FOUR workers. Archive PID32656 is the current active process;
+128MiB/video,512MiB configured aggregate media buffers. Controller24737 is
+COMPLETE, not an archive worker; do not restart it. Historical21504(two) and
+25643(three) were gracefully drained; both are exited. latest-run.json and
+artifacts/current-drama-worker-benchmark.json now reflect completion/selection.
+No new monitor or unrelated process was started. Tonight remains complete979/979.
+
+At13:41:34UTC(08:41EST):DramaRamaRUNNING,1,494uploaded physical files,
+55aliased sources,1,549completed sources,10,622remaining,zero failures,
+8,630,346,396uploaded bytes. All80measured uploads are disjoint/preserved.
+All1,453original Drama completions and979Tonight completions preserve status,
+Drive/canonical IDs,hashes,size. Six fresh actual Drive reads(three per phase)
+independently verify source identity,parent,size,MD5,SHA256 against full-decode
+receipts. Source/core helper SHA256 unchanged throughout. All83focused tests
+passed; simulated accounting/selection tests are distinct from real transfers.
+
+Three phase08:18:42–08:28:42EST,free memory32–52%,whole-Mac swapouts3.03GB;
+four phase08:30:44–08:40:44EST,free48–61%,swapouts1.34GB. These include other
+apps; neither reached low-memory rollback. A delayed existing Drive upload
+finished before the first trial and was excluded from measurement. No cap/quality,
+auth/challenge bypass, queue,publish,delete or deployment changes. Existing
+cooldown/adaptive reduction and source packet/full-decode/cloud checks remain.
+Media stays in RAM/pipes; source/series folders and ledger identities unchanged.
+
+Report:docs/implementation/DRAMA_WORKER_BENCHMARK_20261101.md.
+Evidence:artifacts/drama-worker-benchmark-20261101/{state.json,result-3.json,
+result-4.json,decision.json,original-completions.json,independent-verification.json}
+plus per-process logs. Counts above are a snapshot, not all-complete.
+
 ## Solo DramaRama three/four-worker benchmark started — November 1, 08:15 EST
 
 Owner explicitly requested testing3and4 workers on DramaRama alone. One-shot
