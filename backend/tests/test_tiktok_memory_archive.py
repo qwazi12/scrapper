@@ -208,3 +208,9 @@ def test_inventory_verification_status_stops_without_auto_retry(tmp_path, monkey
         drama_inventory.main()
     assert request.call_count == 1 and sleeps == [1]
     assert not (tmp_path / 'inventory.json').exists()
+
+
+def test_inventory_honors_longer_server_wait():
+    assert drama_inventory.server_wait({'Retry-After': '2400'}) == 2400
+    assert drama_inventory.server_wait({'Retry-After': 'Wed, 21 Oct 2015 07:28:00 GMT'}) == 0
+    assert drama_inventory.server_wait({'Retry-After': 'invalid'}) == 0

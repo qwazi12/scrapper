@@ -7,6 +7,7 @@ Completed series checkpoints are reusable after interruption.
 """
 import argparse
 import datetime as dt
+import email.utils
 import fcntl
 import json
 import os
@@ -23,6 +24,19 @@ def write(path, value):
         os.fsync(f.fileno())
     tmp.chmod(0o600)
     tmp.replace(path)
+
+
+def server_wait(headers):
+    """Honor a longer server Retry-After without changing access identity."""
+    value = headers.get('Retry-After', '')
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        try:
+            deadline = email.utils.parsedate_to_datetime(value)
+            return max(0, (deadline - dt.datetime.now(dt.timezone.utc)).total_seconds())
+        except (TypeError, ValueError, AttributeError):
+            return 0
 
 
 def episode(item, series, uid, sec_uid, handle):
@@ -68,6 +82,13 @@ def main():
     root.chmod(0o700)
     lock = (root / 'inventory.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    cooldown = root / 'inventory-cooldown.json'
+    if cooldown.exists():
+        previous = json.loads(cooldown.read_text())
+        remaining = (dt.datetime.fromisoformat(previous['retry_at']) -
+                     dt.datetime.now(dt.timezone.utc)).total_seconds()
+        if remaining > 0:
+            time.sleep(remaining)
     import tiktok_access  # noqa: F401 -- disables stock challenge solving
     import yt_dlp
     source_url = 'https://www.tiktok.com/@' + args.handle
@@ -80,6 +101,7 @@ def main():
             for attempt in range(4):
                 time.sleep(1)  # bounded request pacing, not detection evasion
                 rate_limited = False
+                minimum_delay = 0
                 try:
                     data = ie._download_json('https://www.tiktok.com/api/drama/' + path,
                                             'drama-inventory', query={
@@ -90,6 +112,8 @@ def main():
                     cause = getattr(exc, 'cause', exc)
                     status = getattr(cause, 'status', None)
                     rate_limited = status == 429
+                    if isinstance(cause, HTTPError):
+                        minimum_delay = server_wait(cause.response.headers)
                     allowed = (isinstance(cause, HTTPError) and status in (408, 429, 500, 502, 503, 504) or
                                isinstance(cause, TransportError) and not isinstance(cause, SSLError))
                     if not allowed or attempt == 3:
@@ -102,7 +126,7 @@ def main():
                     # risk, login and all unknown statuses still stop.
                     if status not in (10101, 10111) or attempt == 3:
                         raise ValueError('TikTok inventory refused: status=' + str(status))
-                seconds = (900 * 2 ** attempt if rate_limited else 60 * 3 ** attempt)
+                seconds = max(minimum_delay, 900 * 2 ** attempt if rate_limited else 60 * 3 ** attempt)
                 write(root / 'inventory-cooldown.json', {
                     'status': status, 'seconds': seconds, 'query': query,
                     'retry_at': (dt.datetime.now(dt.timezone.utc) +
