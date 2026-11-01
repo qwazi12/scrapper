@@ -1,5 +1,49 @@
 # Scrapper Memory
 
+## Episodic grouping confirmed; actual Drive pilot verified — Oct 31
+
+Owner clarified that @dramamodeonxprime_mx is organized as series with episodes.
+This is implemented as The Ick Room / dramamodeonxprime_mx / series title
+[canonical series ID] / numbered episode + original video ID.mp4. Translation/
+version series sharing a title remain separate. Actual new source folder:
+https://drive.google.com/drive/folders/10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b
+First series folder:1vPwvFXVmFVyeT7GQkLl-ySU2HZFlBUTs.
+
+Actual pilot video7702925760046042388 uploaded into that series folder:
+Drive ID1LmrSGVUoJba-fGD2ws1Rqkq7S7Ay22nU,7,652,297bytes, full video/audio decode
+and source-duration checks passed. Independent fresh Drive reads verify folder
+parentage, canonical source/series/video markers, size, MD5 and SHA256. SHA256
+ad85434c9a2ec79f0b2e63d8f359c3dd629f2753ed76e40d44ff9ce160ed5bc0.
+No local media files exist. Reserved-ID/checksum receipt is fsynced in
+artifacts/dramamodeonxprime-mx-20261031/receipts; the full worker adopts this
+uploaded entry before selecting pending IDs, so it will not redownload the pilot.
+This replaces the earlier zero-upload/preflight-pending snapshot below.
+
+Full inventory remains in progress; latest observed at 2026-11-01T00:56:22.631680+00:00: {'completed_series': 124, 'series': 208, 'unique_videos': 7578, 'missing': [], 'restricted': 0}. Enumeration counts are not uploaded counts.
+Catalogue208series/12,171slots was independently matched against the UI. Approx
+storage90GB when scaled by all declared episode durations against the sample;
+93.1GB is the simpler per-slot extrapolation. Both are rough, not guaranteed.
+Shared-pool available capacity is not exposed; uploads stop on quota failure.
+
+Task-owned one-shot handoff PID77089, caffeinate77090 waits for the existing
+inventory PID75429, then validates complete catalogue identity/coverage and the
+actual pilot receipt before execing the two-worker RAM archive. This is a local
+Python handoff, not an AI recurring monitor or app deployment. Its archive code
+is pinned by SHA256 and commit22bfec2; it stops if code changed while waiting,
+inventory failed, or the pilot was not verified. New source2x128MiB=256MiB raw
+video buffers, alongside existing Tonight's Conversation4x256MiB=1GiB. Verified
+pilot is preserved. Server/network cooldown recovery is bounded; verification/
+login/DRM/access/quota/integrity failures require action. No queue/publication.
+
+Authoritative private evidence: context.json, catalog.json, per-series inventory
+checkpoints, inventory-progress/log/launch, pilot-log and independent-cloud-
+verification, pipeline-launch/state, archive-log, then ledger.json and receipts.
+Do not interpret waiting_for_complete_inventory as bulk downloads already active.
+Forty-one focused checks pass; cloud/cooldown inventory faults are simulated,
+synthetic FFmpeg decoding and the separately noted actual cloud pilot are real.
+Code/test commits0b93498,a4133d1,22bfec2 are pushed on
+codex/shorts-archive-20261019. Existing worker63531 remains untouched and running.
+
 ## @dramamodeonxprime_mx: The Ick Room, grouped by series — Oct 31
 
 Owner explicitly answered **The Ick Room**, then clarified these are series with
