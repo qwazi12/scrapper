@@ -31,7 +31,7 @@ passed; simulated accounting/selection tests are distinct from real transfers.
 Three phase08:18:42–08:28:42EST,free memory32–52%,whole-Mac swapouts3.03GB;
 four phase08:30:44–08:40:44EST,free48–61%,swapouts1.34GB. These include other
 apps; neither reached low-memory rollback. A delayed existing Drive upload
-finished before the first trial and was excluded from measurement. No cap/quality,
+finished before the first trial and was excluded from measurement. No quality,
 auth/challenge bypass, queue,publish,delete or deployment changes. Existing
 cooldown/adaptive reduction and source packet/full-decode/cloud checks remain.
 Media stays in RAM/pipes; source/series folders and ledger identities unchanged.
@@ -40,6 +40,9 @@ Report:docs/implementation/DRAMA_WORKER_BENCHMARK_20261101.md.
 Evidence:artifacts/drama-worker-benchmark-20261101/{state.json,result-3.json,
 result-4.json,decision.json,original-completions.json,independent-verification.json}
 plus per-process logs. Counts above are a snapshot, not all-complete.
+Follow-up08:43EST:the same four-worker PID32656 continued advancing to1,504
+physical uploads plus55aliases,10,612remaining,zero failures/current errors.
+Benchmark code, report and memory saved/pushed on codex/shorts-archive-20261019.
 
 ## Solo DramaRama three/four-worker benchmark started — November 1, 08:15 EST
 
