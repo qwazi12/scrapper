@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## PLAN — 2026-11-01 — Cinama = 8 posts/day total (owner: "6 shorts 2 LongForm; if a countdown is listing then 5 shorts
+2 LongForm 1 countdown")
+1. Scheduler: a Shorts (Movie Clips) slot at the same time as a taken Countdowns slot is given up (constant SHARED_SLOTS =
+   {"Movie Clips": "Countdowns"}); Countdowns plans first. No countdown that day → the Shorts post goes out.
+2. Schedule (ET): Shorts 08, 10, 12*, 17, 19, 22 (6; *yields to a countdown) · Countdowns 12 · LongForm 15, 20 →
+   8/day max on Cinama YouTube (was up to 11; YouTube refused at ~12 on 2026-10-03). Before-config saved in scratchpad.
+3. Tests → suite → push when idle → set the schedule live → verify next slots → log here.
+
 ## PLAN — 2026-10-31 (night 2) — "DramaRama" section in SocialPilot (owner asked)
 Owner answers: own new Upload-Post profile; videos from a Drive folder (link to come); SEO: decide later.
 1. Backend: pipeline "DramaRama" locked to profile `DramaRama`, the same way The ICK Room is locked to `TheIckRoom`
