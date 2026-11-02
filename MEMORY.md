@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## LOG — 2026-11-02 (00:20 UTC) — DramaRama re-import; "5k in Shorts" explained
+- The "📋 Posting Queue (N)" tab badge = /api/queue/counts with no pipeline = EVERY section (Shorts + LongForm + Ick Room +
+  DramaRama). The Shorts list itself excludes the own-profile sections. Verified Shorts = 4,031 unposted (3,403 ready,
+  627 review, 1 posting), all sourced from Movie Clips. Badge fix (count only Shorts) offered, not built.
+- Re-imported DramaRama Drive 10sy_JiqqtUGW_nhE73y0KMTTxIzIah_b (job a7e7f03da347): +4,953 new, 447 existing, 5,400 scanned.
+  Verified: 5,471 rows sourced DramaRama, all pipeline DramaRama / review / Dramarama:*; 0 elsewhere. 88 series.
+  Note: 518 rows existed but only 447 matched in Drive now → ~71 old rows' files may have moved or been deleted (not checked).
+
 ## LOG — 2026-11-01 — Ick Room Facebook + "queue unavailable" fix
 - Owner fixed the TheIckRoom Facebook Page in Upload-Post (error was "Page 957497210771010 is not among the Pages this
   account can manage"). Re-posted the one failed row #4845 → ✓ https://www.facebook.com/reel/28898847116470450.
