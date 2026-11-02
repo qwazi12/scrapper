@@ -1,5 +1,25 @@
 # Scrapper Memory
 
+## Owner requested deletion of628duplicates: already skipped — November 1,19:20 EST
+
+Clarified the prior status wording after owner asked to delete the628duplicates.
+These628are statusaliased completion/provenance entries, representing downloads
+already avoided. All628have NO own drive_file_id and NO retained reserved file.
+Each points to a distinct existing canonical video whose SHA256,MD5,size and full
+decode match. Do NOT delete their canonical videos or remove the completion rows:
+that would lose saved originals or cause redownloads/incomplete episode coverage.
+Future status should call these "skipped duplicates" rather than imply extra
+physical Drive files. The alias count does not mean that many files need cleanup.
+
+Read-only Shared Drive enumeration completed12pages,5,417source-marked files
+observed while uploads continued. None has any of those628alias source IDs.
+Fresh cloud metadata independently verifies all628canonical copies by ID,parent,
+source properties,size,MD5,SHA256. Separate/reserved files for these628:ZERO.
+Deleted files:ZERO;bytes removed:ZERO. No queue or archive-state mutation, stop,
+restart, publishing or deployment. This is scoped to those628aliases, not a
+claim that unrelated historical physical duplicates/referenced files were cleaned.
+Evidence:artifacts/duplicate-delete-request-20261101/cloud-audit.json.
+
 ## Solo three/four-worker trials complete: keep FOUR — November 1, 08:41 EST
 
 Completed both owner-requested solo DramaRama trials. Three-worker cap:
