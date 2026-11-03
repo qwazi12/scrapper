@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## Combined UI rename integration regression — November 2, 2026
+
+Historical full CI41575917931passed backend/frontend but browser32passed/1failed:
+queue read-recovery still looked for the old Posting Queue tab after Claude's
+approved Screen Central rename. Updated only that exact navigation locator;
+kept rate-limit/outage/recovery/no-mutation assertions and all published behavior.
+Send to Posting Queue action labels are separate unchanged controls. Fresh exact
+source browser/full CI is required, not a rerun against the obsolete selector.
+
 ## Successful retry callback keeps its original quota day — November 2, 2026
 
 Final independent review reproduced a real quota defect: after a failed episode

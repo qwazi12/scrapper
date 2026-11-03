@@ -1524,7 +1524,7 @@ test("Queue read recovery uses the real limiter with a seeded exhausted fixture 
   await page.route(`${stack.api}/api/queue**`, route => fail && ["/api/queue", "/api/queue/counts"].includes(new URL(route.request().url()).pathname)
     ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic queue read outage" }) }) : route.continue());
   await page.getByRole("button", { name: /SocialPilot AI/ }).click();
-  await page.getByRole("button", { name: /Posting Queue/ }).first().click();
+  await page.getByRole("button", { name: /Screen Central \(/ }).click();
   await expect(unavailable).toContainText("Current queue contents could not be confirmed");
   await expect(unavailable.getByRole("alert")).toHaveText("503: Synthetic queue read outage");
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
