@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## PLAN — 2026-11-03 — X copy over 280 for Screen Central (owner: "Go ahead and make the update")
+Problem: Screen Central (Cinama:x) posts title+description+hashtags to X; over 280 weight the publisher refuses X and the row
+goes to Retry (#880). Register has X variants only for Ick (302) and 19 DramaRama; none for Screen Central.
+Change (queue_payloads.preview only): when NOT Ick, no reviewed X variant, and the full copy is over 280 → X gets
+title + public hashtags. YouTube/Facebook/Instagram copy unchanged. If even that is over 280, still refused (no truncation).
+Ick and DramaRama paths untouched. Test added. Rollback: git revert. Then retry #880's X only if owner asks.
+
 ## PLAN — 2026-11-03 — apply latest SEO Review Register (owner: "Apply and utilize the excel… we are doing 4 a day")
 Register reviewed vs live queue by Queue ID: 2,987 of 3,023 drafts already live. To do now:
 1. Screen Central Clips: apply the 15 un-applied drafts (proposed title, description, public hashtags). Before-values backed up.
