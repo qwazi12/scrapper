@@ -42,6 +42,8 @@ public and protected state, including immutable source binding.
 | --- | --- |
 | `GET /api/drama/contract` | Current capabilities, limits and activation blocker. |
 | `GET /api/drama/cutover-status` | Read-only current rows, live publication leases, late receipts and retained-history inventory. Not a release certificate. |
+| `GET /api/drama/published-media/{facebook or x}` | One bounded native media-list page, sanitized without temporary CDN URLs; actual available fields/caption/ID, no upload-history echo. |
+| `GET /api/drama/items/{id}/delivery-readback` | Match exact journal-attributed provider post URL to a native post ID/caption, canonical source and reviewed payload; decode bounded Facebook CDN video when available. Partial observations only. |
 | `GET /api/drama/items/{id}` | Exact state/fingerprint and server evidence/review IDs. |
 | `POST /api/drama/items/{id}/inspect` | Verify a complete source-marked canonical archive inventory and actual full decoded Drive bytes. |
 | `POST /api/drama/items/{id}/review-preview` | Preview exact canonical episode, current copy, revision/hashes, explicit targets and platform payload; produces acknowledgment digest. |
@@ -81,6 +83,19 @@ caption or synthetic transport test does not establish actual delivered media
 and visible copy. There is currently **no supported deployed positive fidelity
 receipt/verifier**. Do not claim an operational autonomous Drama schedule.
 
+The partial reader uses the documented native
+[media-list endpoint](https://docs.upload-post.com/api/instagram-media/), one page
+of at most25items. It binds exact observed permalink/native ID and caption to a
+journal-attributed provider request, immutable canonical source hash/duration and
+reviewed platform payload hash. It never substitutes an upload-history caption.
+For Facebook it can download one provider-returned HTTPS fbcdn.net playable video
+up to256MiB, refuse redirects, fully decode it, measure duration/audio streams and
+hash it, then remove the temporary copy. For X the documented video media URL is
+only a preview image; it is never fetched or presented as video proof. The
+normalized native schema has no separate Facebook title or X video duration/
+audio fields. Stream presence alone does not verify audio content. These missing
+proofs are reported explicitly and cannot activate or advance a lane.
+
 Before enabling it, implement and test an independently read proof binding:
 queue/canonical episode identity, exact source hash/duration/audio, reviewed
 payload/hash and target identity, provider request and native post IDs, observed
@@ -99,6 +114,14 @@ duration, audio and expanded public text. Preserve failures and uncertain
 receipts; never automatically delete/repost, thread or advance the series.
 If either readback is inaccessible, record it as unknown and retain the hold.
 A canary alone is not an implementation of per-episode verification.
+Current Drama admission blocks even that canary: there is deliberately no
+test-mode parameter or manual-publish bypass. Root/SEO need a separately approved
+one-shot first-episode operation through an existing legitimate provider route,
+with canonical source/copy/target/request binding retained, or a narrowly
+implemented/approved one-shot canary grant in the guarded publisher. Do not
+toggle global activation or generic Ready to run a probe. The one-shot operation
+must not authorize EP2, a third destination, or another request to an accepted
+target. No such live operation is performed by this code/test release task.
 
 Cutover must reconcile full retained history and exact live publication leases,
 and quiesce old Drama publishers. A database one-use permit atomically binds new

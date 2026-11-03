@@ -9,7 +9,7 @@ from typing import Literal
 from uuid import uuid4
 from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -178,6 +178,59 @@ def contract():
 @router.get('/plan')
 def inspect_plan(s: Session = Depends(get_session)):
     return dc.state(s)
+
+
+@router.get('/published-media/{platform}')
+async def published_media(platform: Literal['facebook','x'], limit: int = Query(default=5,ge=1,le=25)):
+    from . import drama_readback
+    from .social import upload_post
+    try:
+        body=await upload_post.published_media('Dramarama',platform,limit)
+    except upload_post.UploadPostError as exc:
+        raise HTTPException(502,'Native published-media read unavailable; retain the delivery hold') from exc
+    return {'read_only':True,'writes':0,'profile':'Dramarama','platform':platform,
+        'readback_source':'native platform media list, not submitted upload metadata',
+        'media':[drama_readback.native_view(row,platform) for row in body['media']],
+        'has_more':(body.get('pagination') or {}).get('has_more'), 'bounded_pages':1,
+        'fidelity_verified':False,'activation':dc.activation_contract()}
+
+
+@router.get('/items/{qid}/delivery-readback')
+def delivery_readback(qid: int, s: Session = Depends(get_session)):
+    from . import drama_readback
+    from .social import upload_post
+    item=s.get(QueueItem,qid,populate_existing=True)
+    dc.require_item(s,item)
+    evidence,ready=dc.readiness(s,item)
+    reviewed=dc.payload(s,item)
+    results={}
+    for event in s.query(PublicationEvent).filter_by(queue_id=qid,queue_identity=journal.identity(item)).order_by(PublicationEvent.id):
+        entry=event.payload
+        if entry.get('drama_ready_id')!=ready.operation_id or not entry.get('request_id'): continue
+        status=entry.get('observed_status') or entry.get('provider_status')
+        if not status: continue
+        from .social.queue_manager import resolve_results
+        resolved=resolve_results([entry],{entry['request_id']:status},dc.now(s))
+        if resolved is None: continue
+        for account,url in resolved['ok']: results[account]={'provider_request_id':entry['request_id'],'provider_post_url':url}
+        for account in resolved['failed']: results.pop(account,None)
+    identity=journal.identity(item);proof=dict(evidence.data);ready_id=ready.operation_id
+    evidence_id=evidence.id;targets=list(ready.data['targets'])
+    s.rollback()  # Native/CDN reads and decode must not hold DB writer ownership.
+    observations={}
+    for account,receipt in results.items():
+        platform=account.partition(':')[2]
+        platform='x' if platform=='twitter' else platform
+        if account not in targets or platform not in ('facebook','x'): continue
+        try:
+            observation=asyncio.run(drama_readback.inspect_destination(platform,receipt['provider_post_url'],reviewed,proof))
+        except upload_post.UploadPostError:
+            observation={'status':'unknown','fidelity_verified':False,'reason':'Native readback unavailable'}
+        observations[account]={**receipt,**observation}
+    return {'read_only':True,'writes':0,'queue_identity':identity,'canonical_evidence_id':evidence_id,
+        'reviewed_ready_id':ready_id,'canonical_source':{key:proof[key] for key in ('series_key','episode','source_video_id','sha256','duration')},
+        'observations':observations,'fidelity_verified':False,'activation':dc.activation_contract(),
+        'notice':'Partial native observations only. Missing title/media/audio proof holds the lane; no repost or episode advance.'}
 
 
 @router.get('/cutover-status')

@@ -1,5 +1,33 @@
 # Scrapper Memory
 
+## Bounded native delivery readback — November 2, 2026, America/New_York
+
+Primary provider media-list docs establish a native read path distinct from
+submitted upload history:actual native IDs/captions/permalinks; Facebook playable
+media URLs, but X video URLs are preview images. Added one-page read-only Drama
+API, no analytics/provider-write/queue mutation/new credential. Per-item readback
+requires an immutable Ready review plus matching journal-attributed provider
+success; binds native post ID/permalink/observed caption to canonical source
+hash/duration and approved payload hash. Bounded supported Facebook CDN video can
+be fully decoded/measured/hashed and temporary bytes removed. Signed CDN URLs are
+not returned/persisted, redirects and unsupported hosts refuse. X previews are
+never fetched as video proof. Actual native-field availability must be verified
+read-only after release; mocks do not establish live platform behavior.
+
+Still held:the normalized native schema has no independent separate Facebook
+title or X video duration/audio. An audio stream alone does not establish audio
+content fidelity. Partial reader explicitly cannot activate/advance a lane.
+Current admission also blocks a canary; root/SEO need separately coordinated
+one-shot first-episode authorization/path with fixed canonical source, exact
+platform variants, target/Page identity and request/native IDs, never a global
+activation toggle. No live canary has been submitted. Exact boundaries and
+required observed evidence are in docs/DRAMA_RELEASE_CONTRACT.md.
+
+Source42e3ac4was pushed normally and full CI41575917931started; it is historical
+to this follow-up reader until a final combined source run passes. Updated local
+PostgreSQL source42e3ac4passed506tests plus restore; earlier cutover-fixture failed
+run retained. New reader/final tests and final CI remain required before merge.
+
 ## Release reconciliation — November 2, 2026, America/New_York
 
 Owner confirmed Claude stopped and lifted the implementation/release ownership

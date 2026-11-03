@@ -281,6 +281,18 @@ def test_cutover_status_includes_cleared_history_and_owned_leases_without_mutati
     assert not a.transfers
 
 
+def test_readback_requires_server_attributed_receipts_and_cannot_advance_lane(archive,monkeypatch):
+    a=archive;qid=a.rows[0,1][0]
+    ready(a,(0,1))
+    async def forbidden(*args,**kwargs):pytest.fail('No native read before an attributed actual publication receipt')
+    monkeypatch.setattr(upload_post,'published_media',forbidden)
+    before=view(a,(0,1))
+    result=a.client.get(f'/api/drama/items/{qid}/delivery-readback')
+    assert result.status_code==200,result.text
+    assert result.json()['observations']=={} and result.json()['fidelity_verified'] is False
+    assert view(a,(0,1))==before and not a.transfers
+
+
 @pytest.mark.parametrize('damage', ['gap', 'duplicate', 'trashed', 'hash', 'props', 'media', 'incomplete', 'restricted',
     'malformed_size', 'malformed_row', 'malformed_url'])
 def test_false_source_or_media_proofs_are_rejected_without_binding(archive, monkeypatch, damage):

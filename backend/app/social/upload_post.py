@@ -342,6 +342,32 @@ async def get_status(request_id: str) -> dict[str, Any]:
     return res.json()
 
 
+async def published_media(profile: str, platform: str, limit: int = 25) -> dict:
+    """One bounded native media-list read, not upload history or analytics.
+
+    https://docs.upload-post.com/api/instagram-media/
+    X's video media_url is a preview image, never video-duration evidence.
+    """
+    if platform not in ('facebook', 'x') or type(limit) is not int or not 1 <= limit <= 25:
+        raise UploadPostError('Readback supports one bounded Facebook/X media page', status_code=400)
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            res = await client.get(f'{API_BASE}/uploadposts/media', headers=_headers(),
+                                   params={'platform': platform, 'user': profile, 'limit': limit})
+    except httpx.HTTPError as exc:
+        raise UploadPostError('Native published-media read timed out or is unavailable') from exc
+    _raise_for(res, 'Published media read')
+    try:
+        body = res.json()
+    except ValueError as exc:
+        raise UploadPostError('Published media response is not JSON') from exc
+    if (not isinstance(body, dict) or body.get('success') is not True or not isinstance(body.get('media'), list)
+            or len(body['media']) > limit or any(not isinstance(row, dict) for row in body['media'])
+            or body.get('pagination') is not None and not isinstance(body['pagination'],dict)):
+        raise UploadPostError('Published media response is incomplete or malformed')
+    return body
+
+
 async def connect_url(profile: str) -> str:
     """Hosted page where the owner connects social accounts to a profile."""
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
