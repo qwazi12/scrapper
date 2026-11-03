@@ -12,6 +12,12 @@
 4. ⏰ Schedule editor: X added to per-platform settings (backend already accepts any platform).
 5. Per-account list: "default" → Cinama/TheIckRoom/Dramarama/mk; live DramaRama config: drop "youtube: 2" (no YouTube).
 Tests → suite → tsc → push when idle → verify live → log.
+BUILT 2026-11-03 (7fdf32a, committed, NOT pushed — the deploy was refused by the permission check; owner to confirm):
++1 test; backend suite 1,209 passed / 1 skipped; frontend tests + tsc clean. Item 5's live config edit (drop DramaRama
+"youtube: 2") not done yet — it's a live change, waits with the deploy.
+Seen live 13:10 UTC (other agent's code, deployed 11:52): #880 Facebook now posts as a full video (/videos/, not a Reel) —
+90-second cut fixed. X refused: "visible copy exceeds the verified baseline" (>280) → row goes to Retry. Every post with
+long copy will do this on X until short X variants exist (owner decision pending).
 
 ## ICK display-thumbnail inspection hotfix candidate — November 3, 2026
 
