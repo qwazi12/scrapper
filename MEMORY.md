@@ -1,5 +1,63 @@
 # Scrapper Memory
 
+## Verified guarded delivery release — November 2, 2026, America/New_York
+
+Released exact tested application source33f4231cd4a95b5fafa5d70e59ec19cd739e7229
+through the authorized existing non-force Git route. GitHub main fast-forwarded
+from3df81f0 after verifying ancestry, clean exact source, no branch protections/
+rulesets requiring a PR, and terminal green full CI41577694754. No PR approval,
+auto-merge, branch/security/credential change or denied integration-write retry.
+All committed Claude changes and local hold note9117336 are retained. The original
+twelve-file draft and unrelated archive edits remain byte-for-byte untouched.
+
+Final CI:https://github.com/qwazi12/scrapper/actions/runs/41577694754.
+Backend1059passed/1existing skip/1existing dependency warning(281.25s);
+frontend typecheck,6API-error tests,build and zero-vulnerability audit passed;
+full network-disabled Linux browser33passed(11.5min). Actual PostgreSQL525passed
+plus native restore1.532s/source unchanged. Corrected queue-recovery navigation
+also passed independently in a network-disabled Docker browser, with screenshot
+visually checked. Synthetic media/provider tests are not real platform uploads.
+
+Railway production deploymentf3fc20fe-eb6f-495c-bdc5-b4185814ec67 SUCCESS and
+Vercel productiondpl_GxhFsxFtTueveQiX1Qxpk3SnDfkD READY both identify exact33f4231.
+Live health200, auth Drama contract/plan/cutover reads200, and healthy non-stale
+checksummed pre-migration backup verified. Live Drama plan is null and activation
+is server-held. Cutover read found5471Review/wildcard rows, zero current posting/
+request rows, live publication leases, late receipts, retained Drama events or
+unattributed historical Drama identities. This inventory is not a delivery proof.
+No content metadata, Ready, scheduling, account/destination, publish/test-post,
+archive-worker or unrelated process change was performed by this release task.
+
+Deployed code:explicit complete-file Facebook VIDEO fields; full supported X
+visible copy or a local pre-intent hold; exact canonical episode/review/Ready
+receipts; isolated two-series/four-each future-slot controls; publisher/SQL permits;
+idempotence, conditional rollback and canonical retry quota units including the
+successful next-day callback fix; explicit reviewed FB/X targets with YouTube
+excluded; read-only native media and publication/cutover observations. Existing
+Studio/native/export/rights gates and source-bound LongForm title authority stay
+intact. See docs/DRAMA_RELEASE_CONTRACT.md for operations/acceptance boundaries.
+
+Actual new native reads succeeded:DramaRama Facebook has2IMAGErecords and X has0
+records in the bounded page; fields include native ID,caption,media type,URL,
+permalink,timestamp andthumbnail, not complete duration/audio or separate FB title.
+Independent public X example renders211.633seconds. Its preview and observed
+video/audio .m4s fragments share a media ID, but DOM source is a blob and no
+complete standalone video/manifest was observed through supported page-assets
+inspection. This does not establish a whole-file URL or positive X media proof;
+no URL guessing, hidden-state extraction, fragment-as-full-video claim or new
+credential was used. Feasibility evidence remains private; no additional release
+code or unsafe activation bypass was introduced.
+
+Remaining before autonomous Drama posting:exact approved X variants or verified
+entitlements; verified native/Page target identity; a separately coordinated,
+one-shot first-episode canary/path owned by root/SEO; independent complete served
+media/audio and visible-copy proof with canonical/review/request/native-ID binding.
+Current admission deliberately blocks canaries and full plan activation until a
+supported path is explicitly implemented/approved. Unknown output cannot advance
+an episode or trigger a duplicate resend. No real delivery certificate exists.
+Private first-episode proposal and source/copy evidence are outside Git. This
+follow-up changes MEMORY.md only; deployed application files remain exact33f4231.
+
 ## Combined UI rename integration regression — November 2, 2026
 
 Historical full CI41575917931passed backend/frontend but browser32passed/1failed:
