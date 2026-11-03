@@ -29,7 +29,7 @@ COPY_FIELDS = ('title', 'description', 'tags', 'pipeline', 'source', 'drive_link
 def activation_contract():
     return {'supported': False, 'blocker': 'delivery_fidelity_verifier_unavailable',
         'detail': 'Provider acceptance/success URLs do not prove full episode duration and exact visible copy. A supported server-side delivered-media/copy verifier is required before activating this plan.',
-        'baseline_entitlements': '280-weight X caption, 140-second/512-MiB video until account entitlements are verified; no automatic threads or truncation'}
+        'baseline_entitlements': 'Conservative software/provider-route caps:280-weight X caption,140-second/512-MiB video; not universal X Post limits. No automatic expansion, threads or truncation'}
 
 
 def require_activation_capability():
@@ -167,8 +167,11 @@ def payload(s, item):
     evidence, ready = readiness(s, item)
     review = latest(s, item, 'review')
     from .drama_payloads import build
-    current = build(item, evidence.data, review.data['document']['review'])
-    if current['errors'] or current['sha256'] != review.data['document']['payload']['sha256']:
+    from . import drama_media
+    current = build(item, drama_media.reviewed_proof(s,item,evidence), review.data['document']['review'])
+    lineage=drama_media.binding(drama_media.selected(s,item))
+    digest=pm.digest({'values':current['values'],'derivative_lineage':lineage}) if lineage else current['sha256']
+    if current['errors'] or digest != review.data['document']['payload']['sha256']:
         fail('visible platform payload differs from its exact accepted copy or supported bounds')
     return current['values']
 
@@ -393,11 +396,11 @@ def reserved_before(s, identity):
         PublicationEvent.payload['drama_series_key'].as_string().isnot(None)).first())
 
 
-def admission(s, item, *, media_sha256=None, final=False):
+def admission(s, item, *, media_sha256=None, final=False, transport=None):
     """Called inside the existing publication lease; final caller owns DB mutex."""
     from . import drama_canary
     if drama_canary.current():
-        return drama_canary.validate(s,item,media_sha256=media_sha256,final=final)
+        return drama_canary.validate(s,item,media_sha256=media_sha256,final=final,transport=transport)
     require_activation_capability()
     evidence, ready = readiness(s, item)
     require_source_history(s, item, evidence.data)

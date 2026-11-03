@@ -19,9 +19,11 @@ URLs the provider would strip and unsupported control characters are held
 before a per-platform intent or request. No automatic shortening, hashtag
 removal, threading, or Premium assumption occurs. A guarded Drama review can
 bind a separately approved exact X variant while preserving public hashtags.
-Drama media beyond the unverified 140-second/512-MiB baseline also requires a
-separate verified entitlement contract. These conservative holds are not claims
-that every account or posting path has those media limits.
+Drama media beyond this software/provider-route 140-second/512-MiB baseline also
+requires a separate verified route contract. These are conservative software
+holds, not universal current X Post limits. X's current [primary media guidance](https://docs.x.com/x-api/media/quickstart/best-practices)
+lists default Post video up to20minutes/8GB, versus140seconds/512MB for DMs.
+This patch does not expand the verified Upload-Post route or account entitlements.
 
 New transport receipts bind the actual visible platform fields. Reported
 provider changes/warnings hold the delivery for review without resubmitting an
@@ -213,3 +215,110 @@ from synthetic internal state-machine tests that replace that boundary.
 Private workbooks, queue IDs, account credentials, real copy and source evidence
 remain outside Git. CI artifacts and private release receipts identify the exact
 source tested. No fixture success is a live delivery certificate.
+
+## Local media-lineage and diagnostic implementation for review
+
+This extension is local and **not deployed**. No live artifact, grant, Ready
+transition, upload, dispatch or public test has been performed by this task.
+Code release and actual specific public-test approval are separate decisions;
+previous deployment approval is not reused.
+
+### Explicit original-to-derivative lineage
+
+`POST /api/drama/items/{id}/derivatives/prepare` accepts an operation UUID,
+current full queue fingerprint, canonical evidence ID and only the fixed recipe
+`h264-aaclc-preserve-timeline-v1`. There is no client path, URL, arbitrary command,
+upload body or client-supplied validation flag. The server downloads/verifies the
+canonical original, runs the bounded recipe, validates complete output and saves
+an immutable receipt. Original Drive/queue media and canonical evidence are never
+overwritten or relabelled as the derivative.
+
+The receipt binds original identity/hash/bytes/probe and decoded video PTS;
+derivative identity/hash/bytes/probe; recipe/arguments and actual FFmpeg/FFprobe
+versions; exact queue identity, copy and target selection; and measured content
+comparisons. Encoding uses measured encoder AND MP4 track timebase, passthrough
+timing, fixed H264/AAC-LC settings and bounded threads/time/bytes/disk reserve.
+It preserves frame count, complete PTS, stream starts/durations, geometry and color
+metadata. Missing timing/audio/profile or unsupported transformations hold.
+
+Audio checks each original channel separately at the same sample origin, using
+cosine, RMS level ratio and normalized decoded error. Mono similarity alone does
+not certify stereo content or gain preservation. Full-video SSIM and timing are
+technical floors, not perceptual approval, rights or delivered-platform fidelity.
+There is no client-selected trim, crop, speed/loudness or arbitrary recipe.
+
+`GET /api/drama/derivatives/{id}/artifact` permits authenticated local review.
+Existing review-preview/review accept an explicit `derivative` object containing
+the preparation ID, exact document SHA256 and a separate original/derivative
+video-and-every-audio-channel review decision. Ready revalidates actual media.
+Canary authorization additionally requires `authorized_artifact_sha256` and
+`authorized_lineage_sha256`, binding both the original and reviewed derivative.
+Journal events retain `original_media_sha256`, `transport_media_sha256` and
+lineage; artifact/request keys include it. The final original-hash guard still
+checks actual original bytes, while the separate transport file must match its
+reviewed hash/recipe. Derivative hash never substitutes for the original check.
+
+`POST /api/drama/derivatives/{id}/revoke` appends revocation without deleting
+retained lineage/media or recalling sent requests. Changed original, recipe,
+artifact, copy, target selection or revoked review blocks unsent transport.
+Unknown recipes after source rollback hold. Same-operation preparation rechecks
+its receipt under ownership before generation. Preexisting, committed or
+uncertain-commit artifacts are never deleted/overwritten on retry; validated
+uncommitted artifacts remain for explicit investigation.
+
+AAC codec name alone is insufficient: review requires actual **AAC-LC** profile
+evidence, mono/stereo and the supported pixel format. HE-AAC/HE-AACv2, missing
+profile or unknown audio holds. Fresh inspection can append media observations
+without changing the immutable canonical binding. Old missing profile evidence
+is never silently assumed to be Low Complexity.
+
+Derivative review uses a lineage-bound payload digest. An older publisher that
+understands only the original values-only digest therefore rejects the new
+review, even when the original is already H264, instead of silently choosing
+original bytes after source rollback. Absent optional fields preserve historical
+v1 operation request hashes/replay; old unconsumed grants without an exact
+transport binding hold. A consumed scope is never reset for migration.
+
+Artifact reads use the existing immutable-hash-checked ASGI response, with shared
+file ownership through the last body byte and a fresh hash check at actual send.
+The persistent `drama-artifacts` directory is outside cache/download/render/Studio
+sweep and rescan scopes. Existing `file_refs.protected` also recognizes immutable
+artifact receipts independently of mutable queue rows, including revoked and
+accepted/unknown artifacts. A stale Clip reference cannot make them disposable.
+Database backups retain the receipts but **do not package physical artifact
+videos**; volume/file recovery must preserve those separately. Missing artifacts
+fail closed, preserving canonical originals and all durable receipts.
+
+### Separate original 120-second calibration
+
+The diagnostic uses wholly generated colors/mathematical tones, with no external
+footage, music, voices or fonts. It is never EP1, a queue row, an episode
+predecessor or a schedule assignment. Its independent scope cannot activate the
+normal eight-slot plan or reset the existing canonical canary scope.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/drama/calibration/contract` | Separate scope/counts; no publication authority. |
+| `POST /api/drama/calibration/assets/prepare` | Generate only `original-color-tones-120-v1`; validate120seconds/3600frames, H264/AAC-LC, colors at15/45/75/105seconds and the late110-second audio pulse. |
+| `GET /api/drama/calibration/assets/{id}/artifact` | Authenticated review of exact generated original. |
+| `POST /api/drama/calibration/preview` | Exact asset/document hash, visible Facebook VIDEO copy, Page/pins and future slot; authorization may stay null. |
+| `POST /api/drama/calibration/grants` | Unchanged acknowledged preview plus actual owner authorization/rights reference and exact asset/payload hashes. Does not send. |
+| `GET /api/drama/calibration/grants/{id}` | Historical claim, transport/native observations and uncertainty; never resend authority. |
+| `POST /api/drama/calibration/grants/{id}/revoke` | Append cancellation; never reset consumption or recall a sent request. |
+| `POST /api/drama/calibration/grants/{id}/dispatch` | At most one explicit Facebook VIDEO request in its authorized five-minute future window. No X/YouTube/wildcard expansion. |
+| `POST /api/drama/calibration/grants/{id}/observe` | Read only the original retained provider request ID and append immutable status/native IDs; no upload or fidelity certificate. |
+
+The separate immutable `DramaRecord` diagnostic journal retains claims, send
+intents, results/observations and original/artifact hashes with stable request
+identity. No fake queue identity or episode evidence is created. Cross-process
+lease, writer mutex and one transaction consume authority before HTTP. Fresh
+native Page/pin reads precede claim and send. Unknown/accepted outcomes never
+resend; replay/restart returns original receipts. Revocation, changed media/copy/
+Page/slot or a new operation ID cannot reset consumption. Provider native status
+is not an independent check of expanded public title, full served video or audio.
+
+Both public-test authorizations remain absent. Derivative/content review, exact
+X variant approval retaining all common hashtags, source/copy rights and actual
+grant decisions require root/SEO coordination. A real120-second calibration
+could prove only that exact diagnostic on that exact Facebook route, not episode
+quality, X behavior or continuous fidelity. Automatic activation and EP2 stay held.

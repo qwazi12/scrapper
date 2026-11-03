@@ -1,5 +1,72 @@
 # Scrapper Memory
 
+## Local derivative/calibration slice ready for review — November 3, 2026, America/New_York
+
+LOCAL ONLY, not pushed/deployed or approved for public testing. Base main1c30659
+is the previous memory-only follow-up; deployed application remains77ac5c9.
+Root authorized local implementation/tests, explicitly withholding live grants,
+Ready/metadata/schedule/account changes, provider/Drive uploads, dispatch and paid
+API calls. SEO remains sole live writer. Private investigation/candidates, exact
+copy/IDs/hashes and canonical workbook were read only and remain outside Git.
+
+Implemented explicit server-owned original-to-derivative preparation with one
+fixed bounded H264/AAC-LC recipe, measured encoder AND MP4 track timebase, full
+decoded frame PTS/offset/duration preservation, per-channel audio content AND
+level/error checks, SSIM floor and immutable original/artifact/recipe/tool/source/
+copy/target binding. Separate exact derivative review and original-plus-artifact
+canary authorization are required. The original-hash guard is retained; no Drive/
+queue media replacement or silent transcode. Actual AAC profile is checked:
+HE-AACv2 is not AAC-LC; missing evidence stays held. Old v1 receipt hashes/replay
+remain stable for absent optional lineage fields; old unconsumed grants without
+transport binding reject409 and consumed histories never reset.
+
+Separate original120-second color/tone calibration has bounded local generation,
+server decode/marker verification, review/preview/grant/revoke/status/observe/
+dispatch contracts, a dedicated cross-process lease and immutable intent/result
+journal. It never creates a queue row or canonical episode. Exact Page/pin/copy/
+asset/slot/rights authorization is required; no X/YouTube/wildcard expansion.
+Unknown/accepted outcomes never resend; late receipts survive generation loss.
+Normal eight-slot activation/fidelity and EP2 remain held. Both public-test
+authorizations, perceptual derivative review, source/copy rights and the exact
+three-hashtag X variant approval are absent. No private candidate was adopted.
+
+Retained artifacts live under DATA_DIR/drama-artifacts, outside existing cache,
+download, render_new, Studio/archive and Clip/Compilation rescan sweep scopes.
+Added only a minimal immutable-receipt reference to existing file_refs.protected
+so a stale Clip/path cannot delete a registered derivative/calibration artifact,
+including after revocation or accepted/unknown transport. DB backups retain these
+records; existing DB backup does NOT package physical artifact video files.
+Volume/file recovery must preserve those separately. Missing files fail closed
+without deleting originals/receipts. Both artifact routes reuse the existing
+hash-checked ASGI FileResponse and hold shared pins through the last byte.
+
+Final backend1146passed/1existing skip/1existing dependency warning(263.41s),
+actual isolatedPG612passed(274.25s),native restore2.230s/source unchanged,
+1012902bytes,SHA5bbf30c75514cd1b0110e8cc94c05e29236adc70157d0b95bb94edebd979b90b.
+The earlier1136/602full runs preceded the late-receipt/compatibility additions;
+their separate late-generation1pass and affected140/PG140 receipts are retained,
+not substituted for the final broad passes. Serving/retention focused50/2passed.
+Exact old77ac5c9 publisher function rejects the new lineage-bound review, even
+for an H264 original, while current-code transport and historical v1 replay pass.
+
+Full offline browser32passed/1failed: existing asset-review competing edit hit a
+real source-stream FileBusy409. Fresh unmodified targeted navigation/queue/asset
+suite3passed. The test now completes the actual preview, polls read-only marked
+fixture DB ownership and ready-render state, then performs the original one-shot
+edit; no mutation retry, file guard weakening or lost stale-write assertions.
+Updated targeted1passed then fulloffline33passed(11.0min), with actual ownership
+evidence showing render ready and zero source claims. This full UI run froze
+integration snapshot9b649e8e before the final two-module rollback-digest fix.
+Final snapshot07782d513662a615084b789bde957bf05503281cb1a5ad995da98f4f58827fc4
+has full backend/PG above plus fresh navigation/queue-recovery/asset-review
+browser3passed(1.3min). Do not claim an additional full33run after that last fix.
+Frontend6API-error tests,typecheck,build passed. Existing installed Docker image
+was reused with current read-only source/test overlays and networknone; no
+dependency installation or new image/source-deployment claim. Original held
+draft and unrelated archive edits/processes are preserved. No outstanding test
+failure; exact remote CI/release on the review-approved commit remains future
+work requiring separate code-release approval. See docs/DRAMA_RELEASE_CONTRACT.md.
+
 ## Verified one-shot canary code release — November 3, 2026, America/New_York
 
 Released application77ac5c93acfdd75e79adc68b6caf1620ebf4ad28 through the

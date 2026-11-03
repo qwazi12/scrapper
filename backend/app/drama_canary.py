@@ -35,6 +35,7 @@ class Dispatch:
     grant_sha256: str
     target_identity: dict
     checked_monotonic: float
+    transport_paths: tuple | None=None
 
 
 def current(): return _current.get()
@@ -99,6 +100,11 @@ def prepared(s,item,req,target_identity,*,require_authorization=False):
         dc.fail('canary cannot coexist with or activate an ordinary Drama plan')
     dc.require_source_history(s,item,evidence.data)
     payload=dc.payload(s,item)
+    from . import drama_media
+    derivative=drama_media.selected(s,item)
+    lineage=drama_media.binding(derivative)
+    transport={'original_sha256':evidence.data['sha256'],
+        'artifact_sha256':derivative['artifact_sha256'] if derivative else evidence.data['sha256'],'lineage':lineage}
     if payload['facebook_media_type']!='VIDEO': dc.fail('canary requires the explicit full-length Facebook VIDEO path')
     instant=dc.now(s);slot=dc.aware(req.slot)
     local=slot.astimezone(dc.TZ)
@@ -115,12 +121,15 @@ def prepared(s,item,req,target_identity,*,require_authorization=False):
         dc.fail('specific public-canary authorization must bind this exact visible platform payload')
     if req.authorization and req.authorization.authorized_source_sha256!=evidence.data['sha256']:
         dc.fail('specific public-canary rights/authorization must bind this exact original source checksum')
+    if req.authorization and lineage and (req.authorization.authorized_artifact_sha256!=transport['artifact_sha256']
+            or req.authorization.authorized_lineage_sha256!=pm.digest(lineage)):
+        dc.fail('specific authorization/rights must bind BOTH original and exact reviewed derivative lineage/artifact hashes')
     canonical={key:evidence.data[key] for key in ('series_key','series_id','season','episode','source_video_id',
         'canonical_video_id','drive_file_id','sha256','file_size','duration','catalog_hash')}
     document={'version':VERSION,'canary_scope':SCOPE,'queue_id':item.id,'queue_identity':journal.identity(item),
         'queue_fingerprint':pm.fingerprint(s,item),'evidence_id':evidence.id,'review_id':review.operation_id,
         'transport_state_sha256':transport_state(item),
-        'ready_id':ready.operation_id,'copy_hash':dc.copy_hash(item),'series':req.series,'canonical':canonical,
+        'ready_id':ready.operation_id,'copy_hash':dc.copy_hash(item),'series':req.series,'canonical':canonical,'transport':transport,
         'target_identity':target_identity,'targets':ready.data['targets'],'payload':payload,'payload_sha256':pm.digest(payload),
         'slot':slot.isoformat(),'expires_at':(slot+dt.timedelta(minutes=5)).isoformat(),
         'slot_local':local.isoformat(),'timezone':dc.TZ.key,
@@ -142,10 +151,12 @@ def prepared(s,item,req,target_identity,*,require_authorization=False):
     return document
 
 
-def validate(s,item,*,final=False,media_sha256=None):
+def validate(s,item,*,final=False,media_sha256=None,transport=None):
     value=current()
     if not value or value.queue_id!=item.id: dc.fail('an explicit dedicated canary dispatch operation is required')
     row=grant(s,value.grant_id);doc=row.data['document']
+    if not isinstance(doc.get('transport'),dict):
+        dc.fail('legacy canary grant has no exact original/artifact binding; retain its history and obtain a new explicit grant only if unconsumed/revoked')
     if pm.digest(doc)!=value.grant_sha256 or revoked(s,row): dc.fail('canary grant changed or was revoked')
     if consumed(s,row): dc.fail('canary grant already has a durable dispatch; replay its operation or inspect publication evidence without resending')
     if journal.identity(item)!=doc['queue_identity'] or pm.fingerprint(s,item)!=doc['queue_fingerprint']:
@@ -171,9 +182,11 @@ def validate(s,item,*,final=False,media_sha256=None):
     if len(dc.attempted_today(s,None,instant))>=8 or len(dc.attempted_today(s,evidence.series_key,instant))>=4:
         dc.fail('canary cannot exceed the existing Drama episode quota')
     if final and media_sha256!=doc['canonical']['sha256']: dc.fail('canary transport bytes differ from the specifically authorized original')
+    if final and transport!=doc['transport']:dc.fail('original/artifact/recipe lineage differs from exact canary authorization')
     return {'drama_ready_id':ready.operation_id,'drama_canary_grant_id':row.operation_id,
         'drama_canary_operation_id':value.operation_id,'drama_series_key':evidence.series_key,
-        'drama_episode':1,'drama_slot':doc['slot']}
+        'drama_episode':1,'drama_slot':doc['slot'],'original_media_sha256':doc['transport']['original_sha256'],
+        'transport_media_sha256':doc['transport']['artifact_sha256'],'derivative_lineage':doc['transport']['lineage']}
 
 
 async def refresh_target_identity():
@@ -189,7 +202,7 @@ def request_keys(s,item):
     value=current()
     if not value:return None
     doc=grant(s,value.grant_id).data['document']
-    return {account:uuid5(UUID(value.operation_id),pm.digest([account,doc['canonical']['sha256'],doc['payload_sha256'],doc['target_identity']])).hex
+    return {account:uuid5(UUID(value.operation_id),pm.digest([account,doc['transport'],doc['payload_sha256'],doc['target_identity']])).hex
             for account in doc['targets']}
 
 
@@ -240,6 +253,12 @@ async def before_destination(account):
         await refresh_target_identity()
         with SessionLocal() as s:
             row=grant(s,value.grant_id);doc=row.data['document'];claimed=consumed(s,row)
+            from .studio.media_quality import file_hash
+            if not value.transport_paths or any(file_hash(path)!=expected for path,expected in value.transport_paths):
+                dc.fail('original or approved derivative bytes changed before destination transport')
+            if doc['transport']['lineage']:
+                from . import drama_media
+                if drama_media.revoked(s,doc['transport']['lineage']['derivative_id']):dc.fail('derivative review was revoked')
             if (revoked(s,row) or not claimed or claimed.operation_id!=value.operation_id or account not in doc['targets']
                     or not dt.datetime.fromisoformat(doc['slot'])<=dc.now(s)<dt.datetime.fromisoformat(doc['expires_at'])):
                 dc.fail('canary destination/slot/claim is no longer valid; do not resend')

@@ -1927,6 +1927,38 @@ test("Reviewed asset decisions preserve provenance, recover stale words and requ
   await card.getByRole("button", { name: "Review metadata and use permission", exact: true }).click();
   await form.getByRole("button", { name: "Restore unsaved draft", exact: true }).click();
   await expect(description).toHaveValue("Private corrected violet sound labels survive navigation and stale reviews.");
+  // A preview owns its source through the last ASGI byte. Finish that real read
+  // before the independent metadata edit; do not waive/retry a refused write
+  // or make renderer/stream ownership depend on incidental browser timing.
+  const previewReads: Promise<unknown>[] = [];
+  const onPreview = (response: any) => {
+    if (new URL(response.url()).pathname === `/api/editorial/assets/${aid}/media`) previewReads.push(response.finished());
+  };
+  page.on("response", onPreview);
+  await expect(card.locator("audio")).toHaveCount(1);
+  await card.locator("audio").evaluateAll(elements => elements.forEach(element => {
+    const audio = element as HTMLAudioElement; audio.preload = "auto"; audio.load();
+  }));
+  await expect.poll(() => card.locator("audio").evaluateAll(elements => elements.every(element =>
+    (element as HTMLAudioElement).readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA))).toBe(true);
+  const completedReads = await Promise.all(previewReads); page.off("response", onPreview);
+  expect(completedReads.every(result => result === null)).toBe(true);
+  const ownership = () => JSON.parse(execFileSync("python", ["-c", `
+import datetime as dt,json,sqlite3,sys
+from pathlib import Path
+root=Path(sys.argv[1]).resolve();database=(root/'data'/'scrapper.db').resolve()
+assert root.name.startswith('scrapper-e2e-') and (root/'.scrapper-e2e').is_file() and database.is_relative_to(root)
+with sqlite3.connect(database.as_uri()+'?mode=ro',uri=True) as db:
+ source=Path(db.execute('SELECT file_path FROM media_assets WHERE id=?',(int(sys.argv[2]),)).fetchone()[0]).resolve()
+ uses=[];now=dt.datetime.now(dt.timezone.utc)
+ for resource,paths,owner,expires in db.execute('SELECT f.resource,f.paths,l.owner,l.expires_at FROM file_uses f JOIN worker_leases l ON l.resource=f.resource'):
+  stamp=dt.datetime.fromisoformat(expires).replace(tzinfo=dt.timezone.utc)
+  if owner and stamp>now and any(source==Path(p) or source.is_relative_to(Path(p)) or Path(p).is_relative_to(source) for p in json.loads(paths)):uses.append(resource)
+ campaign=db.execute('SELECT stage_status FROM creative_campaigns WHERE id=?',(int(sys.argv[3]),)).fetchone()[0]
+ print(json.dumps({'live_source_uses':uses,'campaign_stage':campaign}))
+`, stack.root, String(aid), String(cid)], { encoding: "utf8" }));
+  await expect.poll(() => ownership(), { timeout: 15_000 }).toEqual({ live_source_uses: [], campaign_stage: "ready" });
+  writeFileSync(path.join(evidence, "asset-review-completed-source-ownership.json"), JSON.stringify(ownership(), null, 2));
   const competing = await request.post(endpoint, { headers, data: { ...original.metadata, expected_version: original.version,
     description: "A concurrent owner decision changes the source metadata before this form saves.", rationale: "An independent current review must never be overwritten by a stale form.", reviewed: true } });
   expect(competing.ok(), await competing.text()).toBe(true);

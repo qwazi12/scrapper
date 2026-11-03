@@ -100,6 +100,10 @@ from .drama_routes import router as drama_router
 app.include_router(drama_router)
 from .drama_canary_routes import router as drama_canary_router
 app.include_router(drama_canary_router)
+from .drama_media_routes import router as drama_media_router
+app.include_router(drama_media_router)
+from .drama_calibration import router as drama_calibration_router
+app.include_router(drama_calibration_router)
 from .editorial import asset_annotations
 app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes

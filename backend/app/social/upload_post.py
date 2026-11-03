@@ -201,7 +201,7 @@ async def list_accounts() -> list[dict[str, Any]]:
     return accounts
 
 
-async def canary_target_identity(facebook_page_id: str) -> dict:
+async def _native_page_identity(facebook_page_id: str):
     """Read exact native identities/current Facebook pin; never select a Page.
 
     Documented GET user-profiles and facebook-page endpoints. Provider plan
@@ -217,7 +217,7 @@ async def canary_target_identity(facebook_page_id: str) -> dict:
         _raise_for(page_response,'Canary Facebook Page/pin read')
         profile_body,page_body=profile_response.json(),page_response.json()
         profile=profile_body['profile']; accounts=profile['social_accounts']
-        x=accounts['x']; facebook=accounts['facebook']
+        facebook=accounts['facebook']
         pages=page_body['pages']
         # An explicit null is authoritative unpinned evidence, not a missing
         # alias to discard in favour of a potentially stale populated field.
@@ -232,27 +232,37 @@ async def canary_target_identity(facebook_page_id: str) -> dict:
         if len(matches)!=1:
             issue='page_access_unverifiable';raise ValueError(issue)
         page=matches[0]
-        if not isinstance(x.get('username'),str) or not x['username'].strip():
-            issue='native_x_identifier_missing';raise ValueError(issue)
         if (profile_body.get('success') is not True or page_body.get('success') is not True
                 or profile.get('username')!='Dramarama' or profile.get('reauth_required') is True
                 or profile.get('blocked') is True or profile_body.get('blocked') is True
-                or x.get('reauth_required') is True or facebook.get('reauth_required') is True
-                or not isinstance(x.get('handle'),str) or not x['handle'].strip()
+                or facebook.get('reauth_required') is True
                 or not isinstance(page.get('name'),str) or not page['name'].strip()):
             raise ValueError('Native destination identity/pin cannot be confirmed')
-        return {'profile':'Dramarama','accounts':['Dramarama:facebook','Dramarama:x'],
+        return {'profile':'Dramarama','accounts':['Dramarama:facebook'],
                 'facebook_connection_id':facebook.get('username') if isinstance(facebook.get('username'),str) else None,
                 'facebook_page_id':facebook_page_id,
                 'facebook_page_name':page['name'],'facebook_pinned_page_id':selected,
                 'profile_pinned_page_id':profile_pins[0],
-                'pin_evidence':'matching native profile and Page/pin GET responses',
-                'x_account_id':x['username'],'x_handle':x['handle'],
-                'x_entitlement':'unverified; conservative baseline only'}
+                'pin_evidence':'matching native profile and Page/pin GET responses'},accounts
     except UploadPostError:
         raise
     except (httpx.HTTPError,ValueError,KeyError,TypeError,StopIteration,AttributeError) as exc:
         raise UploadPostError(f'Canary target evidence unavailable ({issue}); no canary authorized or settings changed',409) from exc
+
+
+async def facebook_page_identity(facebook_page_id:str):
+    identity,_=await _native_page_identity(facebook_page_id)
+    return identity
+
+
+async def canary_target_identity(facebook_page_id:str):
+    identity,accounts=await _native_page_identity(facebook_page_id)
+    x=accounts.get('x')
+    if (not isinstance(x,dict) or not isinstance(x.get('username'),str) or not x['username'].strip()
+            or not isinstance(x.get('handle'),str) or not x['handle'].strip() or x.get('reauth_required') is True):
+        raise UploadPostError('Canary target evidence unavailable (native_x_identifier_or_handle_missing); no canary authorized or settings changed',409)
+    return {**identity,'accounts':['Dramarama:facebook','Dramarama:x'],
+            'x_account_id':x['username'],'x_handle':x['handle'],'x_entitlement':'unverified; conservative baseline only'}
 
 
 def prepare_video_fields(profile, platforms, title, description, platform_overrides=None):

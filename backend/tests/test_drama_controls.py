@@ -17,12 +17,12 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, text, func
 from sqlalchemy.exc import DBAPIError
 
 from backend.app import drama_archive, drama_controls as dc, pending_metadata as pm, publication_journal as journal
 from backend.app.db import SessionLocal, engine
-from backend.app.models import AppSetting, DramaEpisode, DramaRecord, PublicationEvent, QueueItem
+from backend.app.models import AppSetting, DramaEpisode, DramaRecord, PublicationEvent, QueueItem, StudioProject, CountdownProject, QueueSourceBinding
 from backend.app.social import queue_manager as qm, upload_post
 
 _SCENARIOS = itertools.count()
@@ -54,6 +54,12 @@ def archive(session, monkeypatch, tmp_path, original_video):
                 'inventory_complete': True, 'items': {}}
     metas = {}
     rows, source_files = {}, {}
+    # SQLite can reuse deleted numeric IDs while retained Studio links/history
+    # correctly survive. Allocate above those identities instead of deleting
+    # history or weakening the production legacy-source admission guard.
+    next_queue_id=1+max(session.query(func.max(column)).scalar() or 0 for column in
+        (QueueItem.id,StudioProject.queue_item_id,CountdownProject.queue_item_id,
+         DramaEpisode.queue_id,PublicationEvent.queue_id,QueueSourceBinding.queue_id))
     for series in range(2):
         sid = 'synthetic-series-' + unique + '-' + str(series)
         parent = 'synthetic-folder-' + unique + '-' + str(series)
@@ -77,11 +83,12 @@ def archive(session, monkeypatch, tmp_path, original_video):
             metas[fid] = {'id': fid, 'size': str(len(body)), 'md5Checksum': md5, 'sha256Checksum': sha,
                 'parents': [parent], 'mimeType': 'video/mp4', 'appProperties': {
                     'scrapper_platform': 'tiktok', 'scrapper_account': channel, 'scrapper_video': vid}}
-            item = QueueItem(title=f'Unreliable display name {7-ep}', description='Owner-reviewed synthetic copy',
+            item = QueueItem(id=next_queue_id,title=f'Unreliable display name {7-ep}', description='Owner-reviewed synthetic copy',
                 tags='#Synthetic', status='review', accounts=['Dramarama:facebook', 'Dramarama:x'],
                 pipeline='DramaRama', drive_link='https://drive.google.com/file/d/' + fid + '/view',
                 source='Synthetic archive', research={})
             session.add(item); session.flush()
+            next_queue_id+=1
             rows[series, ep] = (item.id, vid)
     session.commit()
     setting = session.get(AppSetting, dc.PLAN_KEY)

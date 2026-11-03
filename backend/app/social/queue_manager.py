@@ -1044,6 +1044,9 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
 
     from ..file_use import pin
     paths=[video_path,*images]
+    from .. import drama_media
+    derivative=drama_media.selected(s,item) if drama_controls.managed(s,item) else None
+    if derivative:paths.append(derivative['path'])
     if item.thumb_path and not item.thumb_path.startswith('http'):paths.append(item.thumb_path)
     if native_id:
         from ..models import CreativeExport
@@ -1053,13 +1056,13 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         paths.extend(source_use_paths(s,native))
     try:
         with pin(paths,session=s):
-            return await _submit_owned_media(item,s,video_path,images,regular)
+            return await _submit_owned_media(item,s,video_path,images,regular,derivative=derivative)
     finally:
         if is_temp_download and video_path:
             video_path.unlink(missing_ok=True)
 
 
-async def _submit_owned_media(item,s,video_path,images,regular):
+async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     if (item.research or {}).get("native_export_id"):
         s.refresh(item)
         s.expire_all()
@@ -1084,10 +1087,19 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     import json
     from ..studio.media_quality import file_hash
     video_sha256 = file_hash(video_path)
+    original_path=video_path
+    from .. import drama_media
+    if derivative:
+        if video_sha256!=derivative['original_sha256']:raise upload_post.UploadPostError('Original hash changed; a derivative never replaces the canonical hash guard',status_code=409)
+        observed=drama_media.inspect(derivative['path'])
+        if observed!=derivative['artifact']:raise upload_post.UploadPostError('Actual derivative differs from its inspected/reviewed artifact',status_code=409)
+        video_path=derivative['path']
+    transport={'original_sha256':video_sha256,'artifact_sha256':file_hash(video_path),'lineage':drama_media.binding(derivative)}
+    if drama_canary.current():drama_canary.current().transport_paths=((original_path,video_sha256),(video_path,transport['artifact_sha256']))
     artifact_key = hashlib.sha256(json.dumps({"video": video_sha256, "images": [file_hash(p) for p in images], "title": item.title,
         "description": item.description, "tags": item.tags, "accounts": sorted(send_accounts),
         "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path,
-        **({'drama_visible_payload': drama_payload} if is_drama else {})},
+        **({'drama_visible_payload': drama_payload,'drama_transport':transport} if is_drama else {})},
         sort_keys=True).encode()).hexdigest()
     from fastapi import HTTPException
     try:source_binding=queue_sources.verify(s,item)
@@ -1105,7 +1117,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
         s.refresh(item)
         if captured != pending_metadata.fingerprint(s, item):
             raise upload_post.UploadPostError('Drama copy/protected state changed while hashing; refresh', status_code=409)
-        try: drama_flags = drama_controls.admission(s, item, media_sha256=video_sha256, final=True)
+        try: drama_flags = drama_controls.admission(s, item, media_sha256=video_sha256, final=True,transport=transport)
         except HTTPException as exc:
             raise upload_post.UploadPostError(str(exc.detail), status_code=409) from exc
     import uuid

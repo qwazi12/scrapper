@@ -156,7 +156,10 @@ def inspect(item, manifest_id, video_id):
                 'manifest_sha256': hashlib.sha256(content).hexdigest(),
                 'decode': 'passed', 'duration': float(probe['format']['duration']),
                 'media': {'format': probe['format'].get('format_name', ''), 'video_codec': video.get('codec_name'),
-                          'audio_codec': audio.get('codec_name'), 'width': video.get('width'), 'height': video.get('height')},
+                          'video_profile':video.get('profile'),'pixel_format':video.get('pix_fmt'),
+                          'audio_codec': audio.get('codec_name'),'audio_profile':audio.get('profile'),
+                          'audio_channels':audio.get('channels'),'audio_sample_rate':audio.get('sample_rate'),
+                          'width': video.get('width'), 'height': video.get('height')},
                 'mapping_basis': 'source-marked complete archive manifest; not filename or SEO title',
                 'rights_status': 'not certified by automated media inspection'}
     finally:

@@ -1,6 +1,6 @@
 """Conservative database references that keep shared media out of retention."""
 from pathlib import Path
-from .models import Clip,Compilation,QueueItem,StudioProject,CountdownProject,CreativeExport,MediaAsset,ExportVersion,DeliveryArchive
+from .models import Clip,Compilation,QueueItem,StudioProject,CountdownProject,CreativeExport,MediaAsset,ExportVersion,DeliveryArchive,DramaRecord
 from .config import settings
 
 
@@ -17,6 +17,14 @@ def _paths(value,root):
 def protected(s,path,*,ignore=None,ignore_rows=()):
     target=Path(path).resolve()
     def matches(p):return target==p or p.is_relative_to(target)
+    # These immutable receipts own server-derived paths, independently of any
+    # mutable queue/Clip reference, revocation or accepted/unknown result.
+    from .drama_media import path as artifact_path
+    from fastapi import HTTPException
+    for (operation_id,) in s.query(DramaRecord.operation_id).filter(DramaRecord.kind.in_(('media_derivative','calibration_asset'))):
+        try:retained=artifact_path(operation_id).resolve()
+        except HTTPException:continue
+        if matches(retained):return True
     for model in (QueueItem,StudioProject,CountdownProject,CreativeExport,MediaAsset,Clip,Compilation,ExportVersion,DeliveryArchive):
         for row in s.query(model):
             if ignore==(model,row.id) or (model,row.id) in ignore_rows:continue

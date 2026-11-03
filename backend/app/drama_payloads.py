@@ -39,9 +39,11 @@ def build(item, evidence, review):
     if mode == 'REELS' and evidence['duration'] > 90:
         errors.append('The provider Reels path has shortened longer inputs; select the explicitly reviewed full-length VIDEO path')
     probe = evidence.get('media', {})
-    if probe and (probe.get('video_codec') != 'h264' or probe.get('audio_codec') not in ('aac', None)
-                  or 'mp4' not in probe.get('format', '') or probe.get('width', 0) > 1920 or probe.get('height', 0) > 1920):
-        errors.append('Media is outside the explicitly supported baseline MP4/H264/AAC X contract; no silent transcode is authorized here')
+    if (probe.get('video_codec') != 'h264' or probe.get('audio_codec')!='aac'
+            or probe.get('audio_profile')!='LC' or probe.get('audio_channels') not in (1,2)
+            or probe.get('pixel_format')!='yuv420p' or 'mp4' not in probe.get('format', '')
+            or not 0<probe.get('width',0)<=1920 or not 0<probe.get('height',0)<=1920):
+        errors.append('Media needs verified MP4/H264/yuv420p/AAC-LC mono/stereo evidence; HE-AAC or missing profile evidence is held, with no silent transcode')
     values = {'facebook_title': item.title, 'facebook_description': description,
               'facebook_media_type': mode, 'x_title': x_text}
     return {'values': values, 'sha256': pm.digest(values), 'errors': errors,

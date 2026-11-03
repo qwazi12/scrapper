@@ -53,6 +53,13 @@ class XVariant(BaseModel):
     approved_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
+class DerivativeReview(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    derivative_id:str=Field(pattern=pm.OPERATION_PATTERN)
+    document_sha256:str=Field(pattern=r'^[a-f0-9]{64}$')
+    decision:Literal['I reviewed the exact original and derivative video and every audio channel, and approve this exact lineage artifact without cuts or content changes']
+
+
 class ReviewContent(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     evidence_id: str = Field(pattern=pm.OPERATION_PATTERN)
@@ -62,6 +69,7 @@ class ReviewContent(BaseModel):
     decision: Literal['Accept this exact canonical episode and public copy for guarded release']
     facebook_media_type: Literal['REELS', 'VIDEO'] = 'VIDEO'
     x_variant: XVariant | None = None
+    derivative: DerivativeReview | None = None
 
 
 class ReviewPreview(ItemOperation, ReviewContent):
@@ -94,8 +102,10 @@ class Rollback(Operation):
 
 
 def request_hash(kind, req, qid=None):
+    request=req.model_dump(exclude={'operation_id'})
+    if request.get('derivative','absent') is None:request.pop('derivative',None)
     return pm.digest({'version': dc.VERSION, 'kind': kind, 'queue_id': qid,
-                      'request': req.model_dump(exclude={'operation_id'})})
+                      'request': request})
 
 
 @contextlib.contextmanager
@@ -155,10 +165,25 @@ def review_document(s, item, req, connected=None):
     if req.approved_proposal_sha256 != pm.digest({key: getattr(item, key) for key in pm.PUBLIC_FIELDS}):
         dc.fail('approved proposal hash differs from the exact current public copy')
     content = req.model_dump(include=set(ReviewContent.model_fields))
+    from . import drama_media
+    derivative=drama_media.selected(s,item,content.get('derivative')) if content.get('derivative') else None
+    if derivative:
+        row=s.query(DramaRecord).filter_by(operation_id=derivative['derivative_id']).one()
+        if row.data['document']['prepared_queue_fingerprint']!=req.expected_fingerprint:
+            dc.fail('queue state changed since derivative preparation; do not approve a stale source/copy/target artifact')
+    transport=derivative['artifact'] if derivative else drama_media.original_observation(s,item,evidence)
     from .drama_payloads import build
+    payload=build(item,transport,content)
+    if derivative:
+        # Older publishers compare their ordinary values-only digest to this
+        # field. Salting the reviewed digest makes them fail closed instead of
+        # ignoring a derivative and submitting the original after rollback.
+        payload={**payload,'values_sha256':payload['sha256'],
+            'sha256':pm.digest({'values':payload['values'],'derivative_lineage':drama_media.binding(derivative)})}
     value = {'version': dc.VERSION, 'queue_identity': journal.identity(item), 'evidence_id': evidence.id,
              'copy_hash': dc.copy_hash(item), 'targets': accounts, 'account_selection': list(item.accounts), 'review': content,
-             'payload': build(item, evidence.data, content)}
+             'derivative_lineage':drama_media.binding(derivative),'transport_media':transport,
+             'payload':payload}
     return evidence, value, pm.digest(value)
 
 
@@ -325,7 +350,7 @@ def inspect_archive(qid: int, req: Inspect, s: Session = Depends(get_session)):
                 total_episodes=evidence['total_episodes'], data=evidence)
             s.add(bound); s.flush()
         response = dc.record(s, req.operation_id, hashed, 'inspect', {'evidence_id': bound.id,
-            'fingerprint': pm.fingerprint(s, item), 'evidence': bound.data}, item=item)
+            'fingerprint': pm.fingerprint(s, item), 'evidence': bound.data}, item=item,live_media_observation=evidence)
         s.commit(); return response
 
 
@@ -380,6 +405,10 @@ def mark_ready(qid: int, req: Ready, s: Session = Depends(get_session)):
         proof = dict(evidence.data)
         s.rollback()
         observed = drama_archive.inspect(frozen, proof['manifest_id'], proof['source_video_id'])
+        from . import drama_media
+        derivative=drama_media.selected(s,frozen)
+        if derivative and drama_media.inspect(derivative['path'])!=derivative['artifact']:
+            dc.fail('derivative changed since actual server media inspection/review')
         lock_owned(s)
         item = s.get(QueueItem, qid, populate_existing=True)
         dc.require_item(s, item, pristine=True); dc.expected(s, item, req.expected_fingerprint)

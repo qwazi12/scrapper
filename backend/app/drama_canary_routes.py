@@ -31,6 +31,8 @@ class Authorization(BaseModel):
     authorization_reference: str=Field(min_length=1,max_length=2000)
     authorized_public_payload_sha256: str=Field(pattern=r'^[a-f0-9]{64}$')
     authorized_source_sha256: str=Field(pattern=r'^[a-f0-9]{64}$')
+    authorized_artifact_sha256: str | None=Field(default=None,pattern=r'^[a-f0-9]{64}$')
+    authorized_lineage_sha256: str | None=Field(default=None,pattern=r'^[a-f0-9]{64}$')
     rights_basis: Literal['owned_original','licensed','explicit_permission']
     rights_reference: str=Field(min_length=1,max_length=4000)
     decision: Literal['I specifically authorize ONE public EP1 canary to the exact reviewed Facebook Page and X account at this future slot, and confirm rights for this exact source and copy']
@@ -76,8 +78,14 @@ class Revoke(Operation):
 
 
 def hashed(kind,req,qid=None):
+    request=req.model_dump(exclude={'operation_id'})
+    # Preserve hashes/replay of original v1 operations that predate these
+    # optional lineage fields. Non-null derivative authority stays in the hash.
+    if isinstance(request.get('authorization'),dict):
+        for key in ('authorized_artifact_sha256','authorized_lineage_sha256'):
+            if request['authorization'].get(key) is None:request['authorization'].pop(key,None)
     return pm.digest({'version':canary.VERSION,'kind':kind,'queue_id':qid,
-                      'request':req.model_dump(exclude={'operation_id'})})
+                      'request':request})
 
 
 def target_read(page):
