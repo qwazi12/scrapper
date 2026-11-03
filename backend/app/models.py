@@ -609,6 +609,7 @@ class DramaDispatchPermit(Base):
     queue_created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
     attempt_id: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    protocol: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class DramaEpisode(Base):

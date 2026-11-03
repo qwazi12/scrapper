@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     safe_e2e_root: str = ""
     max_upload_bytes: int = Field(default=500 * 1024 * 1024, ge=1)
 
+    # Optional native GET verification. Deployment never enables these reads,
+    # creates credentials or assumes X paid-read authority from a posting token.
+    drama_native_reads_enabled: bool = False
+    drama_fb_read_token: str = ""
+    drama_x_read_token: str = ""
+    drama_fb_graph_version: str = Field(default="v25.0", pattern=r"^v[0-9]{2}\.0$")
+
     # --- Reliability layers ---------------------------------------------
     auto_update_ytdlp: bool = True          # Layer 1: self-healing engine
     ytdlp_update_hour: int = 4              # nightly hour (local time) to update

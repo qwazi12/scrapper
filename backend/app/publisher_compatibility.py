@@ -63,6 +63,17 @@ def install_fence(engine):
             connection.execute(text(f"""CREATE TRIGGER IF NOT EXISTS scrapper_ick_permit_consume_v1
                 AFTER UPDATE OF status ON queue_items WHEN NEW.status='posting' AND {ick_identity}
                 BEGIN DELETE FROM drama_dispatch_permits WHERE queue_id=NEW.id; END"""))
+            normal_identity="""EXISTS (SELECT 1 FROM drama_records r WHERE r.queue_id=NEW.id
+                AND r.kind='normal_guard' AND strftime('%Y-%m-%d %H:%M:%f',json_extract(r.data,'$.created_at_identity'))
+                    =strftime('%Y-%m-%d %H:%M:%f',NEW.created_at))"""
+            connection.execute(text(f"""CREATE TRIGGER IF NOT EXISTS scrapper_normal_protocol_v2
+                BEFORE UPDATE OF status ON queue_items WHEN NEW.status='posting' AND {normal_identity}
+                BEGIN SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM drama_dispatch_permits p
+                    WHERE p.queue_id=NEW.id AND p.queue_created_at=NEW.created_at
+                    AND p.protocol='drama-normal-v2'
+                    AND p.attempt_id=json_extract(NEW.publish_requests,'$[0].client_request_id')
+                    AND julianday(p.expires_at)>julianday('now'))
+                THEN RAISE(ABORT,'Normal Drama v2 atomic permit required; preserve rights/native guards on rollback') END; END"""))
         elif engine.dialect.name=='postgresql':
             connection.execute(text("""CREATE OR REPLACE FUNCTION scrapper_publisher_protocol_v1()
                 RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -106,3 +117,19 @@ def install_fence(engine):
             if not exists:
                 connection.execute(text("""CREATE TRIGGER scrapper_ick_protocol_v1 BEFORE UPDATE OF status ON queue_items
                     FOR EACH ROW WHEN (NEW.status='posting') EXECUTE FUNCTION scrapper_ick_protocol_v1()"""))
+            # Alphabetically before the existing Drama BEFORE trigger, which
+            # verifies and consumes the same one-use permit in this transaction.
+            connection.execute(text("""CREATE OR REPLACE FUNCTION scrapper_aa_normal_protocol_v2()
+                RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+                IF EXISTS (SELECT 1 FROM drama_records r WHERE r.queue_id=NEW.id AND r.kind='normal_guard'
+                    AND (r.data->>'created_at_identity')::timestamptz=NEW.created_at) AND
+                    NOT EXISTS (SELECT 1 FROM drama_dispatch_permits p WHERE p.queue_id=NEW.id
+                        AND p.queue_created_at=NEW.created_at AND p.protocol='drama-normal-v2'
+                        AND p.attempt_id=NEW.publish_requests->0->>'client_request_id'
+                        AND p.expires_at>clock_timestamp())
+                THEN RAISE EXCEPTION 'Normal Drama v2 atomic permit required; preserve rights/native guards on rollback'
+                    USING ERRCODE='23514'; END IF; RETURN NEW; END; $$"""))
+            exists=connection.execute(text("SELECT 1 FROM pg_trigger WHERE tgname='scrapper_aa_normal_protocol_v2' AND tgrelid='queue_items'::regclass")).first()
+            if not exists:
+                connection.execute(text("""CREATE TRIGGER scrapper_aa_normal_protocol_v2 BEFORE UPDATE OF status ON queue_items
+                    FOR EACH ROW WHEN (NEW.status='posting') EXECUTE FUNCTION scrapper_aa_normal_protocol_v2()"""))

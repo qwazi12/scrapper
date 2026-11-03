@@ -72,3 +72,9 @@ history is saved passively.
   browser cookies: add `--cookies-from-browser chrome` to `YTDLP_ARGS` in
   `scrape.py`.
 - Keep yt-dlp updated (`pip3 install -U yt-dlp`) — X changes things often.
+
+## Guarded Drama release
+
+The versioned ordinary release API, fixed lanes, durable delivery evidence and
+unconfigured native-read holds are documented in [the Drama contract](docs/drama-normal-release.md).
+Deployment does not activate a plan or publish an episode.

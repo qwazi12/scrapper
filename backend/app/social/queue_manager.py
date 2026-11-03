@@ -951,8 +951,9 @@ def strip_blocked_accounts(s: Session) -> int:
 
 async def publish_queue_item(item_id: int, s: Session, regular: bool = False) -> QueueItem:
     from ..worker_leases import scope,LeaseLost
+    from .. import drama_normal
     try:
-        with scope(f'publication:{item_id}'):
+        with scope(f'publication:{item_id}'),drama_normal.scope():
             try:
                 return await _publish_queue_item_owned(item_id,s,regular)
             except BaseException:
@@ -1120,6 +1121,10 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         if observed!=derivative['artifact']:raise upload_post.UploadPostError('Actual derivative differs from its inspected/reviewed artifact',status_code=409)
         video_path=derivative['path']
     transport={'original_sha256':video_sha256,'artifact_sha256':file_hash(video_path),'lineage':drama_media.binding(derivative)}
+    from .. import drama_normal
+    if is_drama:
+        await drama_normal.prepare(s,item,original_path,video_path,transport)
+        drama_payload=drama_normal.payload(drama_payload)
     if drama_canary.current():drama_canary.current().transport_paths=((original_path,video_sha256),(video_path,transport['artifact_sha256']))
     artifact_key = hashlib.sha256(json.dumps({"video": video_sha256, "images": [file_hash(p) for p in images], "title": item.title,
         "description": item.description, "tags": item.tags, "accounts": sorted(send_accounts),
@@ -1137,6 +1142,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         from .. import drama_archive
         drama_archive.verify_dispatch(drama_controls.binding(s, item).data)
         await drama_canary.refresh_target_identity()
+        await drama_normal.refresh()
         from ..budget_reservations import lock
         lock(s)
         s.refresh(item)
@@ -1159,7 +1165,9 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         captured=pending_metadata.fingerprint(s,item);s.refresh(item)
         if captured!=pending_metadata.fingerprint(s,item):raise upload_post.PayloadBlocked("Guarded ICK state changed before claim")
         ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
-    if is_drama or ick_release:drama_controls.grant_dispatch(s,item,batch_key)
+    if is_drama or ick_release:
+        normal_protocol={'protocol':drama_normal.VERSION} if drama_normal.current() else {}
+        drama_controls.grant_dispatch(s,item,batch_key,**normal_protocol)
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
     # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
@@ -1237,6 +1245,11 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             assert_current(s)
             if item.status!='posting': raise upload_post.UploadPostError('Submission was stopped for review',status_code=409)
             if not result:
+                if drama_normal.current():
+                    try:drama_normal.guard_intent(s,item,entry)
+                    except Exception as exc:
+                        s.rollback()
+                        raise upload_post.PayloadBlocked(str(getattr(exc,'detail',exc))) from exc
                 if ick_release:
                     try:ick_readiness.guard_intent(s,item,video_path,entry,regular=regular,fresh_identity=current_ick_identity)
                     except Exception as exc:
@@ -1264,6 +1277,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             description=description, tags=backend_tags, thumbnail=thumb, allow=allow,
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
             **({"before_destination":refresh_ick_identity} if ick_release else {}),
+            **({"before_destination":drama_normal.before_destination} if drama_normal.current() else {}),
             **({"media_files": images} if images else {}),
             **({'platform_overrides': drama_payload} if is_drama else {'queue_x_text':queue_x_text} if queue_x_text is not None else {}),
             **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
@@ -1483,6 +1497,9 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
             res = resolve_results(saved, statuses, now)
             if res is not None:
                 apply_result(item, res, now)
+                if any(entry.get('drama_normal_version')=='drama-normal-v2' for entry in saved) and not res['failed']:
+                    item.status='review';item.published_at=None
+                    item.notes=('Normal Drama transport confirmed; native delivered media/copy verification pending. Do not resend. | '+(item.notes or ''))[:1000]
                 if any(entry.get('drama_canary_grant_id') for entry in saved):
                     item.status='review';item.published_at=None
                     item.notes=('One-shot canary transport reconciled; delivered-media/copy proof is still held. Do not resend. | '+(item.notes or ''))[:1000]

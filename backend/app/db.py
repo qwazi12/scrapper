@@ -60,6 +60,11 @@ def _migrate() -> None:
 
     insp = inspect(engine)
     tables = insp.get_table_names()
+    if 'drama_dispatch_permits' in tables:
+        columns={c['name'] for c in insp.get_columns('drama_dispatch_permits')}
+        if 'protocol' not in columns:
+            with engine.begin() as conn:
+                conn.execute(text('ALTER TABLE drama_dispatch_permits ADD COLUMN protocol VARCHAR(40)'))
     # Legacy evidence stays readable, but unknown project identity is never
     # invented by a migration. Re-fetch/re-review before using it as support.
     evidence_columns = {

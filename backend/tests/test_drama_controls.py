@@ -287,7 +287,9 @@ def test_cutover_status_includes_cleared_history_and_owned_leases_without_mutati
         assert value['late_receipt_rows']==baseline['late_receipt_rows']+1
         assert value['retained_unresolved_attempts']==baseline['retained_unresolved_attempts']+1
         assert value['history_attribution_unverified']==baseline['history_attribution_unverified']
-        assert value['activation']['supported'] is False
+        assert value['activation']['supported'] is True
+        assert value['activation']['enabled_by_deployment'] is False
+        assert value['activation']['legacy_plan_apply_supported'] is False
     assert not a.transfers
 
 
@@ -481,7 +483,7 @@ def test_pre_controls_v1_only_engine_is_blocked_for_drama_but_other_brand_can_cl
     finally:old.dispose()
 
 
-def test_real_activation_is_explicitly_held_without_fidelity_capability(archive, monkeypatch):
+def test_legacy_activation_stays_held_without_versioned_rights_native_plan(archive, monkeypatch):
     a=archive
     for key in [(0,1),(1,1)]: ready(a,key)
     monkeypatch.setattr(dc,'require_activation_capability',a.real_activation_gate)
@@ -490,7 +492,8 @@ def test_real_activation_is_explicitly_held_without_fidelity_capability(archive,
          'items':[{'id':a.rows[n,1][0],'expected_fingerprint':view(a,(n,1))['fingerprint']} for n in range(2)]}
     preview=a.client.post('/api/drama/plan-preview',json=req)
     assert preview.status_code==200 and preview.json()['preview_only'] and preview.json()['writes']==0
-    assert not preview.json()['activation']['supported']
+    assert preview.json()['activation']['supported']
+    assert not preview.json()['activation']['legacy_plan_apply_supported']
     result=a.client.post('/api/drama/plan',json=req)
     assert result.status_code==409 and 'delivery_fidelity_verifier_unavailable' in result.text
     assert a.client.get('/api/drama/plan').json()['plan'] is None

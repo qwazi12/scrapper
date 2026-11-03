@@ -27,23 +27,21 @@ COPY_FIELDS = ('title', 'description', 'tags', 'pipeline', 'source', 'drive_link
 
 
 def activation_contract():
-    return {'supported': False, 'blocker': 'delivery_fidelity_verifier_unavailable',
-        'detail': 'Provider acceptance/success URLs do not prove full episode duration and exact visible copy. A supported server-side delivered-media/copy verifier is required before activating this plan.',
+    from . import drama_native
+    return {'supported': True, 'versioned_normal_contract': '/api/drama/normal/contract',
+        'enabled_by_deployment': False, 'legacy_plan_apply_supported': False,
+        'detail': 'Versioned rights/native-bound first-episode planning is implemented. Successor admission requires actual bounded delivered-content observations on BOTH destinations, not acceptance or a success URL.',
+        'native_delivery_reads': drama_native.capability(),
         'baseline_entitlements': 'Conservative software/provider-route caps:280-weight X caption,140-second/512-MiB video; not universal X Post limits. No automatic expansion, threads or truncation'}
 
 
 def require_activation_capability():
-    contract = activation_contract()
-    if not contract['supported']:
-        fail(contract['blocker'] + ': ' + contract['detail'])
+    fail('delivery_fidelity_verifier_unavailable for legacy v1 activation; use the versioned /api/drama/normal rights/native-bound plan')
 
 
 def delivery_fidelity_verified(s, item, ready):
-    # No supported platform read currently supplies an independently checked
-    # delivered duration AND exact visible copy. Do not turn a success URL or a
-    # client checkbox into this missing proof. Keep the lane held until that
-    # separate bounded capability is implemented and tested.
-    return False
+    from .drama_delivery import verified
+    return verified(s, item, ready)
 
 
 def fail(message):
@@ -203,7 +201,7 @@ def require_source_history(s, item, proof):
             fail('a deleted/replaced identity has already submitted these canonical bytes')
 
 
-def successes(s, item, ready):
+def successful_observations(s, item, ready):
     """Only complete journaled provider observations prove destination success.
 
     catchup.done, published_at, free-form notes and an accepted request alone do
@@ -223,13 +221,21 @@ def successes(s, item, ready):
         if not entry.get('request_id'):
             continue
         resolved = resolve_results([entry], {entry['request_id']: status}, now(s))
+        # An explicitly observed uncertain/partial result supersedes a prior
+        # success for the same destination; silence alone is not a new result.
+        accounts = [entry.get('profile', '') + ':' + platform for platform in entry.get('platforms', [])]
+        for account in accounts:
+            result.pop(account, None)
         if resolved is None:
             continue
         for account, url in resolved['ok']:
-            result[account] = (True, url)
-        for account in resolved['failed']:
-            result[account] = (False, '')
-    return {a for a, (ok, _) in result.items() if ok}
+            result[account] = {'url': url, 'request_id': entry['request_id'],
+                'attempt_id': entry.get('client_request_id')}
+    return result
+
+
+def successes(s, item, ready):
+    return set(successful_observations(s, item, ready))
 
 
 def complete(s, item):
@@ -401,6 +407,9 @@ def admission(s, item, *, media_sha256=None, final=False, transport=None):
     from . import drama_canary
     if drama_canary.current():
         return drama_canary.validate(s,item,media_sha256=media_sha256,final=final,transport=transport)
+    from . import drama_normal
+    if drama_normal.is_plan(s):
+        return drama_normal.admission(s,item,final=final,media_sha256=media_sha256,transport=transport)
     require_activation_capability()
     evidence, ready = readiness(s, item)
     require_source_history(s, item, evidence.data)
@@ -432,8 +441,9 @@ def admission(s, item, *, media_sha256=None, final=False, transport=None):
     total = attempted_today(s, None, instant)
     if not retry and journal.identity(item) not in total and len(total) >= 8:
         fail('DramaRama already used its eight daily episode attempts')
-    if final and media_sha256 != evidence.data['sha256']:
-        fail('transport bytes differ from the server-inspected and owner-reviewed canonical media')
+    if final:
+        from . import drama_normal
+        drama_normal.transport_proof(s,item,media_sha256,transport)
     return {'drama_ready_id': ready.operation_id, 'drama_plan_id': plan.operation_id,
             'drama_series_key': evidence.series_key, 'drama_episode': evidence.episode,
             'drama_slot': assignment['at']}
@@ -447,7 +457,7 @@ def conditional_update(s, item, **changes):
     s.refresh(item)
 
 
-def grant_dispatch(s, item, attempt_id):
+def grant_dispatch(s, item, attempt_id, *, protocol=None):
     """Caller has validated under its publisher lease, media claim and mutex.
 
     Never commit a permit separately. The posting UPDATE consumes it with built-in
@@ -459,5 +469,5 @@ def grant_dispatch(s, item, attempt_id):
     worker_leases.guard(s)
     s.execute(delete(DramaDispatchPermit).where(DramaDispatchPermit.queue_id == item.id))
     s.add(DramaDispatchPermit(queue_id=item.id, queue_created_at=item.created_at,
-        attempt_id=attempt_id, expires_at=worker_leases.clock(s) + dt.timedelta(seconds=30)))
+        attempt_id=attempt_id, expires_at=worker_leases.clock(s) + dt.timedelta(seconds=30),protocol=protocol))
     s.flush()

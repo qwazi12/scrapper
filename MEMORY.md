@@ -1,5 +1,77 @@
 # Scrapper Memory
 
+## Ordinary Drama v2 implementation candidate — November 3, 2026
+
+Implemented a conditional ordinary release path at `/api/drama/normal` instead
+of removing the legacy gate without working authority. Deployment grants no
+rights, selects no series, creates no plan and publishes nothing. The authorized
+coordinator records existing user permission with accurate agent QA/provenance;
+there is no additional manual human wording-approval loop or invented watched
+claim. No other-series or YouTube rights are inferred. Production permission,
+inspection, derivative, review, Ready, plan and episode operations remain the
+SEO coordinator's work; the code task performed none of them.
+
+Versioned immutable permission binds exact canonical series/season/catalog and
+native Facebook Page/X connection/account/pins. Plans have exactly A/B lane
+positions with null vacancies, eight fixed alternating New York slots, maximum
+four attempts per occupied lane/eight total per local day. One approved lane
+allows four. Canonical episode order, future cutoff, five-minute dispatch window,
+actual attempt accounting, no refill/catchup/gap skipping and exact failed-only
+future-slot retries remain enforced. Full protected queue/source-binding CAS,
+publication generations, one-use permits and retained additive SQLite/PG fences
+hold through final intent. Original and selected reviewed derivative hashes and
+lineage are separately bound through actual regular multipart transport. Plan
+acknowledgments exclude volatile observation timestamps (receipt creation time
+retains audit history), survive short delays, reject changed cutoff/facts and
+cannot omit unresolved old assignments while leaving misleading schedules.
+
+Native acceptance/URLs/Archived/preview images cannot certify completion. Optional
+official Facebook Graph Video and X Post/media readers are implemented, streamed
+to bounded JSON/media sizes, disabled and unconfigured by default. Posting keys
+are not native-read credentials. Missing native title/author/playable video/audio
+holds that item's proof and successors, while a fully reviewed, permitted first
+episode has a real supported admission path. No credentials, paid native reads,
+new integration, public calibration, upload or source deletion was performed.
+Server observations decode actual media, compare complete timelines/sampled video
+and per-channel audio, and tolerate normal codec/resolution/frame-rate/gain
+changes. Technical coverage is explicitly not semantic/perceptual or rights
+proof. Retained actual calibration passes with all240video samples, no freeze or
+bad frames, both audio channels and +7.05863dB gain; this is not episode proof.
+
+Verification journals exact terminal provider results atomically before archiving,
+including when it precedes background polling. Immutable verified publication
+history has no24-hour expiry and causes no daily all-history native rereads.
+Current exact permission/targets still apply; Ready/original/derivative/copy and
+request/attempt/native IDs remain bound. Later uncertainty, partial/failure,
+changed native post, held observation, identity revision, rollback or late receipt
+holds sequencing. Day-three tests prove unchanged/renewed permission can advance
+without another native content call, and missing/contradictory proof cannot.
+
+Validation in progress: focused54passed46.89s; final normal/ICK compatibility103
+passed54.90s. First broad backend1260passed/2failed/1skip305.38s and PG726passed/
+2failed386.56s exposed a shared2027DSTfixture slot already consumed by a legacy
+test and an unnecessary optional keyword on the old ICK permit call. Corrected
+with a separate2031DSTcalendar and unchanged legacy call shape; retained failed
+reports. Fresh fullbackend2:1262passed/1optional skip279.26s; actual fullPG2:728passed
+360.86s, restore passed2.669s/1310531bytes/SHA256
+4b20777285fcdfb938847872ad0932961bed04aa23764a7b893c0f08a007e925,
+source database unchanged; owned private PostgreSQL stopped. Frontend typecheck,
+API6 and production build passed. Local browser1:32passed/1launcher failure in
+7.9min (missing python on PATH), before the final one-line ICK compatibility fix;
+not a final-source full pass. Final-source focused browser2:2passed12.4s with
+existing venv PATH, actual asset revision/recovery and uncertain publication;
+no app/spec change for that environment correction. Owned stacks stopped, evidence
+retained. Hosted exact-source CI and independent coordinator review precede any
+normal Git merge/deployment; no normal candidate push/deploy is claimed yet.
+
+The earlier ICK display-thumbnail hotfix0e11437 was independently reviewed and
+released: hosted1208backend passed/1skip,33offline browser passed, frontend checks
+passed; Railway deploymentd93010eb-ac28-4808-a810-5e213dd73b50 SUCCESS at exact
+source. GET-only production health/auth/contracts passed. Failed old inspection
+identity is preserved; no live retry by code task. Private current reconciliation
+found302of309ICKrows with unchanged source/metadata and7absent IDs with no exact
+Drive-reference replacement. Do not retarget these by title or recycled ID.
+
 ## ICK display-thumbnail inspection hotfix candidate — November 3, 2026
 
 Production inspection treated an HTTPS display-thumbnail reference as a local

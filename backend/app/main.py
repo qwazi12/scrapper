@@ -106,6 +106,8 @@ from .drama_calibration import router as drama_calibration_router
 app.include_router(drama_calibration_router)
 from .ick_readiness import router as ick_readiness_router
 app.include_router(ick_readiness_router)
+from .drama_normal_routes import router as drama_normal_router
+app.include_router(drama_normal_router)
 from .editorial import asset_annotations
 app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes

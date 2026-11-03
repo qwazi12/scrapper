@@ -193,9 +193,17 @@ def selected(s,item,choice=None):
     if (doc['recipe'].get('id')!=RECIPE or pm.digest(doc['recipe'])!=doc['recipe_sha256']
             or doc['recipe']['arguments']!=recipe_arguments(doc['original'])):
         dc.fail('unknown or changed deterministic derivative recipe; source rollback cannot adopt it')
+    selection_matches=doc['account_selection']==list(item.accounts)
+    if not selection_matches and dc.reserved_before(s,journal.identity(item)):
+        # Only a journal-proven remaining subset of the original reviewed pair
+        # can reuse this artifact after a partial failure. Manual retargeting
+        # never qualifies, and a successful destination is never resent.
+        review=dc.latest(s,item,'review')
+        selection_matches=bool(review and review.data['document']['account_selection']==doc['account_selection']
+            and set(item.accounts)==set(dc.dispatch_targets(s,item)))
     if (row.queue_identity!=journal.identity(item)
             or not evidence or doc['canonical_evidence']!=evidence.data or doc['copy_hash']!=dc.copy_hash(item)
-            or doc['account_selection']!=list(item.accounts)):
+            or not selection_matches):
         dc.fail('derivative no longer matches original canonical source, exact copy or target selection')
     artifact=path(row.operation_id)
     if artifact.is_symlink() or not artifact.is_file() or file_hash(artifact)!=doc['artifact']['sha256']:
