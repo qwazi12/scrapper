@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## HOLD — 2026-11-03 — owner: "hold off on deploying or changing the live Scrapper queue"
+- No deploys, no queue edits, no schedule changes until the owner lifts this. (This note is committed locally, NOT pushed:
+  a push redeploys Vercel.)
+- Pending when lifted (none approved yet): DramaRama 6 vs 8/day + series order; apply SEO workbook v32 (owner has it; mine
+  is older: 1,315 vs 1,439 Drama proposals); 13 (or 12) LongForm titles via Studio; 5 unverified drafts.
+- Found 2026-11-03 (not fixed): Facebook posts go out as Reels (no facebook media type sent) → long videos cut to 90 s;
+  X receives only the title (no description/hashtags). Another agent ("dot") is also working on Scrapper scheduling —
+  ownership to be agreed before either deploys.
+
 ## LOG — 2026-11-03 (01:00 UTC) — SEO register applied; Screen Central tab; Ick Room hashtags
 - Owner's "Scrapper SEO Review Register.xlsx": applied only the drafted "Reviewed proposal" rows (title/description/hashtags),
   and only where the live row was unposted and still equal to the register's Existing values. 1,900/1,913 applied + verified
