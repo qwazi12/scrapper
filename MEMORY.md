@@ -1,5 +1,58 @@
 # Scrapper Memory
 
+## Verified one-shot canary code release — November 3, 2026, America/New_York
+
+Released application77ac5c93acfdd75e79adc68b6caf1620ebf4ad28 through the
+authorized existing non-force Git route after terminal green full CI41585689958:
+https://github.com/qwazi12/scrapper/actions/runs/41585689958.
+Linux backend1100passed/1existing skip/1existing dependency warning(446.29s);
+frontend typecheck,6API-error tests,build,audit0vulnerabilities; network-disabled
+Linux browser33passed(12.9min). Actual isolated PostgreSQL566passed(132.18s),
+native restore1.478s/source unchanged,508270bytes,
+SHA475f0ec6168407ac0c099a5a7ce82f0e3c9688928f415c9bbb3558a0960dcba3.
+The retained synthetic-calendar overlap is fixed in test fixtures; no production
+scheduling rule was weakened. Original held draft12files remain unchanged.
+
+GitHub main fast-forwarded from158efe3 to77ac5c9. Railway production deployment
+08ae4fdd-dda6-4408-9ae3-d4706beccf19 SUCCESS identifies exact77ac5c9. Existing
+Vercel productiondpl_GxhFsxFtTueveQiX1Qxpk3SnDfkD remains READY at33f4231;
+frontend treeae665110566898721a9fc6bc5d7dc56b08a50ff3 is IDENTICAL at both
+revisions. No claim of a same-commit Vercel redeployment. Site200/title verified,
+backend health200, healthy non-stale checksummed pre-migration backup, new
+authenticated canary routes200 and unauthenticated contract401 verified.
+
+Live canary contract:installed,grants0,consumed0,revoked0. Dedicated target GET
+successfully read the documented single-profile and Page/pin responses, verifying
+both pins match the exact Page and a stable native X identifier with its handle.
+Display-label fallback from the older generic account route is not used. Exact
+native IDs remain in private evidence. No connection/pin/account change occurred.
+Drama5471Review,0Ready/Posting/Posted/Retry/Error/Archived;plan null;wildcards5471;
+current requests/live publication leases/late receipts/retained Drama events0.
+These are scoped live inventory reads, not a whole-live all-field comparison.
+Synthetic tests independently protect exact copy/targets/source/schedule state.
+
+No live grant, Ready transition, metadata edit, schedule/target/account mutation,
+public dispatch/probe, other-brand/archive-worker or unrelated process change.
+Root/SEO alone own live content decisions. New code provides the one-shot path;
+it does NOT provide actual owner authorization or certify source/copy rights.
+Specific public-canary authorization AND rights references remain missing. The
+exact shorter X variant is proposed/unapproved; current common copy exceeds the
+baseline. Current original HEVC source is outside the guarded H264 X contract;
+no transcode or derivative contract was authorized. Its roughly61-second length
+cannot test the >90-second shortening defect. Native target identity is now
+verified, resolving that implementation-checkpoint uncertainty below. Actual
+server inspect/review/Ready IDs remain absent until the authorized live writer
+can satisfy the gates. Full independent delivered media/audio/visible-copy proof
+is still unsupported; normal automatic plan activation and EP2 remain held.
+
+Private artifacts:canary-release-state.json,canary-post-deploy-read.json,
+DRAMA-ONE-SHOT-CANARY-REVIEW.json and DRAMA-CANARY-RELEASE-HANDOFF.md under the
+existing private scrapper-seo-integration-evidence directory. The proposal records
+source/copy hashes, measured original media, native targets and a future-only
+slot, preserving absent rights/authorization/server IDs as null. No fake grant
+or public test is performed to complete this code release. This follow-up edits
+MEMORY.md only; tested/deployed application source remains exact77ac5c9.
+
 ## One-shot EP1 canary implementation — November 3, 2026, America/New_York
 
 Resumed only the saved isolated canary work after Mac reconnection. The original
