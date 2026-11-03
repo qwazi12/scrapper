@@ -9,7 +9,7 @@ import { notify } from "../lib/dialogs";
 // editing one never changes the other.
 
 type Queue = "Movie Clips" | "LongForm" | "Countdowns" | "The ICK Room" | "DramaRama";
-const LABEL: Record<Queue, string> = { "Movie Clips": "Posting Queue", LongForm: "LongForm", Countdowns: "Countdowns",
+const LABEL: Record<Queue, string> = { "Movie Clips": "Screen Central", LongForm: "LongForm", Countdowns: "Countdowns",
                                        "The ICK Room": "The ICK Room", DramaRama: "DramaRama" };
 
 // Owner (2026-10-13): post more on Facebook/Instagram, less on YouTube.

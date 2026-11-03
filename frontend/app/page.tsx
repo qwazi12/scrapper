@@ -58,6 +58,8 @@ export default function Page() {
     return () => clearInterval(t);
   }, []);
   const [queueCount, setQueueCount] = useState<number>(0);
+  // The Screen Central tab counts only its own videos, not the other sections (owner, 2026-11-02).
+  const [screenCentralCount, setScreenCentralCount] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<NavTab>("scraper");
   const [socialPilotTab, setSocialPilotTab] = useState<"queue" | "longform" | "countdowns" | "ickroom" | "dramarama" | "scheduler" | "ingest" | "drive">("queue");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -75,7 +77,7 @@ export default function Page() {
   const failures = useRef(0);
   const refresh = useCallback(async () => {
     try {
-      const [c, cm, st, q] = await Promise.all([
+      const [c, cm, st, q, sc] = await Promise.all([
         api.clips(),
         api.compilations(),
         api.stats(),
@@ -83,12 +85,14 @@ export default function Page() {
           const fallback = await api.queue();
           return fallback.length;
         }),
+        api.queueCounts("Movie Clips").then((r) => r.all).catch(() => null),
       ]);
       if (typeof q !== "number" || !Number.isFinite(q) || q < 0) throw new Error("Queue counts could not be confirmed");
       setClips(c);
       setComps(cm);
       setStats(st);
       setQueueCount(q);
+      if (typeof sc === "number") setScreenCentralCount(sc);
       setConnected(true);
       failures.current = 0;
     } catch {
@@ -471,7 +475,7 @@ export default function Page() {
                     borderRadius: 6,
                   }}
                 >
-                  📋 Posting Queue ({readyQueueCount})
+                  📺 Screen Central ({screenCentralCount})
                 </button>
                 <button
                   onClick={() => setSocialPilotTab("longform")}
