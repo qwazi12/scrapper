@@ -32,16 +32,22 @@ public test or dispatch was performed. SEO remains sole content live writer.
 
 Existing automatic nightly DB backup attempted its configured Drive upload and
 received service-account storageQuotaExceeded403. Local backups remain healthy;
-this is an explicit off-device backup gap, not a successful remote copy. No
-backup settings, credentials or external destination was changed. An existing
-nightly snapshot was downloaded privately, hash verified, restored and passed
-SQLite integrity_check; it contains0derivative/calibration records at its backup
-time. Authenticated current storage inventory shows no drama-artifacts directory.
+the automated Drive/cloud copy remains blocked. No manual upload retry, backup
+cadence/settings, credential or destination change was made. A real production
+nightly DB snapshot was downloaded GET-only to the private Mac, hash verified,
+restored and passed SQLite integrity_check: this IS a verified point-in-time
+off-server DB recovery copy, distinct from synthetic test restores and from an
+unverified automated cloud/offsite backup. It contains0derivative/calibration
+records at its backup time and excludes physical videos. Exact production source,
+read endpoint, private destinations, times, sizes/checksums and restore proof are
+retained privately; containing directories0700 and DB/archive files0600 verified.
+Authenticated current storage inventory shows no drama-artifacts directory.
 SSH inventory was unauthorized; no login/retry/new credential was attempted.
 Separate private copies of the3known local original/candidate/calibration files
 total48,573,183bytes and passed hash/temporary-restore proof with originals
-unchanged. Those are same-Mac private copies, not production/off-device disaster
-recovery. DB backups do NOT package physical artifact video files.
+unchanged. Those3media copies are same-Mac private copies, not off-device media
+recovery. Code rollback does not repair the automatic backup quota blocker.
+DB backups do NOT package physical artifact video files.
 
 Rights/source/copy authorization, actual perceptual derivative review, exact
 217-weight three-hashtag X variant approval and both specific public-test
