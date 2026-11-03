@@ -57,7 +57,12 @@ def preview(title,description,raw_tags,platforms,*,ick=False,x_variant_text=None
         actual={unicodedata.normalize('NFC',t).casefold() for t in HASHTAG.findall(unicodedata.normalize('NFC',x_variant_text))}
         if not required<=actual:raise ValueError('Reviewed X variant drops mandatory public hashtags')
         exact_x=x_variant_text
+    short_x=False
+    if x_variant_text is None and not ick and common_weight>280:
+        # Owner 2026-11-03: Screen Central X over 280 posts title + public hashtags; other platforms keep full copy.
+        short=x_text(title,'',raw_tags)[0]
+        if weight_upper_bound(short)<=280:exact_x,short_x=short,True
     fields=video_fields(title,caption,platforms,{'x_title':exact_x} if set(platforms)&{'x','twitter'} else None)
-    return {'values':fields,'tags':parts,'x_appended_hashtags':missing,'x_body_unchanged':x_variant_text is None,
+    return {'values':fields,'tags':parts,'x_appended_hashtags':missing,'x_body_unchanged':x_variant_text is None and not short_x,'x_short_form':short_x,
         'x_variant_selected':x_variant_text is not None,'x_common_weight_upper_bound':common_weight,'x_weight_upper_bound':weight_upper_bound(exact_x),
         'x_limit':280,'variant_policy':'Over-budget or unsupported copy needs a separately reviewed exact variant; no truncation or threading'}

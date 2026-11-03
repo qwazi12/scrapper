@@ -149,3 +149,17 @@ def test_new_delivery_warning_is_held_without_reposting_but_old_receipts_are_unc
     clean={'status':'completed','results':[{**status['results'][0],'changes':{},'video_was_transcoded':True}]}
     assert 'delivery_holds' not in qm.resolve_results([entry],{'synthetic-fb-result':clean},now)
 
+
+
+def test_screen_central_x_over_280_posts_title_and_hashtags_only():
+    from backend.app.social import queue_payloads as qp
+    title,desc='Young Bruce Wayne Never Flinched','A long recap. '*30
+    r=qp.preview(title,desc,'#shorts #movieclips',['youtube','facebook','x'])
+    assert r['values']['x_title']==title+'\n\n#shorts #movieclips' and r['x_short_form'] and not r['x_body_unchanged']
+    assert desc.strip() in r['values']['facebook_description']                   # other platforms keep full copy
+    short=qp.preview(title,'Short.','#shorts',['x'])
+    assert short['values']['x_title']==title+'\n\nShort.\n\n#shorts' and not short['x_short_form']
+    with pytest.raises(ValueError):                                              # ICK still needs a reviewed variant
+        qp.preview(title,desc,'#tonightsconversation #theickroom',['x'],ick=True)
+    with pytest.raises(ValueError):                                              # never truncates the title
+        qp.preview('T'*300,desc,'#shorts',['x'])
