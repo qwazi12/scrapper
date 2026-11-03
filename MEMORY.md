@@ -1,5 +1,79 @@
 # Scrapper Memory
 
+## ICK exact X/future Ready local candidate — November 3, 2026, America/New_York
+
+Isolated branch codex/ick-ready-x-20261103 starts from main57644c3. This is local
+implementation candidate; parent subsequently authorized its scoped release after
+checks and review. At this entry no push, merge, deployment, live Ready,
+schedule/account change, provider upload or episode dispatch has occurred.
+SEO remains the live content writer.
+No archive worker was changed and no duplicate file was deleted or trashed.
+
+The shared adapter already sent title and description through x_title at the
+released source; the queue-specific gap was exact composition/hashtag handling,
+review binding and safe future admission. New queue_payloads separates explicit
+public hashtags from whole backend keyword phrases, composes exact reviewed
+title/description plus missing hashtags for X, and holds ambiguous/unsupported or
+over280 copy. It preserves the full historical Facebook title/caption and all
+its public hashtags; default X composition also preserves all. The latest scoped
+instruction allows an explicitly QA-reviewed ICK X variant to omit optional
+Facebook hashtags while retaining #tonightsconversation and #theickroom.
+Backend tags remain unchanged. It never invents a variant or truncates.
+Read-only reconciliation found309reviewed matching never-submitted candidates,
+all309unchanged current copies overX280;0fit. This is a copy-budget result,
+not a Ready/media/rights approval. Separately owner-reviewed exact X variants
+require immutable revision/proposal/workbook/hash/reference receipts. Agent
+editorial QA under the existing optimization instruction is truthful provenance;
+the protocol does not add a new manual human approval round or establish that
+the user personally viewed an exact variant or hash. SEO prepares the309pack;
+this worker does not create a duplicate editorial batch.
+
+New authenticated /api/ick-readiness routes inspect actual bounded local/Drive
+media, completely decode MP4/H264/yuv420p/AAC-LC, bind current public-copy review,
+full protected fingerprint, source/version/checksums and native Facebook/X
+identities/Page pins. Per-item preview/Ready preserves account selection and
+existing Ready assignments, uses publication/media leases and full DB CAS,
+reserves only a strictly future cadence-compatible slot, and never wakes the
+poster. Generic ICK Review approval rejects; refused queue writes no longer wake.
+Planner/schedule writes serialize with reservations; guarded slots are retained.
+The regular dispatch checks actual bytes/copy/approval/native identity before
+claim and each destination. New retained publication history blocks initial send;
+partial/uncertain attempts cannot be blindly resent. One-use SQL fences cover
+SQLite and PostgreSQL and survive source rollback; failed claims roll back permits.
+
+Missed five-minute windows show expired_no_catchup. Explicit conditional owner
+withdrawal can return only an unsent reservation to Review, preserving the old
+slot and audit; fresh review/evidence/preview reserves a new future slot. No
+automatic rollover, catch-up, silent FB-only fallback or new frontend approval
+control. Technical decode/metadata declarations do not certify rights or semantic
+content review. Full API/rollback contract: docs/ICK_READY_CONTRACT.md.
+
+Verification checkpoint:223focused tests passed12.49s on the final candidate; earlier boundary snapshot
+full backend1198passed/1existing skip223.82s; actual PostgreSQL664passed245.32s
+plus successful backup/restore drill. Two added boundary regressions first failed as expected
+(post-Ready rejected history; refused generic approval wake) and now pass.
+Exact evidence at artifacts/ick-backend2 and artifacts/ick-pg2. A later bounded
+X-variant optional-hashtag instruction and explicit post-Ready source-binding
+revision guard passed223focused SQLite tests and128actual PostgreSQL tests
+(537unrelated deselected), plus another successful restore drill;
+hosted exact-source CI/review/release remains pending. Frontend typecheck,6API
+error tests,2platform-status tests and production build passed with unchanged
+frontend source. Provider HTTP
+is mocked and media is generated in disposable test roots; no paid/live posting.
+
+The specifically authorized EP1 derivative preparation used the existing deployed
+guarded route and retained canonical evidence. Its actual server artifact was
+downloaded to private same-Mac backup, hash/restore/full-decode verified, and
+independently compared to the original: complete PTS timeline matches within2us,
+SSIM0.995219, per-channel cosine0.998912/0.998924 and RMS ratios0.994444/0.994702.
+This is actual prepared-artifact evidence, not a different offline candidate,
+off-device backup, delivered-fidelity certificate or owner perceptual review.
+The worker did not accept its review, make it Ready, alter metadata or dispatch;
+exact X copy binding remains SEO's work under the existing authorization;
+no additional manual human wording approval is imposed here. Private receipt/hash/
+restore/comparison evidence is retained outside Git. Existing calibration
+publication/fidelity holds were not changed or repeated.
+
 ## Reviewed media-lineage/diagnostic code released — November 3, 2026, America/New_York
 
 Independent code review and exact hosted CI passed before main was fast-forwarded

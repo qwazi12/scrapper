@@ -104,6 +104,8 @@ from .drama_media_routes import router as drama_media_router
 app.include_router(drama_media_router)
 from .drama_calibration import router as drama_calibration_router
 app.include_router(drama_calibration_router)
+from .ick_readiness import router as ick_readiness_router
+app.include_router(ick_readiness_router)
 from .editorial import asset_annotations
 app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes
@@ -124,7 +126,7 @@ async def _wake_poster_on_queue_change(request, call_next):
     """Any change to the queue or schedule wakes the auto-poster now (it otherwise
     checks every 5 minutes), so approvals get their time slot immediately."""
     response = await call_next(request)
-    if request.method != "GET" and request.url.path.startswith(("/api/queue", "/api/schedule", "/api/autopost")):
+    if response.status_code < 400 and request.method != "GET" and request.url.path.startswith(("/api/queue", "/api/schedule", "/api/autopost")):
         queue_manager.wake()
     return response
 
@@ -893,6 +895,8 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         item.pipeline = req.pipeline
         if req.accounts is None:
             queue_manager.fit_destination(item)   # moved into/out of The ICK Room: its destinations follow
+    if req.status=="ready" and item.pipeline==queue_manager.ICK_ROOM and item.status!="ready":
+        raise HTTPException(409,"Use the exact ICK future Ready workflow")
     if req.status is not None:
         if req.status == "ready" and not queue_manager.has_video_source(item):
             raise HTTPException(400, "This row has no video yet — it can be Ready to Post once its video exists.")
@@ -940,6 +944,8 @@ def approve_queue_item(item_id: int, s: Session = Depends(get_session)):
     if not item:
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
+    if item.pipeline==queue_manager.ICK_ROOM and item.status!="ready":
+        raise HTTPException(409,"Use the exact ICK future Ready workflow; generic approval can wake a current slot")
     undo.record(s, "queue", f"Approve #{item.id}", rows=[item])
     item.status = "ready"
     s.commit()
@@ -1241,6 +1247,8 @@ def bulk_queue_action(req: QueueBulkAction, s: Session = Depends(get_session)) -
         if req.action=='edit' and any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','pipeline')):
             from . import queue_sources
             queue_sources.require_copy_editable(s,item)
+    if (req.action=="approve" or req.action=="change_status" and req.target_status=="ready") and any(it.pipeline==queue_manager.ICK_ROOM and it.status!="ready" for it in items):
+        raise HTTPException(409,"Use individual exact ICK future Ready operations; bulk approval cannot bypass review")
     count = len(items)
     what = {"approve": "Approve", "review": "Set to Review", "archive": "Archive", "posted": "Mark posted",
             "change_status": f"Set status {req.target_status}", "set_accounts": "Change targets",

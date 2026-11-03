@@ -224,7 +224,7 @@ def schedule_config() -> dict[str, Any]:
 def load_schedule(s: Session) -> dict[str, Any]:
     """Refresh the active schedule from the DB (falls back to env defaults)."""
     global _schedule_cfg
-    row = s.get(AppSetting, "schedule")
+    row = s.get(AppSetting, "schedule", populate_existing=True)
     try:
         _schedule_cfg = validate_schedule(row.value) if row and row.value else default_schedule()
     except ValueError as exc:  # bad stored value: keep running on defaults, say so
@@ -235,8 +235,10 @@ def load_schedule(s: Session) -> dict[str, Any]:
 
 def save_schedule(s: Session, cfg: dict[str, Any] | None) -> dict[str, Any]:
     """Persist a new schedule (None = back to env defaults); audit-logged."""
+    from ..budget_reservations import lock
+    lock(s)
     before = schedule_config()
-    row = s.get(AppSetting, "schedule")
+    row = s.get(AppSetting, "schedule", populate_existing=True)
     if cfg is None:
         if row:
             s.delete(row)
@@ -515,6 +517,15 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     per slot. Items already due keep their slot; items with no accounts picked
     or no video yet get no slot (nothing is ever posted to accounts the owner
     didn't choose, and a missing video never burns a slot). Returns rows changed."""
+    from ..budget_reservations import lock
+    from .. import ick_readiness
+    lock(s)
+    # Serialize reservation admission with planning; refresh snapshots after waits.
+    s.expire_all()
+    load_schedule(s)
+    reserved=ick_readiness.reservations(s)
+    guarded={row.queue_identity for row in reserved}
+    reserved_slots={datetime.datetime.fromisoformat(row.data["document"]["slot"]) for row in reserved}
     ready = (
         s.query(QueueItem)
         .filter(QueueItem.status == "ready")
@@ -528,6 +539,8 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     from .. import publication_journal as journal
     drama_identities = {identity for (identity,) in s.query(DramaEpisode.queue_identity)}
     for it in ready:
+        if journal.identity(it) in guarded:
+            continue  # Immutable ICK reservation; never current-slot replan/catch-up.
         if it.pipeline == DRAMARAMA or journal.identity(it) in drama_identities:
             # Its explicit conditional plan owns these fields. Generic schedule
             # changes/ticks must neither reorder it nor activate an unbound row.
@@ -592,6 +605,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     # Queues that give way to another plan last, once the other's slots are known.
     for group, items in sorted(groups.items(), key=lambda g: g[0] in SHARED_SLOTS):
         taken = taken_by(SHARED_SLOTS[group]) if group in SHARED_SLOTS else set()
+        if group==ICK_ROOM:taken |= reserved_slots
         if group == "LongForm" or any(bool(momentum.extract_release_date(it, session=s)) for it in items):
             items.sort(key=_momentum_order_key)
 
@@ -630,8 +644,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             if _aware(it.scheduled_at) != slot:
                 it.scheduled_at = slot
                 changed += 1
-    if changed:
-        s.commit()
+    s.commit()  # Also release the reservation mutex when the plan is unchanged.
     return changed
 
 
@@ -667,6 +680,8 @@ async def submit_upload(
     media_files: list[pathlib.Path] | None = None,
     platform_overrides: dict | None = None,
     request_keys: dict | None = None,
+    queue_x_text: str | None = None,
+    before_destination=None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -699,11 +714,13 @@ async def submit_upload(
                   "client_request_id": request_key}
         overrides = {k:v for k,v in (platform_overrides or {}).items()
                      if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}
+        transport_title,transport_description=(queue_x_text,"") if queue_x_text is not None and network in ("x","twitter") else (title,description)
         if not media_files:
             try:
                 from .. import drama_canary
                 await drama_canary.before_destination(account)
-                visible = upload_post.prepare_video_fields(profile, platforms, title, description, overrides)
+                if before_destination:await before_destination(account)
+                visible = upload_post.prepare_video_fields(profile, platforms, transport_title, transport_description, overrides)
             except upload_post.PayloadBlocked as exc:
                 # This refusal occurs BEFORE a durable per-platform intent or
                 # provider I/O. A crash cannot turn a known local hold into an
@@ -729,8 +746,8 @@ async def submit_upload(
                     title=title, description=description, idempotency_key=request_key)
             else:
                 rid = await upload_post.upload_video(
-                    video_path, profile=profile, platforms=platforms, title=title,
-                    description=description, tags=tags, privacy=settings.publish_privacy,
+                    video_path, profile=profile, platforms=platforms, title=transport_title,
+                    description=transport_description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
                     **({'platform_overrides': overrides} if overrides else {}),
                 )
@@ -790,7 +807,8 @@ def start_ick_room_seo(s: Session) -> int:
     rows = (s.query(QueueItem).filter(QueueItem.pipeline == ICK_ROOM,
                                       QueueItem.status.in_(["review", "ready", "retry"]))
             .order_by(QueueItem.id).all())
-    todo = [it for it in rows if ick_room_seo.needs_seo(it)]
+    from .. import ick_readiness
+    todo = [it for it in rows if not ick_readiness.guard(s,it) and ick_room_seo.needs_seo(it)]
     ids = [it.id for it in todo]
     if not ids:
         return 0
@@ -965,7 +983,7 @@ def require_native_queue(s,item):
 
 async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = False) -> QueueItem:
     """Submit a queue item to Upload-Post for the accounts the owner picked."""
-    item = s.get(QueueItem, item_id)
+    item = s.get(QueueItem, item_id, populate_existing=True)
     if not item:
         raise ValueError(f"Queue item {item_id} not found")
     from .. import drama_controls
@@ -986,6 +1004,10 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
     if not item.accounts:
         raise upload_post.UploadPostError(
             "No accounts picked. Choose where this video posts (Posts To column, or 🔗 Set Target Accounts).", status_code=400)
+    from .. import ick_readiness
+    ick_release=ick_readiness.guard(s,item)
+    if item.pipeline==ICK_ROOM and item.status=="review" and not ick_release:
+        raise upload_post.PayloadBlocked("Use the exact ICK future Ready workflow before publication")
     native_id = (item.research or {}).get("native_export_id")
     if native_id:require_native_queue(s,item)
     from .. import queue_sources
@@ -1079,8 +1101,11 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     drama_payload = drama_controls.payload(s, item) if is_drama else None
     from .. import drama_canary
     if is_drama:drama_payload=drama_canary.payload(s,item,drama_payload)
-    send_accounts = drama_controls.dispatch_targets(s, item) if is_drama else list(item.accounts)
-    if not is_drama and not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
+    from .. import ick_readiness
+    current_ick_identity=await ick_readiness.identity_for(s,item)
+    ick_release=ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
+    send_accounts = drama_controls.dispatch_targets(s, item) if is_drama else (ick_release["targets"] if ick_release else list(item.accounts))
+    if not is_drama and not ick_release and not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
     import hashlib
@@ -1127,13 +1152,19 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                "submitted_at": datetime.datetime.now(UTC).isoformat()}]
     source_binding_id=source_binding.id if source_binding else None
     if source_binding_id:intent[0]['source_binding_id']=source_binding_id
-    if is_drama: drama_controls.grant_dispatch(s, item, batch_key)
     from sqlalchemy import String, cast, update
+    if ick_release:
+        from ..budget_reservations import lock
+        lock(s)
+        captured=pending_metadata.fingerprint(s,item);s.refresh(item)
+        if captured!=pending_metadata.fingerprint(s,item):raise upload_post.PayloadBlocked("Guarded ICK state changed before claim")
+        ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
+    if is_drama or ick_release:drama_controls.grant_dispatch(s,item,batch_key)
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
     # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
                         QueueItem.created_at == item.created_at, queue_sources.admission_clause(item,source_binding),
-                        *(pending_metadata._same_snapshot(item) if is_drama else []),
+                        *(pending_metadata._same_snapshot(item) if is_drama or ick_release else []),
                         QueueItem.status.in_(("ready", "retry", "review", "error")),
                         QueueItem.title == item.title, QueueItem.description == item.description,
                         QueueItem.tags == item.tags, cast(QueueItem.accounts, String) == json.dumps(item.accounts),
@@ -1146,9 +1177,9 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     if claimed:
         journal.record(s,item,intent[0],'batch_intent')
         drama_canary.claim(s,item,batch_key,artifact_key)
-    if is_drama and not claimed:
+    if (is_drama or ick_release) and not claimed:
         s.rollback()  # An unsuccessful claim must never commit an unused permit.
-        raise upload_post.UploadPostError('Drama changed at the atomic claim; refresh', status_code=409)
+        raise upload_post.UploadPostError('Guarded publication changed at the atomic claim; refresh', status_code=409)
     s.commit()
     s.refresh(item)
     if not claimed:
@@ -1162,6 +1193,18 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
 
     try:
         description = "\n\n".join(p.strip() for p in (item.description, item.tags) if p and p.strip())
+        queue_x_text=None
+        backend_tags=_hashtags(item.tags)
+        structured_tags=(item.tags or "").lstrip().startswith(("[","{"))
+        if not is_drama and (ick_release or structured_tags or any(a.split(":")[-1] in ("x","twitter") for a in send_accounts)):
+            from . import queue_payloads
+            try:
+                preview=ick_release["payload"] if ick_release else queue_payloads.preview(item.title,item.description,item.tags,[a.split(":")[-1] for a in send_accounts],ick=item.pipeline==ICK_ROOM)
+            except ValueError as exc:raise upload_post.PayloadBlocked(str(exc)) from exc
+            queue_x_text=preview["values"].get("x_title")
+            parts=preview["tags"];backend_tags=[t.lstrip("#") for t in parts["public_hashtags"]]+parts["phrase_tags"]
+            if parts["encoding"].startswith("structured"):
+                description="\n\n".join(x for x in (item.description," ".join(parts["public_hashtags"])) if x)
         thumb = pathlib.Path(item.thumb_path) if item.thumb_path and not item.thumb_path.startswith("http") else None
         allow = None
         group = pipeline_group(item)
@@ -1172,6 +1215,10 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             hhmm = at.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M") if at else None
             allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
                      for net, lim in limits.items()}
+        async def refresh_ick_identity(account):
+            nonlocal current_ick_identity
+            try:current_ick_identity=await ick_readiness.identity_for(s,item)
+            except Exception as exc:raise upload_post.PayloadBlocked(str(getattr(exc,"detail",exc))) from exc
         def persist(entry, result=False):
             from ..budget_reservations import lock
             from .. import worker_leases as leases
@@ -1190,6 +1237,11 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             assert_current(s)
             if item.status!='posting': raise upload_post.UploadPostError('Submission was stopped for review',status_code=409)
             if not result:
+                if ick_release:
+                    try:ick_readiness.guard_intent(s,item,video_path,entry,regular=regular,fresh_identity=current_ick_identity)
+                    except Exception as exc:
+                        s.rollback()
+                        raise upload_post.PayloadBlocked(str(getattr(exc,"detail",exc))) from exc
                 try:drama_canary.guard_destination_intent(s,item,entry)
                 except upload_post.PayloadBlocked:
                     # Release the writer mutex before the caller persists the
@@ -1209,10 +1261,11 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             s.commit()
         entries = await submit_upload(
             video_path, send_accounts, title=item.title or item.video_name,
-            description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
+            description=description, tags=backend_tags, thumbnail=thumb, allow=allow,
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
+            **({"before_destination":refresh_ick_identity} if ick_release else {}),
             **({"media_files": images} if images else {}),
-            **({'platform_overrides': drama_payload} if is_drama else {}),
+            **({'platform_overrides': drama_payload} if is_drama else {'queue_x_text':queue_x_text} if queue_x_text is not None else {}),
             **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
         )
         from ..budget_reservations import lock

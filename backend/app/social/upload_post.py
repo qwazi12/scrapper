@@ -201,18 +201,19 @@ async def list_accounts() -> list[dict[str, Any]]:
     return accounts
 
 
-async def _native_page_identity(facebook_page_id: str):
+async def _native_page_identity(facebook_page_id: str, profile_name: str="Dramarama"):
     """Read exact native identities/current Facebook pin; never select a Page.
 
     Documented GET user-profiles and facebook-page endpoints. Provider plan
     names do not establish X subscription or long-text/video entitlement.
     """
+    if profile_name not in ('Dramarama','TheIckRoom'):raise PayloadBlocked('Unsupported guarded profile')
     issue='response_schema_unverifiable'
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            profile_response = await client.get(f'{API_BASE}/uploadposts/users/Dramarama',headers=_headers())
+            profile_response = await client.get(f'{API_BASE}/uploadposts/users/{profile_name}',headers=_headers())
             page_response = await client.get(f'{API_BASE}/uploadposts/users/facebook-page',headers=_headers(),
-                                              params={'profile_username':'Dramarama'})
+                                              params={'profile_username':profile_name})
         _raise_for(profile_response,'Canary native profile read')
         _raise_for(page_response,'Canary Facebook Page/pin read')
         profile_body,page_body=profile_response.json(),page_response.json()
@@ -233,12 +234,12 @@ async def _native_page_identity(facebook_page_id: str):
             issue='page_access_unverifiable';raise ValueError(issue)
         page=matches[0]
         if (profile_body.get('success') is not True or page_body.get('success') is not True
-                or profile.get('username')!='Dramarama' or profile.get('reauth_required') is True
+                or profile.get('username')!=profile_name or profile.get('reauth_required') is True
                 or profile.get('blocked') is True or profile_body.get('blocked') is True
                 or facebook.get('reauth_required') is True
                 or not isinstance(page.get('name'),str) or not page['name'].strip()):
             raise ValueError('Native destination identity/pin cannot be confirmed')
-        return {'profile':'Dramarama','accounts':['Dramarama:facebook'],
+        return {'profile':profile_name,'accounts':[profile_name+':facebook'],
                 'facebook_connection_id':facebook.get('username') if isinstance(facebook.get('username'),str) else None,
                 'facebook_page_id':facebook_page_id,
                 'facebook_page_name':page['name'],'facebook_pinned_page_id':selected,
