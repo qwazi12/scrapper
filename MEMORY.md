@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## PLAN — 2026-11-03 — apply latest SEO Review Register (owner: "Apply and utilize the excel… we are doing 4 a day")
+Register reviewed vs live queue by Queue ID: 2,987 of 3,023 drafts already live. To do now:
+1. Screen Central Clips: apply the 15 un-applied drafts (proposed title, description, public hashtags). Before-values backed up.
+2. DramaRama: move drafted rows still in review (2,366; skip the 4 identity-only unverified) to Ready. Pace stays 4/day (config
+   already posts_per_day 4, Facebook only). Order = series take turns, episodes from EP1 (drama_order). Posting stays blocked by
+   drama_controls until delivery-fidelity check exists — Ready ≠ posting. Rollback: ids saved; PATCH back to review.
+3. Not done (by design): 4 Drama + 1 Ick unverified drafts; 14 LongForm titles (Studio lock 409); Ick hashtag case-only diffs.
+4. X limit: register has NO X variants. Screen Central X posts over 280 still go to Retry — needs owner decision.
+
 ## PLAN — 2026-11-03 — scheduler screens fix 1–5 (owner: "Do 1-5"; lifts the hold for these)
 1. No "Invalid Date": a Ready row with no time shows "Not scheduled", and DramaRama shows why (posting is off until the
    other agent's delivery check exists). /api/schedule gains `posting_blocked` {queue: reason}.
