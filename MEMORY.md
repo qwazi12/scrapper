@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## DONE 2026-11-03 — register applied + new frequencies (owner)
+- Register: 15 Screen Central Clips drafts applied (#4506–4520, 200s, before-values in scratchpad sc15_plan.json). DramaRama:
+  2,516 drafted review rows → Ready (first pass 1,066 hit 429; retried one at a time, all 200). Ready now: Clips 3,393,
+  LongForm 12, Ick 173, DramaRama 2,535 (87 series). Rollback ids: scratchpad xl3/drama_ready_ids.json.
+- Frequencies (live PUT, server snapshot for undo): LongForm 1/day 20:00 ET (was 15+20); Ick 4/day (Facebook 4, X 2;
+  times 10:00/13:20/16:40/20:00); DramaRama Facebook 4, YouTube 2, X 2 (Dramarama YouTube newly connected in Upload-Post).
+  Note: a queue runs at its busiest platform's int rate, so Facebook must stay listed. Screen Central clips unchanged.
+- X fix (short X = title + hashtags over 280, non-Ick) committed locally; push denied by auto-mode — owner to push.
+
 ## PLAN — 2026-11-03 — X copy over 280 for Screen Central (owner: "Go ahead and make the update")
 Problem: Screen Central (Cinama:x) posts title+description+hashtags to X; over 280 weight the publisher refuses X and the row
 goes to Retry (#880). Register has X variants only for Ick (302) and 19 DramaRama; none for Screen Central.
