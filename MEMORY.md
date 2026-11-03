@@ -1,5 +1,34 @@
 # Scrapper Memory
 
+## ICK display-thumbnail inspection hotfix candidate — November 3, 2026
+
+Production inspection treated an HTTPS display-thumbnail reference as a local
+file and raised FileNotFoundError before saving its inspection receipt. Root
+verified terminal HTTP500 after7.351s, not a provider timeout or quota failure.
+No live retry, receipt fabrication, queue edit, permission change or deletion
+was performed by the code task. Current production lease/fileclaim cleanup is
+not independently observable via existing GET routes; context cleanup is expected,
+and no mutation endpoint was used as a probe. Original failed operation/evidence
+is retained privately for SEO's reconciliation; SEO owns any fresh retry.
+
+The bounded guard now follows publisher HTTP display-reference semantics:
+preserve the full URL in the queue/fingerprint, never fetch/pin/hash it as a
+filesystem file, record its reference digest and no local-thumbnail hash. Actual
+local transport thumbnails must be regular readable nonsymlink files; missing,
+unsafe or unreadable files return actionable JSON409. Local bytes and unchanged
+reference are rechecked before Ready and dispatch. No publisher code, payload,
+live queue or diagnostic API change. The separate normal-Drama draft is preserved
+in its isolated worktree and is not included in this hotfix.
+
+Coordinator reviewed the scoped app/tests diff. Initial focused226passed12.73s;
+final exact ICK57passed8.74s and real PostgreSQL57passed17.92s (617unrelated
+deselected), plus successful backup/restore with unchanged source. Tests include
+actual synthetic FB/X multipart without a remote thumbnail upload, URL drift,
+local bytes/missing/symlink/directory holds and no new receipt/Ready/intent with
+publication/file claims cleaned on error. All provider HTTP is mocked. Exact
+hosted CI and deployment verification follow the existing authorized Git route;
+no completed hosted/deployed claim is made by this candidate entry.
+
 ## ICK guarded Ready/X release verified live — November 3, 2026, America/New_York
 
 Scoped coordinator review passed015de95d07de2c6e3eacc64aaf201206c82819cd before

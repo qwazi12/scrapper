@@ -93,13 +93,39 @@ def verify_remote(item,proof):
     if remote(item)!=proof['remote']:fail('Drive identity/version/checksum changed; inspect the actual media again')
 
 
+def thumbnail_path(item):
+    value=item.thumb_path
+    # Match the publisher: HTTP display references are never multipart files.
+    # Their unchanged identity is already bound by the full queue fingerprint.
+    if not value or value.startswith('http'):return None
+    path=Path(value)
+    try:valid=not path.is_symlink() and path.is_file()
+    except OSError:valid=False
+    if not valid:fail('required local transport thumbnail is missing or unsafe; restore its exact file before inspection')
+    return path
+
+
+def thumbnail_hash(item):
+    from . import drama_media as dm
+    path=thumbnail_path(item)
+    if path is None:return None
+    try:return dm.file_hash(path)
+    except OSError:fail('required local transport thumbnail cannot be read; restore its exact file before inspection')
+
+
+def verify_thumbnail(item,proof):
+    if ('thumbnail_reference_sha256' in proof and proof['thumbnail_reference_sha256']!=pm.digest(item.thumb_path)):
+        fail('thumbnail reference changed after inspection')
+    if thumbnail_hash(item)!=proof['thumbnail_sha256']:fail('thumbnail bytes changed after inspection')
+
+
 def verify_local(item,proof):
     from . import drama_media as dm
     if item.video_path and Path(item.video_path).is_file():
         path=Path(item.video_path)
         if path.stat().st_size!=proof['actual']['file_size'] or dm.file_hash(path)!=proof['actual']['sha256']:fail('local media bytes changed after inspection')
     elif proof['remote'] is None:fail('inspected local media is missing')
-    if item.thumb_path and dm.file_hash(Path(item.thumb_path))!=proof['thumbnail_sha256']:fail('thumbnail bytes changed after inspection')
+    verify_thumbnail(item,proof)
 
 
 def save(s,op,hashed,item,scope,data,response):
@@ -244,16 +270,18 @@ def inspect(qid:int,req:Inspect,s:Session=Depends(get_session)):
                 if not path or not path.is_file():
                     if not initial:fail('actual video unavailable; no title/topic-only approval')
                     temporary=path=drive_sync.download_drive_file(item.drive_link)
-                paths=[path]+([Path(item.thumb_path)] if item.thumb_path else [])
+                thumb_path=thumbnail_path(item)
+                paths=[path]+([thumb_path] if thumb_path else [])
                 with pin(paths),rollback_on_error(s):
                     actual=dm.inspect(path)
                     if not dm.compatible(actual):fail('actual input needs verified MP4/H264/AAC-LC; no silent transcode')
-                    thumb=dm.file_hash(Path(item.thumb_path)) if item.thumb_path else None
+                    thumb=thumbnail_hash(item)
                     if initial:
                         import hashlib
                         if (int(initial['size'])!=actual['file_size'] or hashlib.md5(path.read_bytes()).hexdigest()!=initial['md5Checksum']
                                 or initial.get('sha256Checksum',actual['sha256'])!=actual['sha256']):fail('actual source bytes differ from Drive evidence')
-                    proof={'remote':initial,'actual':actual,'thumbnail_sha256':thumb}
+                    proof={'remote':initial,'actual':actual,'thumbnail_sha256':thumb,
+                        'thumbnail_reference_sha256':pm.digest(item.thumb_path)}
                     verify_remote(item,proof)
                     s.rollback()  # End the read snapshot after independent file-use heartbeats.
                     lock(s);leases.guard(s);s.refresh(item);pending(s,item,req.expected_fingerprint)
@@ -360,7 +388,9 @@ def ready(qid:int,req:Ready,s:Session=Depends(get_session)):
             from .file_use import pin
             item=s.get(QueueItem,qid,populate_existing=True)
             if item is None:fail('queue identity was deleted')
-            paths=[Path(p) for p in (item.video_path,item.thumb_path) if p and Path(p).is_file()]
+            paths=[Path(item.video_path)] if item.video_path and Path(item.video_path).is_file() else []
+            thumb_path=thumbnail_path(item)
+            if thumb_path:paths.append(thumb_path)
             s.rollback()
             with pin(paths),rollback_on_error(s):
                 lock(s)
@@ -395,7 +425,7 @@ def admit(s,item,path,*,regular,claimed=False,fresh_identity=None):
     media=s.get(MetadataMutationReceipt,doc['media_receipt_id']);proof=media.data['proof']
     verify_remote(item,proof)
     if dm.file_hash(path)!=doc['media_sha256']:fail('transport bytes differ from reviewed source')
-    if item.thumb_path and dm.file_hash(Path(item.thumb_path))!=proof['thumbnail_sha256']:fail('thumbnail bytes changed')
+    verify_thumbnail(item,proof)
     selected=variant(s,item,doc['x_variant_receipt_id'],reviewed)
     if (pm.digest(selected.data) if selected else None)!=doc['x_variant_receipt_sha256']:fail('X variant approval changed')
     fresh=queue_payloads.preview(item.title,item.description,item.tags,[a.split(':')[1] for a in doc['targets']],ick=True,

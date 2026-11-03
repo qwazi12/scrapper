@@ -164,8 +164,12 @@ def test_dispatch_guard_is_future_only_and_never_catches_up_or_retargets(candida
 
 
 @pytest.mark.parametrize('use_variant',[False,True])
-def test_actual_guarded_claim_and_multipart_match_preview_for_both_destinations(candidate,monkeypatch,use_variant):
+@pytest.mark.parametrize('display_thumbnail',[False,True])
+def test_actual_guarded_claim_and_multipart_match_preview_for_both_destinations(candidate,monkeypatch,use_variant,display_thumbnail):
     a=candidate
+    if display_thumbnail:
+        set_thumbnail(a,'https://images.example.invalid/display-only.jpg')
+        inspect_thumbnail(a)
     if use_variant:
         values=a.client.get(f'/api/pending-metadata/{a.qid}').json()
         description='Exact separately reviewed Facebook copy. '*12+'#TheIckRoom'
@@ -184,6 +188,7 @@ def test_actual_guarded_claim_and_multipart_match_preview_for_both_destinations(
     real=httpx.AsyncClient
     def handler(request):
         fields=multipart(request);network=fields['platform[]'][0].decode();calls.append(fields)
+        if display_thumbnail:assert not any('thumbnail' in key for key in fields)
         assert fields['video']==[a.media.read_bytes()]
         if network=='x':assert fields['x_title']==[doc['payload']['values']['x_title'].encode()]
         else:
@@ -198,6 +203,75 @@ def test_actual_guarded_claim_and_multipart_match_preview_for_both_destinations(
     with SessionLocal() as s:
         with pytest.raises(upload_post.UploadPostError):asyncio.run(qm.publish_queue_item(a.qid,s,regular=True))
     assert len(calls)==2
+
+
+def set_thumbnail(a,value):
+    with SessionLocal() as s:
+        item=s.get(QueueItem,a.qid);item.thumb_path=value;s.commit()
+    v=a.client.get(f'/api/pending-metadata/{a.qid}').json()
+    context={'revision':'Synthetic unchanged copy; new thumbnail reference','workbook_sha256':'1'*64,
+        'proposal_sha256':'2'*64,'applied_public_copy_sha256':pm.digest({k:v[k] for k in pm.PUBLIC_FIELDS})}
+    r=a.client.patch(f'/api/pending-metadata/{a.qid}',json={'operation_id':str(uuid4()),
+        'expected_fingerprint':v['fingerprint'],'title':v['title'],'approval_context':context})
+    assert r.status_code==200,r.text
+    a.body.update(operation_id=str(uuid4()),expected_fingerprint=r.json()['fingerprint'],approval_receipt_id=r.json()['receipt_id'])
+
+
+def inspect_thumbnail(a):
+    req={k:v for k,v in a.body.items() if k in ir.Inspect.model_fields};req['operation_id']=str(uuid4())
+    r=a.client.post(f'/api/ick-readiness/items/{a.qid}/inspect',json=req)
+    if r.status_code==200:a.body.update(operation_id=str(uuid4()),media_receipt_id=r.json()['media_receipt_id'])
+    return r,req
+
+
+def test_remote_display_thumbnail_is_preserved_and_never_a_file_claim(candidate,monkeypatch):
+    from backend.app import file_use
+    from contextlib import contextmanager
+    a=candidate;url='https://images.example.invalid/display-only.jpg';set_thumbnail(a,url);claimed=[];real=file_use.pin
+    @contextmanager
+    def tracked(paths,**kw):
+        paths=list(paths);claimed.extend(map(str,paths))
+        assert all(not str(p).startswith('http') for p in paths)
+        with real(paths,**kw) as handle:yield handle
+    monkeypatch.setattr(file_use,'pin',tracked)
+    r,_=inspect_thumbnail(a);assert r.status_code==200,r.text
+    with SessionLocal() as s:
+        proof=s.get(MetadataMutationReceipt,r.json()['receipt_id']).data['proof']
+        assert proof['thumbnail_sha256'] is None and proof['thumbnail_reference_sha256']==pm.digest(url)
+    release(a)
+    assert claimed and snap(a.qid)['thumb_path']==url
+
+
+@pytest.mark.parametrize('unsafe',['missing','directory','symlink'])
+def test_unsafe_required_local_thumbnail_returns_json_hold_without_receipt_or_claim(candidate,tmp_path,unsafe):
+    from backend.app.models import FileUse
+    a=candidate;path=tmp_path/'required-thumb.jpg'
+    if unsafe=='directory':path.mkdir()
+    if unsafe=='symlink':path.symlink_to(a.media)
+    set_thumbnail(a,str(path));r,req=inspect_thumbnail(a)
+    assert r.status_code==409 and 'local transport thumbnail' in r.json()['detail']
+    with SessionLocal() as s:
+        assert s.get(MetadataMutationReceipt,req['operation_id']) is None
+        assert s.query(FileUse).count()==0
+        assert s.query(PublicationEvent).filter_by(queue_identity=journal.identity(s.get(QueueItem,a.qid))).count()==0
+    assert not leases.live(f'publication:{a.qid}') and snap(a.qid)['status']=='review'
+
+
+@pytest.mark.parametrize('damage',['display_url','local_bytes','local_missing'])
+def test_display_reference_or_real_transport_thumbnail_drift_holds_dispatch(candidate,tmp_path,damage):
+    a=candidate;path=tmp_path/'actual-thumbnail.jpg'
+    if damage=='display_url':set_thumbnail(a,'https://images.example.invalid/first.jpg')
+    else:
+        path.write_bytes(b'synthetic-thumbnail-original');set_thumbnail(a,str(path))
+    r,_=inspect_thumbnail(a);assert r.status_code==200,r.text
+    _,doc,_=release(a);a.clock[0]=dt.datetime.fromisoformat(doc['slot'])
+    if damage=='display_url':
+        with SessionLocal() as s:
+            item=s.get(QueueItem,a.qid);item.thumb_path='https://images.example.invalid/second.jpg';s.commit()
+    elif damage=='local_bytes':path.write_bytes(b'changed-transport-thumbnail')
+    else:path.unlink()
+    with SessionLocal() as s:
+        with pytest.raises(HTTPException):ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True)
 
 
 def test_old_publisher_status_write_cannot_bypass_guard_after_rollback(candidate):
