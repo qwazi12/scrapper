@@ -1,5 +1,57 @@
 # Scrapper Memory
 
+## ICK guarded Ready/X release verified live — November 3, 2026, America/New_York
+
+Scoped coordinator review passed015de95d07de2c6e3eacc64aaf201206c82819cd before
+main was fast-forwarded and pushed through the existing authorized Git route.
+No force push, branch-rule/credential change, GitHub-plugin write or PR approval
+on the user's behalf. Exact hosted CI41622635361 passed: backend1199passed/
+1existing skip/1dependency warning601.33s; offline browser33passed11.0min;
+frontend typecheck,6API-error tests,build and audit0vulnerabilities passed.
+https://github.com/qwazi12/scrapper/actions/runs/41622635361
+Final affected local223passed12.49s; actual PostgreSQL128passed15.77s plus
+verified backup/restore. Earlier full boundary snapshot1198passed/1skip223.82s
+and actualPG664passed245.32s plus restore remain separately identified below.
+
+Railway deploymentac03db9b-c095-4f7e-b0b7-71d410141861 SUCCESS identifies exact
+015de95. GET-only production verification passed health and both guarded route
+families; /api/ick-readiness/contract returnsick-future-ready-v1 with no automatic
+approval/catch-up. Missing and invalid credentials both return401. All25existing
+ICK Ready rows have identical complete queue snapshots before/after deployment.
+No frontend source changed or frontend deployment was requested; the existing
+frontend remains compatible. This entry is documentation only, not another app
+source release or a claim the frontend build uses the new backend commit.
+
+The private309X pack passed309/309 exact payload/hash/weight checks with0errors.
+Explicit agent-QA X variants may retain only the two mandatory ICK brand tags;
+optional hashtags remain untouched in Facebook/common copy and backend tags.
+The default X composition preserves all. SEO alone performs any actual current
+metadata/no-op review, media inspection, variant binding and future Ready writes.
+The code worker did not apply the pack or change live queue/schedule/accounts.
+No paid/provider upload, calibration repeat, episode dispatch or duplicate
+deletion was performed by this release task. Prepared media/QA packs/private
+copy/request bodies remain outside Git; portable source patch is saved privately.
+
+Private SEO handoff includes deployed exact EP1 review-preview/review/Ready
+schemas and URLs, existing canonical evidence and actual server derivative IDs/
+hashes, exact217-weight agent-prepared source-based X copy and v29 provenance.
+The request validates against the deployed model and payload with0errors.
+It does not invent acceptance/Ready receipts or claim manual owner wording/hash
+review. SEO must refresh exact fingerprint/history/media and bind truthful QA
+under the coordinator's existing user authorization. Named Prime Suspect FB/X
+scope does not extend rights to YouTube or other series. A supported CAS no-op
+pending-metadata review can establish an accurate missing approval_context
+receipt with unchanged public/protected fields; it is not a gate bypass.
+
+Drama review/Ready routes are independently deployed and Ready-capable. Normal
+Drama plan application/dispatch remains hard-blocked by activation_contract()
+returningsupported=False/delivery_fidelity_verifier_unavailable unconditionally.
+That is a separate code dependency; ordinary Facebook-served gain/codec conversion
+is not its cause. Observed+7dB alone does not prove missing/truncated story/audio.
+Source-to-actual-server-derivative preservation passed and remains meaningful.
+This release does not remove partial/uncertain/history/predecessor/canonical or
+text-budget guards and makes no whole-roadmap or normal-Drama-publishing claim.
+
 ## ICK exact X/future Ready local candidate — November 3, 2026, America/New_York
 
 Isolated branch codex/ick-ready-x-20261103 starts from main57644c3. This is local
