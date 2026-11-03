@@ -29,8 +29,8 @@ class Permission(Targets):
     expected_fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
     evidence_id: str = Field(pattern=pm.OPERATION_PATTERN)
     expected_permission_fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
-    permission_reference: str = Field(min_length=1, max_length=2000)
-    authorization_provenance: str = Field(min_length=1, max_length=2000)
+    permission_reference: str = Field(min_length=1, max_length=2000, pattern=r'\S')
+    authorization_provenance: str = Field(min_length=1, max_length=2000, pattern=r'\S')
     decision: Literal['Record the existing user permission for this exact canonical series on the frozen DramaRama Facebook and X destinations only']
 
 

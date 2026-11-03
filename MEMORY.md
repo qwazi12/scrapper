@@ -2,6 +2,14 @@
 
 ## Ordinary Drama v2 implementation candidate — November 3, 2026
 
+Final request-validation followup: permission reference and authorization
+provenance must contain nonwhitespace content; whitespace-only values are422 and
+leave the current permission unchanged. Both regressions passed2.12s. Candidate
+4bfc72e is superseded by this bounded validation followup; no merge or normal
+deployment occurred. The1262backend/728PG and focused browser2 results below
+belong to its preceding source generation. Exact followup full backend/PG and
+hosted CI are rerunning; release receipts remain private until verified.
+
 Implemented a conditional ordinary release path at `/api/drama/normal` instead
 of removing the legacy gate without working authority. Deployment grants no
 rights, selects no series, creates no plan and publishes nothing. The authorized

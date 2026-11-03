@@ -61,6 +61,19 @@ def permission(a,key=(0,1)):
     return r.json(),req
 
 
+@pytest.mark.parametrize('field',['permission_reference','authorization_provenance'])
+def test_whitespace_only_permission_reference_or_provenance_is_not_authority(normal_archive,field):
+    a=normal_archive;ready(a,(0,1));grant,req=permission(a)
+    series=view(a,(0,1))['evidence']['series_key'];before=a.client.get('/api/drama/normal/permissions/'+series).json()
+    req.update(operation_id=str(uuid4()),expected_permission_fingerprint=before['fingerprint'],
+        expected_fingerprint=view(a,(0,1))['fingerprint'])
+    req[field]=' \n\t '
+    response=a.client.post('/api/drama/normal/permissions',json=req)
+    assert response.status_code==422,response.text
+    assert a.client.get('/api/drama/normal/permissions/'+series).json()==before
+    assert not a.transfers
+
+
 def plan_request(a,keys,lanes=None):
     v=view(a,keys[0]);lanes=lanes or [v['evidence']['series_key'],None]
     return {'operation_id':str(uuid4()),**targets(a),'expected_plan_fingerprint':a.client.get('/api/drama/plan').json()['fingerprint'],
