@@ -16,6 +16,7 @@ from ..studio import gemini
 
 KIND = "ick_room"
 RETRY_AFTER = 24 * 3600
+BRAND_TAGS = ["#tonightsconversation", "#theickroom"]   # on every Ick Room video (owner, 2026-11-02)
 _failed: dict[int, float] = {}   # row id -> when its SEO last failed (the scheduler waits before retrying)
 
 EXAMPLES = """- She found out her fiancé is already married… 😳 and now she AND his wife are both pregnant.
@@ -67,6 +68,7 @@ def generate(item, cache: dict | None = None) -> tuple[dict[str, Any], dict[str,
         raise
     _failed.pop(item.id, None)
     tags = [("#" + t.lstrip("#").replace(" ", "")) for t in (meta.get("hashtags") or []) if str(t).strip()][:8]
+    tags = [t for t in tags if t.lower() not in BRAND_TAGS] + BRAND_TAGS
     return ({"title": str(meta["title"])[:100], "caption": str(meta.get("caption") or ""), "hashtags": tags},
             {"kind": KIND, "from": source_title(item)})
 
