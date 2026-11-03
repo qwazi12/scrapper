@@ -172,6 +172,7 @@ def contract():
         'rights': 'preserve applicable existing export/media/rights gates; technical evidence and posting authority do not certify rights',
         'cutover': 'quiesce old Drama publishers and unresolved in-flight requests before activation',
         'activation_owner': 'SEO coordinator; this deployment does not apply live queue or schedule changes',
+        'one_shot_canary_contract':'/api/drama/canary/contract; separate exact owner authorization/rights and dispatch required',
         'activation': dc.activation_contract()}
 
 

@@ -1,5 +1,55 @@
 # Scrapper Memory
 
+## One-shot EP1 canary implementation — November 3, 2026, America/New_York
+
+Resumed only the saved isolated canary work after Mac reconnection. The original
+twelve-file held draft still matches its private isolation hashes; unrelated
+archive edits/processes and all existing main history are preserved. Root/SEO
+remain sole live content/Ready/schedule writers. This code task creates no live
+grant, Ready transition, dispatch, metadata/account edit or public probe.
+
+Implemented a dedicated authenticated preview/grant/status/revoke/dispatch path
+for one exact reviewed canonical A/EP1, two approved series, Facebook Page and
+native X identity, source/payload hashes and one future 10:00 New York slot.
+Deployment, generic manual publishing, scheduler ticks and environment flags do
+not grant canary authority. Actual specific owner authorization AND source/copy
+rights references are required; a read-only preview can leave them null. Both
+supported provider GETs must agree on the Page pin, including explicit nulls and
+conflicting aliases; a display name never substitutes for native X identity.
+Read again before batch claim and each destination. Never change pins to pass.
+
+The database claim atomically records one-shot consumption, batch intent and the
+existing SQL permit before provider HTTP. Stable destination request keys bind
+the original operation/source/payload/targets; replay returns the durable saved
+receipt without sending again, including after process restart. Changed state,
+revocation or expiry holds any unsent destination. Revoking an in-flight grant
+does not recall sent requests or reset consumption. No new episode, destination,
+catch-up or successful/unknown-destination resend is authorized. Terminal canary
+results stay Review; uncertain results stay Posting. Fidelity, EP2 advancement
+and normal eight-slot automatic activation remain explicitly held.
+
+Focused original-media/fake-provider canary tests41passed. A new independent
+protected-edit test reproduced a writer-mutex/receipt-session deadlock; rollback
+of the rejected intent now releases the mutex before saving its local refusal.
+Expanded full SQLite/PostgreSQL runs also exposed retained synthetic-date overlap
+with the fixed DST test; fixture scenarios now use separate month-spaced dates
+outside that explicit DST calendar, without changing production scheduling.
+Fresh combined canary/scheduling84passed. Full PostgreSQL and remote CI/release
+verification are pending at this implementation checkpoint; earlier green
+source is not assigned to it.
+
+Private exact first-episode proposal, measured original media, common/proposed
+platform copy hashes, future slot and unfilled authorization/rights/server IDs
+are saved outside Git. Current proposed source is HEVC and does not pass the
+guarded H264 X contract; no silent transcode is authorized. Its roughly61-second
+duration cannot verify the >90-second shortening defect. A proposed shorter X
+variant is unapproved. Native ID/pin field availability still needs actual live
+read verification. No rights or approval is inferred from archive provenance,
+technical decode, rollout approval or connected accounts. A separately authorized
+owned/permission-confirmed >90-second test and complete independently observed
+served media/audio/visible text remain required for that distinct delivery claim.
+See docs/DRAMA_RELEASE_CONTRACT.md for exact operation/hold boundaries.
+
 ## Verified guarded delivery release — November 2, 2026, America/New_York
 
 Released exact tested application source33f4231cd4a95b5fafa5d70e59ec19cd739e7229

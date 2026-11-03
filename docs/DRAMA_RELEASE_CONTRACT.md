@@ -54,6 +54,77 @@ public and protected state, including immutable source binding.
 | `GET /api/drama/receipts/{operation_id}` | Inspect a committed historical receipt. |
 | `POST /api/drama/receipts/{operation_id}/rollback` | Reverse only supported recorded Ready/plan fields when identity, full state, history and plan still match. Never restore a past slot. |
 
+## Separate one-shot EP1 canary
+
+The installed one-shot path is independent of the held automatic plan. Deploying
+it creates **zero grants**. Generic manual publishing, Ready, scheduler ticks and
+environment flags cannot acquire its dispatch context. Only the existing owner
+token can invoke its dedicated operations; root/SEO retain live writer ownership.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/drama/canary/contract` | Installed policy and counts of granted, consumed and revoked operations; never authority to publish. |
+| `GET /api/drama/canary/targets?facebook_page_id=...` | Read the specific native Page/access/pin and native X identifier/handle. No account or Page selection write. |
+| `POST /api/drama/canary/items/{id}/preview` | Read-only exact proposal using the existing canonical inspect/review/Ready receipts. `authorization:null` permits a preview without inventing rights. |
+| `POST /api/drama/canary/items/{id}/grants` | Record the unchanged acknowledged proposal and actual specific owner authorization/rights references. Does not dispatch or edit the queue or schedule. |
+| `GET /api/drama/canary/grants/{grant_id}` | Historical grant, source/copy/target/slot binding, revocation/expiry and original dispatch receipt. |
+| `POST /api/drama/canary/grants/{grant_id}/revoke` | Append cancellation, including during transport. Stops an unsent destination when checked; cannot recall a request already sent or undo consumption. |
+| `POST /api/drama/canary/items/{id}/dispatch` | Explicitly consume that grant once through the existing durable publisher and SQL fence, in its exact time window. |
+
+A proposal binds the full queue fingerprint; exact inspect, review and Ready IDs;
+the two canonical series in approved A/B order; A's EP1 source SHA256/Drive/catalog
+evidence; reviewed visible Facebook and X payloads and payload SHA256; exact native
+Page and X account IDs/handle; and a future 10:00 America/New_York slot within
+48 hours. The row must be guarded Ready with no ordinary schedule, pin, Post Next
+or extra unbound thumbnail/media. The second series needs its own EP1 evidence.
+Connected YouTube remains excluded, including when the stored selection is a
+legacy wildcard. Unknown X entitlement still enforces the conservative media/text
+bounds above. No copy is shortened automatically.
+
+Grant requests add `acknowledged_fingerprint` from a preview containing the exact
+actual authorization statement, plus the authorizer, specific authorization
+reference, exact source and public-payload SHA256, rights basis and rights
+reference. These are recorded owner statements, not an AI rights certificate.
+Broad rollout/deployment approval or a null/blank rights reference cannot grant.
+The required decision is:
+
+> I specifically authorize ONE public EP1 canary to the exact reviewed Facebook Page and X account at this future slot, and confirm rights for this exact source and copy
+
+The native read uses the supported read-only [user profile](https://docs.upload-post.com/api/user-profiles/)
+and [current Page/pin](https://docs.upload-post.com/api/facebook-page/) endpoints.
+Both responses must prove the same requested pin; missing, null or contradictory
+provided pin fields reject. The requested Page must be accessible exactly once.
+An OAuth person's display name is not the Page, and an X display label/handle
+cannot replace the documented stable native account identifier. Evidence gaps
+are holds, not assertions that authorization was lost. No pin is changed to make
+a request pass. Identity is read again before the atomic batch claim and each
+destination. Canonical bytes are downloaded, hashed and reverified before claim.
+
+Dispatch requests supply a new operation UUID, `expected_fingerprint`, `grant_id`
+and `grant_sha256`. The five-minute window has no catch-up/automatic renewal.
+The atomic transaction consumes the grant, records the batch intent and uses the
+existing one-use database permit before provider HTTP. Per-destination request
+keys are deterministic for that operation/source/payload/target binding. A fresh
+atomic destination check rejects revoked/stale/copy/source/target changes before
+its HTTP request. Already accepted or unknown destinations are never resent.
+Same-operation replay returns its committed historical receipt without another
+provider read or upload, including from another process after restart. Another
+dispatch operation cannot spend a consumed grant. A crash after durable claim
+retains uncertain evidence rather than assuming permission to send again.
+
+The first grant freezes this server's one-shot scope to that exact source,
+series pair and native destinations. An unconsumed grant can be revoked and
+replaced only within that frozen scope; a consumed grant cannot be renewed, even
+after revocation. This is at most one request to each of Facebook/X, not a route
+for additional episodes, destinations or unbounded probes. Native platform
+requests already in flight cannot be recalled by a later local revocation.
+
+Inspect original provider/native IDs through the saved dispatch receipt and
+`GET /api/queue/{id}/publication-evidence`. Known terminal outcomes return the
+canary to Review with a delivery hold; uncertain outcomes retain Posting. Neither
+counts as delivered fidelity or EP1 completion. EP2 and the normal eight-slot
+automatic plan remain blocked, even when both provider requests report success.
+
 The review names an approved revision, workbook hash and exact proposal hash;
 technical inspection does not certify rights. Original Studio/native/export
 gates remain applicable. Metadata approval context does not widen authority for
@@ -114,14 +185,11 @@ duration, audio and expanded public text. Preserve failures and uncertain
 receipts; never automatically delete/repost, thread or advance the series.
 If either readback is inaccessible, record it as unknown and retain the hold.
 A canary alone is not an implementation of per-episode verification.
-Current Drama admission blocks even that canary: there is deliberately no
-test-mode parameter or manual-publish bypass. Root/SEO need a separately approved
-one-shot first-episode operation through an existing legitimate provider route,
-with canonical source/copy/target/request binding retained, or a narrowly
-implemented/approved one-shot canary grant in the guarded publisher. Do not
-toggle global activation or generic Ready to run a probe. The one-shot operation
-must not authorize EP2, a third destination, or another request to an accepted
-target. No such live operation is performed by this code/test release task.
+The separate one-shot grant above provides that bounded transport path, subject
+to actual source/copy/target/slot-specific owner authorization and rights
+confirmation. Those are still absent for the proposed live test. No grant,
+Ready transition or public dispatch is performed by this code/test release task.
+Do not toggle global activation or generic Ready to run a probe.
 
 Cutover must reconcile full retained history and exact live publication leases,
 and quiesce old Drama publishers. A database one-use permit atomically binds new

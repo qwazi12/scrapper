@@ -110,7 +110,10 @@ def archive(session, monkeypatch, tmp_path, original_video):
         downloads.append(path); return path
     monkeypatch.setattr(drama_archive.drive_sync, 'download_drive_file', download)
     monkeypatch.setattr(qm, 'wake', lambda: pytest.fail('Drama operations must not wake the generic poster'))
-    clock = [dt.datetime.combine(dt.date(2027,1,1)+dt.timedelta(days=next(_SCENARIOS)), dt.time(8), dc.TZ).astimezone(dc.UTC)]
+    # Retained history is deliberately never deleted. Keep independent scenarios
+    # a month apart and outside the explicit 2027 DST test's calendar; growing
+    # the suite must not consume that test's fixed spring/fall slots beforehand.
+    clock = [dt.datetime.combine(dt.date(2040,1,1)+dt.timedelta(days=32*next(_SCENARIOS)), dt.time(8), dc.TZ).astimezone(dc.UTC)]
     def journal_clock(connection, clause, multiparams, params, options):
         if (getattr(clause, 'is_insert', False) and getattr(getattr(clause,'table',None),'name',None)=='publication_events'
                 and 'created_at' not in params and 'created_at' not in (getattr(clause,'_values',{}) or {})):

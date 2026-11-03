@@ -666,6 +666,7 @@ async def submit_upload(
     on_result=None,
     media_files: list[pathlib.Path] | None = None,
     platform_overrides: dict | None = None,
+    request_keys: dict | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -677,6 +678,8 @@ async def submit_upload(
         raise upload_post.UploadPostError("No accounts picked for this video", status_code=400)
     # Whole-profile picks ("default:*") expand to that profile's channels now.
     accounts = upload_post.expand_targets(accounts, await upload_post.list_accounts())
+    if request_keys is not None and set(request_keys)!=set(accounts):
+        raise upload_post.PayloadBlocked('Canary transport must use exactly its frozen per-destination request keys')
 
     now = datetime.datetime.now(UTC).isoformat()
     entries: list[dict[str, Any]] = []
@@ -691,13 +694,15 @@ async def submit_upload(
         profile, network = upload_post.split_account(account)
         platforms = [network]
         import uuid
-        request_key = uuid.uuid4().hex
+        request_key = request_keys[account] if request_keys is not None else uuid.uuid4().hex
         intent = {"profile": profile, "platforms": platforms, "state": "intent", "submitted_at": scheduled_date or now,
                   "client_request_id": request_key}
         overrides = {k:v for k,v in (platform_overrides or {}).items()
                      if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}
         if not media_files:
             try:
+                from .. import drama_canary
+                await drama_canary.before_destination(account)
                 visible = upload_post.prepare_video_fields(profile, platforms, title, description, overrides)
             except upload_post.PayloadBlocked as exc:
                 # This refusal occurs BEFORE a durable per-platform intent or
@@ -711,7 +716,13 @@ async def submit_upload(
             if visible:
                 intent.update(transport_contract='facebook-x-visible-v1', visible_payload=visible)
         if on_intent:
-            on_intent(intent)
+            try:on_intent(intent)
+            except upload_post.PayloadBlocked as exc:
+                result={**intent,'state':'rejected','error':str(exc)[:300],
+                    'transport_dispatched':False,'hold':'exact_platform_payload_required'}
+                entries.append(result)
+                if on_result:on_result(result)
+                continue
         try:
             if media_files:
                 rid = await upload_post.upload_images(media_files, profile=profile, platforms=platforms,
@@ -1063,6 +1074,8 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     from .. import drama_controls, pending_metadata
     is_drama = drama_controls.managed(s, item)
     drama_payload = drama_controls.payload(s, item) if is_drama else None
+    from .. import drama_canary
+    if is_drama:drama_payload=drama_canary.payload(s,item,drama_payload)
     send_accounts = drama_controls.dispatch_targets(s, item) if is_drama else list(item.accounts)
     if not is_drama and not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
@@ -1086,6 +1099,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
         captured = pending_metadata.fingerprint(s, item)
         from .. import drama_archive
         drama_archive.verify_dispatch(drama_controls.binding(s, item).data)
+        await drama_canary.refresh_target_identity()
         from ..budget_reservations import lock
         lock(s)
         s.refresh(item)
@@ -1095,7 +1109,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
         except HTTPException as exc:
             raise upload_post.UploadPostError(str(exc.detail), status_code=409) from exc
     import uuid
-    batch_key=uuid.uuid4().hex
+    batch_key=drama_canary.current().operation_id if drama_canary.current() else uuid.uuid4().hex
     publication_identity=journal.identity(item)
     intent = [{"state": "intent", "client_request_id":batch_key, "accounts": send_accounts, "artifact_key": artifact_key, **drama_flags,
                "submitted_at": datetime.datetime.now(UTC).isoformat()}]
@@ -1117,7 +1131,9 @@ async def _submit_owned_media(item,s,video_path,images,regular):
                         .values(status="posting", publish_requests=intent),
                         execution_options={"synchronize_session": False}).rowcount
     from .. import publication_journal as journal
-    if claimed: journal.record(s,item,intent[0],'batch_intent')
+    if claimed:
+        journal.record(s,item,intent[0],'batch_intent')
+        drama_canary.claim(s,item,batch_key,artifact_key)
     if is_drama and not claimed:
         s.rollback()  # An unsuccessful claim must never commit an unused permit.
         raise upload_post.UploadPostError('Drama changed at the atomic claim; refresh', status_code=409)
@@ -1161,6 +1177,14 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             from ..file_use import assert_current
             assert_current(s)
             if item.status!='posting': raise upload_post.UploadPostError('Submission was stopped for review',status_code=409)
+            if not result:
+                try:drama_canary.guard_destination_intent(s,item,entry)
+                except upload_post.PayloadBlocked:
+                    # Release the writer mutex before the caller persists the
+                    # definite local rejection through its independent receipt
+                    # session. Holding it here deadlocks that receipt writer.
+                    s.rollback()
+                    raise
             journal.record(s,item,entry)
             saved = [e for e in (item.publish_requests or []) if e.get("profile")]
             previous=next((e for e in saved if e.get('client_request_id')==entry.get('client_request_id')),None)
@@ -1177,6 +1201,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
             **({"media_files": images} if images else {}),
             **({'platform_overrides': drama_payload} if is_drama else {}),
+            **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
         )
         from ..budget_reservations import lock
         lock(s);s.refresh(item)
@@ -1225,7 +1250,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
                           f"↻ Didn't post — retry. {str(exc)[:220]}")
         else:
             # Nothing was sent, or every platform refused it: back to Retry (owner, 2026-10-19).
-            item.status = "retry"
+            item.status = "review" if drama_canary.current() else "retry"
             item.publish_requests = [e for e in item.publish_requests or [] if e.get("profile")]
             item.notes = f"Not posted: {str(exc)[:300]}"
             journal.append(s, item.id, batch_key, "not_posted", {"error": str(exc)[:300]})
@@ -1393,6 +1418,9 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
             res = resolve_results(saved, statuses, now)
             if res is not None:
                 apply_result(item, res, now)
+                if any(entry.get('drama_canary_grant_id') for entry in saved):
+                    item.status='review';item.published_at=None
+                    item.notes=('One-shot canary transport reconciled; delivered-media/copy proof is still held. Do not resend. | '+(item.notes or ''))[:1000]
                 if res.get('delivery_holds'):
                     journal.append(s, item.id, 'delivery-fidelity', 'delivery_hold', res['delivery_holds'])
                 if item.status == 'retry' and any(e.get('state') == 'confirmed_not_accepted' for e in saved):

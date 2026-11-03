@@ -98,6 +98,8 @@ from .pending_metadata import router as pending_metadata_router
 app.include_router(pending_metadata_router)
 from .drama_routes import router as drama_router
 app.include_router(drama_router)
+from .drama_canary_routes import router as drama_canary_router
+app.include_router(drama_canary_router)
 from .editorial import asset_annotations
 app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes

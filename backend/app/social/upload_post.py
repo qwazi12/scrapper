@@ -201,10 +201,64 @@ async def list_accounts() -> list[dict[str, Any]]:
     return accounts
 
 
+async def canary_target_identity(facebook_page_id: str) -> dict:
+    """Read exact native identities/current Facebook pin; never select a Page.
+
+    Documented GET user-profiles and facebook-page endpoints. Provider plan
+    names do not establish X subscription or long-text/video entitlement.
+    """
+    issue='response_schema_unverifiable'
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            profile_response = await client.get(f'{API_BASE}/uploadposts/users/Dramarama',headers=_headers())
+            page_response = await client.get(f'{API_BASE}/uploadposts/users/facebook-page',headers=_headers(),
+                                              params={'profile_username':'Dramarama'})
+        _raise_for(profile_response,'Canary native profile read')
+        _raise_for(page_response,'Canary Facebook Page/pin read')
+        profile_body,page_body=profile_response.json(),page_response.json()
+        profile=profile_body['profile']; accounts=profile['social_accounts']
+        x=accounts['x']; facebook=accounts['facebook']
+        pages=page_body['pages']
+        # An explicit null is authoritative unpinned evidence, not a missing
+        # alias to discard in favour of a potentially stale populated field.
+        profile_pins=[profile[k] for k in ('facebook_page_id','selected_page_id') if k in profile]
+        page_pins=[page_body[k] for k in ('selected_page_id','facebook_page_id') if k in page_body]
+        if not profile_pins or any(pin!=facebook_page_id for pin in profile_pins):
+            issue='profile_page_pin_missing_or_conflicting';raise ValueError(issue)
+        if not page_pins or any(pin!=facebook_page_id for pin in page_pins):
+            issue='page_pin_missing_or_conflicting';raise ValueError(issue)
+        selected=page_pins[0]
+        matches=[p for p in pages if p.get('id')==facebook_page_id]
+        if len(matches)!=1:
+            issue='page_access_unverifiable';raise ValueError(issue)
+        page=matches[0]
+        if not isinstance(x.get('username'),str) or not x['username'].strip():
+            issue='native_x_identifier_missing';raise ValueError(issue)
+        if (profile_body.get('success') is not True or page_body.get('success') is not True
+                or profile.get('username')!='Dramarama' or profile.get('reauth_required') is True
+                or profile.get('blocked') is True or profile_body.get('blocked') is True
+                or x.get('reauth_required') is True or facebook.get('reauth_required') is True
+                or not isinstance(x.get('handle'),str) or not x['handle'].strip()
+                or not isinstance(page.get('name'),str) or not page['name'].strip()):
+            raise ValueError('Native destination identity/pin cannot be confirmed')
+        return {'profile':'Dramarama','accounts':['Dramarama:facebook','Dramarama:x'],
+                'facebook_connection_id':facebook.get('username') if isinstance(facebook.get('username'),str) else None,
+                'facebook_page_id':facebook_page_id,
+                'facebook_page_name':page['name'],'facebook_pinned_page_id':selected,
+                'profile_pinned_page_id':profile_pins[0],
+                'pin_evidence':'matching native profile and Page/pin GET responses',
+                'x_account_id':x['username'],'x_handle':x['handle'],
+                'x_entitlement':'unverified; conservative baseline only'}
+    except UploadPostError:
+        raise
+    except (httpx.HTTPError,ValueError,KeyError,TypeError,StopIteration,AttributeError) as exc:
+        raise UploadPostError(f'Canary target evidence unavailable ({issue}); no canary authorized or settings changed',409) from exc
+
+
 def prepare_video_fields(profile, platforms, title, description, platform_overrides=None):
     """Pure preflight shared by the durable dispatcher and HTTP adapter."""
     if platform_overrides:
-        allowed = ({'facebook_title', 'facebook_description', 'facebook_media_type'} if platforms == ['facebook'] else
+        allowed = ({'facebook_title', 'facebook_description', 'facebook_media_type', 'facebook_page_id'} if platforms == ['facebook'] else
                    {'x_title'} if platforms in (['x'], ['twitter']) else set())
         if profile != 'Dramarama' or not set(platform_overrides) <= allowed or any(not isinstance(v, str) for v in platform_overrides.values()):
             raise PayloadBlocked('Unsupported platform copy override; use the guarded Drama contract')

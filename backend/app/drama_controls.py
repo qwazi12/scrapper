@@ -230,6 +230,8 @@ def successes(s, item, ready):
 
 
 def complete(s, item):
+    if latest(s,item,'canary_dispatch'):
+        return False  # A canary never promotes itself into an ordinary episode release proof.
     try:
         _, ready = readiness(s, item)
     except HTTPException:
@@ -393,6 +395,9 @@ def reserved_before(s, identity):
 
 def admission(s, item, *, media_sha256=None, final=False):
     """Called inside the existing publication lease; final caller owns DB mutex."""
+    from . import drama_canary
+    if drama_canary.current():
+        return drama_canary.validate(s,item,media_sha256=media_sha256,final=final)
     require_activation_capability()
     evidence, ready = readiness(s, item)
     require_source_history(s, item, evidence.data)
