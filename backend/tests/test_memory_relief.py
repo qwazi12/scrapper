@@ -23,8 +23,20 @@ def test_release_advises_large_files_and_skips_small_and_database(tmp_path, monk
 
 def test_maybe_release_runs_at_most_every_few_minutes(tmp_path, monkeypatch):
     calls = []
+    clock = {"now": 100.0}
     monkeypatch.setattr(memory_relief, "release", lambda root, **k: calls.append(root) or {"files": 0})
     monkeypatch.setattr(memory_relief, "_last", 0.0)
+    monkeypatch.setattr(memory_relief.time, "monotonic", lambda: clock["now"])
+    # Initial grace period and exact throttle boundary, independent of host uptime.
+    assert memory_relief.maybe_release(tmp_path) is None
+    clock["now"] = 299.999
+    assert memory_relief.maybe_release(tmp_path) is None
+    clock["now"] = 300.0
     assert memory_relief.maybe_release(tmp_path) is not None
     assert memory_relief.maybe_release(tmp_path) is None
     assert len(calls) == 1
+    clock["now"] = 599.999
+    assert memory_relief.maybe_release(tmp_path) is None
+    clock["now"] = 600.0
+    assert memory_relief.maybe_release(tmp_path) is not None
+    assert calls == [tmp_path, tmp_path]

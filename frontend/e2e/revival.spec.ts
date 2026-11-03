@@ -76,6 +76,49 @@ async function acceptExactExport(page: any, screenshot?: string) {
   await expect(form).toHaveCount(0);
 }
 
+async function inspectedLongFormFixture(page: any, request: any, titleId: number) {
+  // Each recovery case builds its own original media through real production
+  // stages and detailed acceptance. No seed grants approval or fabricates bytes.
+  await page.goto("/#longform");
+  await page.getByPlaceholder("Search a movie or TV show…").fill(`Synthetic Film ${titleId}`);
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await expect(page.getByTestId("script-editor")).toBeVisible();
+  const pid = Number(new URL(page.url()).hash.split("/")[1]);
+  await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Voice + shots", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Render video", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Render video", exact: true }).click();
+  await expect(page.getByTestId("export-quality")).toContainText("decoded", { timeout: 120_000 });
+  await page.getByRole("button", { name: "Detailed review", exact: true }).click();
+  await acceptExactExport(page);
+  const response = await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers });
+  expect(response.ok()).toBe(true);
+  const project = await response.json();
+  expect(project.render.quality.errors).toEqual([]);
+  expect(project.render.quality.decode).toBe("passed");
+  return project;
+}
+
+async function archivedLongFormFixture(page: any, request: any, titleId: number) {
+  const project = await inspectedLongFormFixture(page, request, titleId);
+  await page.getByRole("button", { name: "Send to Posting Queue", exact: true }).click();
+  await expect(page.getByText(/Ready to Post in SocialPilot/)).toBeVisible();
+  const queued = await (await request.get(`${stack.api}/api/studio/projects/${project.id}`, { headers })).json();
+  const qid = queued.queue_item_id;
+  expect(qid).toBeGreaterThan(0);
+  // The real publish/reconcile gates run against the offline transport fixture.
+  const submission = await request.post(`${stack.api}/api/queue/${qid}/publish`, { headers });
+  expect(submission.ok()).toBe(true);
+  const item = async () => (await (await request.get(`${stack.api}/api/queue`, { headers })).json())
+    .find((q: any) => q.id === qid);
+  await expect.poll(async () => (await item())?.status).toBe("posting");
+  const reconciled = await request.post(`${stack.api}/api/queue/reconcile`, { headers });
+  expect(reconciled.ok()).toBe(true);
+  await expect.poll(async () => (await item())?.status).toBe("archived");
+  return item();
+}
+
 test("LongForm real UI: research, rejected edit, repair, speech, export approval and simulated delivery", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
@@ -126,7 +169,7 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   writeFileSync(path.join(evidence, "longform-probe.json"), JSON.stringify(probe, null, 2));
   writeFileSync(path.join(evidence, "longform-quality.json"), JSON.stringify(project.render.quality, null, 2));
   await page.screenshot({ path: path.join(evidence, "longform-render-review.png"), fullPage: true });
-  await page.getByRole("button", { name: "Approve inspected export", exact: true }).click();
+  await page.getByRole("button", { name: "Detailed review", exact: true }).click();
   await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText(`Requested length: approximately ${project.target_minutes.toFixed(1)} minutes`);
   await acceptExactExport(page, "longform-requested-length-acceptance.png");
   await expect(page.getByRole("button", { name: "Send to Posting Queue", exact: true })).toBeEnabled();
@@ -164,10 +207,7 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
 });
 
 test("queued source evidence retains last retrieved words on read failure and fences late refreshes", async ({ page, request }) => {
-  // This suite deliberately follows the preceding actual LongForm production
-  // flow; no opaque source or mocked approval is represented as a real export.
-  const items = await (await request.get(`${stack.api}/api/queue`, { headers })).json();
-  const item = items.find((value: any) => value.source === "LongForm Studio" && value.status === "archived");
+  const item = await archivedLongFormFixture(page, request, 9001);
   expect(item).toBeTruthy();
   await page.goto("/#socialpilot");
   await page.getByRole("button", { name: "🎬 LongForm Breakdowns", exact: true }).click();
@@ -277,7 +317,7 @@ test("Top 5 real UI: five independent segment pipelines, final stitch, inspectio
   await page.getByRole("button", { name: "🔄 Refresh Options", exact: true }).click();
   await expect.poll(async () => (await getCountdown()).render.thumb_round).toBe(1);
   await page.screenshot({ path: path.join(evidence, "countdown-review.png"), fullPage: true });
-  await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
+  await page.getByRole("button", { name: "Detailed review", exact: true }).click();
   await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText("Requested Countdown format: Top 5");
   await expect(page.getByRole("form", { name: "Exact export acceptance", exact: true })).toContainText("Requested length: approximately 8.0 minutes");
   await acceptExactExport(page, "countdown-format-acceptance.png");
@@ -388,7 +428,7 @@ test("Legacy saved Countdown UI preserves exact words and old media through expl
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
   await expect(page.getByTestId("countdown-export-quality")).toContainText("decoded", { timeout: 120_000 });
   expect((await current()).script).toEqual(fixture.words);
-  await page.getByRole("button", { name: "Approve inspected countdown", exact: true }).click();
+  await page.getByRole("button", { name: "Detailed review", exact: true }).click();
   await acceptExactExport(page);
   await page.getByRole("button", { name: "📤 Send to Countdowns queue", exact: true }).click();
   const sendingLegacy = page.waitForResponse(response => response.url().endsWith(`/api/countdowns/${cid}/publish`) && response.request().method() === "POST");
@@ -914,9 +954,9 @@ test("unsaved Studio and Countdown scripts survive polling, navigation, reload a
 });
 
 test("retained export UI recovers prior words and media after invalidation and project deletion", async ({ page, request }) => {
-  const project = await (await request.get(`${stack.api}/api/studio/projects/1`, { headers })).json();
+  const project = await inspectedLongFormFixture(page, request, 9002);
   expect(project.script.sentences.length).toBeGreaterThan(0);
-  const versions = await (await request.get(`${stack.api}/api/export-history?kind=studio&project_id=1`, { headers })).json();
+  const versions = await (await request.get(`${stack.api}/api/export-history?kind=studio&project_id=${project.id}`, { headers })).json();
   const original = versions.versions.find((v: any) => v.assets.some((a: any) => a.role === "video" && a.available));
   expect(original).toBeTruthy();
   const detail = await (await request.get(`${stack.api}/api/export-history/${original.id}`, { headers })).json();
@@ -948,12 +988,12 @@ test("retained export UI recovers prior words and media after invalidation and p
     }
     expect(response.ok()).toBe(true);
   };
-  await page.goto("/#longform/1");
+  await page.goto(`/#longform/${project.id}`);
   await page.getByTestId("script-editor").fill(`A newer owner draft preserved before the explicit recovery, revision ${Date.now()}.`);
-  await rateAware(`${stack.api}/api/studio/projects/1`, "PATCH",
+  await rateAware(`${stack.api}/api/studio/projects/${project.id}`, "PATCH",
     () => page.getByRole("button", { name: "Save script", exact: true }).click());
   await expect(page.getByTestId("research-blocked")).toBeVisible();
-  await rateAware(`${stack.api}/api/export-history?kind=studio&project_id=1`, "GET",
+  await rateAware(`${stack.api}/api/export-history?kind=studio&project_id=${project.id}`, "GET",
     () => history.getByText("Retained export history", { exact: true }).click(),
     () => history.getByRole("button", { name: "Refresh history", exact: true }).click());
   await rateAware(`${stack.api}/api/export-history/${original.id}`, "GET",
@@ -974,7 +1014,7 @@ test("retained export UI recovers prior words and media after invalidation and p
   expect((await partial.body()).equals(originalBytes.subarray(0, 32))).toBe(true);
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "OK", exact: true }).click();
-  await expect.poll(async () => (await request.get(`${stack.api}/api/studio/projects/1`, { headers })).status()).toBe(404);
+  await expect.poll(async () => (await request.get(`${stack.api}/api/studio/projects/${project.id}`, { headers })).status()).toBe(404);
   expect((await request.get(`${stack.api}/api/export-history/${original.id}/file/video`, { headers })).status()).toBe(200);
   await page.goto("/#settings");
   await expect(page.getByText("Invalid Date", { exact: true })).toHaveCount(0);
@@ -991,9 +1031,8 @@ test("retained export UI recovers prior words and media after invalidation and p
 
 
 test("retained delivery UI preserves published bytes and remains available when schedule settings fail", async ({ page, request }) => {
+  const original = await archivedLongFormFixture(page, request, 9003);
   const before = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
-  const queued = await (await request.get(`${stack.api}/api/queue`, { headers })).json();
-  const original = queued.find((q: any) => q.status === "archived" && q.pipeline === "LongForm");
   expect(original).toBeTruthy();
   const originalBytes = readFileSync(original.video_path);
   await page.goto("/#queue");

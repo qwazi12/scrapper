@@ -52,9 +52,14 @@ _MOVES = [
 ]
 
 # Loudness, then a hard ceiling: loudnorm alone can overshoot its TP target and the
-# release check blocks any export over 0 dBFS (countdown #7, 2026-10-20). -2.5 dBFS
-# leaves room for AAC encoding overshoot.
-NARRATION_MASTER = "loudnorm=I=-14:TP=-1.5:LRA=11,alimiter=limit=0.75:level=false:latency=true"
+# release check blocks any export over 0 dBFS (countdown #7, 2026-10-20).
+# AAC encoding/resampling can add intersample peaks: FFmpeg6.1 produced -0.8dBFS
+# after the former0.75 limiter. A0.65 ceiling (~-3.7dBFS) leaves encoding headroom;
+# Normalize mono/stereo consistently, then resample before limiting so AAC gets
+# a stable48kHz stereo input. Acceptance still measures the decoded AAC against
+# -1dBFS and the loudness target, rather than trusting pre-encoding filter values.
+NARRATION_MASTER = ("aformat=channel_layouts=stereo,loudnorm=I=-14:TP=-1.5:LRA=11,"
+                    "aresample=48000,alimiter=limit=0.65:level=false:latency=true")
 
 
 def _human_date(iso: str) -> str:

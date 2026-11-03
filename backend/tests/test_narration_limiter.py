@@ -2,17 +2,24 @@
 release check (blocks > 0 dBFS) no longer stops loud entries like countdown #7."""
 from backend.app.studio import media, media_quality
 from backend.app.studio.stage_render import NARRATION_MASTER
+import pytest
+import json
 
 
-def test_clipped_loud_narration_is_limited_below_minus_one_dbfs(tmp_path):
+@pytest.mark.parametrize("rate,channels,bitrate", [(48000, 2, "192k"), (44100, 2, "192k"),
+                                                 (48000, 2, "128k"), (48000, 1, "192k")])
+def test_clipped_loud_narration_is_limited_below_minus_one_dbfs(tmp_path, rate, channels, bitrate):
     src, out = tmp_path / "loud.wav", tmp_path / "narration.m4a"
     # Quiet tone with a loud burst every second: loudnorm alone peaks at about -0.5 dBFS here
     # (real renders reached +1.0 dBFS, e.g. #115 Cyberpunk: Edgerunners).
     expr = "0.02*sin(2*PI*300*t)+if(gt(mod(t\\,1)\\,0.98)\\,0.9*sin(2*PI*3000*t)\\,0)"
-    media.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"aevalsrc={expr}:s=48000:d=8",
-               "-ac", "2", str(src)])
+    media.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"aevalsrc={expr}:s={rate}:d=8",
+               "-ac", str(channels), str(src)])
     media.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-af", NARRATION_MASTER,
-               "-c:a", "aac", "-b:a", "192k", str(out)])
+               "-c:a", "aac", "-b:a", bitrate, str(out)])
+    probe = json.loads(media.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(out)]).stdout)
+    audio = probe["streams"][0]
+    assert audio["channels"] == 2 and audio["sample_rate"] == "48000"
     log = media.run(["ffmpeg", "-hide_banner", "-i", str(out), "-af", "ebur128=peak=true", "-f", "null", "-"]).stderr
     peak = float(log.rsplit("Peak:", 1)[1].split("dBFS")[0])
     assert peak <= -1.0, peak

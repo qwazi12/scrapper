@@ -8,6 +8,7 @@ COPY frontend/package.json frontend/package-lock.json /app/frontend/
 RUN cd frontend && npm ci --ignore-scripts --no-audit --no-fund && npx playwright install --with-deps chromium
 COPY backend /app/backend
 COPY scripts/e2e /app/scripts/e2e
+COPY scripts/archive_worker.py scripts/local_worker.py /app/scripts/
 COPY frontend /app/frontend
 # The frozen-source launcher uses the index as its file inventory. The build
 # context intentionally excludes host .git metadata and credentials; create a
