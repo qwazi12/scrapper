@@ -1271,3 +1271,18 @@ def test_queue_list_returns_304_when_nothing_changed(session, client):
     session.commit()
     changed = client.get("/api/queue", headers={"If-None-Match": etag})
     assert changed.status_code == 200 and changed.headers["etag"] != etag
+
+
+def test_dramarama_series_take_turns_and_never_skip_an_episode():
+    def ep(id_, series, n, status="ready"):
+        return QueueItem(id=id_, pipeline=qm.DRAMARAMA, source=f"DramaRama / {series}", status=status,
+                         video_name=f"20260927 {series} EP{n:03d} x 7690004994367556871.mp4", title=f"t{id_}")
+    a = [ep(10, "Alpha", 4), ep(11, "Alpha", 3), ep(12, "Alpha", 1), ep(13, "Alpha", 2)]   # arrived out of order
+    b = [ep(20, "Beta", 1), ep(21, "Beta", 2)]
+    c = [ep(30, "Gamma", 6), ep(31, "Gamma", 8)]               # Gamma posted up to EP5; EP7 is missing
+    done = [ep(1, "Gamma", 5, "archived"), ep(2, "Gamma", 4, "archived")]
+    ordered, held = qm.drama_order(a + b + c, done)
+    assert [o.id for o in ordered] == [12, 20, 30, 13, 21, 11, 10]       # A1 B1 C6 · A2 B2 · A3 · A4
+    assert held == {"Gamma": "waiting for EP7"}
+    ordered, held = qm.drama_order([ep(40, "Delta", 2)], [])
+    assert ordered == [] and held == {"Delta": "waiting for EP1"}

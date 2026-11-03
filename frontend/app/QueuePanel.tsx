@@ -64,6 +64,12 @@ function sortValue(it: QueueItem, key: SortKey): string | number {
   }
 }
 
+// DramaRama: a video's series (its Drive subfolder) and episode (EP010 in the file name, or "Ep. 10" in a reviewed title).
+function dramaEpisode(it: QueueItem): [string, number] {
+  const m = /\bEP\s*0*(\d+)/i.exec(it.video_name || "") || /\bEp\.\s*(\d+)/.exec(it.title || "");
+  return [(it.source || "").split(" / ").slice(1).join(" / "), m ? Number(m[1]) : Number.MAX_SAFE_INTEGER];
+}
+
 function fmtET(iso: string): string {
   return new Date(parseApiDate(iso)).toLocaleString("en-US", {
     timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric",
@@ -271,6 +277,13 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
 
   const sortedItems = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
+    if (section === DRAMARAMA && sortKey === "position") {
+      // Owner (2026-11-03): DramaRama is listed by series, each series from EP1 on — never mixed by import order.
+      return [...items].sort((a, b) => {
+        const [sa, ea] = dramaEpisode(a), [sb, eb] = dramaEpisode(b);
+        return (sa < sb ? -1 : sa > sb ? 1 : ea - eb || a.id - b.id) * dir;
+      });
+    }
     return [...items].sort((a, b) => {
       const va = sortValue(a, sortKey);
       const vb = sortValue(b, sortKey);
@@ -278,7 +291,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
       if (va > vb) return dir;
       return (a.id - b.id) * dir;
     });
-  }, [items, sortKey, sortDir]);
+  }, [items, sortKey, sortDir, section]);
 
   function toggleSel(id: number) {
     setSel((prev) => {

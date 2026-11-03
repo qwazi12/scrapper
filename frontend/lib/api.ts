@@ -398,8 +398,10 @@ export type ScheduleInfo = ScheduleConfig & {
   ready_without_accounts: number;
   pipelines: Record<
     string,
-    { ready: number; next: { id: number; title: string; channel: string; scheduled_at: string }[] }
+    { ready: number; next: { id: number; title: string; channel: string; scheduled_at: string | null }[];
+      held?: Record<string, string> }   // DramaRama: series waiting for a missing episode
   >;
+  posting_blocked?: Record<string, string>;   // queue -> why the scheduler can't post it now
   ai: { configured: boolean; model: string };
   scheduler: {
     enabled: boolean;

@@ -14,13 +14,13 @@ const PRESET_PACING = [
   { count: 20, label: "20 / day", desc: "Blitz (Every ~44m)" },
 ];
 
-const KNOWN_PIPELINES = [
-  { id: "Movie Clips", name: "Movie Clips", icon: "🎬", desc: "14-Channel Shorts Pipeline (Parent)" },
-  { id: "LongForm", name: "LongForm Studio", icon: "🎞️", desc: "Trailer Breakdown Videos (16:9)" },
-];  // Abyss Declassified, The ICK Room and Default were removed (owner, 2026-10-04: unused)
+const QUEUES = ["Movie Clips", "LongForm", "Countdowns", "The ICK Room", "DramaRama"];
+const queueLabel = (q: string) => (q === "Movie Clips" ? "Screen Central" : q);
 
 const KNOWN_ACCOUNTS = [
-  { id: "default", name: "Screen Central (YouTube)", icon: "▶️", profile: "default" },
+  { id: "Cinama", name: "Screen Central (YouTube, Facebook, Instagram, X)", icon: "▶️", profile: "Cinama" },
+  { id: "TheIckRoom", name: "The ICK Room (Facebook, X)", icon: "🤢", profile: "TheIckRoom" },
+  { id: "Dramarama", name: "DramaRama (Facebook, X)", icon: "🎭", profile: "Dramarama" },
   { id: "mk", name: "Flamingo Remix (YouTube)", icon: "🦩", profile: "mk" },
 ];
 
@@ -39,7 +39,8 @@ function fmtHour(h: number): string {
   return `${num}:00 ${ampm}`;
 }
 
-function fmtSlot(iso: string, tz: string): string {
+function fmtSlot(iso: string | null, tz: string): string {
+  if (!iso || !Number.isFinite(Date.parse(iso))) return "Not scheduled";
   try {
     return new Date(Date.parse(iso)).toLocaleTimeString("en-US", {
       timeZone: tz,
@@ -141,21 +142,6 @@ export function PacingThrottle({
     } finally {
       setSaving(false);
     }
-  }
-
-  function setPipelineOverride(pipelineId: string, ppd: number | null) {
-    const next = { ...(form.pipeline_overrides || {}) };
-    if (ppd === null) {
-      delete next[pipelineId];
-    } else {
-      next[pipelineId] = {
-        ...(next[pipelineId] || {}),
-        posts_per_day: ppd,
-        start_hour: form.start_hour,
-        end_hour: form.end_hour,
-      };
-    }
-    setForm({ ...form, pipeline_overrides: next });
   }
 
   function setAccountOverride(accountId: string, ppd: number | null) {
@@ -281,7 +267,7 @@ export function PacingThrottle({
             borderRadius: 6,
           }}
         >
-          📁 Per-Pipeline Overrides ({Object.keys(form.pipeline_overrides || {}).length})
+          📁 Each Queue's Schedule
         </button>
         <button
           onClick={() => setTargetTab("accounts")}
@@ -391,108 +377,32 @@ export function PacingThrottle({
         </div>
       )}
 
-      {/* TAB 2: PER-PIPELINE OVERRIDES */}
+      {/* TAB 2: EVERY QUEUE'S OWN SCHEDULE (read-only; owner 2026-11-03: one place to change it — ⏰ Schedule in its tab) */}
       {targetTab === "pipelines" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>
-            Tune posting velocity independently per pipeline. For instance, run <b>Movie Clips</b> at 20/day while
-            running <b>LongForm Studio</b> at 1/day.
+            Each queue keeps its own schedule. To change one, open its tab in SocialPilot and use <b>⏰ Schedule</b>.
           </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {KNOWN_PIPELINES.map((p) => {
-              const override = form.pipeline_overrides?.[p.id];
-              const effectivePpd = override?.posts_per_day ?? currentGlobalPpd;
-              const hasOverride = override?.posts_per_day !== undefined;
-              const readyCount = sched.pipelines?.[p.id]?.ready || 0;
-
-              return (
-                <div
-                  key={p.id}
-                  style={{
-                    background: "var(--row)",
-                    border: hasOverride ? "1px solid #059669" : "1px solid var(--border)",
-                    borderRadius: 8,
-                    padding: "12px 14px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 12,
-                  }}
-                >
-                  <div style={{ minWidth: 200 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span>{p.icon}</span>
-                      <span style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</span>
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>({readyCount} ready)</span>
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>{p.desc}</div>
-                    <div style={{ marginTop: 4 }}>
-                      {hasOverride ? (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: "#34d399",
-                            background: "#064e3b",
-                            padding: "2px 6px",
-                            borderRadius: 10,
-                          }}
-                        >
-                          ⚡ OVERRIDE: {effectivePpd} / day
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 10, color: "var(--muted)" }}>
-                          ↳ Inheriting global ({effectivePpd} / day)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 1-Click Override Buttons */}
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    {[1, 3, 8, 12, 20].map((count) => {
-                      const isSelected = hasOverride && override?.posts_per_day === count;
-                      return (
-                        <button
-                          key={count}
-                          type="button"
-                          onClick={() => setPipelineOverride(p.id, count)}
-                          style={{
-                            fontSize: 11,
-                            padding: "3px 8px",
-                            borderRadius: 4,
-                            background: isSelected ? "#064e3b" : "var(--bg)",
-                            color: isSelected ? "#34d399" : "var(--text)",
-                            border: isSelected ? "1px solid var(--accent)" : "1px solid var(--border)",
-                          }}
-                        >
-                          {count}/d
-                        </button>
-                      );
-                    })}
-                    {hasOverride && (
-                      <button
-                        type="button"
-                        onClick={() => setPipelineOverride(p.id, null)}
-                        style={{
-                          fontSize: 10,
-                          padding: "3px 8px",
-                          borderRadius: 4,
-                          background: "transparent",
-                          color: "var(--yellow)",
-                          border: "1px dashed var(--yellow)",
-                        }}
-                      >
-                        ↺ Reset to Global
-                      </button>
-                    )}
-                  </div>
+          {QUEUES.map((q) => {
+            const ov = sched.pipeline_overrides?.[q] || {};
+            const plats = Object.entries(ov.platforms || {})
+              .map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(", ") : `${v}/day`}`).join(" · ");
+            const when = ov.times?.length ? `at ${ov.times.join(", ")}`
+              : `${ov.posts_per_day ?? sched.posts_per_day ?? sched.slots_per_day}/day, ${fmtHour(ov.start_hour ?? sched.start_hour)}–${fmtHour(ov.end_hour ?? sched.end_hour)}`;
+            const next = sched.pipeline_next_slots?.[q] || [];
+            return (
+              <div key={q} style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: 12 }}>
+                <div style={{ fontWeight: 700 }}>
+                  📁 {queueLabel(q)} <span style={{ fontWeight: 400, color: "var(--muted)" }}>({sched.pipelines?.[q]?.ready || 0} ready)</span>
                 </div>
-              );
-            })}
-          </div>
+                <div>{when}{plats && <span style={{ color: "var(--muted)" }}> · {plats}</span>}</div>
+                <div style={{ fontSize: 11, color: sched.posting_blocked?.[q] ? "var(--yellow)" : "var(--muted)" }}>
+                  {sched.posting_blocked?.[q] ? `⏸ ${sched.posting_blocked[q]}`
+                    : `Next: ${next.slice(0, 3).map((t) => fmtSlot(t, sched.timezone)).join(" · ") || "—"}`}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -852,9 +762,15 @@ export function SchedulerView({ onSaved }: { onSaved?: () => void }) {
                   alignItems: "center",
                 }}
               >
-                <span>📁 {name}</span>
+                <span>📁 {queueLabel(name)}</span>
                 <span style={{ color: "#34d399", fontWeight: 600, fontSize: 12 }}>{p.ready} ready</span>
               </div>
+              {sched.posting_blocked?.[name] && (
+                <div style={{ fontSize: 11, color: "var(--yellow)", marginBottom: 4 }}>⏸ {sched.posting_blocked[name]}</div>
+              )}
+              {Object.entries(p.held || {}).map(([series, why]) => (
+                <div key={series} style={{ fontSize: 11, color: "var(--muted)" }}>⏳ {series}: {why}</div>
+              ))}
               {p.next.slice(0, 3).map((n) => (
                 <div key={n.id} style={{ fontSize: 11, display: "flex", gap: 8, marginTop: 4 }}>
                   <span style={{ color: "#34d399", whiteSpace: "nowrap" }}>

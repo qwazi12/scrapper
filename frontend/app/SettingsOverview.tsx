@@ -647,8 +647,14 @@ export function SettingsOverview() {
             {pipelines.map(([name, p]) => (
               <div key={name} style={{ background: "var(--row)", border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
                 <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>
-                  📁 {name} <span style={{ color: "var(--muted)", fontWeight: 400 }}>— {p.ready} ready</span>
+                  📁 {name === "Movie Clips" ? "Screen Central" : name} <span style={{ color: "var(--muted)", fontWeight: 400 }}>— {p.ready} ready</span>
                 </div>
+                {sched.posting_blocked?.[name] && (
+                  <div style={{ fontSize: 11, color: "var(--yellow)" }}>⏸ {sched.posting_blocked[name]}</div>
+                )}
+                {Object.entries(p.held || {}).map(([series, why]) => (
+                  <div key={series} style={{ fontSize: 11, color: "var(--muted)" }}>⏳ {series}: {why}</div>
+                ))}
                 {p.next.map((n) => (
                   <div key={n.id} style={{ fontSize: 11, display: "flex", gap: 8, marginTop: 3 }}>
                     <span style={{ color: "#34d399", whiteSpace: "nowrap" }}>{fmtSlot(n.scheduled_at, sched.timezone)}</span>

@@ -1875,6 +1875,21 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         if len(p["next"]) < 5:
             p["next"].append({"id": it.id, "title": it.title, "channel": it.pipeline,
                               "scheduled_at": queue_manager._aware(it.scheduled_at)})
+    if queue_manager.DRAMARAMA in pipelines:
+        # DramaRama's line-up in its real order: series take turns, episodes from EP1 on (owner, 2026-11-03).
+        done = s.query(QueueItem).filter(QueueItem.pipeline == queue_manager.DRAMARAMA,
+                                         QueueItem.status.in_(["posting", "posted", "archived"])).all()
+        drama_ready = [it for it in ready if it.accounts and queue_manager.pipeline_group(it) == queue_manager.DRAMARAMA]
+        ordered, held = queue_manager.drama_order(drama_ready, done)
+        pipelines[queue_manager.DRAMARAMA]["next"] = [
+            {"id": it.id, "title": it.title, "channel": it.pipeline, "scheduled_at": queue_manager._aware(it.scheduled_at)}
+            for it in ordered[:5]]
+        pipelines[queue_manager.DRAMARAMA]["held"] = held
+    # Queues the scheduler can't post for now, and why (shown instead of a time).
+    from . import drama_controls
+    drama = drama_controls.activation_contract()
+    posting_blocked = {} if drama["supported"] else {
+        queue_manager.DRAMARAMA: "DramaRama posting is off until a check that the full video and text arrived exists."}
     cfg = queue_manager.load_schedule(s)
     per_day = queue_manager.slots_per_day()
     pacing_summary = {
@@ -1900,6 +1915,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "archive_delete_days": settings.archive_delete_days,
         "ready_without_accounts": no_accounts,
         "pipelines": pipelines,
+        "posting_blocked": posting_blocked,
         "ai": {"configured": bool(settings.gemini_api_key), "model": settings.gemini_model},
         "scheduler": {**queue_manager.scheduler_status, "tick_seconds": queue_manager.TICK_SECONDS,
                       "enabled": settings.worker_mode != "web_only",

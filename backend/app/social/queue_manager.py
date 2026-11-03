@@ -11,6 +11,7 @@ import asyncio
 import datetime
 import logging
 import pathlib
+import re
 import threading
 import time
 from typing import Any
@@ -837,6 +838,49 @@ DRAMARAMA = "DramaRama"
 DRAMARAMA_PROFILES = {"Dramarama"}   # the Upload-Post profile name, exactly
 OWN_PROFILES = {ICK_ROOM: ICK_ROOM_PROFILES, DRAMARAMA: DRAMARAMA_PROFILES}   # section -> the only profiles it uses
 LOCKED_PROFILES = ICK_ROOM_PROFILES | DRAMARAMA_PROFILES                     # never used by any other queue
+
+
+def drama_series_episode(item: QueueItem) -> tuple[str, int | None]:
+    """(series, episode) of a DramaRama video: the series is its Drive subfolder, the episode the EP number
+    in the file name (EP010), or "Ep. 10" in a reviewed title."""
+    series = (item.source or "").partition(" / ")[2].strip()
+    m = re.search(r"\bEP\s*0*(\d+)", item.video_name or "", re.I) or re.search(r"\bEp\.\s*(\d+)", item.title or "")
+    return series, (int(m.group(1)) if m else None)
+
+
+def drama_order(ready: list[QueueItem], done: list[QueueItem]) -> tuple[list[QueueItem], dict[str, str]]:
+    """DramaRama's posting order (owner, 2026-11-03): series take turns (A1, B1, A2, B2 …) and every series goes on
+    from the episode after its last posted one, never skipping one — a missing episode holds that series.
+    `done` = DramaRama videos already posted or posting. Returns (ordered Ready videos, {series: why it is held})."""
+    last: dict[str, int] = {}
+    for it in done:
+        series, ep = drama_series_episode(it)
+        if ep is not None:
+            last[series] = max(last.get(series, 0), ep)
+    by_series: dict[str, list[tuple[int, QueueItem]]] = {}
+    held: dict[str, str] = {}
+    for it in sorted(ready, key=lambda r: r.id):
+        series, ep = drama_series_episode(it)
+        if ep is None:
+            held[series or f"#{it.id}"] = f"#{it.id} has no episode number"
+            continue
+        by_series.setdefault(series, []).append((ep, it))
+    lanes: list[list[QueueItem]] = []
+    for series, eps in by_series.items():               # series in the order their first video arrived
+        eps.sort(key=lambda e: e[0])
+        lane, want = [], last.get(series, 0) + 1
+        for ep, it in eps:
+            if ep < want:
+                continue                                 # an episode already posted (a duplicate) is never re-sent
+            if ep != want:
+                held[series] = f"waiting for EP{want}"
+                break
+            lane.append(it)
+            want += 1
+        if lane:
+            lanes.append(lane)
+    ordered = [lane[i] for i in range(max(map(len, lanes), default=0)) for lane in lanes if i < len(lane)]
+    return ordered, held
 
 
 def _profile(account: Any) -> str:

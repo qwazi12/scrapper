@@ -13,8 +13,9 @@ const LABEL: Record<Queue, string> = { "Movie Clips": "Screen Central", LongForm
                                        "The ICK Room": "The ICK Room", DramaRama: "DramaRama" };
 
 // Owner (2026-10-13): post more on Facebook/Instagram, less on YouTube.
-const PLATFORMS: [string, string][] = [["youtube", "YouTube"], ["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"]];
-const SHORT: Record<string, string> = { youtube: "YT", facebook: "FB", instagram: "IG", tiktok: "TT" };
+const PLATFORMS: [string, string][] = [["youtube", "YouTube"], ["facebook", "Facebook"], ["instagram", "Instagram"], ["x", "X"],
+                                       ["tiktok", "TikTok"]];
+const SHORT: Record<string, string> = { youtube: "YT", facebook: "FB", instagram: "IG", x: "X", tiktok: "TT" };
 
 const fmtHour = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? " AM" : " PM"}`;
 const fmtTime = (t: string) => {
@@ -117,7 +118,8 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
       <button onClick={() => setOpen(!open)} disabled={saving || !schedInfo}
               title={`${LABEL[queue]} posting schedule`}
               style={{ background: "#064e3b", borderColor: "#059669", color: "#d1fae5", fontWeight: 600, fontSize: 11 }}>
-        ⏰ Schedule · {perDay}/day{isNarrow ? "" : ` · ${summary}`}{platSummary ? ` · ${platSummary}` : ""} ▾
+        ⏰ Schedule · {perDay}/day{isNarrow ? "" : ` · ${summary}`}{platSummary ? ` · ${platSummary}` : ""}
+        {schedInfo?.posting_blocked?.[queue] ? " · ⏸ posting off" : ""} ▾
       </button>
       {open && schedInfo && (
         <div style={{ ...sheet, zIndex: 60, background: "var(--panel)", border: "1px solid #059669", borderRadius: 10,
@@ -195,7 +197,8 @@ export function QueueScheduleButton({ queue, schedInfo, isNarrow, onSaved }: {
 
           <div>
             <div style={{ color: "var(--muted)", fontSize: 11, marginBottom: 2 }}>Next posts on the saved schedule:</div>
-            {next.length ? next.map((t) => <div key={t}>⏰ {fmtSlot(t, tz)}</div>)
+            {schedInfo.posting_blocked?.[queue] ? <div style={{ color: "var(--yellow)" }}>⏸ {schedInfo.posting_blocked[queue]}</div>
+              : next.length ? next.map((t) => <div key={t}>⏰ {fmtSlot(t, tz)}</div>)
               : <div style={{ color: "var(--muted)" }}>—</div>}
           </div>
 
