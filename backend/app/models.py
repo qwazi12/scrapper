@@ -602,6 +602,43 @@ class ContentLineage(Base):
     created_at: Mapped[datetime.datetime]=mapped_column(DateTime(timezone=True),default=_now)
 
 
+class DramaDispatchPermit(Base):
+    """One-use grant, inserted/consumed in the same publisher claim transaction."""
+    __tablename__ = "drama_dispatch_permits"
+    queue_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    queue_created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    attempt_id: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DramaEpisode(Base):
+    """Server-verified archive identity, independent of mutable public copy."""
+    __tablename__ = "drama_episodes"
+    __table_args__ = (UniqueConstraint("series_key", "episode", name="ux_drama_episode"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    queue_id: Mapped[int] = mapped_column(Integer, index=True)
+    queue_identity: Mapped[str] = mapped_column(String(64), unique=True)
+    queue_created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))
+    series_key: Mapped[str] = mapped_column(String(64), index=True)
+    episode: Mapped[int] = mapped_column(Integer)
+    total_episodes: Mapped[int] = mapped_column(Integer)
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class DramaRecord(Base):
+    """Immutable review, readiness, plan and rollback application receipts."""
+    __tablename__ = "drama_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(36), unique=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    queue_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    queue_identity: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    request_hash: Mapped[str] = mapped_column(String(64))
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class MetadataMutationReceipt(Base):
     """Immutable idempotency/audit result; survives queue deletion and ID reuse."""
     __tablename__ = "metadata_mutation_receipts"
@@ -616,7 +653,7 @@ class MetadataMutationReceipt(Base):
 # Journals are append-only at the DB boundary, including raw SQL. PostgreSQL
 # Both dialects reject raw UPDATE/DELETE as an integrity violation.
 from sqlalchemy import DDL, event as _schema_event
-for _table in (MetadataMutationReceipt.__table__, PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__, LearningDecision.__table__, AssetAnnotation.__table__, QueueSourceBinding.__table__):
+for _table in (DramaEpisode.__table__, DramaRecord.__table__, MetadataMutationReceipt.__table__, PublicationEvent.__table__, PublicationDecision.__table__, FinancialResolution.__table__, BudgetReceipt.__table__, ExportVersion.__table__, ResearchSourceRecord.__table__, ResearchClaimReview.__table__, DeliveryArchive.__table__, RemoteCopyEvidence.__table__, ContentLineage.__table__, CommentEvidence.__table__, FeedbackDecision.__table__, LearningDecision.__table__, AssetAnnotation.__table__, QueueSourceBinding.__table__):
     for _action in ("UPDATE", "DELETE"):
         _schema_event.listen(_table,"after_create",DDL(
             f"CREATE TRIGGER IF NOT EXISTS {_table.name}_no_{_action.lower()} BEFORE {_action} ON {_table.name} "

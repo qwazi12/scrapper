@@ -28,6 +28,23 @@ def install_fence(engine):
                 BEFORE UPDATE OF status ON queue_items WHEN NEW.status='posting'
                 BEGIN SELECT CASE WHEN coalesce(scrapper_publisher_protocol_v1(),0)<>1
                 THEN RAISE(ABORT,'Publisher protocol v1 required; stop incompatible publishers') END; END"""))
+            # Built-in SQL only: resolving a missing UDF in a conditional SQLite
+            # trigger also breaks unrelated rows on old connections. A one-use
+            # grant is inserted and consumed inside the new atomic intent claim.
+            connection.execute(text("""CREATE TRIGGER IF NOT EXISTS scrapper_drama_protocol_v1
+                BEFORE UPDATE OF status ON queue_items
+                WHEN NEW.status='posting' AND (NEW.pipeline='DramaRama' OR EXISTS
+                    (SELECT 1 FROM drama_episodes e WHERE e.queue_id=NEW.id AND e.queue_created_at=NEW.created_at))
+                BEGIN SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM drama_dispatch_permits p
+                    WHERE p.queue_id=NEW.id AND p.queue_created_at=NEW.created_at
+                    AND p.attempt_id=json_extract(NEW.publish_requests,'$[0].client_request_id')
+                    AND julianday(p.expires_at)>julianday('now'))
+                THEN RAISE(ABORT,'Drama atomic dispatch permit required; preserve the guard on rollback') END; END"""))
+            connection.execute(text("""CREATE TRIGGER IF NOT EXISTS scrapper_drama_permit_consume_v1
+                AFTER UPDATE OF status ON queue_items
+                WHEN NEW.status='posting' AND (NEW.pipeline='DramaRama' OR EXISTS
+                    (SELECT 1 FROM drama_episodes e WHERE e.queue_id=NEW.id AND e.queue_created_at=NEW.created_at))
+                BEGIN DELETE FROM drama_dispatch_permits WHERE queue_id=NEW.id; END"""))
         elif engine.dialect.name=='postgresql':
             connection.execute(text("""CREATE OR REPLACE FUNCTION scrapper_publisher_protocol_v1()
                 RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -39,3 +56,18 @@ def install_fence(engine):
                 connection.execute(text("""CREATE TRIGGER scrapper_publisher_protocol_v1
                     BEFORE UPDATE OF status ON queue_items FOR EACH ROW WHEN (NEW.status='posting')
                     EXECUTE FUNCTION scrapper_publisher_protocol_v1()"""))
+            connection.execute(text("""CREATE OR REPLACE FUNCTION scrapper_drama_protocol_v1()
+                RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+                IF (NEW.pipeline='DramaRama' OR EXISTS (SELECT 1 FROM drama_episodes e
+                    WHERE e.queue_id=NEW.id AND e.queue_created_at=NEW.created_at)) AND
+                    NOT EXISTS (SELECT 1 FROM drama_dispatch_permits p WHERE p.queue_id=NEW.id
+                        AND p.queue_created_at=NEW.created_at AND p.expires_at>clock_timestamp()
+                        AND p.attempt_id=NEW.publish_requests->0->>'client_request_id')
+                THEN RAISE EXCEPTION 'Drama atomic dispatch permit required; preserve the guard on rollback' USING ERRCODE='23514'; END IF;
+                DELETE FROM drama_dispatch_permits WHERE queue_id=NEW.id;
+                RETURN NEW; END; $$"""))
+            exists = connection.execute(text("SELECT 1 FROM pg_trigger WHERE tgname='scrapper_drama_protocol_v1' AND tgrelid='queue_items'::regclass")).first()
+            if not exists:
+                connection.execute(text("""CREATE TRIGGER scrapper_drama_protocol_v1
+                    BEFORE UPDATE OF status ON queue_items FOR EACH ROW
+                    WHEN (NEW.status='posting') EXECUTE FUNCTION scrapper_drama_protocol_v1()"""))

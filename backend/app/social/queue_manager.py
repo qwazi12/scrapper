@@ -524,7 +524,14 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     groups: dict[str, list[QueueItem]] = {}
     due_groups: set[str] = set()
     changed = 0
+    from ..models import DramaEpisode
+    from .. import publication_journal as journal
+    drama_identities = {identity for (identity,) in s.query(DramaEpisode.queue_identity)}
     for it in ready:
+        if it.pipeline == DRAMARAMA or journal.identity(it) in drama_identities:
+            # Its explicit conditional plan owns these fields. Generic schedule
+            # changes/ticks must neither reorder it nor activate an unbound row.
+            continue
         if not it.accounts or not has_video_source(it):
             if it.scheduled_at is not None:
                 it.scheduled_at = None
@@ -658,6 +665,7 @@ async def submit_upload(
     on_intent=None,
     on_result=None,
     media_files: list[pathlib.Path] | None = None,
+    platform_overrides: dict | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -697,6 +705,9 @@ async def submit_upload(
                     video_path, profile=profile, platforms=platforms, title=title,
                     description=description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
+                    **({'platform_overrides': {k:v for k,v in platform_overrides.items()
+                          if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}}
+                       if platform_overrides else {}),
                 )
             result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
@@ -930,6 +941,12 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
     item = s.get(QueueItem, item_id)
     if not item:
         raise ValueError(f"Queue item {item_id} not found")
+    from .. import drama_controls
+    from fastapi import HTTPException
+    if drama_controls.managed(s, item):
+        try: drama_controls.admission(s, item)
+        except HTTPException as exc:
+            raise upload_post.UploadPostError(str(exc.detail), status_code=409) from exc
     from .. import publication_journal as journal
     if journal.unresolved_late_receipt(s,item):
         raise upload_post.UploadPostError("A late provider receipt needs explicit review before another submission",status_code=409)
@@ -1023,31 +1040,53 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     item_id=item.id
     from .. import publication_journal as journal
     from .. import queue_sources
-    if not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
+    from .. import drama_controls, pending_metadata
+    is_drama = drama_controls.managed(s, item)
+    drama_payload = drama_controls.payload(s, item) if is_drama else None
+    if not is_drama and not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
     import hashlib
     import json
     from ..studio.media_quality import file_hash
-    artifact_key = hashlib.sha256(json.dumps({"video": file_hash(video_path), "images": [file_hash(p) for p in images], "title": item.title,
+    video_sha256 = file_hash(video_path)
+    artifact_key = hashlib.sha256(json.dumps({"video": video_sha256, "images": [file_hash(p) for p in images], "title": item.title,
         "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
-        "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path},
+        "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path,
+        **({'drama_visible_payload': drama_payload} if is_drama else {})},
         sort_keys=True).encode()).hexdigest()
     from fastapi import HTTPException
     try:source_binding=queue_sources.verify(s,item)
     except HTTPException as exc:raise upload_post.UploadPostError(str(exc.detail),status_code=409) from exc
+    drama_flags = {}
+    if is_drama:
+        # Keep the previously hashed snapshot; refreshing must never silently
+        # authorize newer words with an older artifact or owner acknowledgement.
+        captured = pending_metadata.fingerprint(s, item)
+        from .. import drama_archive
+        drama_archive.verify_dispatch(drama_controls.binding(s, item).data)
+        from ..budget_reservations import lock
+        lock(s)
+        s.refresh(item)
+        if captured != pending_metadata.fingerprint(s, item):
+            raise upload_post.UploadPostError('Drama copy/protected state changed while hashing; refresh', status_code=409)
+        try: drama_flags = drama_controls.admission(s, item, media_sha256=video_sha256, final=True)
+        except HTTPException as exc:
+            raise upload_post.UploadPostError(str(exc.detail), status_code=409) from exc
     import uuid
     batch_key=uuid.uuid4().hex
     publication_identity=journal.identity(item)
-    intent = [{"state": "intent", "client_request_id":batch_key, "accounts": list(item.accounts), "artifact_key": artifact_key,
+    intent = [{"state": "intent", "client_request_id":batch_key, "accounts": list(item.accounts), "artifact_key": artifact_key, **drama_flags,
                "submitted_at": datetime.datetime.now(UTC).isoformat()}]
     source_binding_id=source_binding.id if source_binding else None
     if source_binding_id:intent[0]['source_binding_id']=source_binding_id
+    if is_drama: drama_controls.grant_dispatch(s, item, batch_key)
     from sqlalchemy import String, cast, update
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
     # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
                         QueueItem.created_at == item.created_at, queue_sources.admission_clause(item,source_binding),
+                        *(pending_metadata._same_snapshot(item) if is_drama else []),
                         QueueItem.status.in_(("ready", "retry", "review", "error")),
                         QueueItem.title == item.title, QueueItem.description == item.description,
                         QueueItem.tags == item.tags, cast(QueueItem.accounts, String) == json.dumps(item.accounts),
@@ -1058,6 +1097,9 @@ async def _submit_owned_media(item,s,video_path,images,regular):
                         execution_options={"synchronize_session": False}).rowcount
     from .. import publication_journal as journal
     if claimed: journal.record(s,item,intent[0],'batch_intent')
+    if is_drama and not claimed:
+        s.rollback()  # An unsuccessful claim must never commit an unused permit.
+        raise upload_post.UploadPostError('Drama changed at the atomic claim; refresh', status_code=409)
     s.commit()
     s.refresh(item)
     if not claimed:
@@ -1074,7 +1116,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
         thumb = pathlib.Path(item.thumb_path) if item.thumb_path and not item.thumb_path.startswith("http") else None
         allow = None
         group = pipeline_group(item)
-        limits = platform_limits(group) if regular else {}
+        limits = platform_limits(group) if regular and not is_drama else {}
         if limits:      # owner (2026-10-13): e.g. YouTube 1/day, Facebook 3, Instagram 3 — or each its own times
             counts = platform_posts_today(s, group, datetime.datetime.now(UTC))
             at = _aware(item.scheduled_at)
@@ -1084,7 +1126,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
         def persist(entry, result=False):
             from ..budget_reservations import lock
             from .. import worker_leases as leases
-            entry = {**entry, "artifact_key": artifact_key}
+            entry = {**entry, "artifact_key": artifact_key, **drama_flags}
             if source_binding_id:entry['source_binding_id']=source_binding_id
             if result:
                 # A receipt arriving after ownership loss must survive even when
@@ -1113,6 +1155,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
             **({"media_files": images} if images else {}),
+            **({'platform_overrides': drama_payload} if is_drama else {}),
         )
         from ..budget_reservations import lock
         lock(s);s.refresh(item)
@@ -1425,12 +1468,19 @@ def run_scheduler_tick():
         seen: set[str] = set()
         for item in due:
             group = pipeline_group(item)
+            if group == DRAMARAMA:
+                from .. import drama_controls
+                from fastapi import HTTPException
+                try: drama_controls.admission(s, item)
+                except HTTPException as exc:
+                    logger.warning('Drama slot held for #%s: %s', item.id, exc.detail)
+                    continue
             if group in seen:
                 continue
             seen.add(group)
             # Hard stop, whatever the planner did: never more scheduled posts in
             # one day than this pipeline's posts/day setting.
-            limit = slots_per_day(pipeline=group, accounts=item.accounts)
+            limit = 8 if group == DRAMARAMA else slots_per_day(pipeline=group, accounts=item.accounts)
             done = posted_today(s, group, now)
             if item.pinned_at is None and done >= limit:
                 if scheduler_status.get("limit_logged") != (group, now.date().isoformat()):

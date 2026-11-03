@@ -96,6 +96,8 @@ from .queue_source_routes import router as queue_source_router
 app.include_router(queue_source_router)
 from .pending_metadata import router as pending_metadata_router
 app.include_router(pending_metadata_router)
+from .drama_routes import router as drama_router
+app.include_router(drama_router)
 from .editorial import asset_annotations
 app.include_router(asset_annotations.router)
 from .editorial import learning as learning_routes

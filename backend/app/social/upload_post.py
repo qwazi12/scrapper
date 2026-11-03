@@ -207,6 +207,7 @@ async def upload_video(
     scheduled_date: str | None = None,
     thumbnail: pathlib.Path | None = None,
     idempotency_key: str | None = None,
+    platform_overrides: dict | None = None,
 ) -> str:
     """Submit one async upload for ONE profile. Returns the request_id.
 
@@ -251,6 +252,12 @@ async def upload_video(
     if "instagram" in platforms:
         data["instagram_title"] = title
         data["media_type"] = "REELS"
+    if platform_overrides:
+        allowed = ({'facebook_title', 'facebook_description', 'facebook_media_type'} if platforms == ['facebook'] else
+                   {'x_title'} if platforms in (['x'], ['twitter']) else set())
+        if profile != 'Dramarama' or not set(platform_overrides) <= allowed or any(not isinstance(v,str) for v in platform_overrides.values()):
+            raise UploadPostError('Unsupported platform copy override; use the guarded Drama contract', status_code=409)
+        data.update(platform_overrides)
 
     with open(video_path, "rb") as fh:
         files: dict[str, Any] = {"video": (video_path.name, fh, "video/mp4")}

@@ -30,6 +30,16 @@ HASHED_FIELDS = {"source", "research", "video_path", "thumb_path", "drive_link",
                  "media_url", "media_files", "publish_requests", "catchup"}
 
 
+class ApprovalContext(BaseModel):
+    """Auditable exact proposal context; not a substitute for source approval."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+    revision: str = Field(min_length=1, max_length=120)
+    workbook_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    proposal_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    applied_public_copy_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    canonical_evidence_id: str | None = Field(default=None, pattern=OPERATION_PATTERN)
+
+
 class MetadataEdit(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     operation_id: str = Field(pattern=OPERATION_PATTERN)
@@ -37,10 +47,11 @@ class MetadataEdit(BaseModel):
     title: str | None = None
     description: str | None = None
     tags: str | None = None
+    approval_context: ApprovalContext | None = None
 
     @model_validator(mode="after")
     def public_strings_only(self):
-        fields = self.model_fields_set - {"operation_id", "expected_fingerprint"}
+        fields = self.model_fields_set - {"operation_id", "expected_fingerprint", "approval_context"}
         if not fields or any(getattr(self, name) is None for name in fields):
             raise ValueError("Supply at least one public metadata string; null is not an edit")
         if "title" in fields and not self.title.strip():
@@ -143,8 +154,10 @@ def inspect_metadata(item_id: int, s: Session = Depends(get_session)):
 @router.patch("/{item_id}")
 def edit_metadata(item_id: int, req: MetadataEdit, s: Session = Depends(get_session)):
     changes = req.model_dump(include=set(PUBLIC_FIELDS), exclude_unset=True)
+    approval = req.approval_context.model_dump() if req.approval_context else None
     request_hash = digest({"schema_version": SCHEMA_VERSION, "item_id": item_id,
-                          "expected_fingerprint": req.expected_fingerprint, "changes": changes})
+                          "expected_fingerprint": req.expected_fingerprint, "changes": changes,
+                          **({"approval_context": approval} if approval else {})})
     try:
         replay = _replay(s, req.operation_id, request_hash)
         if replay:
@@ -161,6 +174,15 @@ def edit_metadata(item_id: int, req: MetadataEdit, s: Session = Depends(get_sess
             require_pending(s, item)
             if not hmac.compare_digest(req.expected_fingerprint, fingerprint(s, item)):
                 raise HTTPException(409, "Queue metadata or protected fields changed; refresh before editing")
+            if approval:
+                public_copy = {key: changes.get(key, getattr(item, key)) for key in PUBLIC_FIELDS}
+                if digest(public_copy) != approval["applied_public_copy_sha256"]:
+                    raise HTTPException(409, "Applied public copy differs from its exact approved context")
+                if approval["canonical_evidence_id"]:
+                    from . import drama_controls
+                    evidence = drama_controls.binding(s, item)
+                    if not evidence or evidence.id != approval["canonical_evidence_id"]:
+                        raise HTTPException(409, "Canonical episode evidence does not match this queue identity")
             before = view(s, item)
             actual = {key: value for key, value in changes.items() if value != getattr(item, key)}
             if actual:
@@ -181,7 +203,8 @@ def edit_metadata(item_id: int, req: MetadataEdit, s: Session = Depends(get_sess
             s.add(MetadataMutationReceipt(operation_id=req.operation_id, queue_id=item_id,
                 queue_identity=before["queue_identity"], request_hash=request_hash, data={
                     "schema_version": SCHEMA_VERSION, "scope": "pending_public_metadata_only",
-                    "before": before, "after": after, "changed_fields": sorted(actual), "response": response}))
+                    "before": before, "after": after, "changed_fields": sorted(actual), "response": response,
+                    **({"approval_context": approval, "approval_scope": "declared exact proposal context; original source/rights guards unchanged"} if approval else {})}))
             s.commit()
             return response
     except worker_leases.LeaseLost as exc:
