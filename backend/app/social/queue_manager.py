@@ -463,8 +463,11 @@ def fits_slot(item: QueueItem, group: str, slot: datetime.datetime) -> bool:
     if not timed:
         return True
     hhmm = slot.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M")
+    x_only = {n for n, lim in timed.items() if hhmm in lim} == {"x"}
     for acc in item.accounts or []:
         net = str(acc).partition(":")[2]
+        if net == "*" and x_only:
+            continue    # an X-only time is for X catch-up: X follows the other platforms (owner, 2026-11-03)
         if net == "*" or net not in timed or hhmm in timed[net]:
             return True
     return False
@@ -538,11 +541,15 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     changed = 0
     from ..models import DramaEpisode
     from .. import publication_journal as journal
-    drama_identities = {identity for (identity,) in s.query(DramaEpisode.queue_identity)}
+    from .. import drama_controls
+    dot_plan = bool(drama_controls.state(s)["plan"])   # dot's own DramaRama plan, if it ever activates one
+    drama_identities = {identity for (identity,) in s.query(DramaEpisode.queue_identity)} if dot_plan else set()
     for it in ready:
         if journal.identity(it) in guarded:
             continue  # Immutable ICK reservation; never current-slot replan/catch-up.
-        if it.pipeline == DRAMARAMA or journal.identity(it) in drama_identities:
+        if not dot_plan and it.pipeline == DRAMARAMA:
+            continue  # planned below by plan_dramarama (series + episode order, per platform)
+        if dot_plan and (it.pipeline == DRAMARAMA or journal.identity(it) in drama_identities):
             # Its explicit conditional plan owns these fields. Generic schedule
             # changes/ticks must neither reorder it nor activate an unbound row.
             continue
@@ -645,6 +652,8 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             if _aware(it.scheduled_at) != slot:
                 it.scheduled_at = slot
                 changed += 1
+    if not dot_plan:
+        changed += plan_dramarama(s, now)
     s.commit()  # Also release the reservation mutex when the plan is unchanged.
     return changed
 
@@ -838,6 +847,108 @@ DRAMARAMA = "DramaRama"
 DRAMARAMA_PROFILES = {"Dramarama"}   # the Upload-Post profile name, exactly
 OWN_PROFILES = {ICK_ROOM: ICK_ROOM_PROFILES, DRAMARAMA: DRAMARAMA_PROFILES}   # section -> the only profiles it uses
 LOCKED_PROFILES = ICK_ROOM_PROFILES | DRAMARAMA_PROFILES                     # never used by any other queue
+DRAMA_ACTIVE_SERIES = 2   # DramaRama series posting at a time; the next starts when one runs out (owner, 2026-11-03)
+X_MAX_SECONDS = 140       # Scrapper's conservative X video guard: longer X uploads not yet proven on these accounts
+X_MAX_BYTES = 512 * 1024 * 1024
+X_DAILY_CAP = 10          # Upload-Post Basic: 10 X posts per rolling 24 h per connected X account
+
+
+def drama_guarded(s: Session, item: QueueItem) -> bool:
+    """Does this DramaRama row go through dot's guarded lane? Only for its canary or a plan dot activated;
+    otherwise DramaRama posts through this scheduler (owner + dot handoff, 2026-11-03)."""
+    from .. import drama_canary, drama_controls
+    if not drama_controls.managed(s, item):
+        return False
+    return bool(drama_canary.current() or drama_controls.state(s)["plan"])
+
+
+def drama_approval(s: Session, item: QueueItem) -> tuple[list[str] | None, str | None]:
+    """dot's frozen Ready receipt for this row, if one is current: (its destinations, its approved X text)."""
+    from fastapi import HTTPException
+    from .. import drama_controls
+    try:
+        _, ready = drama_controls.readiness(s, item)
+    except HTTPException:
+        return None, None
+    review = drama_controls.latest(s, item, "review")
+    variant = ((review.data.get("document") or {}).get("review") or {}).get("x_variant") if review else None
+    return list(ready.data["targets"]), (variant or {}).get("text")
+
+
+def x_media_problem(path: Any) -> str | None:
+    """Why X can't take this video under Scrapper's guard (None = fine). Never trims or re-encodes."""
+    import json as _json
+    from ..studio import media
+    p = pathlib.Path(path)
+    try:
+        probe = _json.loads(media.run(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(p)],
+                                      timeout=60).stdout)
+        duration = float(probe["format"]["duration"])
+    except Exception as exc:  # noqa: BLE001
+        return f"could not read the video ({str(exc)[:80]})"
+    streams = probe.get("streams") or []
+    v = next((x for x in streams if x.get("codec_type") == "video"), {})
+    a = next((x for x in streams if x.get("codec_type") == "audio"), {})
+    if duration > X_MAX_SECONDS:
+        return f"{duration:.0f}s is over Scrapper's {X_MAX_SECONDS}s X guard (longer X uploads not yet verified)"
+    if p.stat().st_size > X_MAX_BYTES:
+        return f"{p.stat().st_size // 2**20} MiB is over Scrapper's 512 MiB X guard"
+    if v.get("codec_name") != "h264" or a.get("codec_name") != "aac" or a.get("profile") != "LC":
+        return (f"X needs H.264 + AAC-LC; this is {v.get('codec_name')} + {a.get('codec_name')} {a.get('profile') or ''}"
+                ).strip()
+    return None
+
+
+def x_due_now(item: QueueItem, regular: bool) -> bool:
+    """Is X one of the platforms this send is for? (a manual Post Now, or a slot at one of X's own times)."""
+    times = timed_platforms(pipeline_group(item)).get("x")
+    at = _aware(item.scheduled_at)
+    if not regular or not times or at is None:
+        return True
+    return at.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M") in times
+
+
+def x_text_problem(item: QueueItem, variant: str | None) -> str | None:
+    """Why X can't take this copy (None = fine): 280 weighted characters including hashtags, no URL."""
+    from . import queue_payloads
+    try:
+        queue_payloads.preview(item.title, item.description, item.tags, ["x"], x_variant_text=variant)
+    except ValueError as exc:
+        return f"X text is over 280 weighted characters (hashtags included) or unsupported — {str(exc)[:160]}"
+    return None
+
+
+def ick_x_variant(s: Session, item: QueueItem) -> str | None:
+    """dot's saved, owner-reviewed X text for this Ick row, if it still matches the row's current copy."""
+    from fastapi import HTTPException
+    from .. import ick_readiness, pending_metadata as pm
+    copy = pm.digest({k: getattr(item, k) for k in pm.PUBLIC_FIELDS})
+    for row in ick_readiness.records(s, item, "ick-x-variant-v1"):
+        v = row.data.get("variant") or {}
+        if row.data.get("copy_sha256") != copy or v.get("approved_sha256") != pm.digest(v.get("text")):
+            continue
+        try:
+            ick_readiness.approval(s, item, row.data["approval_receipt_id"])
+        except HTTPException:
+            continue
+        return v["text"]
+    return None
+
+
+def x_posts_last_day(s: Session, profile: str, now: datetime.datetime) -> int:
+    """X submissions this profile made in the last 24 h (from the publication journal; refused ones excluded)."""
+    from ..models import PublicationEvent
+    since = now - datetime.timedelta(hours=24)
+    sent, refused = set(), set()
+    for ev in s.query(PublicationEvent).filter(PublicationEvent.created_at >= since).all():
+        e = ev.payload or {}
+        if e.get("profile") != profile or "x" not in (e.get("platforms") or []):
+            continue
+        if e.get("error"):
+            refused.add(ev.attempt_id)
+        elif e.get("state") == "intent" or e.get("request_id"):
+            sent.add(ev.attempt_id)
+    return len(sent - refused)
 
 
 def drama_series_episode(item: QueueItem) -> tuple[str, int | None]:
@@ -848,39 +959,133 @@ def drama_series_episode(item: QueueItem) -> tuple[str, int | None]:
     return series, (int(m.group(1)) if m else None)
 
 
-def drama_order(ready: list[QueueItem], done: list[QueueItem]) -> tuple[list[QueueItem], dict[str, str]]:
-    """DramaRama's posting order (owner, 2026-11-03): series take turns (A1, B1, A2, B2 …) and every series goes on
-    from the episode after its last posted one, never skipping one — a missing episode holds that series.
-    `done` = DramaRama videos already posted or posting. Returns (ordered Ready videos, {series: why it is held})."""
-    last: dict[str, int] = {}
-    for it in done:
-        series, ep = drama_series_episode(it)
-        if ep is not None:
-            last[series] = max(last.get(series, 0), ep)
-    by_series: dict[str, list[tuple[int, QueueItem]]] = {}
-    held: dict[str, str] = {}
-    for it in sorted(ready, key=lambda r: r.id):
-        series, ep = drama_series_episode(it)
+DRAMA_DEFAULT_PLATFORMS = ("facebook", "x")   # what "Dramarama:*" means; YouTube only where it was chosen explicitly
+drama_held: dict[str, dict[str, str]] = {}     # platform -> {series: why it waits}, from the last plan (for the screens)
+
+
+def drama_owes(item: QueueItem) -> set[str]:
+    """Platforms this DramaRama row still has to go to (a whole-profile pick = DRAMA_DEFAULT_PLATFORMS)."""
+    nets: set[str] = set()
+    for a in item.accounts or []:
+        net = str(a).partition(":")[2]
+        nets |= set(DRAMA_DEFAULT_PLATFORMS) if net == "*" else {net} if net else set()
+    return nets
+
+
+def drama_copy_reviewed(item: QueueItem) -> bool:
+    """Reviewed SEO, not the raw file name the import gave it."""
+    title = (item.title or "").strip()
+    return bool(title) and not re.match(r"\d{8}[ _]", title) and not re.search(r"_EP\d{3}_|\.mp4$", title, re.I)
+
+
+def drama_episode_state(rows: list[QueueItem], net: str) -> str:
+    """One episode on one platform: done (delivered), skip (not going there), ready, or wait."""
+    if any(any(str(a).endswith(":" + net) for a, _ in ((it.catchup or {}).get("done") or [])) for it in rows):
+        return "done"
+    if any(it.status == "ready" and net in drama_owes(it) and has_video_source(it) and drama_copy_reviewed(it)
+           for it in rows):
+        return "ready"
+    if any(it.status not in ("archived", "posted") and (net in drama_owes(it) or it.status != "ready") for it in rows):
+        return "wait"          # in review, posting, retry or error — or owed but not playable/reviewed yet
+    return "skip"
+
+
+def drama_lanes(rows: list[QueueItem], net: str) -> tuple[list[list[QueueItem]], dict[str, str]]:
+    """DramaRama order on one platform (owner, 2026-11-03): DRAMA_ACTIVE_SERIES series at a time, each from its
+    next undelivered episode in episode order. A missing or not-Ready episode makes that series wait — it is
+    not finished until every episode up to its highest known one is delivered (or not going to this platform).
+    X/YouTube follow Facebook: an episode waits for them until Facebook has it. Returns (lanes, held)."""
+    series: dict[str, dict[int, list[QueueItem]]] = {}
+    first: dict[str, int] = {}
+    for it in rows:
+        name, ep = drama_series_episode(it)
         if ep is None:
-            held[series or f"#{it.id}"] = f"#{it.id} has no episode number"
             continue
-        by_series.setdefault(series, []).append((ep, it))
-    lanes: list[list[QueueItem]] = []
-    for series, eps in by_series.items():               # series in the order their first video arrived
-        eps.sort(key=lambda e: e[0])
-        lane, want = [], last.get(series, 0) + 1
-        for ep, it in eps:
-            if ep < want:
-                continue                                 # an episode already posted (a duplicate) is never re-sent
-            if ep != want:
-                held[series] = f"waiting for EP{want}"
+        series.setdefault(name, {}).setdefault(ep, []).append(it)
+        first[name] = min(first.get(name, it.id), it.id)
+    open_series = []
+    for name, eps in series.items():
+        states = {}
+        for n in range(1, max(eps) + 1):
+            st = drama_episode_state(eps[n], net) if n in eps else "wait"    # a missing episode is never skipped
+            if st == "ready" and net != "facebook" and drama_episode_state(eps[n], "facebook") not in ("done", "skip"):
+                st = "after facebook"
+            states[n] = st
+        if all(st in ("done", "skip") for st in states.values()):
+            continue                                           # finished on this platform
+        started = any(st == "done" for st in states.values())
+        open_series.append((not started, first[name], name, states))
+    open_series.sort()
+    lanes, held = [], {}
+    for _, _, name, states in open_series[:DRAMA_ACTIVE_SERIES]:
+        lane = []
+        for n, st in states.items():
+            if st in ("done", "skip"):
+                continue
+            if st != "ready":
+                held[name] = (f"waiting for EP{n}" + (" on Facebook first" if st == "after facebook" else "")
+                              + ("" if n in series[name] else " (not in the queue)"))
                 break
-            lane.append(it)
-            want += 1
-        if lane:
-            lanes.append(lane)
-    ordered = [lane[i] for i in range(max(map(len, lanes), default=0)) for lane in lanes if i < len(lane)]
-    return ordered, held
+            lane.append(min((it for it in series[name][n] if it.status == "ready" and net in drama_owes(it)),
+                            key=lambda it: it.id))
+        else:
+            held.pop(name, None)
+        lanes.append(lane)
+    return lanes, held
+
+
+def plan_dramarama(s: Session, now: datetime.datetime) -> int:
+    """Give DramaRama's Ready episodes their slots: each platform's own times (schedule config), slot k of the day
+    belongs to active series k % DRAMA_ACTIVE_SERIES — so Facebook at 4/day posts 2 episodes of each of 2 series.
+    A row owing several platforms gets its earliest slot; that platform's later episodes wait their turn."""
+    global drama_held
+    tz = ZoneInfo(_schedule_cfg["timezone"])
+    times = timed_platforms(DRAMARAMA)
+    rows = s.query(QueueItem).filter(QueueItem.pipeline == DRAMARAMA).all()
+    due = {it.id for it in rows if it.status == "ready" and _is_due(it, now)}
+    plans: dict[str, list[tuple[QueueItem, datetime.datetime]]] = {}
+    held_by: dict[str, dict[str, str]] = {}
+    for net, hhmms in times.items():
+        lanes, held_by[net] = drama_lanes(rows, net)
+        hhmms = sorted(hhmms)
+        per_day = max(1, len(hhmms) // DRAMA_ACTIVE_SERIES)
+        days = max([len(lane) for lane in lanes] or [0]) // per_day + 2
+        plan: list[tuple[QueueItem, datetime.datetime]] = []
+        for i, lane in enumerate(lanes):
+            mine = [datetime.datetime.combine(now.astimezone(tz).date() + datetime.timedelta(days=d),
+                                              datetime.time.fromisoformat(h), tz).astimezone(UTC)
+                    for d in range(days) for k, h in enumerate(hhmms) if k % DRAMA_ACTIVE_SERIES == i]
+            mine = [x for x in mine if x > now]
+            for it, slot in zip(lane, mine):
+                if it.id in due:
+                    break                                       # this episode is going out now; the rest wait
+                plan.append((it, slot))
+        plans[net] = plan
+    chosen: dict[int, datetime.datetime] = {}
+    for plan in plans.values():
+        for it, slot in plan:
+            chosen[it.id] = min(chosen.get(it.id, slot), slot)
+    final: dict[int, datetime.datetime] = {}
+    for plan in plans.values():
+        cut = set()                                             # a lane whose episode went to another platform's slot
+        for it, slot in plan:
+            series = drama_series_episode(it)[0]
+            if series in cut:
+                continue
+            if chosen[it.id] != slot:
+                cut.add(series)
+                continue
+            final[it.id] = slot
+    changed = 0
+    for it in rows:
+        if it.status != "ready" or it.id in due or it.pinned_at is not None:
+            continue
+        slot = final.get(it.id)
+        if _aware(it.scheduled_at) != slot:
+            it.scheduled_at = slot
+            changed += 1
+    drama_held = held_by
+    return changed
 
 
 def _profile(account: Any) -> str:
@@ -1032,10 +1237,16 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         raise ValueError(f"Queue item {item_id} not found")
     from .. import drama_controls
     from fastapi import HTTPException
-    if drama_controls.managed(s, item):
+    if drama_guarded(s, item):
         try: drama_controls.admission(s, item)
         except HTTPException as exc:
             raise upload_post.UploadPostError(str(exc.detail), status_code=409) from exc
+    elif item.pipeline == DRAMARAMA:
+        # Checked before any download (owner + dot handoff, 2026-11-03): Ready is the approval; reviewed copy only.
+        if item.status not in ("ready", "retry"):
+            raise upload_post.PayloadBlocked("DramaRama posts only from Ready (or Retry for what is still owed); review it first")
+        if not drama_copy_reviewed(item):
+            raise upload_post.PayloadBlocked("DramaRama copy is not reviewed SEO yet (title is still the file name)")
     from .. import publication_journal as journal
     from ..models import PublicationEvent
     if s.query(PublicationEvent.id).filter_by(queue_id=item.id, queue_identity=journal.identity(item),
@@ -1111,7 +1322,7 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
     from ..file_use import pin
     paths=[video_path,*images]
     from .. import drama_media
-    derivative=drama_media.selected(s,item) if drama_controls.managed(s,item) else None
+    derivative=drama_media.selected(s,item) if drama_guarded(s,item) else None
     if derivative:paths.append(derivative['path'])
     if item.thumb_path and not item.thumb_path.startswith('http'):paths.append(item.thumb_path)
     if native_id:
@@ -1141,7 +1352,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     from .. import publication_journal as journal
     from .. import queue_sources
     from .. import drama_controls, pending_metadata
-    is_drama = drama_controls.managed(s, item)
+    is_drama = drama_guarded(s, item)
     drama_payload = drama_controls.payload(s, item) if is_drama else None
     from .. import drama_canary
     if is_drama:drama_payload=drama_canary.payload(s,item,drama_payload)
@@ -1149,7 +1360,39 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     current_ick_identity=await ick_readiness.identity_for(s,item)
     ick_release=ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
     send_accounts = drama_controls.dispatch_targets(s, item) if is_drama else (ick_release["targets"] if ick_release else list(item.accounts))
-    if not is_drama and not ick_release and not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
+    drama_x_variant = None
+    if item.pipeline == DRAMARAMA and not is_drama:
+        # Regular DramaRama (owner + dot handoff, 2026-11-03): explicit destinations only. A whole-profile pick means
+        # Facebook + X (never YouTube just because it's connected); dot's Ready receipt narrows to its frozen targets.
+        profile = next(iter(DRAMARAMA_PROFILES))
+        send_accounts = [f"{profile}:{n}" for n in sorted(drama_owes(item))]
+        targets, drama_x_variant = drama_approval(s, item)
+        if targets is not None:
+            send_accounts = [a for a in send_accounts if a in targets]
+        if not send_accounts:
+            raise upload_post.PayloadBlocked("No approved DramaRama destination is still owed")
+        if any(a.endswith(":x") for a in send_accounts) and x_due_now(item, regular):
+            reason = x_media_problem(video_path) or x_text_problem(item, drama_x_variant)
+            if reason:
+                # Hold X for this episode with the reason; never shorten it, never block Facebook/YouTube.
+                send_accounts = [a for a in send_accounts if not a.endswith(":x")]
+                cu = dict(item.catchup or {})
+                cu["held"] = {**(cu.get("held") or {}), f"{profile}:x": reason}
+                item.catchup = cu
+                item.accounts = send_accounts
+                journal.append(s, item.id, f"x-held-{item.id}", "x_held", {"reason": reason})
+                if not send_accounts:
+                    item.status = "archived" if cu.get("done") else "review"
+                    item.published_at = datetime.datetime.now(UTC) if cu.get("done") else None
+                    item.scheduled_at = None
+                    item.notes = f"⏸ X held: {reason}"
+                    s.commit()
+                    logbus.log("warning", "queue_x_held", f"Item #{item.id}: X held — {reason}")
+                    return item
+                s.commit()
+                logbus.log("warning", "queue_x_held", f"Item #{item.id}: X held — {reason}; other platforms go ahead")
+    if (not is_drama and not ick_release and item.pipeline != DRAMARAMA and not queue_sources.controlled(s,item)
+            and needs_auto_seo(item) and auto_seo_enabled(s)):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
     import hashlib
@@ -1203,7 +1446,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         captured=pending_metadata.fingerprint(s,item);s.refresh(item)
         if captured!=pending_metadata.fingerprint(s,item):raise upload_post.PayloadBlocked("Guarded ICK state changed before claim")
         ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
-    if is_drama or ick_release:drama_controls.grant_dispatch(s,item,batch_key)
+    # Every DramaRama dispatch takes dot's one-use DB permit (the posting trigger requires it): no double send.
+    if is_drama or ick_release or item.pipeline == DRAMARAMA:drama_controls.grant_dispatch(s,item,batch_key)
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
     # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
@@ -1221,7 +1465,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     if claimed:
         journal.record(s,item,intent[0],'batch_intent')
         drama_canary.claim(s,item,batch_key,artifact_key)
-    if (is_drama or ick_release) and not claimed:
+    if (is_drama or ick_release or item.pipeline == DRAMARAMA) and not claimed:
         s.rollback()  # An unsuccessful claim must never commit an unused permit.
         raise upload_post.UploadPostError('Guarded publication changed at the atomic claim; refresh', status_code=409)
     s.commit()
@@ -1243,7 +1487,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         if not is_drama and (ick_release or structured_tags or any(a.split(":")[-1] in ("x","twitter") for a in send_accounts)):
             from . import queue_payloads
             try:
-                preview=ick_release["payload"] if ick_release else queue_payloads.preview(item.title,item.description,item.tags,[a.split(":")[-1] for a in send_accounts],ick=item.pipeline==ICK_ROOM)
+                preview=ick_release["payload"] if ick_release else queue_payloads.preview(item.title,item.description,item.tags,[a.split(":")[-1] for a in send_accounts],ick=item.pipeline==ICK_ROOM,
+                    x_variant_text=drama_x_variant if item.pipeline==DRAMARAMA else ick_x_variant(s,item) if item.pipeline==ICK_ROOM else None)
             except ValueError as exc:raise upload_post.PayloadBlocked(str(exc)) from exc
             queue_x_text=preview["values"].get("x_title")
             parts=preview["tags"];backend_tags=[t.lstrip("#") for t in parts["public_hashtags"]]+parts["phrase_tags"]
@@ -1259,6 +1504,10 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             hhmm = at.astimezone(ZoneInfo(_schedule_cfg["timezone"])).strftime("%H:%M") if at else None
             allow = {net: (hhmm in lim) if isinstance(lim, list) else counts.get(net, 0) < lim
                      for net, lim in limits.items()}
+        if not is_drama and not ick_release and send_accounts and (allow or {}).get("x") is not False:
+            x_profile = str(send_accounts[0]).partition(":")[0]
+            if x_posts_last_day(s, x_profile, datetime.datetime.now(UTC)) >= X_DAILY_CAP:
+                allow = {**(allow or {}), "x": False}      # Upload-Post Basic cap: X waits for a later slot
         async def refresh_ick_identity(account):
             nonlocal current_ick_identity
             try:current_ick_identity=await ick_readiness.identity_for(s,item)
@@ -1324,6 +1573,11 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             # Every platform already had today's number: nothing to send now.
             item.status = "ready"
             item.publish_requests = entries
+            if regular and item.scheduled_at is not None:   # this slot is spent: no new try every tick
+                cu = dict(item.catchup or {})
+                cu["slots"] = (list(cu.get("slots") or []) + [_slot_iso(item.scheduled_at)])[-20:]
+                item.catchup = cu
+                item.scheduled_at = None
             item.notes = f"Waiting: {', '.join(skipped)} already had today's posts (per-platform limits)."
             s.commit()
             logbus.log("info", "queue_platform_limits", f"Item #{item.id}: all platforms at today's number — not sent")
@@ -1444,6 +1698,23 @@ def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -
         if [a, url] not in done: done.append([a, url])
     parts = [f"✓ {a} {url}".strip() for a, url in done]
     parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
+    if item.pipeline == DRAMARAMA and res["failed"] and not any(e.get("drama_ready_id") for e in item.publish_requests or []):
+        # DramaRama (owner, 2026-11-03): X failing never holds back or reposts Facebook/YouTube. A rate limit waits
+        # for X's next slot; any other X refusal is held for this episode with its reason (not retried).
+        failed = dict(res["failed"])
+        for a, why in list(failed.items()):
+            if not a.endswith(":x"):
+                continue
+            del failed[a]
+            if re.search(r"429|rate.?limit|too many|try again later|daily (?:post )?limit", why, re.I):
+                skipped.append(a)
+                parts.append(f"⏳ {a}: rate-limited — waits for its next slot")
+            else:
+                cu = dict(item.catchup or {})
+                cu["held"] = {**(cu.get("held") or {}), a: why[:220]}
+                item.catchup = cu
+                parts.append(f"⏸ {a} held (not retried)")
+        res = {**res, "failed": failed}
     if res.get('delivery_holds'):
         item.status = 'review'
         item.published_at = None
@@ -1578,7 +1849,10 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
     from fastapi import HTTPException
     from ..delivery_archive import retain
     cutoff = now - datetime.timedelta(days=settings.archive_delete_days)
+    # DramaRama rows stay (owner, 2026-11-03): they are each series' record of what was posted — episode order,
+    # duplicate protection and dot's history checks all read them.
     expired = (s.query(QueueItem).filter(QueueItem.status.in_(["posted", "archived"]))
+        .filter(QueueItem.pipeline != DRAMARAMA)
         .filter(QueueItem.published_at.isnot(None), QueueItem.published_at < cutoff)
         .order_by(QueueItem.published_at).limit(ARCHIVE_SWEEP_BATCH).all())
     removed = 0
@@ -1640,7 +1914,7 @@ def run_scheduler_tick():
         seen: set[str] = set()
         for item in due:
             group = pipeline_group(item)
-            if group == DRAMARAMA:
+            if group == DRAMARAMA and drama_guarded(s, item):
                 from .. import drama_controls
                 from fastapi import HTTPException
                 try: drama_controls.admission(s, item)
@@ -1652,7 +1926,7 @@ def run_scheduler_tick():
             seen.add(group)
             # Hard stop, whatever the planner did: never more scheduled posts in
             # one day than this pipeline's posts/day setting.
-            limit = 8 if group == DRAMARAMA else slots_per_day(pipeline=group, accounts=item.accounts)
+            limit = 8 if group == DRAMARAMA and drama_guarded(s, item) else slots_per_day(pipeline=group, accounts=item.accounts)
             done = posted_today(s, group, now)
             if item.pinned_at is None and done >= limit:
                 if scheduler_status.get("limit_logged") != (group, now.date().isoformat()):

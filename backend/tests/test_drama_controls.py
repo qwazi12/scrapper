@@ -752,15 +752,20 @@ def test_unknown_destination_holds_its_lane_without_resending_accepted_destinati
     assert len(a.transfers)==3  # A Facebook once, then both healthy B destinations.
 
 
-def test_manual_approve_bulk_and_post_next_cannot_create_a_dispatchable_binding(archive,monkeypatch):
+def test_manual_approve_never_creates_a_dot_binding_and_posts_only_explicit_destinations(archive,monkeypatch):
+    # Owner + dot handoff (2026-11-03): Ready is the approval for the regular DramaRama scheduler. Approving
+    # still never creates dot's guarded binding, and a whole-profile pick never adds YouTube.
     a=archive;qid=a.rows[0,1][0]
+    inspect(a,(0,1))     # canonical identity recorded while in Review, as for the live rows
     monkeypatch.setattr(qm,'wake',lambda:None)  # These legacy routes normally wake.
     assert a.client.post(f'/api/queue/{qid}/approve').status_code==200
     assert a.client.post(f'/api/queue/{qid}/post-next').status_code==200
     assert a.client.post('/api/queue/bulk-action',json={'ids':[qid],'action':'approve'}).status_code==200
-    with pytest.raises(upload_post.UploadPostError):submit(a,(0,1))
-    assert not a.downloads and not a.transfers
-    with SessionLocal() as s:assert s.get(QueueItem,qid).scheduled_at is None
+    with SessionLocal() as s:assert dc.latest(s,s.get(QueueItem,qid),'ready') is None   # no guarded Ready receipt
+    item=submit(a,(0,1))
+    assert item.status=='posting'
+    assert {p for t in a.transfers for p in t['platforms']} <= {'facebook','x'}
+    with pytest.raises(upload_post.UploadPostError):submit(a,(0,1))     # never sent twice
 
 
 def test_alias_history_is_not_clean_just_because_published_at_is_empty(archive):

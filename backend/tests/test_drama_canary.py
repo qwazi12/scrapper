@@ -273,11 +273,12 @@ def test_concurrent_different_dispatch_cannot_spend_the_same_one_shot_grant(cand
     assert len(a.transfers)==2
 
 
-def test_grant_does_not_enable_generic_manual_publish_or_scheduler_admission(candidate):
+def test_generic_publish_never_spends_a_canary_grant(candidate):
+    # Owner + dot handoff (2026-11-03): a Ready DramaRama row may go through the regular publisher, but that
+    # never consumes (or counts as) a canary grant.
     a=candidate;grant(a);at_slot(a)
-    with SessionLocal() as s,pytest.raises(upload_post.UploadPostError):
+    with SessionLocal() as s:
         asyncio.run(qm.publish_queue_item(a.rows[0,1][0],s))
-    assert not a.transfers
     assert a.client.get('/api/drama/canary/contract').json()['consumed_grant_count']==0
 
 

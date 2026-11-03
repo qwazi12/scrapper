@@ -1876,20 +1876,22 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
             p["next"].append({"id": it.id, "title": it.title, "channel": it.pipeline,
                               "scheduled_at": queue_manager._aware(it.scheduled_at)})
     if queue_manager.DRAMARAMA in pipelines:
-        # DramaRama's line-up in its real order: series take turns, episodes from EP1 on (owner, 2026-11-03).
-        done = s.query(QueueItem).filter(QueueItem.pipeline == queue_manager.DRAMARAMA,
-                                         QueueItem.status.in_(["posting", "posted", "archived"])).all()
-        drama_ready = [it for it in ready if it.accounts and queue_manager.pipeline_group(it) == queue_manager.DRAMARAMA]
-        ordered, held = queue_manager.drama_order(drama_ready, done)
+        # DramaRama's real line-up: its planned slots (series + episode order, per platform), and series that wait.
+        planned = sorted((it for it in ready if it.scheduled_at and queue_manager.pipeline_group(it) == queue_manager.DRAMARAMA),
+                         key=lambda it: queue_manager._aware(it.scheduled_at))
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(queue_manager.load_schedule(s)["timezone"])
+        times = queue_manager.timed_platforms(queue_manager.DRAMARAMA)
         pipelines[queue_manager.DRAMARAMA]["next"] = [
-            {"id": it.id, "title": it.title, "channel": it.pipeline, "scheduled_at": queue_manager._aware(it.scheduled_at)}
-            for it in ordered[:5]]
-        pipelines[queue_manager.DRAMARAMA]["held"] = held
-    # Queues the scheduler can't post for now, and why (shown instead of a time).
-    from . import drama_controls
-    drama = drama_controls.activation_contract()
-    posting_blocked = {} if drama["supported"] else {
-        queue_manager.DRAMARAMA: "DramaRama posting is off until a check that the full video and text arrived exists."}
+            {"id": it.id, "title": it.title, "channel": it.pipeline, "scheduled_at": queue_manager._aware(it.scheduled_at),
+             "platforms": [n for n, hh in times.items()
+                           if queue_manager._aware(it.scheduled_at).astimezone(tz).strftime("%H:%M") in hh]}
+            for it in planned[:8]]
+        pipelines[queue_manager.DRAMARAMA]["held"] = queue_manager.drama_held.get("facebook", {})
+        pipelines[queue_manager.DRAMARAMA]["held_by_platform"] = queue_manager.drama_held
+    # Queues the scheduler can't post for now, and why (shown instead of a time). DramaRama posts through the
+    # regular scheduler since the 2026-11-03 handoff; dot's guarded lane only runs for its own active plan.
+    posting_blocked: dict[str, str] = {}
     cfg = queue_manager.load_schedule(s)
     per_day = queue_manager.slots_per_day()
     pacing_summary = {
