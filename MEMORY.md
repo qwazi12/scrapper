@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## PLAN — 2026-11-03 — scheduler screens fix 1–5 (owner: "Do 1-5"; lifts the hold for these)
+1. No "Invalid Date": a Ready row with no time shows "Not scheduled", and DramaRama shows why (posting is off until the
+   other agent's delivery check exists). /api/schedule gains `posting_blocked` {queue: reason}.
+2. DramaRama order: series interleaved (A1, B1, A2, B2…), each series from its next episode with no skipped episode
+   (a gap holds that series). Shown everywhere DramaRama's line-up is listed; DramaRama tab list sorted by series+episode.
+   The actual posting plan stays the other agent's guarded drama_controls (2 hand-picked series, off). Passive
+   next-series refill there is NOT changed here — needs agreement with that agent.
+3. Pacing & Scheduler tab: the per-pipeline section (only Movie Clips + LongForm; its buttons overwrote hours) becomes a
+   read-only list of all 5 queues with their real settings + "change with ⏰ Schedule in its tab".
+4. ⏰ Schedule editor: X added to per-platform settings (backend already accepts any platform).
+5. Per-account list: "default" → Cinama/TheIckRoom/Dramarama/mk; live DramaRama config: drop "youtube: 2" (no YouTube).
+Tests → suite → tsc → push when idle → verify live → log.
+
 ## ICK display-thumbnail inspection hotfix candidate — November 3, 2026
 
 Production inspection treated an HTTPS display-thumbnail reference as a local
