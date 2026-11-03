@@ -8,16 +8,9 @@ import re
 import unicodedata
 
 from . import pending_metadata as pm
+from .social.platform_payloads import weight_upper_bound
 
 _URL = re.compile(r'(?i)(?:\b(?:https?|ftp|wss?)://|\bwww\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}/|\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?/)')
-
-
-def weight_upper_bound(text):
-    # Without emoji-cluster parsing this intentionally overcounts some composed
-    # emoji. It never undercounts them or treats CJK as one standard character.
-    ranges = ((0, 4351), (8192, 8205), (8208, 8223), (8242, 8247))
-    return sum(1 if any(a <= ord(c) <= b for a, b in ranges) else 2
-               for c in unicodedata.normalize('NFC', text))
 
 
 def build(item, evidence, review):
@@ -40,11 +33,11 @@ def build(item, evidence, review):
         errors.append('X visible copy contains unsupported control characters')
     if len(item.title.encode('utf-16-le')) // 2 > 255 or len(description.encode('utf-16-le')) // 2 > 63206:
         errors.append('Facebook visible title/description exceeds the supported exact-copy bounds')
-    mode = review.get('facebook_media_type', 'REELS')
+    mode = review.get('facebook_media_type', 'VIDEO')
     if evidence['duration'] > 140 or evidence['file_size'] > 512 * 1024 * 1024:
         errors.append('X media exceeds the conservative unverified-entitlement baseline (140 seconds/512 MiB)')
     if mode == 'REELS' and evidence['duration'] > 90:
-        errors.append('Media exceeds the documented Facebook Reels baseline; an explicitly reviewed VIDEO mode is required')
+        errors.append('The provider Reels path has shortened longer inputs; select the explicitly reviewed full-length VIDEO path')
     probe = evidence.get('media', {})
     if probe and (probe.get('video_codec') != 'h264' or probe.get('audio_codec') not in ('aac', None)
                   or 'mp4' not in probe.get('format', '') or probe.get('width', 0) > 1920 or probe.get('height', 0) > 1920):

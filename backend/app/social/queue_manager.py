@@ -694,6 +694,22 @@ async def submit_upload(
         request_key = uuid.uuid4().hex
         intent = {"profile": profile, "platforms": platforms, "state": "intent", "submitted_at": scheduled_date or now,
                   "client_request_id": request_key}
+        overrides = {k:v for k,v in (platform_overrides or {}).items()
+                     if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}
+        if not media_files:
+            try:
+                visible = upload_post.prepare_video_fields(profile, platforms, title, description, overrides)
+            except upload_post.PayloadBlocked as exc:
+                # This refusal occurs BEFORE a durable per-platform intent or
+                # provider I/O. A crash cannot turn a known local hold into an
+                # uncertain possibly-published request.
+                result = {**intent, 'state': 'rejected', 'error': str(exc)[:300],
+                          'transport_dispatched': False, 'hold': 'exact_platform_payload_required'}
+                entries.append(result)
+                if on_result: on_result(result)
+                continue
+            if visible:
+                intent.update(transport_contract='facebook-x-visible-v1', visible_payload=visible)
         if on_intent:
             on_intent(intent)
         try:
@@ -705,9 +721,7 @@ async def submit_upload(
                     video_path, profile=profile, platforms=platforms, title=title,
                     description=description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
-                    **({'platform_overrides': {k:v for k,v in platform_overrides.items()
-                          if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}}
-                       if platform_overrides else {}),
+                    **({'platform_overrides': overrides} if overrides else {}),
                 )
             result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
@@ -716,6 +730,8 @@ async def submit_upload(
             # A lost or timed-out response can still mean accepted — that stays "unknown".
             state = "rejected" if definitely_rejected(exc) else "unknown"
             result = {**intent, "state": state, "error": str(exc)[:300]}
+            if isinstance(exc, upload_post.PayloadBlocked):
+                result.update(transport_dispatched=False, hold='exact_platform_payload_required')
         entries.append(result)
         if on_result:
             on_result(result)
@@ -948,6 +964,10 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
         except HTTPException as exc:
             raise upload_post.UploadPostError(str(exc.detail), status_code=409) from exc
     from .. import publication_journal as journal
+    from ..models import PublicationEvent
+    if s.query(PublicationEvent.id).filter_by(queue_id=item.id, queue_identity=journal.identity(item),
+            kind='delivery_hold').first():
+        raise upload_post.UploadPostError('A published delivery has unresolved media/copy changes; review it without reposting', status_code=409)
     if journal.unresolved_late_receipt(s,item):
         raise upload_post.UploadPostError("A late provider receipt needs explicit review before another submission",status_code=409)
     if any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
@@ -1043,6 +1063,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     from .. import drama_controls, pending_metadata
     is_drama = drama_controls.managed(s, item)
     drama_payload = drama_controls.payload(s, item) if is_drama else None
+    send_accounts = drama_controls.dispatch_targets(s, item) if is_drama else list(item.accounts)
     if not is_drama and not queue_sources.controlled(s,item) and needs_auto_seo(item) and auto_seo_enabled(s):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
@@ -1051,7 +1072,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     from ..studio.media_quality import file_hash
     video_sha256 = file_hash(video_path)
     artifact_key = hashlib.sha256(json.dumps({"video": video_sha256, "images": [file_hash(p) for p in images], "title": item.title,
-        "description": item.description, "tags": item.tags, "accounts": sorted(item.accounts),
+        "description": item.description, "tags": item.tags, "accounts": sorted(send_accounts),
         "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path,
         **({'drama_visible_payload': drama_payload} if is_drama else {})},
         sort_keys=True).encode()).hexdigest()
@@ -1076,7 +1097,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
     import uuid
     batch_key=uuid.uuid4().hex
     publication_identity=journal.identity(item)
-    intent = [{"state": "intent", "client_request_id":batch_key, "accounts": list(item.accounts), "artifact_key": artifact_key, **drama_flags,
+    intent = [{"state": "intent", "client_request_id":batch_key, "accounts": send_accounts, "artifact_key": artifact_key, **drama_flags,
                "submitted_at": datetime.datetime.now(UTC).isoformat()}]
     source_binding_id=source_binding.id if source_binding else None
     if source_binding_id:intent[0]['source_binding_id']=source_binding_id
@@ -1151,7 +1172,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             item.publish_requests = [*saved, entry]
             s.commit()
         entries = await submit_upload(
-            video_path, list(item.accounts), title=item.title or item.video_name,
+            video_path, send_accounts, title=item.title or item.video_name,
             description=description, tags=_hashtags(item.tags), thumbnail=thumb, allow=allow,
             on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
             **({"media_files": images} if images else {}),
@@ -1183,7 +1204,7 @@ async def _submit_owned_media(item,s,video_path,images,regular):
             cu = dict(item.catchup or {})
             cu["slots"] = (list(cu.get("slots") or []) + [_slot_iso(item.scheduled_at)])[-20:]
             item.catchup = cu
-        item.notes = (f"Submitted to Upload-Post for {', '.join(item.accounts)}; "
+        item.notes = (f"Submitted to Upload-Post for {', '.join(send_accounts)}; "
                       "waiting for the platforms to confirm."
                       + (f" Not sent to {', '.join(skipped)} — that platform's daily number was reached." if skipped else ""))
         s.commit()
@@ -1232,6 +1253,7 @@ def resolve_results(
         return None
     accounts = [f"{e['profile']}:{net}" for e in entries for net in e.get("platforms", [])]
     outcome: dict[str, tuple[bool, str]] = {}
+    delivery_holds = {}
     for e in entries:
         if e.get("skipped"):            # left out on purpose (platform's daily number reached)
             continue
@@ -1252,13 +1274,20 @@ def resolve_results(
             acc = f"{r.get('profile_username') or e['profile']}:{r.get('platform')}"
             if acc not in expected or acc in seen:return None
             seen.add(acc)
-            if r['success']:outcome[acc]=(True,r.get('post_url') or '')
+            if r['success']:
+                outcome[acc]=(True,r.get('post_url') or '')
+                if e.get('transport_contract') == 'facebook-x-visible-v1' and any(
+                        evidence.get(key) for evidence in (st,r) for key in ('changes','warnings')):
+                    # A transcode flag alone is not evidence of shortening. Any
+                    # reported alteration/warning needs actual delivered-output
+                    # review; provider echoes do not certify visible copy.
+                    delivery_holds[acc] = 'Provider reported media/copy changes or warnings; verify the actual published output without reposting'
             else:outcome[acc]=(False,str(r.get('error_message') or 'Provider confirmed failure'))
         if seen!=expected:return None
     ok = [(a, outcome[a][1]) for a in accounts if a in outcome and outcome[a][0]]
     failed = {a: (outcome[a][1] if a in outcome else "no result returned") for a in accounts
               if not (a in outcome and outcome[a][0])}
-    return {"ok": ok, "failed": failed}
+    return {"ok": ok, "failed": failed, **({'delivery_holds': delivery_holds} if delivery_holds else {})}
 
 
 def _fetch_statuses(entries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -1281,7 +1310,11 @@ def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -
         if [a, url] not in done: done.append([a, url])
     parts = [f"✓ {a} {url}".strip() for a, url in done]
     parts += [f"✕ {a}: {why[:220]}" for a, why in res["failed"].items()]
-    if res["failed"]:
+    if res.get('delivery_holds'):
+        item.status = 'review'
+        item.published_at = None
+        parts += ['Delivery held: ' + reason for reason in res['delivery_holds'].values()]
+    elif res["failed"]:
         # Retry only what failed (and what's still owed), so a retry never double-posts.
         item.status = "retry"
         item.accounts = list(res["failed"]) + [a for a in skipped if a not in res["failed"]]
@@ -1360,6 +1393,8 @@ def reconcile_posting(s: Session, now: datetime.datetime) -> int:
             res = resolve_results(saved, statuses, now)
             if res is not None:
                 apply_result(item, res, now)
+                if res.get('delivery_holds'):
+                    journal.append(s, item.id, 'delivery-fidelity', 'delivery_hold', res['delivery_holds'])
                 if item.status == 'retry' and any(e.get('state') == 'confirmed_not_accepted' for e in saved):
                     item.status = 'review'; item.scheduled_at = None
                 for entry in item.publish_requests or []: journal.record(s, item, entry, 'settled')

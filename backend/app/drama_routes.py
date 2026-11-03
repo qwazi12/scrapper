@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import asyncio
 import datetime as dt
 from typing import Literal
 from uuid import uuid4
@@ -17,7 +18,7 @@ from . import drama_archive, drama_controls as dc, pending_metadata as pm, publi
 from .auth import require_token
 from .budget_reservations import lock
 from .db import get_session
-from .models import AppSetting, DramaEpisode, DramaRecord, PublicationEvent, QueueItem
+from .models import AppSetting, DramaEpisode, DramaRecord, PublicationEvent, QueueItem, WorkerLease
 
 router = APIRouter(prefix='/api/drama', dependencies=[Depends(require_token)])
 _owned_handles = contextvars.ContextVar('drama_owned_handles', default=())
@@ -59,7 +60,7 @@ class ReviewContent(BaseModel):
     approved_workbook_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
     approved_proposal_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
     decision: Literal['Accept this exact canonical episode and public copy for guarded release']
-    facebook_media_type: Literal['REELS', 'VIDEO'] = 'REELS'
+    facebook_media_type: Literal['REELS', 'VIDEO'] = 'VIDEO'
     x_variant: XVariant | None = None
 
 
@@ -131,13 +132,24 @@ def mutable_state(item):
             for k in ('status', 'scheduled_at', 'pinned_at')}
 
 
-def review_document(s, item, req):
+def connected_for_review(s, qid):
+    item = s.get(QueueItem, qid, populate_existing=True)
+    if item and item.accounts == ['Dramarama:*']:
+        from .social.upload_post import list_accounts, UploadPostError
+        try:
+            return asyncio.run(list_accounts())
+        except (UploadPostError, OSError) as exc:
+            dc.fail('connected destinations could not be verified; retain the wildcard and retry the read later')
+    return None
+
+
+def review_document(s, item, req, connected=None):
     dc.require_item(s, item, pristine=True)
     dc.expected(s, item, req.expected_fingerprint)
     evidence = dc.binding(s, item)
     if not evidence or evidence.id != req.evidence_id:
         dc.fail('server-inspected canonical episode evidence is required')
-    accounts = dc.targets(item.accounts)
+    accounts = dc.targets(item.accounts, connected)
     from . import queue_sources
     queue_sources.verify(s, item)  # Keep actual existing Studio/export gates.
     if req.approved_proposal_sha256 != pm.digest({key: getattr(item, key) for key in pm.PUBLIC_FIELDS}):
@@ -145,7 +157,7 @@ def review_document(s, item, req):
     content = req.model_dump(include=set(ReviewContent.model_fields))
     from .drama_payloads import build
     value = {'version': dc.VERSION, 'queue_identity': journal.identity(item), 'evidence_id': evidence.id,
-             'copy_hash': dc.copy_hash(item), 'targets': accounts, 'review': content,
+             'copy_hash': dc.copy_hash(item), 'targets': accounts, 'account_selection': list(item.accounts), 'review': content,
              'payload': build(item, evidence.data, content)}
     return evidence, value, pm.digest(value)
 
@@ -166,6 +178,46 @@ def contract():
 @router.get('/plan')
 def inspect_plan(s: Session = Depends(get_session)):
     return dc.state(s)
+
+
+@router.get('/cutover-status')
+def cutover_status(s: Session = Depends(get_session)):
+    """Read-only current + retained-history inventory, never an activation grant."""
+    episodes = {e.queue_identity for e in s.query(DramaEpisode)}
+    rows = {journal.identity(item): item for item in s.query(QueueItem)
+            if item.pipeline == dc.PIPELINE or journal.identity(item) in episodes}
+    events = []
+    for event in s.query(PublicationEvent).order_by(PublicationEvent.id):
+        payload = event.payload
+        if (event.queue_identity in rows or event.queue_identity in episodes or payload.get('profile') == 'Dramarama'
+                or any(str(a).startswith('Dramarama:') for a in payload.get('accounts', []))):
+            events.append(event)
+    historical = {e.queue_identity for e in events}
+    ids = {item.id for item in rows.values()} | {e.queue_id for e in events}
+    current = worker_leases.clock(s)
+    live = [lease.resource for lease in s.query(WorkerLease).filter(WorkerLease.expires_at > current)
+            if lease.owner and lease.resource in {f'publication:{qid}' for qid in ids}]
+    late = [item.id for identity, item in rows.items() if identity in historical and journal.unresolved_late_receipt(s,item)]
+    # A cleared mutable field cannot erase a retained transport intent. Report
+    # unresolved history conservatively; this endpoint never certifies delivery.
+    attempts = {}
+    for event in events:
+        key = (event.queue_identity, event.attempt_id)
+        if event.kind in ('batch_returned','not_posted'):
+            attempts.pop(key, None)
+        elif event.payload.get('state'):
+            attempts[key] = event.payload['state']
+    unresolved = sum(state in ('intent','unknown','accepted') for state in attempts.values())
+    return {'read_only': True, 'writes': 0, 'current_rows': len(rows),
+        'current_posting_rows': sum(item.status == 'posting' for item in rows.values()),
+        'current_request_rows': sum(bool(item.publish_requests) for item in rows.values()),
+        'live_publication_leases': len(live), 'late_receipt_rows': len(late),
+        'retained_events': len(events), 'retained_unresolved_attempts': unresolved,
+        'historical_identities_without_current_row': len(historical - rows.keys()),
+        'history_attribution_unverified': len(historical - episodes),
+        'wildcard_rows': sum(item.accounts == ['Dramarama:*'] for item in rows.values()),
+        'notice': 'Inventory only; absence of mutable requests is not proof of delivery or a release certificate. Reconcile retained uncertainty and stop old publishers before activation.',
+        'activation': dc.activation_contract()}
 
 
 @router.get('/receipts/{operation_id}')
@@ -225,8 +277,9 @@ def inspect_archive(qid: int, req: Inspect, s: Session = Depends(get_session)):
 
 @router.post('/items/{qid}/review-preview')
 def preview_review(qid: int, req: ReviewPreview, s: Session = Depends(get_session)):
+    connected = connected_for_review(s, qid)
     item = s.get(QueueItem, qid, populate_existing=True)
-    evidence, document, fingerprint = review_document(s, item, req)
+    evidence, document, fingerprint = review_document(s, item, req, connected)
     return {'acknowledged_fingerprint': fingerprint, 'document': document,
             'server_media_evidence': evidence.data, 'public_copy': {k: getattr(item, k) for k in pm.PUBLIC_FIELDS},
             'rights_status': 'technical evidence does not certify rights; existing source/export gates remain applicable'}
@@ -237,12 +290,13 @@ def accept_review(qid: int, req: Review, s: Session = Depends(get_session)):
     hashed = request_hash('review', req, qid)
     if saved := dc.replay(s, req.operation_id, hashed):
         return saved
+    connected = connected_for_review(s, qid)  # Provider read precedes lease/mutex writes.
     with owned(s, [qid]):
         lock_owned(s)
         if saved := dc.replay(s, req.operation_id, hashed):
             s.rollback(); return saved
         item = s.get(QueueItem, qid, populate_existing=True)
-        evidence, document, fingerprint = review_document(s, item, req)
+        evidence, document, fingerprint = review_document(s, item, req, connected)
         if fingerprint != req.acknowledged_fingerprint:
             dc.fail('exact media/copy/review acknowledgement changed; inspect the preview again')
         if document['payload']['errors']:
@@ -266,6 +320,8 @@ def mark_ready(qid: int, req: Ready, s: Session = Depends(get_session)):
         item = s.get(QueueItem, qid, populate_existing=True)
         dc.require_item(s, item, pristine=True); dc.expected(s, item, req.expected_fingerprint)
         evidence, review = dc.require_review(s, item, req.evidence_id, req.review_id)
+        if list(item.accounts) != review.data['document']['account_selection']:
+            dc.fail('destination selection changed after exact copy review')
         frozen = SimpleNamespace(**{c.key: getattr(item, c.key) for c in QueueItem.__table__.columns})
         proof = dict(evidence.data)
         s.rollback()
@@ -274,6 +330,8 @@ def mark_ready(qid: int, req: Ready, s: Session = Depends(get_session)):
         item = s.get(QueueItem, qid, populate_existing=True)
         dc.require_item(s, item, pristine=True); dc.expected(s, item, req.expected_fingerprint)
         evidence, review = dc.require_review(s, item, req.evidence_id, req.review_id)
+        if list(item.accounts) != review.data['document']['account_selection']:
+            dc.fail('destination selection changed during live media verification')
         for key in ('series_key', 'episode', 'catalog_hash', 'source_video_id', 'drive_file_id', 'sha256', 'file_size'):
             if observed[key] != evidence.data[key]:
                 dc.fail('live canonical media differs from the inspected/reviewed evidence')
@@ -285,7 +343,8 @@ def mark_ready(qid: int, req: Ready, s: Session = Depends(get_session)):
         dc.conditional_update(s, item, status='ready', scheduled_at=None, pinned_at=None)
         response = dc.record(s, req.operation_id, hashed, 'ready', {'ready_id': req.operation_id,
             'fingerprint': pm.fingerprint(s, item)}, item=item, evidence_id=evidence.id,
-            review_id=review.operation_id, copy_hash=dc.copy_hash(item), targets=dc.targets(item.accounts),
+            review_id=review.operation_id, copy_hash=dc.copy_hash(item), targets=review.data['targets'],
+            initial_accounts=list(item.accounts),
             live_media_observation=observed, live_observed_at=dc.now(s).isoformat(),
             undo={'items': [{'id': qid, 'identity': journal.identity(item), 'before': before,
                 'after_fingerprint': pm.fingerprint(s, item), 'events': event_hash(s, item)}]})

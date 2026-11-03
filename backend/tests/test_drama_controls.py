@@ -225,7 +225,64 @@ def test_canonical_inspection_decode_and_idempotent_receipt_do_not_use_display_t
     assert a.client.get('/api/drama/plan').json()['plan'] is None
 
 
-@pytest.mark.parametrize('damage', ['gap', 'duplicate', 'trashed', 'hash', 'props', 'media', 'incomplete', 'restricted'])
+def test_wildcard_freezes_only_reviewed_facebook_x_and_never_expands_to_youtube(archive, monkeypatch):
+    a = archive
+    qid = a.rows[0,1][0]
+    with SessionLocal() as s:
+        s.get(QueueItem,qid).accounts = ['Dramarama:*']; s.commit()
+    async def connected():
+        return [{'id': 'Dramarama:' + p, 'profile': 'Dramarama'} for p in ('facebook','x','youtube')]
+    monkeypatch.setattr(upload_post, 'list_accounts', connected)
+    ready(a,(0,1)); ready(a,(1,1))
+    receipt, _ = plan(a,[(0,1),(1,1)])
+    at_slot(a,receipt,(0,1)); submit(a,(0,1))
+    assert [t['platforms'] for t in a.transfers] == [['facebook'], ['x']]
+    with SessionLocal() as s:
+        item=s.get(QueueItem,qid)
+        assert item.accounts == ['Dramarama:*']
+        frozen=dc.latest(s,item,'ready').data
+        assert frozen['targets'] == ['Dramarama:facebook','Dramarama:x']
+        assert frozen['initial_accounts'] == ['Dramarama:*']
+
+
+def test_wildcard_review_with_missing_required_destination_is_held(archive, monkeypatch):
+    a=archive; qid=a.rows[0,1][0]
+    with SessionLocal() as s:
+        s.get(QueueItem,qid).accounts=['Dramarama:*'];s.commit()
+    async def missing(): return [{'id':'Dramarama:youtube','profile':'Dramarama'}]
+    monkeypatch.setattr(upload_post,'list_accounts',missing)
+    inspect(a,(0,1))
+    with SessionLocal() as s:
+        with pytest.raises(HTTPException, match='') as error: dc.targets(['Dramarama:*'], asyncio.run(missing()))
+        assert error.value.status_code == 409
+    assert not a.transfers
+
+
+def test_cutover_status_includes_cleared_history_and_owned_leases_without_mutation(archive):
+    a=archive;qid=a.rows[0,1][0]
+    inspect(a,(0,1))  # Retain immutable attribution after this test's row is removed.
+    baseline=a.client.get('/api/drama/cutover-status').json()
+    with SessionLocal() as s:
+        row=s.get(QueueItem,qid)
+        journal.record(s,row,{'client_request_id':'synthetic-late-attempt','profile':'Dramarama','platforms':['x'],
+            'state':'accepted','request_id':'synthetic-late-receipt'},'transport_result')
+        s.commit()
+    from backend.app import worker_leases
+    with worker_leases.scope(f'publication:{qid}'):
+        result=a.client.get('/api/drama/cutover-status')
+        assert result.status_code==200,result.text
+        value=result.json()
+        assert value['read_only'] and value['writes']==0
+        assert value['current_request_rows']==0 and value['live_publication_leases']==1
+        assert value['late_receipt_rows']==baseline['late_receipt_rows']+1
+        assert value['retained_unresolved_attempts']==baseline['retained_unresolved_attempts']+1
+        assert value['history_attribution_unverified']==baseline['history_attribution_unverified']
+        assert value['activation']['supported'] is False
+    assert not a.transfers
+
+
+@pytest.mark.parametrize('damage', ['gap', 'duplicate', 'trashed', 'hash', 'props', 'media', 'incomplete', 'restricted',
+    'malformed_size', 'malformed_row', 'malformed_url'])
 def test_false_source_or_media_proofs_are_rejected_without_binding(archive, monkeypatch, damage):
     a = archive; qid, vid = a.rows[0, 1]
     source = a.manifest['items'][vid]
@@ -237,6 +294,9 @@ def test_false_source_or_media_proofs_are_rejected_without_binding(archive, monk
     elif damage == 'props': a.metas[source['drive_file_id']]['appProperties']['scrapper_video'] = 'wrong'
     elif damage == 'incomplete': a.manifest['inventory_complete'] = False
     elif damage == 'restricted': source['restricted'] = True
+    elif damage == 'malformed_size': a.metas[source['drive_file_id']]['size'] = 'not a size'
+    elif damage == 'malformed_row': a.manifest['items'][a.rows[0,2][1]] = None
+    elif damage == 'malformed_url': source['original_url'] = 42
     elif damage == 'media':
         def corrupt(fid):
             path = a.download(fid); path.write_bytes(b'not playable media'); return path

@@ -96,6 +96,12 @@ class UploadPostError(Exception):
         self.status_code = status_code
 
 
+class PayloadBlocked(UploadPostError):
+    """Known local refusal: no provider request was dispatched."""
+    def __init__(self, message):
+        super().__init__(message, status_code=422)
+
+
 def configured() -> bool:
     return bool(settings.uploadpost_api_key)
 
@@ -195,6 +201,20 @@ async def list_accounts() -> list[dict[str, Any]]:
     return accounts
 
 
+def prepare_video_fields(profile, platforms, title, description, platform_overrides=None):
+    """Pure preflight shared by the durable dispatcher and HTTP adapter."""
+    if platform_overrides:
+        allowed = ({'facebook_title', 'facebook_description', 'facebook_media_type'} if platforms == ['facebook'] else
+                   {'x_title'} if platforms in (['x'], ['twitter']) else set())
+        if profile != 'Dramarama' or not set(platform_overrides) <= allowed or any(not isinstance(v, str) for v in platform_overrides.values()):
+            raise PayloadBlocked('Unsupported platform copy override; use the guarded Drama contract')
+    from .platform_payloads import video_fields
+    try:
+        return video_fields(title, description, platforms, platform_overrides)
+    except ValueError as exc:
+        raise PayloadBlocked(str(exc)) from exc
+
+
 async def upload_video(
     video_path: pathlib.Path,
     *,
@@ -220,7 +240,8 @@ async def upload_video(
     if not video_path.exists() or video_path.stat().st_size == 0:
         raise UploadPostError(f"Video file missing or empty: {video_path.name}", status_code=404)
 
-    title = (title or "New video").strip()
+    original_title = title or "New video"
+    title = original_title.strip()
     data: dict[str, Any] = {
         "user": profile,
         "title": title,
@@ -252,12 +273,7 @@ async def upload_video(
     if "instagram" in platforms:
         data["instagram_title"] = title
         data["media_type"] = "REELS"
-    if platform_overrides:
-        allowed = ({'facebook_title', 'facebook_description', 'facebook_media_type'} if platforms == ['facebook'] else
-                   {'x_title'} if platforms in (['x'], ['twitter']) else set())
-        if profile != 'Dramarama' or not set(platform_overrides) <= allowed or any(not isinstance(v,str) for v in platform_overrides.values()):
-            raise UploadPostError('Unsupported platform copy override; use the guarded Drama contract', status_code=409)
-        data.update(platform_overrides)
+    data.update(prepare_video_fields(profile, platforms, original_title, description, platform_overrides))
 
     with open(video_path, "rb") as fh:
         files: dict[str, Any] = {"video": (video_path.name, fh, "video/mp4")}

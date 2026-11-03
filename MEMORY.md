@@ -1,5 +1,61 @@
 # Scrapper Memory
 
+## Release reconciliation — November 2, 2026, America/New_York
+
+Owner confirmed Claude stopped and lifted the implementation/release ownership
+hold. This branch preserves Claude's latest GitHub main3df81f0, its local note
+9117336, the green safety lineage62013df, and isolated draftb8cba36. The original
+twelve-file uncommitted safety-worktree draft was checked byte-for-byte and is
+untouched; unrelated archive worktree edits also remain untouched. Release work
+continues only in codex/drama-delivery-isolated-20261102. No force push, credential
+change, live queue edit or post has occurred during this reconciliation.
+
+Implemented explicit Facebook normal Page VIDEO delivery of complete original
+bytes and exact Facebook fields; X visible title/description/public hashtags now
+use x_title. Unsupported/oversized X copy holds before per-platform intent or
+HTTP dispatch, without truncation/threading. Reported delivery changes/warnings
+on newly marked attempts retain accepted destinations and hold without reposting.
+Historical published posts are not edited or reinterpreted.
+
+Guarded Drama API provides canonical inventory/actual-media inspection, exact
+copy/revision acknowledgment, conditional Ready, isolated plan preview/apply,
+immutable replay receipts, conditional rollback, and read-only cutover inventory.
+Future cadence is two canonical series/four new episodes each/eight total per
+America/New_York day, alternating10:00,11:30,13:00,14:30,16:00,17:30,19:00,20:30.
+Strict EP1/predecessors on both destinations, no catch-up/third-series rollover/
+quota transfer, canonical retry units, ownership/CAS and old-source rollback
+fences remain. Ordinary schedule planning excludes managed Drama identities.
+Existing wildcard account fields stay unchanged; only an explicit new exact
+review freezes Facebook/X. Newly connected YouTube is excluded, and legacy
+wildcards without reviewed targets cannot dispatch. Connection is not approval.
+
+Activation remains server-held: no supported positive delivered-duration/audio/
+visible-copy verifier exists. Success URLs, caption echoes and synthetic tests
+are not fidelity certificates. Root/SEO must coordinate a bounded first-episode
+canary and the supported per-episode proof implementation; this task submits no
+live test post. SEO is sole live metadata/Ready/schedule writer. Exact X variants
+or verified account entitlements remain necessary when approved common copy or
+media exceed verified baseline. Bound LongForm copy still uses genuine original
+Studio/native revision gates; approval context is not a bypass or rights proof.
+
+Earlier combined local backend source passed1039tests/1existing skip and actual
+PostgreSQL431tests plus verified native restore(source unchanged). Final read-only
+cutover API and expanded PostgreSQL wrappers require fresh terminal checks/CI
+on the final committed combined source before merge/deploy. The local PostgreSQL
+runtime initially failed before tests because an old /tmp dependency prefix was
+gone; restored only that absent test prefix using links to existing libraries,
+without changing binaries/services. A new cutover test originally left synthetic
+unattributed history; corrected fixture retains immutable canonical attribution
+and compares global counters against its baseline, preserving the production
+orphan-history rejection. Failed evidence is retained, not called a code pass.
+
+Fresh read-only live health/backup are healthy; app connection now includes
+DramaRama Facebook/X/YouTube.5471current Drama rows are all Review/wildcard, with
+no current request fields; this is not proof that all historical/late requests
+or leases are clear. Production remains2e3c772 at this checkpoint. Full contract,
+limitations and acceptance coverage:docs/DRAMA_RELEASE_CONTRACT.md. Private copy,
+source IDs, workbooks and evidence remain outside Git.
+
 ## HOLD — 2026-11-03 — owner: "hold off on deploying or changing the live Scrapper queue"
 - No deploys, no queue edits, no schedule changes until the owner lifts this. (This note is committed locally, NOT pushed:
   a push redeploys Vercel.)

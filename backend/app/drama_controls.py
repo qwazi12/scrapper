@@ -70,7 +70,14 @@ def copy_hash(item):
     return pm.digest({'identity': journal.identity(item), **{k: getattr(item, k) for k in COPY_FIELDS}})
 
 
-def targets(accounts):
+def targets(accounts, connected=None):
+    if accounts == ['Dramarama:*']:
+        if connected is None:
+            fail('freeze the two allowed destinations from a current server account read before reviewing the wildcard')
+        # A newly connected YouTube account is deliberately excluded. This
+        # two-destination contract never inherits a future wildcard expansion.
+        accounts = [a['id'] for a in connected if a.get('profile') == 'Dramarama'
+                    and a.get('id') in ('Dramarama:facebook', 'Dramarama:x', 'Dramarama:twitter')]
     accounts = sorted(accounts or [])
     nets = [a.partition(':')[2] for a in accounts if a.partition(':')[0] == 'Dramarama']
     if len(accounts) != 2 or nets.count('facebook') != 1 or len(set(nets) & {'x', 'twitter'}) != 1:
@@ -141,6 +148,19 @@ def readiness(s, item):
             DramaRecord.data['response']['rolled_back'].as_string() == ready.operation_id).first():
         fail('this Ready receipt was explicitly rolled back; a new guarded review-to-Ready operation is required')
     return evidence, ready
+
+
+def dispatch_targets(s, item, ready=None):
+    if ready is None:
+        _, ready = readiness(s, item)
+    owed = set(ready.data['targets']) - successes(s, item, ready)
+    initial = ready.data.get('initial_accounts', ready.data['targets'])
+    if list(item.accounts or []) != initial and not (
+            reserved_before(s, journal.identity(item)) and set(item.accounts or []) == owed):
+        fail('current destination selection differs from its frozen two-destination review')
+    if not owed:
+        fail('both reviewed destinations already succeeded; do not submit them again')
+    return sorted(owed)
 
 
 def payload(s, item):
@@ -282,9 +302,7 @@ def prepare_plan(s, operation_id, series, items):
             fail('selected rows must be guarded Ready or proven failed retries in the two active series')
         if journal.unresolved_late_receipt(s, item) or any(e.get('state') in ('intent', 'unknown', 'accepted') for e in item.publish_requests or []):
             fail('uncertain/submitted rows cannot be rescheduled')
-        owed = set(ready.data['targets']) - successes(s, item, ready)
-        if set(item.accounts or []) != owed or not owed:
-            fail('destination state differs from journaled success/failure evidence')
+        dispatch_targets(s, item, ready)
         if item.status == 'retry' and not item.publish_requests:
             fail('retry has no retained provider failure evidence')
         grouped[evidence.series_key].append((evidence, item))
@@ -394,9 +412,7 @@ def admission(s, item, *, media_sha256=None, final=False):
         fail('this slot was already attempted; reconcile and assign a new future slot')
     if item.published_at or item.outstand_post_id or journal.unresolved_late_receipt(s, item):
         fail('published, legacy or uncertain rows cannot be dispatched')
-    owed = set(ready.data['targets']) - successes(s, item, ready)
-    if not owed or set(item.accounts or []) != owed:
-        fail('only destinations without confirmed success may be attempted')
+    dispatch_targets(s, item, ready)
     if any(e.get('state') in ('intent', 'unknown', 'accepted') for e in item.publish_requests or []):
         fail('a destination submission remains unresolved')
     predecessors(s, evidence, dispatch=True)

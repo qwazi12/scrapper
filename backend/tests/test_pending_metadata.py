@@ -47,6 +47,16 @@ def snapshot(qid):
         return {c.key: getattr(row, c.key) for c in QueueItem.__table__.columns}
 
 
+def historical_posting(qid, **changes):
+    # Model a row that was already posting before the Drama dispatch fence was
+    # installed. INSERT is fixture construction, not a new dispatch transition;
+    # production UPDATE rejection and metadata-replay assertions stay intact.
+    values = snapshot(qid)
+    with SessionLocal() as s:
+        s.delete(s.get(QueueItem, qid)); s.flush()
+        s.add(QueueItem(**{**values, 'status': 'posting', **changes})); s.commit()
+
+
 def test_safe_draft_edit_only_changes_public_copy_and_records_narrow_undo(client, row):
     before = snapshot(row)
     expected = token(client, row)
@@ -59,6 +69,32 @@ def test_safe_draft_edit_only_changes_public_copy_and_records_narrow_undo(client
     with SessionLocal() as s:
         entry = s.query(UndoEntry).order_by(UndoEntry.id.desc()).first()
         assert entry.payload["fields"] == sorted(pm.PUBLIC_FIELDS)
+
+
+def test_exact_approval_context_is_recorded_and_replay_bound(client,row):
+    values={k:snapshot(row)[k] for k in pm.PUBLIC_FIELDS};values['title']='Reviewed exact title'
+    context={'revision':'Synthetic reviewed revision','workbook_sha256':'1'*64,'proposal_sha256':'2'*64,
+        'applied_public_copy_sha256':pm.digest(values)}
+    body={'operation_id':str(uuid4()),'expected_fingerprint':token(client,row),'title':values['title'],
+        'approval_context':context}
+    result=client.patch(f'/api/pending-metadata/{row}',json=body)
+    assert result.status_code == 200,result.text
+    receipt=client.get('/api/pending-metadata/receipts/'+body['operation_id']).json()
+    assert receipt['approval_context']=={**context,'canonical_evidence_id':None}
+    assert client.patch(f'/api/pending-metadata/{row}',json=body).json()['replayed']
+    altered={**body,'approval_context':{**context,'revision':'Different approval'}}
+    assert client.patch(f'/api/pending-metadata/{row}',json=altered).status_code == 409
+
+
+@pytest.mark.parametrize('change',[{'applied_public_copy_sha256':'0'*64},{'canonical_evidence_id':str(uuid4())}])
+def test_approval_context_never_certifies_different_copy_or_canonical_evidence(client,row,change):
+    before=snapshot(row)
+    values={k:before[k] for k in pm.PUBLIC_FIELDS};values['title']='New title'
+    context={'revision':'Synthetic revision','workbook_sha256':'1'*64,'proposal_sha256':'2'*64,
+        'applied_public_copy_sha256':pm.digest(values),**change}
+    result=patch(client,row,token(client,row),title=values['title'],approval_context=context)
+    assert result.status_code == 409,result.text
+    assert snapshot(row)==before
 
 
 @pytest.mark.parametrize("field,value", [("title", "Newer title"), ("description", "Newer caption"),
@@ -77,8 +113,11 @@ def test_stale_metadata_approval_schedule_or_brand_rejects(client, row, field, v
 @pytest.mark.parametrize("status", ["posting", "posted", "archived", "deleted", "retry", "error", "unknown"])
 def test_nonpending_and_publication_states_reject(client, row, status):
     expected = token(client, row)
-    with SessionLocal() as s:
-        s.get(QueueItem, row).status = status; s.commit()
+    if status == 'posting':
+        historical_posting(row)
+    else:
+        with SessionLocal() as s:
+            s.get(QueueItem, row).status = status; s.commit()
     assert patch(client, row, expected, title="Must not replace").status_code == 409
 
 
@@ -259,11 +298,7 @@ def test_replay_after_posting_or_identity_reuse_is_historical_and_does_not_mutat
     first = client.patch(f"/api/pending-metadata/{row}", json=body)
     assert first.status_code == 200
     old_identity = first.json()['queue_identity']
-    with SessionLocal() as s:
-        current = s.get(QueueItem, row)
-        current.status = 'posting'
-        current.publish_requests = [{'state': 'accepted', 'request_id': 'synthetic'}]
-        s.commit()
+    historical_posting(row, publish_requests=[{'state': 'accepted', 'request_id': 'synthetic'}])
     before = snapshot(row)
     with leases.scope(f'publication:{row}'):
         replay = client.patch(f"/api/pending-metadata/{row}", json=body)

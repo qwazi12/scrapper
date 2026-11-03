@@ -26,7 +26,19 @@ def fail(message):
 
 
 def remote(service, fid):
-    return service.files().get(fileId=fid, fields=FIELDS, supportsAllDrives=True).execute()
+    value = service.files().get(fileId=fid, fields=FIELDS, supportsAllDrives=True).execute()
+    if not isinstance(value, dict):
+        fail('remote metadata is malformed')
+    return value
+
+
+def size(meta):
+    value = meta.get('size')
+    if type(value) is int and value >= 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r'[0-9]{1,20}', value):
+        return int(value)
+    fail('remote file size is malformed')
 
 
 def _hash(value, length):
@@ -45,11 +57,11 @@ def season(row):
 def inspect(item, manifest_id, video_id):
     service = drive_sync.get_drive_service()
     meta = remote(service, manifest_id)
-    if meta.get('trashed') or not 0 < int(meta.get('size', 0)) <= MAX_MANIFEST_BYTES:
+    if meta.get('trashed') or not 0 < size(meta) <= MAX_MANIFEST_BYTES:
         fail('missing or oversized manifest')
     content = service.files().get_media(fileId=manifest_id, supportsAllDrives=True).execute()
     if (not isinstance(content, bytes) or len(content) > MAX_MANIFEST_BYTES
-            or len(content) != int(meta['size']) or hashlib.md5(content).hexdigest() != meta.get('md5Checksum')):
+            or len(content) != size(meta) or hashlib.md5(content).hexdigest() != meta.get('md5Checksum')):
         fail('manifest size/checksum mismatch')
     try:
         manifest = json.loads(content)
@@ -59,6 +71,9 @@ def inspect(item, manifest_id, video_id):
         sid, episode = row['series_id'], row['episode_number']
     except (KeyError, TypeError, ValueError):
         fail('canonical series/source mapping missing')
+    if (not isinstance(manifest.get('items'), dict)
+            or any(not isinstance(r, dict) for r in manifest['items'].values())):
+        fail('canonical source inventory is malformed')
     if (manifest.get('platform') != 'tiktok' or manifest.get('inventory_complete') is not True
             or not isinstance(channel, str) or not isinstance(sid, str) or not sid
             or type(episode) is not int or episode < 1
@@ -77,6 +92,8 @@ def inspect(item, manifest_id, video_id):
             or len({r['video_id'] for r in catalog}) != len(catalog)):
         fail('missing, ambiguous or duplicate episode slots')
     for r in catalog:
+        if not isinstance(r['url'], str) or not isinstance(r['video_id'], str):
+            fail('invalid canonical source URL/ID')
         url = urlsplit(r['url'])
         if (not re.fullmatch(r'\d{15,24}', r['video_id']) or url.scheme != 'https'
                 or url.hostname != 'www.tiktok.com' or url.username or url.password
@@ -92,7 +109,9 @@ def inspect(item, manifest_id, video_id):
                 or any(row.get(k) != canonical.get(k) for k in ('sha256', 'md5', 'file_size'))):
             fail('alias is not tied to an exact verified original')
     fid = canonical.get('drive_file_id')
-    if (canonical.get('status') != 'uploaded' or not canonical.get('full_decode_passed')
+    if (canonical.get('status') != 'uploaded' or canonical.get('restricted')
+            or canonical.get('full_decode_passed') is not True
+            or type(canonical.get('file_size')) is not int or canonical['file_size'] <= 0
             or not _hash(canonical.get('sha256'), 64) or not _hash(canonical.get('md5'), 32)
             or drive_sync.extract_drive_file_id(item.drive_link or '') != fid):
         fail('queue/Drive file identity or archive decode receipt differs')
@@ -103,7 +122,7 @@ def inspect(item, manifest_id, video_id):
             or actual.get('appProperties') != expected_props
             or actual.get('sha256Checksum') != canonical['sha256']
             or actual.get('md5Checksum') != canonical['md5']
-            or int(actual.get('size', 0)) != canonical.get('file_size')):
+            or size(actual) != canonical.get('file_size')):
         fail('remote video identity/size/checksums changed')
     parent = canonical.get('drive_parent_id')
     if parent not in actual.get('parents', []):
@@ -154,5 +173,5 @@ def verify_dispatch(proof):
     if (meta.get('trashed') or meta.get('appProperties') != props
             or proof['drive_parent_id'] not in meta.get('parents', [])
             or meta.get('sha256Checksum') != proof['sha256'] or meta.get('md5Checksum') != proof['md5']
-            or int(meta.get('size', 0)) != proof['file_size']):
+            or size(meta) != proof['file_size']):
         fail('remote canonical identity changed before dispatch')
