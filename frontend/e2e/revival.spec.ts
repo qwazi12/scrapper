@@ -79,6 +79,7 @@ async function acceptExactExport(page: any, screenshot?: string) {
 async function inspectedLongFormFixture(page: any, request: any, titleId: number) {
   // Each recovery case builds its own original media through real production
   // stages and detailed acceptance. No seed grants approval or fabricates bytes.
+  // Callers reserve separate title ranges: navigation also creates max(title)+1.
   await page.goto("/#longform");
   await page.getByPlaceholder("Search a movie or TV show…").fill(`Synthetic Film ${titleId}`);
   await page.getByRole("button", { name: "Search", exact: true }).click();
@@ -954,7 +955,7 @@ test("unsaved Studio and Countdown scripts survive polling, navigation, reload a
 });
 
 test("retained export UI recovers prior words and media after invalidation and project deletion", async ({ page, request }) => {
-  const project = await inspectedLongFormFixture(page, request, 9002);
+  const project = await inspectedLongFormFixture(page, request, 9101);
   expect(project.script.sentences.length).toBeGreaterThan(0);
   const versions = await (await request.get(`${stack.api}/api/export-history?kind=studio&project_id=${project.id}`, { headers })).json();
   const original = versions.versions.find((v: any) => v.assets.some((a: any) => a.role === "video" && a.available));
@@ -1031,7 +1032,7 @@ test("retained export UI recovers prior words and media after invalidation and p
 
 
 test("retained delivery UI preserves published bytes and remains available when schedule settings fail", async ({ page, request }) => {
-  const original = await archivedLongFormFixture(page, request, 9003);
+  const original = await archivedLongFormFixture(page, request, 9201);
   const before = await (await request.get(`${stack.api}/api/e2e/isolation`)).json();
   expect(original).toBeTruthy();
   const originalBytes = readFileSync(original.video_path);
