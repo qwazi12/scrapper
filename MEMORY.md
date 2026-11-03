@@ -12,6 +12,7 @@
 4. ⏰ Schedule editor: X added to per-platform settings (backend already accepts any platform).
 5. Per-account list: "default" → Cinama/TheIckRoom/Dramarama/mk; live DramaRama config: drop "youtube: 2" (no YouTube).
 Tests → suite → tsc → push when idle → verify live → log.
+DEPLOYED 2026-11-03 (owner said "Deploy"): 7fdf32a+17dbe30 live on Railway (SUCCESS) and Vercel (READY). Verified live /api/schedule: posting_blocked shows the DramaRama reason; DramaRama next = PRIME SUSPECT EP1,2,3,4,5 (one series, EP1-19, none held). Item 5 done: live config PUT dropped DramaRama platforms.youtube (now facebook:4 only); other 4 queues' overrides byte-identical, next times unchanged. Before-snapshot saved by the server for undo. UI screens not yet eyeballed in a browser.
 BUILT 2026-11-03 (7fdf32a, committed, NOT pushed — the deploy was refused by the permission check; owner to confirm):
 +1 test; backend suite 1,209 passed / 1 skipped; frontend tests + tsc clean. Item 5's live config edit (drop DramaRama
 "youtube: 2") not done yet — it's a live change, waits with the deploy.
