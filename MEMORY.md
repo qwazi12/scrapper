@@ -1,5 +1,23 @@
 # Scrapper Memory
 
+## PLAN — 2026-11-03 — finish DramaRama scheduler (owner + dot handoff: "You own scheduling")
+dot stopped its scheduler/activation work. Its lock (drama_controls activation unsupported) is replaced for the regular
+scheduler only; its canary path and records stay. Owner rules: 4/day, series + episode order from EP1, keep explicit
+destinations, approved platform copy, dedupe; per-platform results; X failing never reposts FB/YT; uncertain = hold.
+1. DramaRama goes through the regular planner/publisher (already: per-platform results, retry only failed, unknown
+   outcome stays "posting", claim+journal dedupe). dot's guarded path stays only for canary or an active dot plan (null live).
+2. Order: series in pairs (2 active at a time, interleaved), each from EP1/next, a missing episode holds the series.
+3. Times as per-platform lists (fixes catch-up with int caps — also for Ick): DramaRama FB 4/day, YouTube 2, X 2;
+   Ick FB 4, X 2 at their own times. Each platform walks the same order independently (catch-up).
+4. Rows with dot's Ready receipt (19 PRIME SUSPECT): send only to its frozen targets (FB+X — not YouTube) with its
+   approved X variant.
+5. X media guard (DramaRama): ffprobe duration/size/codec; over 140 s / 512 MiB (one setting, not proven longer) or not
+   H.264+AAC-LC → X dropped for that episode with a clear note, never truncated; FB/YT continue.
+6. X refused by provider after FB/YT succeeded (DramaRama) → X recorded as refused, not retried, others continue.
+7. X 10-per-rolling-24h per account (Upload-Post Basic): X skipped to catch-up when that account has 10 in 24 h.
+8. Schedule screens: DramaRama no longer shown "posting off"; real times.
+Tests for each. Deploy needs owner push. Rollback: git revert + restore schedule snapshot.
+
 ## DONE 2026-11-03 — register applied + new frequencies (owner)
 - Register: 15 Screen Central Clips drafts applied (#4506–4520, 200s, before-values in scratchpad sc15_plan.json). DramaRama:
   2,516 drafted review rows → Ready (first pass 1,066 hit 429; retried one at a time, all 200). Ready now: Clips 3,393,
