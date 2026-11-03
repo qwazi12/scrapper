@@ -1,5 +1,56 @@
 # Scrapper Memory
 
+## Reviewed media-lineage/diagnostic code released — November 3, 2026, America/New_York
+
+Independent code review and exact hosted CI passed before main was fast-forwarded
+from1c30659 to a44587956586e16d819cf42aaa676a9ead77f3f4 through the authorized
+normal Git connection. No force push, PR approval impersonation, branch-rule or
+credential change. This includes the original-only authority fix recorded below.
+CI41600595465: Linux backend1151passed/1existing live-render skip/1dependency
+warning554.79s; offline Linux browser33passed13.2min; frontend typecheck,
+6API-error tests, build and dependency audit0vulnerabilities passed.
+https://github.com/qwazi12/scrapper/actions/runs/41600595465
+The earlier local full1146/PG612 and browser33/3 have their distinct sources below;
+the final narrow fix also passed73affected tests and5actualPG regressions+restore.
+No new full PostgreSQL run is claimed after that narrow authorization fix.
+
+Railway deploymentf460dcde-97b8-449f-8c5a-b49643539f46 SUCCESS identifies exact
+a445879. Vercel productiondpl_6TPqBPPvK9Yp5r7B6nYjeJLee1V6 READY identifies
+the same commit and owns scrapper.nodepilot.dev; root and version.json return200
+with builda44587956586. Frontend deploy workflow41602616515 succeeded. Product
+app tree is unchanged; the full frontend tree differs because the browser test
+changed, which triggered the existing deploy workflow. No trigger settings changed.
+
+Read-only live verification: health/backup healthy and non-stale; missing AND
+invalid credentials refuse401 on all three inspected protected route groups
+(six probes); canary and calibration grant/consumed counts0; no active Drama
+plan; deployment/normal activationfalse, fidelityfalse, EP2held; no artifact
+directory or live asset preparation. Native Page/pins/X identity, Drama queue
+counts and declared schedule times match the immediate pre-deploy reads.
+No live grant, Ready, queue/copy/schedule/account edit, provider media upload,
+public test or dispatch was performed. SEO remains sole content live writer.
+
+Existing automatic nightly DB backup attempted its configured Drive upload and
+received service-account storageQuotaExceeded403. Local backups remain healthy;
+this is an explicit off-device backup gap, not a successful remote copy. No
+backup settings, credentials or external destination was changed. An existing
+nightly snapshot was downloaded privately, hash verified, restored and passed
+SQLite integrity_check; it contains0derivative/calibration records at its backup
+time. Authenticated current storage inventory shows no drama-artifacts directory.
+SSH inventory was unauthorized; no login/retry/new credential was attempted.
+Separate private copies of the3known local original/candidate/calibration files
+total48,573,183bytes and passed hash/temporary-restore proof with originals
+unchanged. Those are same-Mac private copies, not production/off-device disaster
+recovery. DB backups do NOT package physical artifact video files.
+
+Rights/source/copy authorization, actual perceptual derivative review, exact
+217-weight three-hashtag X variant approval and both specific public-test
+authorizations remain absent. Consumed/unknown receipts must never reset/resend.
+Normal eight-slot/fidelity/EP2 holds remain. No wider-roadmap completion claim.
+Private source/test/provider/backup receipts and portable patches remain outside
+Git; original held draft and unrelated archive edits are preserved. This follow-up
+changes release documentation only; runtime stays at the tested a445879 commit.
+
 ## Release review: original-only authority binding corrected — November 3, 2026
 
 Independent review found original-only canary preparation accepted non-null

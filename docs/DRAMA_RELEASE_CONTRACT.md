@@ -216,12 +216,17 @@ Private workbooks, queue IDs, account credentials, real copy and source evidence
 remain outside Git. CI artifacts and private release receipts identify the exact
 source tested. No fixture success is a live delivery certificate.
 
-## Local media-lineage and diagnostic implementation for review
+## Reviewed media-lineage and diagnostic code release
 
-This extension is local and **not deployed**. No live artifact, grant, Ready
-transition, upload, dispatch or public test has been performed by this task.
-Code release and actual specific public-test approval are separate decisions;
-previous deployment approval is not reused.
+This extension was deployed at `a44587956586e16d819cf42aaa676a9ead77f3f4`
+on November 3, 2026 after independent code review and exact hosted CI success
+(run41600595465). Railway and Vercel identify that same release. Read-only live
+checks confirm zero canary/calibration grants or consumed records, no active
+Drama plan, no artifact directory and authentication refusals. No live artifact,
+grant, Ready transition, media upload, dispatch or public test was performed.
+Code release does not grant specific public-test approval or rights; both remain
+pending, along with exact copy and perceptual derivative review. See MEMORY.md
+for release receipts, backup limitations and the unchanged activation holds.
 
 ### Explicit original-to-derivative lineage
 
