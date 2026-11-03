@@ -114,6 +114,37 @@ def test_reviewable_preview_does_not_require_fabricating_owner_rights_or_grant_a
     assert not a.transfers
 
 
+@pytest.mark.parametrize('field',['authorized_artifact_sha256','authorized_lineage_sha256'])
+@pytest.mark.parametrize('value',['wrong','original'])
+def test_original_only_authorization_rejects_any_derivative_hash(candidate,field,value):
+    a=candidate;req=copy.deepcopy(a.canary_req);qid=a.rows[0,1][0]
+    preview=a.client.post(f'/api/drama/canary/items/{qid}/preview',json=req)
+    assert preview.status_code==200,preview.text
+    req['authorization'][field]=(req['authorization']['authorized_source_sha256'] if value=='original' else '0'*64)
+    for route in ('preview','grants'):
+        body=copy.deepcopy(req)
+        if route=='grants':body['acknowledged_fingerprint']=preview.json()['acknowledged_fingerprint']
+        denied=a.client.post(f'/api/drama/canary/items/{qid}/{route}',json=body)
+        assert denied.status_code==409,denied.text
+        assert 'original-only authorization must omit' in denied.text
+    assert a.client.get('/api/drama/canary/contract').json()['grant_count']==0
+    assert not a.transfers
+
+
+def test_original_only_authorization_explicit_null_fields_preserve_historical_hash_and_replay(candidate):
+    a=candidate;qid=a.rows[0,1][0]
+    old=copy.deepcopy(a.canary_req)
+    nullable=copy.deepcopy(old)
+    nullable['authorization'].update(authorized_artifact_sha256=None,authorized_lineage_sha256=None)
+    assert routes.hashed('preview',routes.GrantPreview(**old),qid)==routes.hashed('preview',routes.GrantPreview(**nullable),qid)
+    saved,request=grant(a,old)
+    request['authorization'].update(authorized_artifact_sha256=None,authorized_lineage_sha256=None)
+    replay=a.client.post(f'/api/drama/canary/items/{qid}/grants',json=request)
+    assert replay.status_code==200,replay.text
+    assert replay.json()['replayed'] and replay.json()['grant_id']==saved['grant_id']
+    assert not a.transfers
+
+
 @pytest.mark.parametrize('damage',['missing_rights','blank_reference','broad_rollout','payload_hash','source_hash','ep2','other_series','youtube','naive_slot','wrong_slot'])
 def test_specific_source_copy_rights_authorization_and_slot_cannot_be_inferred(candidate,damage):
     a=candidate;req=copy.deepcopy(a.canary_req);qid=a.rows[0,1][0]

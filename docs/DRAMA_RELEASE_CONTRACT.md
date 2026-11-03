@@ -233,6 +233,12 @@ canonical original, runs the bounded recipe, validates complete output and saves
 an immutable receipt. Original Drive/queue media and canonical evidence are never
 overwritten or relabelled as the derivative.
 
+Original-only canary authorization must omit derivative artifact/lineage hashes
+(explicit null is equivalent to absence). Any non-null value is refused, even
+if an artifact hash equals the original. Selected derivatives instead require
+both exact artifact and lineage hashes. Historical absent/null request hashes
+and consumed-receipt replay remain unchanged.
+
 The receipt binds original identity/hash/bytes/probe and decoded video PTS;
 derivative identity/hash/bytes/probe; recipe/arguments and actual FFmpeg/FFprobe
 versions; exact queue identity, copy and target selection; and measured content

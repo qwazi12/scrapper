@@ -1,5 +1,24 @@
 # Scrapper Memory
 
+## Release review: original-only authority binding corrected — November 3, 2026
+
+Independent review found original-only canary preparation accepted non-null
+derivative authority fields without selecting a derivative. It now refuses any
+artifact/lineage hash in original-only authorization (even the original checksum).
+Absent and explicit-null optional fields retain historical request hashes/replay;
+selected derivatives still require both exact hashes. No approval or authority
+scope is expanded. Affected canary/media73passed49.12s; actual isolatedPG new
+regressions5passed/612deselected6.22s, native restore1.172s/source unchanged,
+136893bytes/SHA2c1064c96e4575a018b778a74ed6bfdc28e10bc2ee5081b78e71641115850a7c.
+Earlier full1146/PG612 and browser33/3 receipts below precede this narrow fix;
+exact revised-candidate hosted CI and independent release approval remain pending.
+Root now authorizes reviewed code release after those gates, separately from
+public tests. No push/deploy or live grant/Ready/copy/schedule/account/upload/
+dispatch action at this checkpoint. Source/copy rights, perceptual review,
+the exact217-weight three-hashtag X variant and both public-test approvals remain
+absent; normal eight-slot activation/fidelity/EP2 are held. Private release
+preflight and physical-backup evidence stay outside public Git.
+
 ## Local derivative/calibration slice ready for review — November 3, 2026, America/New_York
 
 LOCAL ONLY, not pushed/deployed or approved for public testing. Base main1c30659

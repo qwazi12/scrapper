@@ -124,6 +124,9 @@ def prepared(s,item,req,target_identity,*,require_authorization=False):
     if req.authorization and lineage and (req.authorization.authorized_artifact_sha256!=transport['artifact_sha256']
             or req.authorization.authorized_lineage_sha256!=pm.digest(lineage)):
         dc.fail('specific authorization/rights must bind BOTH original and exact reviewed derivative lineage/artifact hashes')
+    if req.authorization and not lineage and (req.authorization.authorized_artifact_sha256 is not None
+            or req.authorization.authorized_lineage_sha256 is not None):
+        dc.fail('original-only authorization must omit derivative artifact and lineage hashes')
     canonical={key:evidence.data[key] for key in ('series_key','series_id','season','episode','source_video_id',
         'canonical_video_id','drive_file_id','sha256','file_size','duration','catalog_hash')}
     document={'version':VERSION,'canary_scope':SCOPE,'queue_id':item.id,'queue_identity':journal.identity(item),
