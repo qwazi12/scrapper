@@ -76,14 +76,35 @@ async function acceptExactExport(page: any, screenshot?: string) {
   await expect(form).toHaveCount(0);
 }
 
+async function createExactBreakdown(page: any, titleId: number) {
+  const title = `Synthetic Film ${titleId}`;
+  await page.getByPlaceholder("Search a movie or TV show…").fill(title);
+  // The calendar already has a Make breakdown button while search is pending.
+  // Wait for this query and click only the card with the exact requested title.
+  const [search] = await Promise.all([
+    page.waitForResponse((response: any) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/studio/search" && url.searchParams.get("q") === title;
+    }),
+    page.getByRole("button", { name: "Search", exact: true }).click(),
+  ]);
+  expect(search.ok()).toBe(true);
+  expect(await search.json()).toContainEqual(expect.objectContaining({ tmdb_id: titleId, title }));
+  const card = page.locator("b").filter({ hasText: new RegExp(`^Synthetic Film ${titleId}$`) }).locator("..");
+  const [created] = await Promise.all([
+    page.waitForResponse((response: any) => new URL(response.url()).pathname === "/api/studio/projects" && response.request().method() === "POST"),
+    card.getByRole("button", { name: "Make breakdown", exact: true }).click(),
+  ]);
+  expect(created.request().postDataJSON()).toEqual({ tmdb_id: titleId, media_type: "movie", title });
+  expect(created.ok()).toBe(true);
+}
+
 async function inspectedLongFormFixture(page: any, request: any, titleId: number) {
   // Each recovery case builds its own original media through real production
   // stages and detailed acceptance. No seed grants approval or fabricates bytes.
   // Callers reserve separate title ranges: navigation also creates max(title)+1.
   await page.goto("/#longform");
-  await page.getByPlaceholder("Search a movie or TV show…").fill(`Synthetic Film ${titleId}`);
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, titleId);
   await expect(page.getByTestId("script-editor")).toBeVisible();
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
   await expect(page.getByRole("button", { name: "Voice + shots", exact: true })).toBeEnabled();
@@ -126,9 +147,7 @@ test("LongForm real UI: research, rejected edit, repair, speech, export approval
   page.on("console", msg => { if (msg.type() === "error") errors.push(msg.text()); });
   await page.goto("/#longform");
   await expect(page.getByRole("heading", { name: "🎬 LongForm Studio", exact: true })).toBeVisible();
-  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 2");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, 2);
   await expect(page.getByTestId("script-editor")).toBeVisible();
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
   const getProject = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
@@ -666,9 +685,7 @@ test("studio project fragments, back/forward and reload keep the intended projec
     } else await route.fulfill({ response });
   });
   await page.goto("/#longform");
-  await page.getByPlaceholder("Search a movie or TV show…").fill(title);
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, number);
   await expect(page.getByTestId("script-editor")).toBeVisible();
   expect(injectedInterstage).toBe(true);
   const second = Number(new URL(page.url()).hash.split("/")[1]);
@@ -689,9 +706,7 @@ test("studio project fragments, back/forward and reload keep the intended projec
 
 test("independent source review UI retains records and invalidates checked narration", async ({ page, request }) => {
   await page.goto("/#longform");
-  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 18");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, 18);
   await expect(page.getByTestId("script-editor")).toBeVisible();
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
   await page.getByText("Research — facts & sources", { exact: true }).click();
@@ -745,9 +760,7 @@ test("independent source review UI retains records and invalidates checked narra
 
 test("residential worker claims, uploads over real HTTP and resumes the waiting Studio UI", async ({ page, request }) => {
   await page.goto("/#longform");
-  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 40");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, 40);
   await expect(page.getByText(/queued for the home Mac worker.*run again once it arrives/).first()).toBeVisible();
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
   const project = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
@@ -855,9 +868,7 @@ test("financial holds UI requires explicit orphan review and reconciles USD and 
 
 test("unsaved Studio and Countdown scripts survive polling, navigation, reload and conflicting saves", async ({ page, request }) => {
   await page.goto("/#longform");
-  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 50");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, 50);
   const editor = page.getByTestId("script-editor");
   await expect(editor).toHaveValue(/Original colored shapes/);
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
@@ -2055,8 +2066,7 @@ test("Older selected assets recover beyond the real 100-row picker with explicit
 test("Credit context UI preserves exact canonical names and blocks wrong title or year despite model approval", async ({ page, request }) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
   await page.goto("/#longform");
-  await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 88");
-  await page.getByRole("button", { name: "Search", exact: true }).click(); await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await createExactBreakdown(page, 88);
   const editor = page.getByTestId("script-editor"); await expect(editor).toBeVisible();
   const pid = Number(new URL(page.url()).hash.split("/")[1]);
   const current = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
@@ -2099,8 +2109,7 @@ test("Credit context UI preserves exact canonical names and blocks wrong title o
 
 test("Cached historical script green is rechecked on read and narration admission before any new model check", async ({ page, request }) => {
   const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
-  await page.goto("/#longform"); await page.getByPlaceholder("Search a movie or TV show…").fill("Synthetic Film 89");
-  await page.getByRole("button", { name: "Search", exact: true }).click(); await page.getByRole("button", { name: "Make breakdown", exact: true }).click();
+  await page.goto("/#longform"); await createExactBreakdown(page, 89);
   await expect(page.getByTestId("script-editor")).toBeVisible(); const pid = Number(new URL(page.url()).hash.split("/")[1]);
   const current = async () => (await request.get(`${stack.api}/api/studio/projects/${pid}`, { headers })).json();
   // An explicitly synthetic old DB state; the production owner PATCH cannot forge checks.
