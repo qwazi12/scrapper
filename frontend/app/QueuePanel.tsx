@@ -578,7 +578,7 @@ export function QueuePanel({ onChange, mode = "clips" }: { onChange: () => void;
               ? isNarrow ? "🎭 DramaRama" : "🎭 DramaRama Queue"
               : longform
               ? isNarrow ? "🎬 LongForm Queue" : "🎬 LongForm Breakdowns Queue"
-              : isNarrow ? "📋 Posting Queue" : "📋 Posting Queue & Content Calendar"}
+              : isNarrow ? "📺 Screen Central" : "📺 Screen Central Queue & Content Calendar"}
           </span>
           <span
             style={{

@@ -31,10 +31,10 @@ def test_ick_room_rows_get_ick_room_seo_not_tmdb(session, monkeypatch):
     res, research = asyncio.run(ai_bulk.ai_for(it, session))
     assert "She Says He Cheated Twice Then Admits She Hit Him" in prompts[0]
     assert "Tonight" not in prompts[0]                       # style only, never their name
-    assert res["hashtags"] == ["#relationships", "#cheating"]
+    assert res["hashtags"] == ["#relationships", "#cheating", "#tonightsconversation", "#theickroom"]
     assert research == {"kind": "ick_room", "from": "She Says He Cheated Twice Then Admits She Hit Him"}
     ai_bulk.apply_ai(it, res, research)
-    assert it.tags == "#relationships #cheating" and not ick_room_seo.needs_seo(it)
+    assert it.tags == "#relationships #cheating #tonightsconversation #theickroom" and not ick_room_seo.needs_seo(it)
 
 
 def test_scheduler_starts_seo_only_for_ick_rows_without_it(session, monkeypatch):

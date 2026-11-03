@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## LOG — 2026-11-03 (01:00 UTC) — SEO register applied; Screen Central tab; Ick Room hashtags
+- Owner's "Scrapper SEO Review Register.xlsx": applied only the drafted "Reviewed proposal" rows (title/description/hashtags),
+  and only where the live row was unposted and still equal to the register's Existing values. 1,900/1,913 applied + verified
+  live (DramaRama 1,311, Ick 294, Screen Central clips 295). 13 LongForm rows refused 409 by design (copy bound to the Studio
+  export: edit in Studio). Not applied: ~8.5k "[Not drafted]" rows (branding-only proposal), Unresolved sheet (71 trashed
+  Drive refs + 5 unverified), #4842 (posted). Before-values: scratchpad seo_plan.json.
+- 5ad1f35 (live): Ick Room AI SEO always ends with #tonightsconversation #theickroom. Added both to all 1,004 unposted Ick
+  rows (978 PATCHed; #TheICKRoom from the register folded into #theickroom). Verified 1,004/1,004.
+- 2e3c772 (live on Vercel): "📋 Posting Queue" → "📺 Screen Central"; its number = /api/queue/counts?pipeline=Movie Clips
+  (4,025), not every section (10,514). Owner thought DramaRama videos were in it — verified they never were (0 rows).
+- Owner asked about LongForm under Screen Central: recommended keeping its own tab/Drive (same Cinama channels + 8/day cap
+  already shared). Warned: Upload-Post profile is still "Cinama"; renaming it there breaks all Cinama:* targets until migrated.
+
 ## LOG — 2026-11-02 (00:20 UTC) — DramaRama re-import; "5k in Shorts" explained
 - The "📋 Posting Queue (N)" tab badge = /api/queue/counts with no pipeline = EVERY section (Shorts + LongForm + Ick Room +
   DramaRama). The Shorts list itself excludes the own-profile sections. Verified Shorts = 4,031 unposted (3,403 ready,
