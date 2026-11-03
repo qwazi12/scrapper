@@ -985,26 +985,31 @@ def drama_episode_state(rows: list[QueueItem], net: str) -> str:
     if any(it.status == "ready" and net in drama_owes(it) and has_video_source(it) and drama_copy_reviewed(it)
            for it in rows):
         return "ready"
-    if any(it.status not in ("archived", "posted") and (net in drama_owes(it) or it.status != "ready") for it in rows):
+    if any(it.status not in ("archived", "posted") and (net in drama_owes(it) or (net == "facebook" and it.status != "ready"))
+           for it in rows):
         return "wait"          # in review, posting, retry or error — or owed but not playable/reviewed yet
+    # (X/YouTube: only rows that go there count; Facebook leads, so any unfinished row holds it)
     return "skip"
 
 
-def drama_lanes(rows: list[QueueItem], net: str) -> tuple[list[list[QueueItem]], dict[str, str]]:
+def drama_lanes(rows: list[QueueItem], net: str, first: set[str] = frozenset()) -> tuple[list[list[QueueItem]], dict[str, str]]:
     """DramaRama order on one platform (owner, 2026-11-03): DRAMA_ACTIVE_SERIES series at a time, each from its
     next undelivered episode in episode order. A missing or not-Ready episode makes that series wait — it is
     not finished until every episode up to its highest known one is delivered (or not going to this platform).
-    X/YouTube follow Facebook: an episode waits for them until Facebook has it. Returns (lanes, held)."""
+    X/YouTube follow Facebook: an episode waits for them until Facebook has it. Series already started go first,
+    then series in `first` (dot-approved), then arrival order. Returns (lanes, held)."""
     series: dict[str, dict[int, list[QueueItem]]] = {}
-    first: dict[str, int] = {}
+    first_id: dict[str, int] = {}
     for it in rows:
         name, ep = drama_series_episode(it)
         if ep is None:
             continue
         series.setdefault(name, {}).setdefault(ep, []).append(it)
-        first[name] = min(first.get(name, it.id), it.id)
+        first_id[name] = min(first_id.get(name, it.id), it.id)
     open_series = []
     for name, eps in series.items():
+        if net != "facebook" and not any(net in drama_owes(it) for rows_ in eps.values() for it in rows_):
+            continue                                           # nothing in this series goes to that platform
         states = {}
         for n in range(1, max(eps) + 1):
             st = drama_episode_state(eps[n], net) if n in eps else "wait"    # a missing episode is never skipped
@@ -1014,10 +1019,10 @@ def drama_lanes(rows: list[QueueItem], net: str) -> tuple[list[list[QueueItem]],
         if all(st in ("done", "skip") for st in states.values()):
             continue                                           # finished on this platform
         started = any(st == "done" for st in states.values())
-        open_series.append((not started, first[name], name, states))
+        open_series.append((not started, name not in first, first_id[name], name, states))
     open_series.sort()
     lanes, held = [], {}
-    for _, _, name, states in open_series[:DRAMA_ACTIVE_SERIES]:
+    for *_, name, states in open_series[:DRAMA_ACTIVE_SERIES]:
         lane = []
         for n, st in states.items():
             if st in ("done", "skip"):
@@ -1043,10 +1048,14 @@ def plan_dramarama(s: Session, now: datetime.datetime) -> int:
     times = timed_platforms(DRAMARAMA)
     rows = s.query(QueueItem).filter(QueueItem.pipeline == DRAMARAMA).all()
     due = {it.id for it in rows if it.status == "ready" and _is_due(it, now)}
+    from ..models import DramaRecord
+    from .. import publication_journal as journal
+    approved = {i for (i,) in s.query(DramaRecord.queue_identity).filter(DramaRecord.kind == "ready")}
+    first = {drama_series_episode(it)[0] for it in rows if journal.identity(it) in approved}
     plans: dict[str, list[tuple[QueueItem, datetime.datetime]]] = {}
     held_by: dict[str, dict[str, str]] = {}
     for net, hhmms in times.items():
-        lanes, held_by[net] = drama_lanes(rows, net)
+        lanes, held_by[net] = drama_lanes(rows, net, first)
         hhmms = sorted(hhmms)
         per_day = max(1, len(hhmms) // DRAMA_ACTIVE_SERIES)
         days = max([len(lane) for lane in lanes] or [0]) // per_day + 2

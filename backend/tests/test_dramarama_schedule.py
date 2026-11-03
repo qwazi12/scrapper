@@ -246,3 +246,12 @@ def test_ick_x_times_take_only_x_catch_up_and_facebook_keeps_its_four(session):
         assert [local(x) for x in fresh] == ["03 10:00", "03 13:20", "03 16:40", "03 20:00", "04 10:00"]
     finally:
         qm.save_schedule(session, None)
+
+
+def test_dot_approved_series_go_first_and_unapproved_youtube_has_nothing_to_wait_for(session, drama):
+    early = [ep(session, "Early", n) for n in (1, 2)]
+    prime = [ep(session, "Prime", n) for n in (1, 2)] + [ep(session, "Prime", 3, "review")]
+    lanes, held = qm.drama_lanes(early + prime, "facebook", {"Prime"})
+    assert [qm.drama_series_episode(lane[0])[0] for lane in lanes] == ["Prime", "Early"]
+    assert held == {"Prime": "waiting for EP3"}
+    assert qm.drama_lanes(early + prime, "youtube") == ([], {})        # nothing owes YouTube: no lane, no wait
