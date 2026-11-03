@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## Successful retry callback keeps its original quota day — November 2, 2026
+
+Final independent review reproduced a real quota defect: after a failed episode
+was retried and successfully reconciled on the following day, the legacy
+published_at fallback added it to that following day's global episode count.
+The first durable reservation already owned its original day. Excluded those
+modern reserved identities from the legacy-only fallback and extended the real
+publisher/reconciler midnight test through successful callback, asserting both
+original-day global count and zero new retry-day units. Original per-series and
+first-reservation assertions remain. Reproduction failed as expected before fix;
+corrected combined focused135tests passed. Fresh full CI on the final committed
+source is required. No live queue or provider writes.
+
 ## Bounded native delivery readback — November 2, 2026, America/New_York
 
 Primary provider media-list docs establish a native read path distinct from

@@ -611,6 +611,14 @@ def test_midnight_retry_remains_the_original_episode_quota_unit(archive,monkeypa
         series=view(a,(0,1))['evidence']['series_key']
         assert len(dc.attempted_today(s,series,first_day))==1
         assert not dc.attempted_today(s,series,a.clock[0])
+    # The eventual successful callback also must not mint a second-day global
+    # quota unit merely because published_at was stamped on the retry day.
+    monkeypatch.setattr(upload_post,'get_status',original)
+    reconcile(a)
+    with SessionLocal() as s:
+        assert s.get(QueueItem,a.rows[0,1][0]).status=='archived'
+        assert len(dc.attempted_today(s,None,first_day))==1
+        assert not dc.attempted_today(s,None,a.clock[0])
 
 
 def test_missing_internal_episode_and_implicit_third_series_selection_are_rejected(archive):

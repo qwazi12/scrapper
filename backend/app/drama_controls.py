@@ -380,7 +380,8 @@ def attempted_today(s, series_key, at):
                 result.add(event.queue_identity)
     if series_key is None:
         result.update(journal.identity(item) for item in s.query(QueueItem).filter(
-            QueueItem.pipeline == PIPELINE, QueueItem.published_at >= start, QueueItem.published_at < end))
+            QueueItem.pipeline == PIPELINE, QueueItem.published_at >= start, QueueItem.published_at < end)
+            if journal.identity(item) not in first)
     return result
 
 
