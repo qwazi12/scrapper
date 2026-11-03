@@ -1,5 +1,23 @@
 # Scrapper Memory
 
+## BUILT 2026-11-03 — DramaRama scheduler + Ick X fix (commits 3d03e95, 81a371d, afef693; NOT pushed — owner to push)
+- Tests: backend 1226 passed / 1 skipped; frontend tsc clean, node tests 8/8. dot's 89 Drama tests pass; 2 dot tests
+  rewritten only where they asserted the old "Ready DramaRama never posts" rule (canary grant still never spent;
+  approve never creates a dot binding). 17 new tests in backend/tests/test_dramarama_schedule.py.
+- Found + fixed before deploy: (1) DB trigger needs dot's one-use dispatch permit for every DramaRama send — now taken
+  on the regular path too (kept as dedupe guard). (2) archive auto-delete (4 days) would erase series history and
+  orphan journal rows (blocks dot's inspect/Ready) — DramaRama rows now kept. (3) Ick fresh rows could take an
+  X-only slot and strand Facebook in Retry — X-only times now take X catch-up only. (4) Ick regular X ignored dot's
+  saved X variants (today's #4857–4859 X refusals) — now used.
+- Live simulation (afef693 on today's data): Facebook lanes = PRIME SUSPECT (23 consecutive Ready) + A Christmas Home
+  for Dad (17, then waits for EP18). X follows Facebook. YouTube: no row approved → nothing.
+- Live config now (2026-11-03 ~20:30 UTC, server snapshot for undo): Ick Facebook 10:00/13:20/16:40/20:00, X unlisted
+  (INTERIM — X with each FB post, as before, until deploy); DramaRama FB same 4 times, X 11:40/18:20, YouTube
+  12:30/19:00 (dormant: no row approved for YouTube).
+- AFTER DEPLOY: set Ick X ["11:40","18:20"]; verify DramaRama next times; X retry #4857–4859 only if variant saved.
+- ROLLBACK: git revert afef693 81a371d (3d03e95 separately) + push; schedule: restore scratchpad sched_before3.json
+  via PUT /api/schedule/config (or Settings → Undo). DramaRama then returns to dot's lock (never posts).
+
 ## PLAN — 2026-11-03 — finish DramaRama scheduler (owner + dot handoff: "You own scheduling")
 dot stopped its scheduler/activation work. Its lock (drama_controls activation unsupported) is replaced for the regular
 scheduler only; its canary path and records stay. Owner rules: 4/day, series + episode order from EP1, keep explicit
