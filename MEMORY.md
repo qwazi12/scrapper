@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## DONE 2026-11-04 07:25 ET — 5 Screen Central test Shorts pinned (owner: "post as priority 1x a day … around 11am … today 11am and 4pm")
+- Queue #11349–11353, pipeline Movie Clips, accounts Cinama:*, copy from youtube_shorts_seo_packs.xlsx (description without the hashtag line; hashtags + YouTube tags as structured tags).
+- Pinned ET: Wed 11:00 (#11349), Wed 16:00 (#11350), Thu/Fri/Sat 11:00 (#11351–11353). X: 3 full copy, 2 title+hashtags (over 280).
+- Unverified: Scrapper's Drive account access to the "test testing screen central" files (connector account couldn't see them) — first real check is the 11:00 post.
+- Undo: Settings → Undo, or delete the rows.
+
 ## DONE 2026-11-03 ~22:30 ET — LongForm/countdown automation off, Gemini SEO off (owner: "stop LongForm and countdown runs… stop all Ai seo that calls Gemini")
 - Studio auto-production (LongForm breakdowns) and countdown automation were already off live; no countdown running/queued/paused (7 exist: done/stopped/error).
 - PUT /api/seo auto=false (undo: Settings → Undo or PUT auto=true).
