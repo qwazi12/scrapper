@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## DEPLOYED 2026-11-03 20:20 ET — DramaRama scheduler + Ick X (143f562 on Railway; owner: "Push: deploy everything right now, let's do prime suspect and a Christmas…")
+- Pushed 00fcc0c..143f562. Railway SUCCESS; DramaRama posting_blocked cleared; scheduler restarted 01:23Z, no errors.
+- Ick X times set to 11:40/18:20 ET (full-config PUT, 200). Pre-change body: scratchpad cfg_pre_ickx.json (or Settings → Undo).
+- DramaRama verified live: Facebook Wed 10:00 PRIME SUSPECT Ep1, 13:20 A Christmas Home for Dad Ep1, 16:40 PS Ep2, 20:00 ACHfD Ep2, then same pattern daily.
+  X waits for each episode's Facebook post; YouTube nothing. ACHfD waits at EP18 (not Ready).
+- Missed: Ick 20:00 Tue slot (restart during deploy) — #4861 moved to Wed 10:00.
+- Rollback: git revert afef693 81a371d && push; restore schedule via Settings → Undo.
+
 ## BUILT 2026-11-03 — DramaRama scheduler + Ick X fix (commits 3d03e95, 81a371d, afef693; NOT pushed — owner to push)
 - Tests: backend 1226 passed / 1 skipped; frontend tsc clean, node tests 8/8. dot's 89 Drama tests pass; 2 dot tests
   rewritten only where they asserted the old "Ready DramaRama never posts" rule (canary grant still never spent;
