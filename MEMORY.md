@@ -3341,3 +3341,8 @@ Release IDs, test URLs, source/backup hashes, limitations and private evidence
 paths are recorded in docs/implementation/RELEASE_20261019.md. Credentials, private
 databases, raw artifacts and videos remain excluded from GitHub. No further
 implementation or follow-up automation; resume only on a new owner instruction.
+
+
+## LOG — 2026-11-04 — Five requested Shorts archived to Screen Central/test test
+
+Owner-requested IDs 8wqNRBp7Le4, ErxHKmxBwyE, C5GkC73Gnb4, m7tuadQCvF8, kaRCJa3Ednw: all 5 uploaded and independently read back with matching Drive size/MD5 plus original-ID appProperties. Each local video passed ffprobe and full FFmpeg decode before upload. Destination: Screen Central (1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY) / test test (13T8u17-tSfdV4HgX4IwjYeATO-nRIhZq). Total 38,149,627 bytes. Public request required sign-in; the previously owner-authorized local Brave Personal session worked without a new login. All owned temporary media/metadata removed after verified Drive copies. No queue imports, schedules, publishing, deployment or application code changes. Private receipts/logs: artifacts/shorts-test-test-20261104/{manifest.json,final-verification.json}; credentials not logged.
