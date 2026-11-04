@@ -54,3 +54,12 @@ def test_scheduler_starts_seo_only_for_ick_rows_without_it(session, monkeypatch)
     monkeypatch.setitem(ai_bulk.status, "running", True)            # one bulk run at a time
     assert qm.start_ick_room_seo(session) == 0
     assert done.id not in started[0] and posted.id not in started[0] and clip.id not in started[0]
+
+
+def test_scheduler_starts_no_ick_seo_when_auto_seo_is_off(session, monkeypatch):
+    ick(session, "a.mp4")
+    monkeypatch.setattr(qm, "auto_seo_enabled", lambda s: False)
+    started = []
+    monkeypatch.setattr(ai_bulk, "start", lambda ids: started.append(ids))
+    monkeypatch.setitem(ai_bulk.status, "running", False)
+    assert qm.start_ick_room_seo(session) == 0 and started == []

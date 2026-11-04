@@ -812,8 +812,8 @@ def start_ick_room_seo(s: Session) -> int:
     """New Ick Room videos get their AI SEO without anyone pressing a button (owner, 2026-10-31):
     starts a bulk AI run for the unposted rows that have none, when no bulk AI run is going."""
     from . import ai_bulk, ick_room_seo
-    if ai_bulk.status.get("running"):
-        return 0
+    if ai_bulk.status.get("running") or not auto_seo_enabled(s):
+        return 0  # auto-SEO off (owner, 2026-11-03: stop Gemini SEO) — nothing starts on its own
     rows = (s.query(QueueItem).filter(QueueItem.pipeline == ICK_ROOM,
                                       QueueItem.status.in_(["review", "ready", "retry"]))
             .order_by(QueueItem.id).all())

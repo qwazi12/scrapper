@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## DONE 2026-11-03 ~22:30 ET — LongForm/countdown automation off, Gemini SEO off (owner: "stop LongForm and countdown runs… stop all Ai seo that calls Gemini")
+- Studio auto-production (LongForm breakdowns) and countdown automation were already off live; no countdown running/queued/paused (7 exist: done/stopped/error).
+- PUT /api/seo auto=false (undo: Settings → Undo or PUT auto=true).
+- Code: start_ick_room_seo now also obeys the auto-SEO switch (was calling Gemini every tick regardless). Test added. 1227 passed, 1 skipped. Committed locally; push needs owner.
+- Not changed: LongForm POSTING of already-made videos (1/day 20:00 ET, next #4839 Wed) — asked owner. Manual AI buttons still work if pressed. dot's separate SEO task is outside Scrapper's switch.
+
 ## DEPLOYED 2026-11-03 20:20 ET — DramaRama scheduler + Ick X (143f562 on Railway; owner: "Push: deploy everything right now, let's do prime suspect and a Christmas…")
 - Pushed 00fcc0c..143f562. Railway SUCCESS; DramaRama posting_blocked cleared; scheduler restarted 01:23Z, no errors.
 - Ick X times set to 11:40/18:20 ET (full-config PUT, 200). Pre-change body: scratchpad cfg_pre_ickx.json (or Settings → Undo).
