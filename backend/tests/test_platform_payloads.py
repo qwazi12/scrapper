@@ -172,3 +172,16 @@ def test_short_x_keeps_two_hashtags_specific_first():
     assert r['values']['x_title']==title+'\n\n#Boyka #Chambers'
     r=qp.preview(title,desc,'#shorts #Recap #ScreenCentral',['x'])
     assert r['values']['x_title']==title+'\n\n#shorts #ScreenCentral'             # generic dropped first, order kept
+
+
+def test_regular_ick_x_without_a_saved_variant_posts_title_and_both_brand_tags():
+    from backend.app.social import queue_payloads as qp
+    r = qp.preview("Short hook", "D" * 400, "#love #tonightsconversation #theickroom", ["x"], ick=True, ick_short_x=True)
+    assert r["values"]["x_title"] == "Short hook\n\n#tonightsconversation #theickroom" and r["x_short_form"]
+
+
+def test_ick_x_without_the_flag_still_needs_a_reviewed_variant():
+    import pytest
+    from backend.app.social import queue_payloads as qp
+    with pytest.raises(ValueError):
+        qp.preview("Short hook", "D" * 400, "#love #tonightsconversation #theickroom", ["x"], ick=True)

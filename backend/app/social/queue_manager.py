@@ -1530,7 +1530,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             from . import queue_payloads
             try:
                 preview=ick_release["payload"] if ick_release else queue_payloads.preview(item.title,item.description,item.tags,send_nets,ick=item.pipeline==ICK_ROOM,
-                    x_variant_text=drama_x_variant if item.pipeline==DRAMARAMA else ick_x_variant(s,item) if item.pipeline==ICK_ROOM else None)
+                    x_variant_text=drama_x_variant if item.pipeline==DRAMARAMA else ick_x_variant(s,item) if item.pipeline==ICK_ROOM else None,
+                    ick_short_x=item.pipeline==ICK_ROOM)
             except ValueError as exc:raise upload_post.PayloadBlocked(str(exc)) from exc
             queue_x_text=preview["values"].get("x_title")
             parts=preview["tags"];backend_tags=[t.lstrip("#") for t in parts["public_hashtags"]]+parts["phrase_tags"]

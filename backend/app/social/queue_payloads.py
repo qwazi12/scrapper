@@ -50,7 +50,7 @@ def x_short_tags(public, limit=X_SHORT_TAGS):
     return [t for t in public if t in keep[:limit]]
 
 
-def preview(title,description,raw_tags,platforms,*,ick=False,x_variant_text=None):
+def preview(title,description,raw_tags,platforms,*,ick=False,x_variant_text=None,ick_short_x=False):
     parts=tags(raw_tags)
     public=parts['public_hashtags']
     text='\n\n'.join(x for x in (title,description,' '.join(public)) if x)
@@ -69,9 +69,11 @@ def preview(title,description,raw_tags,platforms,*,ick=False,x_variant_text=None
         if not required<=actual:raise ValueError('Reviewed X variant drops mandatory public hashtags')
         exact_x=x_variant_text
     short_x=False
-    if x_variant_text is None and not ick and common_weight>280:
+    if x_variant_text is None and (ick_short_x or not ick) and common_weight>280:
         # Owner 2026-11-03: Screen Central X over 280 posts title + hashtags (max 2, plan v2.1); other platforms keep full copy.
-        short='\n\n'.join(x for x in (title,' '.join(x_short_tags(public))) if x)
+        # Owner 2026-11-05: regular Ick Room posting (ick_short_x) without a saved variant: title + its two required hashtags.
+        short=('\n\n'.join((title,' '.join(t for t in public if t.casefold() in ICK_REQUIRED))) if ick
+               else '\n\n'.join(x for x in (title,' '.join(x_short_tags(public))) if x))
         if weight_upper_bound(short)<=280:exact_x,short_x=short,True
     fields=video_fields(title,caption,platforms,{'x_title':exact_x} if set(platforms)&{'x','twitter'} else None)
     return {'values':fields,'tags':parts,'x_appended_hashtags':missing,'x_body_unchanged':x_variant_text is None and not short_x,'x_short_form':short_x,
