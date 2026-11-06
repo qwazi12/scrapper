@@ -1,5 +1,14 @@
 # Scrapper Memory
 
+## PLAN 2026-11-06 ~15:30 UTC — owner chat approvals (S-14, LongForm drop + candidates, DramaRama durability, exports, poller)
+1. S-14: vidIQ caps → daily 20, monthly 250 for November (170 already used). Switch to 100/month on Dec 1 with a durable dated one-shot (not session-bound). Rollback: 100/1850.
+2. Drop the 6 held LongForm rows (#4825, #4819, #4830, #4829, #4824, #4840): set to archived with a note; #4828 was already decided. Propose 3–5 new LongForm candidates (films releasing in the next 2–6 weeks), each with release date + source; check each script against its release date before Review. List them in the next RESULT for the owner to pick. No renders until the owner picks.
+3. DramaRama 12-h spacing: replace the session-only 23:07 ET cron with a durable local launchd one-shot. Confirm the config was live before 09:00 ET Nov 7.
+4. ICK-REEL-CUT-01 keeps the opening 60–90 s cut for all 7 days (no code change).
+5. POSTED export: YouTube Short vs long from the read-only YouTube contentDetails duration; ICK/DramaRama durations from source files where available.
+6. Exports: write straight to ops/exports once Drive for Desktop (kyeboah@kymediamgmt.com) is mounted; until then the owner drags them in.
+7. S-08 poller: one manual headless run, check the Drive connector works unattended, show the log; install only after owner OK.
+
 ## DEPLOYED 2026-11-06 09:34 ET — S6, S1a–d, R7 Facebook by duration, ICK-REEL-CUT-01 (b40d933, Railway e9564440 SUCCESS; owner OK per item)
 - **S6** b28ac62: the countdown topics no longer rebuild on their own while countdown automation is off. That rebuild had been spending ~55 vidIQ credits a day.
 - **S1** 267607c / 9b0fcb7 / dd0177a / 670dd4e:
