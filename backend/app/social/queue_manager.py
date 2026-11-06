@@ -693,6 +693,8 @@ async def submit_upload(
     queue_x_text: str | None = None,
     before_destination=None,
     x_video_path: pathlib.Path | None = None,
+    facebook_video_path: pathlib.Path | None = None,
+    facebook_receipt: dict | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -726,9 +728,12 @@ async def submit_upload(
         overrides = {k:v for k,v in (platform_overrides or {}).items()
                      if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}
         fb_route = None
+        fb_path = facebook_video_path if facebook_video_path and network == "facebook" else video_path
+        if network == "facebook" and facebook_receipt:
+            intent["ick_test"] = facebook_receipt
         if network == "facebook" and not media_files and "facebook_media_type" not in overrides:
             # R7 by duration; a reviewed contract that names its own Facebook mode keeps it.
-            mode, seconds = await asyncio.to_thread(facebook_media_type, video_path)
+            mode, seconds = await asyncio.to_thread(facebook_media_type, fb_path)
             fb_route = {"facebook_media_type": mode, "duration_seconds": seconds, "rule": "R7 2026-11-06: <=90s Reels, >90s VIDEO"}
             intent["facebook_route"] = fb_route
         transport_title,transport_description=(queue_x_text,"") if queue_x_text is not None and network in ("x","twitter") else (title,description)
@@ -763,7 +768,7 @@ async def submit_upload(
                     title=title, description=description, idempotency_key=request_key)
             else:
                 rid = await upload_post.upload_video(
-                    x_video_path if x_video_path and network in ("x", "twitter") else video_path,
+                    x_video_path if x_video_path and network in ("x", "twitter") else fb_path,
                     profile=profile, platforms=platforms, title=transport_title,
                     description=transport_description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
@@ -923,6 +928,63 @@ def facebook_media_type(path: Any) -> tuple[str, float | None]:
     except Exception:  # noqa: BLE001
         return "VIDEO", None
     return ("REELS" if duration <= FB_REELS_MAX_SECONDS else "VIDEO"), round(duration, 2)
+
+
+ICK_REEL_TEST = {"id": "ICK-REEL-CUT-01", "start": datetime.date(2026, 11, 7), "days": 7,
+                 # Owner 2026-11-06: 2 of the 4 daily Facebook slots post a 60–90 s highlight cut as a Reel (R8
+                 # transformation approved for this test only). Pairs alternate daily so both arms see every time band.
+                 "slots": (("10:00", "16:40"), ("13:20", "20:00"))}
+
+
+def ick_test_arm(at: datetime.datetime | None) -> str | None:
+    """'cut' / 'full' for an Ick Room Facebook slot inside ICK-REEL-CUT-01; None outside the test window."""
+    at = _aware(at)
+    if at is None:
+        return None
+    local = at.astimezone(ZoneInfo(_schedule_cfg["timezone"]))
+    day = (local.date() - ICK_REEL_TEST["start"]).days
+    if not 0 <= day < ICK_REEL_TEST["days"]:
+        return None
+    return "cut" if local.strftime("%H:%M") in ICK_REEL_TEST["slots"][day % 2] else "full"
+
+
+def ick_highlight_cut(path: Any) -> tuple[pathlib.Path | None, dict]:
+    """The opening 60–90 s of an Ick video, ending at the pause nearest 75 s (else at 90 s with a short fade).
+    Returns (cut file or None, receipt). None = post the full video (already ≤ 90 s, or it couldn't be cut)."""
+    import json as _json
+    import os
+    import tempfile
+    from ..studio import media
+    try:
+        probe = _json.loads(media.run(["ffprobe", "-v", "error", "-show_format", "-of", "json", str(path)],
+                                      timeout=60).stdout)
+        duration = float(probe["format"]["duration"])
+    except Exception as exc:  # noqa: BLE001
+        return None, {"skipped": f"could not read the video ({str(exc)[:80]})"}
+    if duration <= FB_REELS_MAX_SECONDS:
+        return None, {"skipped": "already 90 s or shorter", "source_seconds": round(duration, 2)}
+    end, how = 90.0, "hard cut at 90 s"
+    try:
+        log = media.run(["ffmpeg", "-v", "info", "-t", "92", "-i", str(path), "-af",
+                         "silencedetect=noise=-30dB:d=0.35", "-vn", "-f", "null", "-"], timeout=120).stderr
+        pauses = [float(m) for m in re.findall(r"silence_start: ([\d.]+)", log or "")]
+        inside = [p for p in pauses if 60.0 <= p <= 90.0]
+        if inside:
+            end, how = min(inside, key=lambda p: abs(p - 75.0)), "pause nearest 75 s"
+    except Exception:  # noqa: BLE001
+        pass
+    fd, name = tempfile.mkstemp(suffix=".reel.mp4")
+    os.close(fd)
+    out = pathlib.Path(name)
+    try:
+        media.run(["ffmpeg", "-y", "-v", "error", "-i", str(path), "-t", f"{end:.2f}", "-map", "0:v:0", "-map", "0:a:0?",
+                   "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "20",
+                   "-af", f"afade=t=out:st={max(end - 0.4, 0):.2f}:d=0.4",
+                   "-c:a", "aac", "-profile:a", "aac_low", "-b:a", "160k", "-movflags", "+faststart", str(out)], timeout=600)
+    except Exception as exc:  # noqa: BLE001
+        out.unlink(missing_ok=True)
+        return None, {"skipped": f"could not cut ({str(exc)[:120]})", "source_seconds": round(duration, 2)}
+    return out, {"source_seconds": round(duration, 2), "cut_start": 0.0, "cut_end": round(end, 2), "cut_rule": how}
 
 
 def x_media_copy(path: Any) -> tuple[pathlib.Path | None, str | None]:
@@ -1619,6 +1681,18 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
             item.publish_requests = [*saved, entry]
             s.commit()
+        fb_cut_path, fb_receipt = None, None
+        arm = ick_test_arm(item.scheduled_at) if item.pipeline == ICK_ROOM and regular and not images else None
+        if arm and any(a.endswith(":facebook") or a.endswith(":*") for a in send_accounts):
+            fb_receipt = {"experiment": ICK_REEL_TEST["id"], "arm": arm}
+            if arm == "cut":
+                if ick_release:
+                    fb_receipt.update(arm="full", skipped="guarded release: reviewed bytes must post unchanged")
+                else:
+                    fb_cut_path, cut = await asyncio.to_thread(ick_highlight_cut, video_path)
+                    fb_receipt.update(cut)
+                    if not fb_cut_path:
+                        fb_receipt["arm"] = "full"
         try:
             entries = await submit_upload(
                 video_path, send_accounts, title=item.title or item.video_name,
@@ -1629,10 +1703,14 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 **({'platform_overrides': drama_payload} if is_drama else {'queue_x_text':queue_x_text} if queue_x_text is not None else {}),
                 **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
                 **({'x_video_path': x_video_path} if x_video_path else {}),
+                **({'facebook_video_path': fb_cut_path} if fb_cut_path else {}),
+                **({'facebook_receipt': fb_receipt} if fb_receipt else {}),
             )
         finally:
             if x_video_path:
                 x_video_path.unlink(missing_ok=True)
+            if fb_cut_path:
+                fb_cut_path.unlink(missing_ok=True)
         from ..budget_reservations import lock
         lock(s);s.refresh(item)
         # Persisted decisions/late-response conflicts take precedence over a stale

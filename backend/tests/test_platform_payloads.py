@@ -226,3 +226,57 @@ def test_r7_reels_reaches_the_provider_field(tmp_path, monkeypatch):
     asyncio.run(upload_post.upload_video(path, profile='synthetic', platforms=['facebook'], title='T', description='D',
         facebook_media_type='REELS'))
     assert seen == [[b'REELS']]
+
+
+def test_ick_reel_test_slots_alternate_daily_and_end_after_seven_days():
+    et = lambda d, hm: dt.datetime(2026, 11, d, *map(int, hm.split(':')), tzinfo=dt.timezone(dt.timedelta(hours=-5)))
+    assert [qm.ick_test_arm(et(7, h)) for h in ('10:00', '13:20', '16:40', '20:00')] == ['cut', 'full', 'cut', 'full']
+    assert [qm.ick_test_arm(et(8, h)) for h in ('10:00', '13:20', '16:40', '20:00')] == ['full', 'cut', 'full', 'cut']
+    assert qm.ick_test_arm(et(6, '10:00')) is None and qm.ick_test_arm(et(14, '10:00')) is None
+    assert qm.ick_test_arm(et(13, '10:00')) == 'cut'
+
+
+def _talk(path, seconds, quiet_at=None):
+    tone = f"sine=f=300:d={seconds}"
+    af = ['-af', f"volume=enable='between(t,{quiet_at},{quiet_at + 1})':volume=0"] if quiet_at else []
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color=c=blue:s=180x320:r=6:d={seconds}',
+        '-f', 'lavfi', '-i', tone, *af, '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-shortest', str(path)], check=True)
+    return path
+
+
+def _seconds(path):
+    return float(json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_format', '-of', 'json', str(path)]))['format']['duration'])
+
+
+def test_ick_highlight_cut_ends_at_a_pause_inside_60_to_90_seconds(tmp_path):
+    out, receipt = qm.ick_highlight_cut(_talk(tmp_path / 'paused.mp4', 150, quiet_at=70))
+    try:
+        assert receipt['cut_rule'] == 'pause nearest 75 s' and 69.5 <= receipt['cut_end'] <= 70.5
+        assert abs(_seconds(out) - receipt['cut_end']) < 0.5 and qm.facebook_media_type(out)[0] == 'REELS'
+    finally:
+        out.unlink(missing_ok=True)
+
+
+def test_ick_highlight_cut_without_a_pause_stops_at_90_and_short_videos_are_left_whole(tmp_path):
+    out, receipt = qm.ick_highlight_cut(_talk(tmp_path / 'steady.mp4', 120))
+    try:
+        assert receipt['cut_rule'] == 'hard cut at 90 s' and abs(_seconds(out) - 90) < 0.5
+    finally:
+        out.unlink(missing_ok=True)
+    assert qm.ick_highlight_cut(_talk(tmp_path / 'short.mp4', 40))[0] is None
+
+
+def test_cut_goes_to_facebook_only_and_the_arm_is_recorded(tmp_path, monkeypatch):
+    full = _clip(tmp_path / 'full.mp4', 120); cut = _clip(tmp_path / 'cut.mp4', 70)
+    calls, intents = {}, []
+    async def accounts(): return [{'id': 'TheIckRoom:' + p, 'profile': 'TheIckRoom'} for p in ('facebook', 'x')]
+    async def upload(path, **kw): calls[kw['platforms'][0]] = (path, kw.get('facebook_media_type')); return 'r'
+    monkeypatch.setattr(upload_post, 'list_accounts', accounts)
+    monkeypatch.setattr(upload_post, 'upload_video', upload)
+    receipt = {'experiment': 'ICK-REEL-CUT-01', 'arm': 'cut', 'cut_end': 70.0}
+    asyncio.run(qm.submit_upload(full, ['TheIckRoom:facebook', 'TheIckRoom:x'], title='T', description='D', tags=[],
+        on_intent=intents.append, facebook_video_path=cut, facebook_receipt=receipt))
+    assert calls['facebook'] == (cut, 'REELS') and calls['x'][0] == full
+    fb = next(i for i in intents if i['platforms'] == ['facebook'])
+    assert fb['ick_test'] == receipt and 'ick_test' not in next(i for i in intents if i['platforms'] == ['x'])

@@ -325,3 +325,32 @@ def test_youtube_follows_facebook_in_episode_order_at_its_own_times(session, dra
     assert local(done) == "03 11:40" and local(nxt) == "03 10:00"
     lanes, _ = qm.drama_lanes([done, nxt], "youtube")
     assert lanes and lanes[0][0] is done                                # EP1 goes to YouTube first, EP2 after Facebook
+
+
+@pytest.mark.parametrize("hm,expect_cut", [("10:00", True), ("13:20", False)])
+def test_ick_reel_test_slot_sends_facebook_the_highlight_cut(session, monkeypatch, tmp_path, hm, expect_cut):
+    cut = tmp_path / "cut.mp4"; cut.write_bytes(b"cut")
+    sent, intents = {}, []
+
+    async def list_accounts():
+        return [{"id": "TheIckRoom:facebook", "profile": "TheIckRoom"}]
+
+    async def upload_video(path, *, profile, platforms, title, description, **kw):
+        sent[platforms[0]] = path
+        return "r"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    monkeypatch.setattr(qm, "ick_highlight_cut", lambda p: (cut, {"cut_end": 75.0, "cut_rule": "pause nearest 75 s"}))
+    monkeypatch.setattr(qm, "facebook_media_type", lambda p: ("REELS" if p == cut else "VIDEO", 1.0))
+    h, m = map(int, hm.split(":"))
+    it = QueueItem(pipeline=qm.ICK_ROOM, status="ready", accounts=["TheIckRoom:facebook"], title="Hook",
+                   description="Body #tonightsconversation #theickroom", tags="#tonightsconversation #theickroom",
+                   video_path=__file__, scheduled_at=et(7, h, m))
+    session.add(it)
+    session.commit()
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
+    session.refresh(it)
+    fb = next(e for e in it.publish_requests if e.get("platforms") == ["facebook"])
+    assert (sent["facebook"] == cut) is expect_cut
+    assert fb["ick_test"]["arm"] == ("cut" if expect_cut else "full")
+    assert fb["facebook_route"]["facebook_media_type"] == ("REELS" if expect_cut else "VIDEO")
