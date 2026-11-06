@@ -1493,10 +1493,12 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         queue_x_text=None
         backend_tags=_hashtags(item.tags)
         structured_tags=(item.tags or "").lstrip().startswith(("[","{"))
-        if not is_drama and (ick_release or structured_tags or any(a.split(":")[-1] in ("x","twitter") for a in send_accounts)):
+        # A whole-profile pick ("Cinama:*") includes X: build its X copy too (bug 2026-11-05: "*" skipped the short-X rule).
+        send_nets=[n for a in send_accounts for n in (("x",) if a.split(":")[-1]=="*" else (a.split(":")[-1],))]
+        if not is_drama and (ick_release or structured_tags or any(n in ("x","twitter") for n in send_nets)):
             from . import queue_payloads
             try:
-                preview=ick_release["payload"] if ick_release else queue_payloads.preview(item.title,item.description,item.tags,[a.split(":")[-1] for a in send_accounts],ick=item.pipeline==ICK_ROOM,
+                preview=ick_release["payload"] if ick_release else queue_payloads.preview(item.title,item.description,item.tags,send_nets,ick=item.pipeline==ICK_ROOM,
                     x_variant_text=drama_x_variant if item.pipeline==DRAMARAMA else ick_x_variant(s,item) if item.pipeline==ICK_ROOM else None)
             except ValueError as exc:raise upload_post.PayloadBlocked(str(exc)) from exc
             queue_x_text=preview["values"].get("x_title")

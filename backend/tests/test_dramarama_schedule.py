@@ -255,3 +255,23 @@ def test_dot_approved_series_go_first_and_unapproved_youtube_has_nothing_to_wait
     assert [qm.drama_series_episode(lane[0])[0] for lane in lanes] == ["Prime", "Early"]
     assert held == {"Prime": "waiting for EP3"}
     assert qm.drama_lanes(early + prime, "youtube") == ([], {})        # nothing owes YouTube: no lane, no wait
+
+
+def test_whole_profile_screen_central_post_sends_x_the_short_copy(session, monkeypatch):
+    sent = {}
+
+    async def list_accounts():
+        return [{"id": f"Cinama:{n}", "profile": "Cinama"} for n in ("youtube", "facebook", "x")]
+
+    async def upload_video(path, *, profile, platforms, title, description, **kw):
+        sent[platforms[0]] = (title, description)
+        return "r"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    it = QueueItem(pipeline="Movie Clips", source="Movie Clips / test", status="ready", accounts=["Cinama:*"],
+                   title="A title", description="D" * 300, tags="#shorts #movieclips", video_path=__file__)
+    session.add(it)
+    session.commit()
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+    assert sent["x"] == ("A title\n\n#shorts #movieclips", "")
+    assert sent["facebook"][0] == "A title" and "D" * 300 in sent["facebook"][1]

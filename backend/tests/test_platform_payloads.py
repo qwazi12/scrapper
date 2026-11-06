@@ -163,3 +163,12 @@ def test_screen_central_x_over_280_posts_title_and_hashtags_only():
         qp.preview(title,desc,'#tonightsconversation #theickroom',['x'],ick=True)
     with pytest.raises(ValueError):                                              # never truncates the title
         qp.preview('T'*300,desc,'#shorts',['x'])
+
+
+def test_short_x_keeps_two_hashtags_specific_first():
+    from backend.app.social import queue_payloads as qp
+    title,desc='Boyka vs Chambers','A long edit. '*30
+    r=qp.preview(title,desc,'#Boyka #Chambers #ScreenCentral #Shorts',['x'])
+    assert r['values']['x_title']==title+'\n\n#Boyka #Chambers'
+    r=qp.preview(title,desc,'#shorts #Recap #ScreenCentral',['x'])
+    assert r['values']['x_title']==title+'\n\n#shorts #ScreenCentral'             # generic dropped first, order kept

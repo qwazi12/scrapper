@@ -39,6 +39,17 @@ def x_text(title,description,raw_tags):
     return '\n\n'.join(x for x in (title,description,' '.join(missing)) if x),missing
 
 
+# Plan v2.1 X rule: 1–2 hashtags. Generic tags go first when trimming (least specific first).
+X_SHORT_TAGS = 2
+GENERIC_TAGS = {'#shorts','#short','#movieclips','#recap','#viral','#fyp','#foryou','#trending','#movie','#movies','#film'}
+
+
+def x_short_tags(public, limit=X_SHORT_TAGS):
+    """The hashtags a short X post keeps: specific ones first, in their order, then generic ones."""
+    keep=[t for t in public if t.casefold() not in GENERIC_TAGS]+[t for t in public if t.casefold() in GENERIC_TAGS]
+    return [t for t in public if t in keep[:limit]]
+
+
 def preview(title,description,raw_tags,platforms,*,ick=False,x_variant_text=None):
     parts=tags(raw_tags)
     public=parts['public_hashtags']
@@ -59,8 +70,8 @@ def preview(title,description,raw_tags,platforms,*,ick=False,x_variant_text=None
         exact_x=x_variant_text
     short_x=False
     if x_variant_text is None and not ick and common_weight>280:
-        # Owner 2026-11-03: Screen Central X over 280 posts title + public hashtags; other platforms keep full copy.
-        short=x_text(title,'',raw_tags)[0]
+        # Owner 2026-11-03: Screen Central X over 280 posts title + hashtags (max 2, plan v2.1); other platforms keep full copy.
+        short='\n\n'.join(x for x in (title,' '.join(x_short_tags(public))) if x)
         if weight_upper_bound(short)<=280:exact_x,short_x=short,True
     fields=video_fields(title,caption,platforms,{'x_title':exact_x} if set(platforms)&{'x','twitter'} else None)
     return {'values':fields,'tags':parts,'x_appended_hashtags':missing,'x_body_unchanged':x_variant_text is None and not short_x,'x_short_form':short_x,
