@@ -12,6 +12,7 @@ ET = ZoneInfo("America/New_York")
 UTC = datetime.timezone.utc
 FB = ["10:00", "13:20", "16:40", "20:00"]
 X = ["11:40", "18:20"]
+YT = ["12:30", "19:00"]
 
 
 def et(d, h, mi=0):
@@ -26,7 +27,7 @@ def local(it):
 def drama(session):
     cfg = qm.load_schedule(session)
     qm.save_schedule(session, {**cfg, "timezone": "America/New_York", "pipelines": {
-        "DramaRama": {"posts_per_day": 4, "platforms": {"facebook": FB, "x": X}}}})
+        "DramaRama": {"posts_per_day": 4, "platforms": {"facebook": FB, "x": X, "youtube": YT}}}})
     yield
     qm.save_schedule(session, None)
 
@@ -69,7 +70,8 @@ def test_series_order_continues_after_delivered_episodes_and_skips_duplicates(se
     dup = ep(session, "Alpha", 1)                                        # same episode again: never re-sent
     two = ep(session, "Alpha", 2)
     qm.plan_schedule(session, et(3, 7))
-    assert done.status == "archived" and local(dup) is None and local(two) == "03 10:00"
+    assert done.status == "archived" and local(two) == "03 10:00"
+    assert local(dup) == "03 12:30"            # EP1 is on Facebook + X already: only YouTube (never had it) takes it
 
 
 def test_x_catch_up_takes_x_times_and_never_a_facebook_slot(session, drama):
@@ -94,15 +96,15 @@ def _connected(monkeypatch, sent, tmp_path):
     return str(video)
 
 
-def test_whole_profile_means_facebook_and_x_never_youtube(session, drama, monkeypatch, tmp_path):
+def test_whole_profile_means_facebook_x_and_youtube(session, drama, monkeypatch, tmp_path):
     sent = []
     it = ep(session, "Alpha", 1, video_path=_connected(monkeypatch, sent, tmp_path))
     it.scheduled_at = et(3, 10)
     session.commit()
     asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
-    assert sent == [["facebook"]]                                       # 10:00 is Facebook's; X later, never YouTube
+    assert sent == [["facebook"]]                                       # 10:00 is Facebook's; X and YouTube at theirs
     qm.apply_result(it, {"ok": [("Dramarama:facebook", "https://fb/1")], "failed": {}}, et(3, 10, 10))
-    assert it.status == "ready" and it.accounts == ["Dramarama:x"]
+    assert it.status == "ready" and sorted(it.accounts) == ["Dramarama:x", "Dramarama:youtube"]
 
 
 def test_dot_approved_rows_keep_their_frozen_destinations(session, drama, monkeypatch, tmp_path):
@@ -110,7 +112,7 @@ def test_dot_approved_rows_keep_their_frozen_destinations(session, drama, monkey
     it = ep(session, "Prime", 1, video_path=_connected(monkeypatch, sent, tmp_path))
     monkeypatch.setattr(qm, "drama_approval", lambda s, item: (["Dramarama:facebook"], None))
     asyncio.run(qm.publish_queue_item(it.id, session, regular=False))   # even a manual Post now
-    assert sent == [["facebook"]]
+    assert sent == [["facebook"], ["youtube"]]                          # dot's targets, plus the owner's YouTube
 
 
 def test_review_rows_and_unreviewed_copy_are_refused_before_download(session, drama, monkeypatch):
@@ -140,7 +142,7 @@ def test_x_over_the_guard_is_held_with_its_reason_and_facebook_is_never_resent(s
 
 def test_x_hold_never_blocks_facebook(session, drama, monkeypatch, tmp_path):
     sent = []
-    it = ep(session, "Alpha", 1, video_path=_connected(monkeypatch, sent, tmp_path))
+    it = ep(session, "Alpha", 1, accounts=("Dramarama:facebook", "Dramarama:x"), video_path=_connected(monkeypatch, sent, tmp_path))
     monkeypatch.setattr(qm, "x_media_problem", lambda p: "172s is over Scrapper's 140s X guard (longer X uploads not yet verified)")
     asyncio.run(qm.publish_queue_item(it.id, session, regular=False))   # Post now: both platforms due
     session.refresh(it)
@@ -287,8 +289,9 @@ def test_ick_x_times_take_only_x_catch_up_and_facebook_keeps_its_four(session):
 
 
 def test_dot_approved_series_go_first_and_unapproved_youtube_has_nothing_to_wait_for(session, drama):
-    early = [ep(session, "Early", n) for n in (1, 2)]
-    prime = [ep(session, "Prime", n) for n in (1, 2)] + [ep(session, "Prime", 3, "review")]
+    fx = ("Dramarama:facebook", "Dramarama:x")                          # explicitly not YouTube
+    early = [ep(session, "Early", n, accounts=fx) for n in (1, 2)]
+    prime = [ep(session, "Prime", n, accounts=fx) for n in (1, 2)] + [ep(session, "Prime", 3, "review", accounts=fx)]
     lanes, held = qm.drama_lanes(early + prime, "facebook", {"Prime"})
     assert [qm.drama_series_episode(lane[0])[0] for lane in lanes] == ["Prime", "Early"]
     assert held == {"Prime": "waiting for EP3"}
@@ -313,3 +316,12 @@ def test_whole_profile_screen_central_post_sends_x_the_short_copy(session, monke
     asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
     assert sent["x"] == ("A title\n\n#shorts #movieclips", "")
     assert sent["facebook"][0] == "A title" and "D" * 300 in sent["facebook"][1]
+
+
+def test_youtube_follows_facebook_in_episode_order_at_its_own_times(session, drama):
+    done = ep(session, "Alpha", 1, accounts=("Dramarama:x", "Dramarama:youtube"), catchup={"done": [["Dramarama:facebook", "u"]]})
+    nxt = ep(session, "Alpha", 2)
+    qm.plan_schedule(session, et(3, 7))
+    assert local(done) == "03 11:40" and local(nxt) == "03 10:00"
+    lanes, _ = qm.drama_lanes([done, nxt], "youtube")
+    assert lanes and lanes[0][0] is done                                # EP1 goes to YouTube first, EP2 after Facebook

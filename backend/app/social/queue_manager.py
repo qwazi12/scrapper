@@ -987,7 +987,7 @@ def drama_series_episode(item: QueueItem) -> tuple[str, int | None]:
     return series, (int(m.group(1)) if m else None)
 
 
-DRAMA_DEFAULT_PLATFORMS = ("facebook", "x")   # what "Dramarama:*" means; YouTube only where it was chosen explicitly
+DRAMA_DEFAULT_PLATFORMS = ("facebook", "x", "youtube")   # what "Dramarama:*" means (owner 2026-11-05: "post to yt for Dramarama")
 drama_held: dict[str, dict[str, str]] = {}     # platform -> {series: why it waits}, from the last plan (for the screens)
 
 
@@ -1405,8 +1405,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         profile = next(iter(DRAMARAMA_PROFILES))
         send_accounts = [f"{profile}:{n}" for n in sorted(drama_owes(item))]
         targets, drama_x_variant = drama_approval(s, item)
-        if targets is not None:
-            send_accounts = [a for a in send_accounts if a in targets]
+        if targets is not None:   # dot's frozen targets; YouTube added by the owner on top of them (2026-11-05)
+            send_accounts = [a for a in send_accounts if a in targets or a.endswith(":youtube")]
         if not send_accounts:
             raise upload_post.PayloadBlocked("No approved DramaRama destination is still owed")
         if any(a.endswith(":x") for a in send_accounts) and x_due_now(item, regular):
