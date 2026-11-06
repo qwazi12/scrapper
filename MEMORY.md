@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-06 15:35 UTC — Drive for Desktop write path live (RESULT_SCRAPPER_20261106T1534Z)
+- ops path: ~/Library/CloudStorage/GoogleDrive-kyeboah@kymediamgmt.com/Shared drives/Flamingo Recap/Researcher/ops. Write method: stage in data/ops/out → `mv -n` → connector readback by name.
+- First direct export run: SCRAPPER_READY_20261106 (6,075 rows) and SCRAPPER_POSTED_20261106 (183 rows; 32/44 ICK+DramaRama durations from ffprobe of source files) landed and were read back.
+
 ## PLAN 2026-11-06 ~15:30 UTC — owner chat approvals (S-14, LongForm drop + candidates, DramaRama durability, exports, poller)
 1. S-14: vidIQ caps → daily 20, monthly 250 for November (170 already used). Switch to 100/month on Dec 1 with a durable dated one-shot (not session-bound). Rollback: 100/1850.
 2. Drop the 6 held LongForm rows (#4825, #4819, #4830, #4829, #4824, #4840): set to archived with a note; #4828 was already decided. Propose 3–5 new LongForm candidates (films releasing in the next 2–6 weeks), each with release date + source; check each script against its release date before Review. List them in the next RESULT for the owner to pick. No renders until the owner picks.
