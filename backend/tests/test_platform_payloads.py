@@ -185,3 +185,44 @@ def test_ick_x_without_the_flag_still_needs_a_reviewed_variant():
     from backend.app.social import queue_payloads as qp
     with pytest.raises(ValueError):
         qp.preview("Short hook", "D" * 400, "#love #tonightsconversation #theickroom", ["x"], ick=True)
+
+
+def _clip(path, seconds):
+    subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',f'color=c=red:s=180x320:r=6:d={seconds}',
+        '-f','lavfi','-i',f'sine=f=440:d={seconds}','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p',
+        '-c:a','aac','-shortest',str(path)],check=True)
+    return path
+
+
+def test_r7_facebook_route_by_duration(tmp_path):
+    assert qm.facebook_media_type(_clip(tmp_path/'short.mp4', 89))[0] == 'REELS'
+    assert qm.facebook_media_type(_clip(tmp_path/'long.mp4', 92))[0] == 'VIDEO'
+    bad = tmp_path/'bad.mp4'; bad.write_bytes(b'not a video')
+    assert qm.facebook_media_type(bad) == ('VIDEO', None)              # unreadable keeps the full-length path
+
+
+@pytest.mark.parametrize('seconds,mode', [(30, 'REELS'), (120, 'VIDEO')])
+def test_r7_facebook_send_uses_the_routed_type_and_records_it(tmp_path, monkeypatch, seconds, mode):
+    path = _clip(tmp_path/'clip.mp4', seconds)
+    calls, intents = [], []
+    async def accounts(): return [{'id': 'synthetic:facebook', 'profile': 'synthetic'}]
+    async def upload(path, **kw): calls.append(kw); return 'synthetic-fb'
+    monkeypatch.setattr(upload_post, 'list_accounts', accounts)
+    monkeypatch.setattr(upload_post, 'upload_video', upload)
+    asyncio.run(qm.submit_upload(path, ['synthetic:facebook'], title='T', description='D', tags=[], on_intent=intents.append))
+    assert calls[0]['facebook_media_type'] == mode
+    assert intents[0]['facebook_route']['facebook_media_type'] == mode and intents[0]['facebook_route']['duration_seconds']
+
+
+def test_r7_reels_reaches_the_provider_field(tmp_path, monkeypatch):
+    path = tmp_path/'s.mp4'; path.write_bytes(b'synthetic')
+    seen = []
+    def handler(request):
+        seen.append(multipart(request)['facebook_media_type']); return httpx.Response(200, json={'request_id': 'r'})
+    real = httpx.AsyncClient
+    monkeypatch.setattr(settings, 'uploadpost_api_key', 'synthetic-not-a-credential')
+    monkeypatch.setattr(upload_post.httpx, 'AsyncClient', lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr('backend.app.costs.record_free', lambda *a, **kw: None)
+    asyncio.run(upload_post.upload_video(path, profile='synthetic', platforms=['facebook'], title='T', description='D',
+        facebook_media_type='REELS'))
+    assert seen == [[b'REELS']]

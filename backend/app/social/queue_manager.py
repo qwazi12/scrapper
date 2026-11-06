@@ -725,6 +725,12 @@ async def submit_upload(
                   "client_request_id": request_key}
         overrides = {k:v for k,v in (platform_overrides or {}).items()
                      if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}
+        fb_route = None
+        if network == "facebook" and not media_files and "facebook_media_type" not in overrides:
+            # R7 by duration; a reviewed contract that names its own Facebook mode keeps it.
+            mode, seconds = await asyncio.to_thread(facebook_media_type, video_path)
+            fb_route = {"facebook_media_type": mode, "duration_seconds": seconds, "rule": "R7 2026-11-06: <=90s Reels, >90s VIDEO"}
+            intent["facebook_route"] = fb_route
         transport_title,transport_description=(queue_x_text,"") if queue_x_text is not None and network in ("x","twitter") else (title,description)
         if not media_files:
             try:
@@ -762,6 +768,7 @@ async def submit_upload(
                     description=transport_description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
                     **({'platform_overrides': overrides} if overrides else {}),
+                    **({'facebook_media_type': fb_route['facebook_media_type']} if fb_route else {}),
                 )
             result = {**intent, "state": "accepted", "request_id": rid}
         except Exception as exc:
@@ -899,6 +906,23 @@ def x_media_problem(path: Any) -> str | None:
         return (f"X needs H.264 + AAC-LC; this is {v.get('codec_name')} + {a.get('codec_name')} {a.get('profile') or ''}"
                 ).strip()
     return None
+
+
+FB_REELS_MAX_SECONDS = 90.0
+
+
+def facebook_media_type(path: Any) -> tuple[str, float | None]:
+    """R7 (owner, 2026-11-06): a Facebook Page post is a Reel when the video is 90 s or shorter, a standard VIDEO
+    when longer. A video whose length can't be read stays on VIDEO (the full-length path)."""
+    import json as _json
+    from ..studio import media
+    try:
+        probe = _json.loads(media.run(["ffprobe", "-v", "error", "-show_format", "-of", "json", str(path)],
+                                      timeout=60).stdout)
+        duration = float(probe["format"]["duration"])
+    except Exception:  # noqa: BLE001
+        return "VIDEO", None
+    return ("REELS" if duration <= FB_REELS_MAX_SECONDS else "VIDEO"), round(duration, 2)
 
 
 def x_media_copy(path: Any) -> tuple[pathlib.Path | None, str | None]:

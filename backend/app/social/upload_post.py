@@ -293,6 +293,7 @@ async def upload_video(
     thumbnail: pathlib.Path | None = None,
     idempotency_key: str | None = None,
     platform_overrides: dict | None = None,
+    facebook_media_type: str | None = None,
 ) -> str:
     """Submit one async upload for ONE profile. Returns the request_id.
 
@@ -339,6 +340,10 @@ async def upload_video(
         data["instagram_title"] = title
         data["media_type"] = "REELS"
     data.update(prepare_video_fields(profile, platforms, original_title, description, platform_overrides))
+    if facebook_media_type and "facebook" in platforms:
+        if facebook_media_type not in ("VIDEO", "REELS"):
+            raise PayloadBlocked("Facebook media type must be VIDEO or REELS")
+        data["facebook_media_type"] = facebook_media_type   # R7 duration route (queue_manager.facebook_media_type)
 
     with open(video_path, "rb") as fh:
         files: dict[str, Any] = {"video": (video_path.name, fh, "video/mp4")}
