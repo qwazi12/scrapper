@@ -9,6 +9,14 @@
 6. Exports: write straight to ops/exports once Drive for Desktop (kyeboah@kymediamgmt.com) is mounted; until then the owner drags them in.
 7. S-08 poller: one manual headless run, check the Drive connector works unattended, show the log; install only after owner OK.
 
+## Log 2026-11-06 15:20 UTC — results of the plan above (RESULT_SCRAPPER_20261106T1519Z in Researcher/ops/results)
+1. vidIQ caps live: 20/day, 250/month (readback OK; November used 170). Dec 1 → 100/month is NOT scheduled: a second launchd job was refused as unrequested persistence. Do it by hand on Dec 1, or get owner OK for a job.
+2. #4825/#4819/#4830/#4829/#4824/#4840: "DROPPED" note, kept in Review (not archived, because archived = posted in Scrapper). Candidates proposed: Hexed (project 92 already rendered, never queued; release Nov 25), Hunger Games: Sunrise on the Reaping (project 74, render failed; release Nov 20), Focker-in-Law (Nov 25), Cliff Booth (IMAX Nov 25 / Netflix Dec 23), De Gaulle: Liberté (US date unconfirmed). Waiting for owner pick.
+3. DramaRama spacing is durable: launchd com.kymedia.scrapper-dr-spacing (~/Library/LaunchAgents), script data/ops/dr_spacing_run.sh. Fires 23:07 ET + 23:37 + 08:30 Nov 7; run-once marker; guarded. Session cron fab3a83a deleted. Dry run OK. Verify data/ops/dr_spacing.log before 09:00 ET Nov 7, then `launchctl bootout gui/$(id -u)/com.kymedia.scrapper-dr-spacing`.
+4. R7 verified live: #966 (46.7 s) and #6413 (69.3 s) went out as Reels; #904 and #4869 as VIDEO. #966 sits in Review because of the provider-transcode hold (source audio/AV1), not because of R7.
+5. POSTED export: YouTube Short/long from a youtube.com/shorts/<id> status check (42 Short / 11 long). The YouTube key is only on Railway, and yt-dlp is bot-checked.
+6. Headless poller test OK (claude.ai Drive connector works in `claude -p`). Use no `--continue`. Wrapper: data/ops/ro_get.sh (GET only).
+
 ## DEPLOYED 2026-11-06 09:34 ET — S6, S1a–d, R7 Facebook by duration, ICK-REEL-CUT-01 (b40d933, Railway e9564440 SUCCESS; owner OK per item)
 - **S6** b28ac62: the countdown topics no longer rebuild on their own while countdown automation is off. That rebuild had been spending ~55 vidIQ credits a day.
 - **S1** 267607c / 9b0fcb7 / dd0177a / 670dd4e:
