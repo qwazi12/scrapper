@@ -1,5 +1,18 @@
 # Scrapper Memory
 
+## DEPLOYED 2026-11-06 09:34 ET — S6, S1a–d, R7 Facebook by duration, ICK-REEL-CUT-01 (b40d933, Railway e9564440 SUCCESS; owner OK per item)
+- **S6** b28ac62: the countdown topics no longer rebuild on their own while countdown automation is off. That rebuild had been spending ~55 vidIQ credits a day.
+- **S1** 267607c / 9b0fcb7 / dd0177a / 670dd4e:
+  - whole-profile posts get the short X copy, max 2 hashtags;
+  - DramaRama X gets an H.264/AAC-LC copy;
+  - DramaRama YouTube is on;
+  - regular ICK X posts the title + 2 brand tags.
+- **R7** 10884a1: Facebook posts a Reel for videos ≤90 s and standard VIDEO for longer ones, on all Pages. Each send records `facebook_route`. Live from deploy ddcee027 (14:29 UTC).
+- **ICK-REEL-CUT-01** b40d933: Nov 7–13 ET. 2 of the 4 ICK Facebook slots a day post a 60–90 s opening cut as a Reel. Each send records `ick_test`; the slot table is in LANE_STATUS update1.
+- **LongForm:** 7 rows held in Review because their voiceover presents past release dates as upcoming: #4828 (owner: drop), #4825, #4819, #4830, #4829, #4824, #4840. Ready: #4826 (Nov 6) and #4841 (Nov 7).
+- Verified: full suite 1,245 passed, health 200. Not yet verified: the first live REELS send (next Screen Central Facebook slot).
+- Local `main` still holds the superseded f7d743f/5fa2c62 (backup branch s1-backup-5fa2c62). Never push it.
+
 ## DONE 2026-11-04 07:25 ET — 5 Screen Central test Shorts pinned (owner: "post as priority 1x a day … around 11am … today 11am and 4pm")
 - Queue #11349–11353, pipeline Movie Clips, accounts Cinama:*, copy from youtube_shorts_seo_packs.xlsx (description without the hashtag line; hashtags + YouTube tags as structured tags).
 - Pinned ET: Wed 11:00 (#11349), Wed 16:00 (#11350), Thu/Fri/Sat 11:00 (#11351–11353). X: 3 full copy, 2 title+hashtags (over 280).
