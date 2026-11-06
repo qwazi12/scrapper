@@ -1369,12 +1369,14 @@ def auto_tick() -> dict[str, Any] | None:
     from . import countdown_topics
     now = _now()
     auto_state["last_check_at"] = now.isoformat()
-    if countdown_topics.is_stale(now):
-        countdown_topics.refresh_async()
     cfg = auto_settings()
     if not cfg["enabled"]:
+        # Off = no automatic topic rebuild either (owner 2026-11-06: it spent ~55 vidIQ credits a day while off).
+        # ↻ Refresh on the Countdowns page still rebuilds on demand.
         auto_state["last_result"] = "off"
         return None
+    if countdown_topics.is_stale(now):
+        countdown_topics.refresh_async()
     pu = cfg.get("paused_until")
     if pu and now < datetime.datetime.fromisoformat(pu):
         auto_state["last_result"] = f"paused for today (until {pu[:16]} UTC)"

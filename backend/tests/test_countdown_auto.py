@@ -247,3 +247,16 @@ def test_topics_use_the_phrase_pool_without_extra_vidiq_calls():
     assert "best horror movies — 134,758/month" in ask.call_args.args[0]  # the AI must pick from real searches
     t = countdown_topics.listing()["topics"][0]
     assert t["demand"]["monthly_searches"] == 134758 and t["checks"]["demand"]["status"] == "pass"
+
+
+def test_automation_off_never_rebuilds_topics_on_its_own(client):
+    countdown.save_auto({"enabled": False})
+    with patch.object(countdown_topics, "is_stale", return_value=True), \
+            patch.object(countdown_topics, "refresh_async") as refresh:
+        assert countdown.auto_tick() is None
+        assert not refresh.called and countdown.auto_state["last_result"] == "off"
+    countdown.save_auto({"enabled": True})
+    with patch.object(countdown_topics, "is_stale", return_value=True), \
+            patch.object(countdown_topics, "refresh_async") as refresh, patch("backend.app.costs.today_spend", return_value=0.0):
+        countdown.auto_tick()
+        assert refresh.called                                            # on: the daily rebuild still happens
