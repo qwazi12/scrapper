@@ -141,10 +141,48 @@ def test_x_over_the_guard_is_held_with_its_reason_and_facebook_is_never_resent(s
 def test_x_hold_never_blocks_facebook(session, drama, monkeypatch, tmp_path):
     sent = []
     it = ep(session, "Alpha", 1, video_path=_connected(monkeypatch, sent, tmp_path))
-    monkeypatch.setattr(qm, "x_media_problem", lambda p: "X needs H.264 + AAC-LC; this is hevc + aac LC")
+    monkeypatch.setattr(qm, "x_media_problem", lambda p: "172s is over Scrapper's 140s X guard (longer X uploads not yet verified)")
     asyncio.run(qm.publish_queue_item(it.id, session, regular=False))   # Post now: both platforms due
     session.refresh(it)
     assert sent == [["facebook"]] and it.accounts == ["Dramarama:facebook"]
+
+
+def test_wrong_format_for_x_sends_x_a_converted_copy_and_deletes_it(session, drama, monkeypatch, tmp_path):
+    files = {}
+
+    async def list_accounts():
+        return [{"id": f"Dramarama:{n}", "profile": "Dramarama"} for n in ("facebook", "x")]
+
+    async def upload_video(path, *, profile, platforms, **kw):
+        files[platforms[0]] = str(path)
+        return "r"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    copy = tmp_path / "v.x.mp4"
+    copy.write_bytes(b"h264")
+    monkeypatch.setattr(qm, "x_media_copy", lambda p: (copy, None))
+    monkeypatch.setattr(qm, "x_posts_last_day", lambda s, profile, now: 0)   # other tests' X sends share the journal
+    it = ep(session, "Alpha", 1, accounts=("Dramarama:facebook", "Dramarama:x"), video_path=str(video))
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+    assert files == {"facebook": str(video), "x": str(copy)}             # Facebook keeps the original
+    assert not copy.exists()
+
+
+def test_x_media_copy_converts_only_a_wrong_format(monkeypatch, tmp_path):
+    from backend.app.studio import media
+    ran = []
+    monkeypatch.setattr(media, "run", lambda cmd, timeout=0: ran.append(cmd))
+    monkeypatch.setattr(qm, "x_media_problem", lambda p: "200s is over Scrapper's 140s X guard")
+    assert qm.x_media_copy(tmp_path / "a.mp4") == (None, "200s is over Scrapper's 140s X guard") and ran == []
+    monkeypatch.setattr(qm, "x_media_problem", lambda p: None)
+    assert qm.x_media_copy(tmp_path / "a.mp4") == (None, None) and ran == []
+    checks = iter(["X needs H.264 + AAC-LC; this is hevc + aac HE-AACv2", None])
+    monkeypatch.setattr(qm, "x_media_problem", lambda p: next(checks))
+    out, why = qm.x_media_copy(tmp_path / "a.mp4")
+    assert why is None and out.suffix == ".mp4" and "libx264" in ran[0] and "aac_low" in ran[0]
+    out.unlink()
 
 
 def test_x_text_over_280_is_held_not_shortened():

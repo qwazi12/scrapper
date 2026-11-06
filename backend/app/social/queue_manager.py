@@ -692,6 +692,7 @@ async def submit_upload(
     request_keys: dict | None = None,
     queue_x_text: str | None = None,
     before_destination=None,
+    x_video_path: pathlib.Path | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -756,7 +757,8 @@ async def submit_upload(
                     title=title, description=description, idempotency_key=request_key)
             else:
                 rid = await upload_post.upload_video(
-                    video_path, profile=profile, platforms=platforms, title=transport_title,
+                    x_video_path if x_video_path and network in ("x", "twitter") else video_path,
+                    profile=profile, platforms=platforms, title=transport_title,
                     description=transport_description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
                     **({'platform_overrides': overrides} if overrides else {}),
@@ -897,6 +899,32 @@ def x_media_problem(path: Any) -> str | None:
         return (f"X needs H.264 + AAC-LC; this is {v.get('codec_name')} + {a.get('codec_name')} {a.get('profile') or ''}"
                 ).strip()
     return None
+
+
+def x_media_copy(path: Any) -> tuple[pathlib.Path | None, str | None]:
+    """X's file (owner, 2026-11-05: post to every account): None = the original fits X; a path = an H.264 + AAC-LC
+    copy of it (same length, picture and sound) made only because the format was wrong; or a reason to hold X."""
+    import os
+    import tempfile
+    from ..studio import media
+    reason = x_media_problem(path)
+    if not reason or not reason.startswith("X needs H.264"):
+        return None, reason
+    fd, name = tempfile.mkstemp(suffix=".x.mp4")
+    os.close(fd)
+    out = pathlib.Path(name)
+    try:
+        media.run(["ffmpeg", "-y", "-v", "error", "-i", str(path), "-map", "0:v:0", "-map", "0:a:0?",
+                   "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "20",
+                   "-c:a", "aac", "-profile:a", "aac_low", "-b:a", "160k", "-movflags", "+faststart", str(out)], timeout=900)
+    except Exception as exc:  # noqa: BLE001
+        out.unlink(missing_ok=True)
+        return None, f"could not convert for X ({str(exc)[:120]})"
+    again = x_media_problem(out)
+    if again:
+        out.unlink(missing_ok=True)
+        return None, again
+    return out, None
 
 
 def x_due_now(item: QueueItem, regular: bool) -> bool:
@@ -1370,6 +1398,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     ick_release=ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
     send_accounts = drama_controls.dispatch_targets(s, item) if is_drama else (ick_release["targets"] if ick_release else list(item.accounts))
     drama_x_variant = None
+    x_video_path = None
     if item.pipeline == DRAMARAMA and not is_drama:
         # Regular DramaRama (owner + dot handoff, 2026-11-03): explicit destinations only. A whole-profile pick means
         # Facebook + X (never YouTube just because it's connected); dot's Ready receipt narrows to its frozen targets.
@@ -1381,7 +1410,9 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         if not send_accounts:
             raise upload_post.PayloadBlocked("No approved DramaRama destination is still owed")
         if any(a.endswith(":x") for a in send_accounts) and x_due_now(item, regular):
-            reason = x_media_problem(video_path) or x_text_problem(item, drama_x_variant)
+            reason = x_text_problem(item, drama_x_variant)
+            if not reason:
+                x_video_path, reason = await asyncio.to_thread(x_media_copy, video_path)
             if reason:
                 # Hold X for this episode with the reason; never shorten it, never block Facebook/YouTube.
                 send_accounts = [a for a in send_accounts if not a.endswith(":x")]
@@ -1563,15 +1594,20 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
             item.publish_requests = [*saved, entry]
             s.commit()
-        entries = await submit_upload(
-            video_path, send_accounts, title=item.title or item.video_name,
-            description=description, tags=backend_tags, thumbnail=thumb, allow=allow,
-            on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
-            **({"before_destination":refresh_ick_identity} if ick_release else {}),
-            **({"media_files": images} if images else {}),
-            **({'platform_overrides': drama_payload} if is_drama else {'queue_x_text':queue_x_text} if queue_x_text is not None else {}),
-            **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
-        )
+        try:
+            entries = await submit_upload(
+                video_path, send_accounts, title=item.title or item.video_name,
+                description=description, tags=backend_tags, thumbnail=thumb, allow=allow,
+                on_intent=lambda entry: persist(entry), on_result=lambda entry: persist(entry, True),
+                **({"before_destination":refresh_ick_identity} if ick_release else {}),
+                **({"media_files": images} if images else {}),
+                **({'platform_overrides': drama_payload} if is_drama else {'queue_x_text':queue_x_text} if queue_x_text is not None else {}),
+                **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
+                **({'x_video_path': x_video_path} if x_video_path else {}),
+            )
+        finally:
+            if x_video_path:
+                x_video_path.unlink(missing_ok=True)
         from ..budget_reservations import lock
         lock(s);s.refresh(item)
         # Persisted decisions/late-response conflicts take precedence over a stale
