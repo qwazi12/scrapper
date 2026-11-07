@@ -107,12 +107,18 @@ def test_whole_profile_means_facebook_x_and_youtube(session, drama, monkeypatch,
     assert it.status == "ready" and sorted(it.accounts) == ["Dramarama:x", "Dramarama:youtube"]
 
 
-def test_dot_approved_rows_keep_their_frozen_destinations(session, drama, monkeypatch, tmp_path):
+def test_dot_approved_rows_keep_their_frozen_destinations_plus_x_and_youtube(session, drama, monkeypatch, tmp_path):
+    from backend.app import drama_dialogue
     sent = []
     it = ep(session, "Prime", 1, video_path=_connected(monkeypatch, sent, tmp_path))
     monkeypatch.setattr(qm, "drama_approval", lambda s, item: (["Dramarama:facebook"], None))
+    monkeypatch.setattr(qm, "x_media_copy", lambda p: (None, None))
+    monkeypatch.setattr(qm, "x_posts_last_day", lambda s, profile, now: 0)
+    copy = tmp_path / "dialogue.mp4"
+    copy.write_bytes(b"vocals")
+    monkeypatch.setattr(drama_dialogue, "fetch", lambda item: (copy, None))
     asyncio.run(qm.publish_queue_item(it.id, session, regular=False))   # even a manual Post now
-    assert sent == [["facebook"], ["youtube"]]                          # dot's targets, plus the owner's YouTube
+    assert sent == [["facebook"], ["x"], ["youtube"]]                   # dot's targets, plus the owner's X and YouTube
 
 
 def test_review_rows_and_unreviewed_copy_are_refused_before_download(session, drama, monkeypatch):
@@ -354,3 +360,80 @@ def test_ick_reel_test_slot_sends_facebook_the_highlight_cut(session, monkeypatc
     assert (sent["facebook"] == cut) is expect_cut
     assert fb["ick_test"]["arm"] == ("cut" if expect_cut else "full")
     assert fb["facebook_route"]["facebook_media_type"] == ("REELS" if expect_cut else "VIDEO")
+
+
+def _paths(monkeypatch, tmp_path):
+    files = {}
+
+    async def list_accounts():
+        return [{"id": f"Dramarama:{n}", "profile": "Dramarama"} for n in ("facebook", "x", "youtube")]
+
+    async def upload_video(path, *, profile, platforms, **kw):
+        files[platforms[0]] = str(path)
+        return "r"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    monkeypatch.setattr(qm, "x_posts_last_day", lambda s, profile, now: 0)
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    return files, str(video)
+
+
+def test_youtube_gets_the_dialogue_only_copy_and_facebook_keeps_the_original(session, drama, monkeypatch, tmp_path):
+    from backend.app import drama_dialogue
+    files, video = _paths(monkeypatch, tmp_path)
+    copy = tmp_path / "dialogue.mp4"
+    copy.write_bytes(b"vocals")
+    monkeypatch.setattr(drama_dialogue, "fetch", lambda item: (copy, None))
+    it = ep(session, "Alpha", 1, accounts=("Dramarama:facebook", "Dramarama:youtube"), video_path=video)
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+    session.refresh(it)
+    assert files == {"facebook": video, "youtube": str(copy)}
+    assert not copy.exists()                                            # temporary download removed
+    yt = next(e for e in it.publish_requests if e.get("platforms") == ["youtube"])
+    assert yt["audio"].startswith("dialogue-only")
+
+
+def test_youtube_waits_without_a_dialogue_copy_and_stays_owed(session, drama, monkeypatch, tmp_path):
+    from backend.app import drama_dialogue
+    files, video = _paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(drama_dialogue, "fetch", lambda item: (None, "0 dialogue-only copies named abc.mp4"))
+    it = ep(session, "Alpha", 1, accounts=("Dramarama:facebook", "Dramarama:youtube"), video_path=video)
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+    assert files == {"facebook": video}                                 # never the original audio on YouTube
+    qm.apply_result(it, {"ok": [("Dramarama:facebook", "https://fb/1")], "failed": {}}, et(3, 10, 10))
+    assert it.status == "ready" and it.accounts == ["Dramarama:youtube"]
+
+
+def test_paused_youtube_never_fetches_a_copy(session, monkeypatch, tmp_path):
+    from backend.app import drama_dialogue
+    cfg = qm.load_schedule(session)
+    qm.save_schedule(session, {**cfg, "timezone": "America/New_York", "pipelines": {
+        "DramaRama": {"posts_per_day": 4, "platforms": {"facebook": FB, "x": X, "youtube": 0}}}})
+    try:
+        files, video = _paths(monkeypatch, tmp_path)
+        monkeypatch.setattr(drama_dialogue, "fetch", lambda item: pytest.fail("fetched while YouTube is paused"))
+        it = ep(session, "Alpha", 1, accounts=("Dramarama:facebook", "Dramarama:youtube"), video_path=video)
+        it.scheduled_at = et(3, 10)
+        session.commit()
+        asyncio.run(qm.publish_queue_item(it.id, session, regular=True))
+        assert files == {"facebook": video}
+    finally:
+        qm.save_schedule(session, None)
+
+
+def test_x_goes_out_even_when_dots_frozen_targets_left_it_out(session, drama, monkeypatch, tmp_path):
+    files, video = _paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(qm, "drama_approval", lambda s, item: (["Dramarama:facebook"], None))
+    monkeypatch.setattr(qm, "x_media_copy", lambda p: (None, None))
+    it = ep(session, "Alpha", 1, accounts=("Dramarama:facebook", "Dramarama:x"), video_path=video)
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+    assert set(files) == {"facebook", "x"}
+
+
+def test_dialogue_copy_name_is_the_source_drive_id():
+    from backend.app import drama_dialogue
+    row = QueueItem(drive_link="https://drive.google.com/file/d/1AbC_def-GHIjkl012/view?usp=drivesdk")
+    assert drama_dialogue.copy_name(row) == "1AbC_def-GHIjkl012.mp4"
+    assert drama_dialogue.copy_name(QueueItem(drive_link=None)) is None
+    assert drama_dialogue.fetch(QueueItem(drive_link=None)) == (None, "no Drive source to match a dialogue-only copy")

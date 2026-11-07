@@ -693,6 +693,7 @@ async def submit_upload(
     queue_x_text: str | None = None,
     before_destination=None,
     x_video_path: pathlib.Path | None = None,
+    youtube_video_path: pathlib.Path | None = None,
     facebook_video_path: pathlib.Path | None = None,
     facebook_receipt: dict | None = None,
 ) -> list[dict[str, Any]]:
@@ -729,6 +730,8 @@ async def submit_upload(
                      if k.startswith('facebook_') and network == 'facebook' or k.startswith('x_') and network in ('x','twitter')}
         fb_route = None
         fb_path = facebook_video_path if facebook_video_path and network == "facebook" else video_path
+        if network == "youtube" and youtube_video_path:
+            intent["audio"] = "dialogue-only copy (owner 2026-11-06)"
         if network == "facebook" and facebook_receipt:
             intent["ick_test"] = facebook_receipt
         if network == "facebook" and not media_files and "facebook_media_type" not in overrides:
@@ -768,7 +771,8 @@ async def submit_upload(
                     title=title, description=description, idempotency_key=request_key)
             else:
                 rid = await upload_post.upload_video(
-                    x_video_path if x_video_path and network in ("x", "twitter") else fb_path,
+                    x_video_path if x_video_path and network in ("x", "twitter")
+                    else youtube_video_path if youtube_video_path and network == "youtube" else fb_path,
                     profile=profile, platforms=platforms, title=transport_title,
                     description=transport_description, tags=tags, privacy=settings.publish_privacy,
                     scheduled_date=scheduled_date, thumbnail=thumbnail, idempotency_key=request_key,
@@ -1491,8 +1495,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         profile = next(iter(DRAMARAMA_PROFILES))
         send_accounts = [f"{profile}:{n}" for n in sorted(drama_owes(item))]
         targets, drama_x_variant = drama_approval(s, item)
-        if targets is not None:   # dot's frozen targets; YouTube added by the owner on top of them (2026-11-05)
-            send_accounts = [a for a in send_accounts if a in targets or a.endswith(":youtube")]
+        if targets is not None:   # dot's frozen targets; YouTube (2026-11-05) and X (2026-11-06: own sequence from EP01) added by the owner
+            send_accounts = [a for a in send_accounts if a in targets or a.endswith((":youtube", ":x"))]
         if not send_accounts:
             raise upload_post.PayloadBlocked("No approved DramaRama destination is still owed")
         if any(a.endswith(":x") for a in send_accounts) and x_due_now(item, regular):
@@ -1637,6 +1641,15 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             x_profile = str(send_accounts[0]).partition(":")[0]
             if x_posts_last_day(s, x_profile, datetime.datetime.now(UTC)) >= X_DAILY_CAP:
                 allow = {**(allow or {}), "x": False}      # Upload-Post Basic cap: X waits for a later slot
+        yt_dialogue_path = None
+        if (item.pipeline == DRAMARAMA and not is_drama and any(a.endswith(":youtube") for a in send_accounts)
+                and (allow or {}).get("youtube") is not False):
+            # DramaRama YouTube gets its dialogue-only copy or waits — never the original audio (owner, 2026-11-06)
+            from .. import drama_dialogue
+            yt_dialogue_path, why = await asyncio.to_thread(drama_dialogue.fetch, item)
+            if not yt_dialogue_path:
+                allow = {**(allow or {}), "youtube": False}
+                logbus.log("warning", "queue_youtube_waits", f"Item #{item.id}: YouTube waits — {why}")
         async def refresh_ick_identity(account):
             nonlocal current_ick_identity
             try:current_ick_identity=await ick_readiness.identity_for(s,item)
@@ -1703,12 +1716,15 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 **({'platform_overrides': drama_payload} if is_drama else {'queue_x_text':queue_x_text} if queue_x_text is not None else {}),
                 **({'request_keys': drama_canary.request_keys(s,item)} if drama_canary.current() else {}),
                 **({'x_video_path': x_video_path} if x_video_path else {}),
+                **({'youtube_video_path': yt_dialogue_path} if yt_dialogue_path else {}),
                 **({'facebook_video_path': fb_cut_path} if fb_cut_path else {}),
                 **({'facebook_receipt': fb_receipt} if fb_receipt else {}),
             )
         finally:
             if x_video_path:
                 x_video_path.unlink(missing_ok=True)
+            if yt_dialogue_path:
+                yt_dialogue_path.unlink(missing_ok=True)
             if fb_cut_path:
                 fb_cut_path.unlink(missing_ok=True)
         from ..budget_reservations import lock
