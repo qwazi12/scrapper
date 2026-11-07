@@ -320,7 +320,7 @@ def test_whole_profile_screen_central_post_sends_x_the_short_copy(session, monke
     session.add(it)
     session.commit()
     asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
-    assert sent["x"] == ("A title\n\n#shorts #movieclips", "")
+    assert sent["x"] == ("A title\n\n#MovieClips", "")                 # X: 2 tags max, no #shorts (owner, 2026-11-07)
     assert sent["facebook"][0] == "A title" and "D" * 300 in sent["facebook"][1]
 
 

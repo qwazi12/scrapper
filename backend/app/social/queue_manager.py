@@ -662,6 +662,27 @@ def _hashtags(tags: str | None) -> list[str]:
     return [t.lstrip("#") for t in (tags or "").split() if t.lstrip("#")]
 
 
+CAP_NETWORKS = ("youtube", "instagram", "facebook", "x", "twitter")
+
+
+def platform_hashtags(s: Session, item: QueueItem):
+    """describe(profile, network, text) -> text with that platform's hashtags (owner, 2026-11-07)."""
+    from . import hashtag_rules, queue_payloads
+    try:
+        pool = queue_payloads.tags(item.tags)["public_hashtags"]
+    except ValueError:
+        pool = hashtag_rules.HASHTAG.findall(item.tags or "")
+    shorts = any(hashtag_rules.key(t) in hashtag_rules.SHORTS for t in pool)
+    lead = hashtag_rules.drama_lead(item.source, item.video_name) if item.pipeline == DRAMARAMA else []
+    # Source channels are stored as "<channel> — <channel id>" pipelines: their names never go on our posts.
+    others = [p.partition(" — ")[0] for (p,) in s.query(QueueItem.pipeline).filter(QueueItem.pipeline.like("% — %")).distinct()]
+
+    def describe(profile: str, network: str, text: str) -> str:
+        brand = "LongForm" if item.pipeline == "LongForm" else profile
+        return hashtag_rules.apply(text, pool, network, brand=brand, profile=profile, lead=lead, shorts=shorts, other_names=others)
+    return describe
+
+
 def definitely_rejected(exc: BaseException) -> bool:
     """Upload-Post answered and refused (4xx), or nothing was sent. 408 (timeout) and
     409 (conflict / possible duplicate) stay uncertain."""
@@ -696,6 +717,7 @@ async def submit_upload(
     youtube_video_path: pathlib.Path | None = None,
     facebook_video_path: pathlib.Path | None = None,
     facebook_receipt: dict | None = None,
+    describe=None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -740,6 +762,11 @@ async def submit_upload(
             fb_route = {"facebook_media_type": mode, "duration_seconds": seconds, "rule": "R7 2026-11-06: <=90s Reels, >90s VIDEO"}
             intent["facebook_route"] = fb_route
         transport_title,transport_description=(queue_x_text,"") if queue_x_text is not None and network in ("x","twitter") else (title,description)
+        if describe and network in CAP_NETWORKS:    # this platform's hashtag cut (owner, 2026-11-07)
+            if queue_x_text is not None and network in ("x","twitter"):
+                transport_title=describe(profile,network,transport_title)
+            else:
+                transport_description=describe(profile,network,transport_description)
         if not media_files:
             try:
                 from .. import drama_canary
@@ -1627,6 +1654,10 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             parts=preview["tags"];backend_tags=[t.lstrip("#") for t in parts["public_hashtags"]]+parts["phrase_tags"]
             if parts["encoding"].startswith("structured"):
                 description="\n\n".join(x for x in (item.description," ".join(parts["public_hashtags"])) if x)
+        describe=None
+        if not is_drama and not ick_release:
+            # Per-platform hashtags (owner, 2026-11-07); dot's guarded DramaRama and guarded ICK copy stay byte-exact.
+            describe=platform_hashtags(s,item)
         thumb = pathlib.Path(item.thumb_path) if item.thumb_path and not item.thumb_path.startswith("http") else None
         allow = None
         group = pipeline_group(item)
@@ -1719,6 +1750,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 **({'youtube_video_path': yt_dialogue_path} if yt_dialogue_path else {}),
                 **({'facebook_video_path': fb_cut_path} if fb_cut_path else {}),
                 **({'facebook_receipt': fb_receipt} if fb_receipt else {}),
+                **({'describe': describe} if describe else {}),
             )
         finally:
             if x_video_path:
