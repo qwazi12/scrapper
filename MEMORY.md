@@ -7,6 +7,11 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-07 13:30 UTC — ops watch replaces poller; per-platform copy + Posting Review reader live
+- launchd com.kymedia.scrapper-ops-watch (:05/:35, data/ops/ops_watch.py): plain checks, claude -p only on new findings; pre-approved writes only via data/ops/ops_actions.py (approve/move/pause/retry, guarded). Old poller and dr-spacing unloaded (plists in data/ops/retired/). Project .claude/settings.json (uncommitted) holds the allow/ask rules.
+- Pushed f4e7de2: queue_items.platform_copy + GET /api/ops/posting-review. Railway c13ef2fa SUCCESS; endpoint reads all 4 tabs (verified). approve applies sheet copy (YouTube title; FB caption minus hashtags; per-platform columns), Edit -> NEEDS OWNER.
+- 13:05 run hit a Drive for Desktop restart (empty mount); watch now retries after 60 s.
+
 ## Log 2026-11-07 12:23 UTC — hashtags live; claim watch + S-02 daily exports on launchd (RESULT_SCRAPPER_20261107T1223Z)
 - Pushed 9d72b8e + 704d415 (per-platform hashtags; DramaRama 3rd tag = row's genre tag, DramaRama YouTube ends #shorts). Railway d63f9b77 SUCCESS. 1258 passed.
 - launchd: com.kymedia.scrapper-yt-claim-watch (30 min, data/ops/yt_claim_watch.py) and com.kymedia.scrapper-daily-exports (05:45 ET, data/ops/daily_exports.sh: GET -> CSV -> mv -n -> Drive id + size read-back; READY includes Review with status column). Manual run: READY_20261107 10,474 rows, POSTED_20261107 165 rows, both confirmed via connector.
