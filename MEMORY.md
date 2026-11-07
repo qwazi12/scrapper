@@ -7,6 +7,13 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-07 14:20 UTC — HH:00 rule live; Screen Central burst fixed and resumed
+- Owner rule (HEAD_RULES_20261107T1345Z): every post at HH:00 ET, one video per channel (brand+platform) per hour, no catch-up bursts. Pushed 87cfb58, Railway 3f440d13 SUCCESS 09:12 ET.
+- Burst cause: a posted row held in Review didn't count as using its slot, so every 5-min tick re-gave 08:00 to the next row (5 Screen Central posts 08:02–08:28; Nov 6 10:00 same, which used Movie Clips' daily 6 by noon, verified in logs). Fixed in slot_used + channel_busy_this_hour; test test_a_held_post_and_two_due_rows_post_once_per_channel_hour fails on old code.
+- Live config (undo data/ops/hh00_pre_20261107T135800Z.json): ICK fb 10/13/17/20, x 11/19; DR x 11/18, youtube 13:00 (was 12:30; claim watch -> 13:00, then 13:00+19:00). Screen Central paused 08:46, resumed 09:13 ET from sc_pause_pre_20261107T134653Z.json.
+- Owner deleted 5 YT Shorts (#897 #1423 #1005 #961 #900): notes marked "YouTube removed by owner — don't repost".
+- Pending owner: #11353 hold/post (unpinned); #4841 copy; #873 not-posted decision; today's Movie Clips likely capped after 1 more post; Upload-Post scheduled_date for exact HH:00 (follow-up).
+
 ## Log 2026-11-07 13:30 UTC — ops watch replaces poller; per-platform copy + Posting Review reader live
 - launchd com.kymedia.scrapper-ops-watch (:05/:35, data/ops/ops_watch.py): plain checks, claude -p only on new findings; pre-approved writes only via data/ops/ops_actions.py (approve/move/pause/retry, guarded). Old poller and dr-spacing unloaded (plists in data/ops/retired/). Project .claude/settings.json (uncommitted) holds the allow/ask rules.
 - Pushed f4e7de2: queue_items.platform_copy + GET /api/ops/posting-review. Railway c13ef2fa SUCCESS; endpoint reads all 4 tabs (verified). approve applies sheet copy (YouTube title; FB caption minus hashtags; per-platform columns), Edit -> NEEDS OWNER.
