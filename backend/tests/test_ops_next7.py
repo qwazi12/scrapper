@@ -60,8 +60,6 @@ def test_other_platform_times_take_the_next_free_hour_one_item_each(session, sch
     a, b = (add(session, pipeline="The ICK Room", source="The ICK Room / t", accounts=["TheIckRoom:*"]) for _ in range(2))
     c = add(session, pipeline="The ICK Room", source="The ICK Room / t", accounts=["TheIckRoom:x"],
             catchup={"done": [["TheIckRoom:facebook", "u"]]})
-    held = add(session, pipeline="The ICK Room", source="The ICK Room / t", accounts=["TheIckRoom:x"],
-               catchup={"done": [["TheIckRoom:facebook", "u"]], "held": {"TheIckRoom:x": "X needs H.264"}})
     now = et(3, 7)
     qm.plan_schedule(session, now)
     got = rows(ops_next7.plan(session, now, {"TheIckRoom": ["facebook", "x"]}))
@@ -70,7 +68,19 @@ def test_other_platform_times_take_the_next_free_hour_one_item_each(session, sch
     assert (a.id, "facebook", "03 10:00", "row slot") in got and (b.id, "facebook", "03 13:00", "row slot") in got
     assert (a.id, "04 11:00") in x and (b.id, "05 11:00") in x                # one X post per hour, posting order
     assert all(slot.endswith(":00") for *_, slot, _ in got)
-    assert not any(r[0] == held.id for r in got)                              # a held platform has no slot
+
+
+def test_an_ick_release_goes_at_its_reserved_slot_to_its_targets(session, schedule, monkeypatch):
+    from types import SimpleNamespace
+    from backend.app import ick_readiness
+    schedule({"The ICK Room": {"platforms": {"facebook": ["10:00", "13:00"], "x": ["11:00"]}}})
+    it = add(session, pipeline="The ICK Room", source="The ICK Room / t", accounts=["TheIckRoom:*"])
+    it.scheduled_at = et(3, 12)
+    session.commit()
+    doc = {"slot": et(3, 12).isoformat(), "targets": ["TheIckRoom:facebook"]}
+    monkeypatch.setattr(ick_readiness, "guard", lambda s, item: SimpleNamespace(data={"document": doc}) if item.id == it.id else None)
+    got = rows(ops_next7.plan(session, et(3, 7), {"TheIckRoom": ["facebook", "x"]}))
+    assert got == [(it.id, "facebook", "03 12:00", "reserved release")]
 
 
 def test_endpoint_rows(session, schedule, monkeypatch):

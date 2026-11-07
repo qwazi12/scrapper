@@ -1,8 +1,8 @@
 """Read-only: every Ready/Review queue item's slot on each platform for the next 7 days (owner, 2026-11-07,
 INSTR_SCRAPPER_20261107T1415Z). The Mac's 05:45 ET export writes SCRAPPER_NEXT7_<date>.csv from it.
 
-Slots come from the scheduler's own plan: DramaRama from each platform's own sequence (drama_net_plans); other
-queues post at the row's slot on every platform whose times include it, and a platform with other times takes its
+Slots come from the scheduler's own plan: DramaRama from each platform's own sequence (drama_net_plans); an ICK
+release dot approved, at its reserved slot to its approved targets; other queues post at the row's slot on every platform whose times include it, and a platform with other times takes its
 next free time after that (projected, in posting order, one item per platform per hour). Nothing is written."""
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ NETS = ("youtube", "facebook", "instagram", "x")
 
 def owed(it: QueueItem, connected: dict[str, list[str]]) -> list[str]:
     """Platforms this row still has to go to: its accounts ("Profile:*" = the profile's connected platforms)
-    minus the ones its catch-up record already delivered or holds (e.g. X waiting on a re-encode)."""
-    done = {str(a) for a, *_ in ((it.catchup or {}).get("done") or [])} | set((it.catchup or {}).get("held") or {})
+    minus the ones its catch-up record already delivered."""
+    done = {str(a) for a, *_ in ((it.catchup or {}).get("done") or [])}
     out = []
     for acc in it.accounts or []:
         prof, _, net = str(acc).partition(":")
@@ -65,12 +65,23 @@ def plan(s: Session, now: datetime.datetime, connected: dict[str, list[str]], da
     for it in rows:
         if it.pipeline != qm.DRAMARAMA:
             groups.setdefault(qm.pipeline_group(it), []).append(it)
+    from . import ick_readiness
     for group, items in groups.items():
         items.sort(key=lambda it: (qm._aware(it.scheduled_at), it.id))
         timed = qm.timed_platforms(group)
         later: dict[str, list[QueueItem]] = {}
         taken: dict[str, set] = {}
         for it in items:
+            try:
+                release = ick_readiness.guard(s, it) if group == qm.ICK_ROOM else None
+            except Exception:  # noqa: BLE001 — an unreconciled release has no slot to report
+                release = None
+            if release is not None:                 # dot's ICK release: its reserved slot, its exact targets
+                slot = datetime.datetime.fromisoformat(release.data["document"]["slot"])
+                for acc in release.data["document"].get("targets") or []:
+                    add(it, str(acc).partition(":")[2], slot, "reserved release")
+                    taken.setdefault(str(acc).partition(":")[2], set()).add(qm._aware(slot).replace(minute=0, second=0, microsecond=0))
+                continue
             at = qm._aware(it.scheduled_at)
             hhmm = at.astimezone(tz).strftime("%H:%M")
             for net in owed(it, connected):
