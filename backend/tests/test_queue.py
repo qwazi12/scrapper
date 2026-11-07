@@ -663,10 +663,9 @@ def test_pacing_presets_20_posts_per_day():
     qm._schedule_cfg = cfg
     slots = qm.slots_after(et(2026, 10, 1, 7, 30), 20)
     assert len(slots) == 20
-    # First slot at 8:00, last slot at 22:00
-    assert slots[0].astimezone(ET).hour == 8
-    assert slots[0].astimezone(ET).minute == 0
-    assert slots[-1].astimezone(ET).hour == 22
+    # On the hour, never two in one hour (owner, 2026-11-07): 20 a day can't fit 8-22, so the day runs 8:00-23:00.
+    day1 = [t.astimezone(ET) for t in slots if t.astimezone(ET).day == 1]
+    assert [t.hour for t in day1] == list(range(8, 24)) and all(t.minute == 0 for t in day1)
     assert slots[-1].astimezone(ET).minute == 0
     assert qm.slots_per_day() == 20
 
@@ -895,13 +894,16 @@ def test_longform_row_uses_its_breakdowns_options(session, client, monkeypatch, 
 def test_each_queue_has_its_own_exact_times(session, client, reset_schedule):
     r = client.put("/api/schedule/config", json={
         "timezone": "America/New_York", "start_hour": 10, "end_hour": 20, "interval_hours": 2, "posts_per_day": 1,
-        "pipeline_overrides": {"Movie Clips": {"times": ["18:30", "10:00", "10:00"]},
+        "pipeline_overrides": {"Movie Clips": {"times": ["18:00", "10:00", "10:00"]},
                                "LongForm": {"posts_per_day": 1, "start_hour": 12, "end_hour": 12}}})
     assert r.status_code == 200, r.text
     assert qm.slots_per_day(pipeline="Movie Clips") == 2
+    off = client.put("/api/schedule/config", json={"timezone": "America/New_York", "start_hour": 9, "end_hour": 21, "interval_hours": 3,
+                     "pipeline_overrides": {"Movie Clips": {"times": ["18:30"]}}})
+    assert off.status_code == 400 and "HH:00" in off.text                  # every post goes out on the hour (owner, 2026-11-07)
     clips = [s.astimezone(ET).strftime("%H:%M") for s in qm.slots_after(et(2026, 10, 6, 9), 3, pipeline="Movie Clips")]
     lf = [s.astimezone(ET).strftime("%H:%M") for s in qm.slots_after(et(2026, 10, 6, 9), 2, pipeline="LongForm")]
-    assert clips == ["10:00", "18:30", "10:00"] and lf == ["12:00", "12:00"]
+    assert clips == ["10:00", "18:00", "10:00"] and lf == ["12:00", "12:00"]
     assert r.json()["pipeline_next_slots"]["Movie Clips"]
     bad = client.put("/api/schedule/config", json={
         "timezone": "America/New_York", "start_hour": 10, "end_hour": 20, "interval_hours": 2,
@@ -1008,6 +1010,13 @@ def test_per_platform_daily_numbers(session, reset_schedule, monkeypatch, tmp_pa
         it.scheduled_at = now
     session.commit()
     asyncio.run(qm.publish_queue_item(rows[0].id, session, regular=True))
+    asyncio.run(qm.publish_queue_item(rows[1].id, session, regular=True))
+    assert sent == [["youtube"], ["facebook"], ["instagram"]]       # one video per channel per hour (owner, 2026-11-07)
+    session.refresh(rows[0])
+    rows[0].publish_requests = [{**e, "submitted_at": (now - datetime.timedelta(hours=2)).isoformat()} if e.get("profile") else e
+                                for e in rows[0].publish_requests]
+    rows[1].status, rows[1].accounts, rows[1].scheduled_at = "ready", ["default:*"], now
+    session.commit()
     asyncio.run(qm.publish_queue_item(rows[1].id, session, regular=True))
     assert sent == [["youtube"], ["facebook"], ["instagram"], ["facebook"], ["instagram"]]   # YouTube only its 1 a day
     session.refresh(rows[1])
@@ -1273,3 +1282,61 @@ def test_queue_list_returns_304_when_nothing_changed(session, client):
     assert changed.status_code == 200 and changed.headers["etag"] != etag
 
 
+
+
+def test_a_held_post_and_two_due_rows_post_once_per_channel_hour(session, reset_schedule, monkeypatch, tmp_path):
+    """INSTR_SCRAPPER_20261107T1400Z: 2026-11-07 08:00 ET, a posted video held in Review left its slot looking free and
+    every 5-min tick posted the next row (5 Screen Central posts in 26 min). Now: the held post uses the slot, nothing is
+    claimed before its time, and later ticks in the hour post nothing; each row waits for its channel's next HH:00."""
+    import types
+    from backend.app import backup
+    from backend.app.social import upload_post as up
+
+    class Clock(datetime.datetime):
+        at = None
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.at.astimezone(tz) if tz else cls.at.replace(tzinfo=None)
+    monkeypatch.setattr(qm, "datetime", types.SimpleNamespace(**{**vars(datetime), "datetime": Clock}))
+    monkeypatch.setattr(qm, "SessionLocal", lambda: session)
+    monkeypatch.setattr(session, "close", lambda: None)
+    monkeypatch.setattr(backup, "maybe_run_nightly_backup", lambda: None)
+    monkeypatch.setattr(qm, "_dest_cache", {"at": 0.0, "profiles": None})   # the tick caches the fake accounts
+    sent = []
+
+    async def list_accounts():
+        return [{"id": f"Cinama:{n}", "profile": "Cinama"} for n in ("youtube", "facebook")]
+
+    async def upload_video(path, *, profile, platforms, **kw):
+        sent.append((Clock.at.astimezone(ET).strftime("%H:%M"), sorted(platforms)))
+        return f"req{len(sent)}"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    cfg = qm.load_schedule(session)
+    hours = ["08:00", "10:00", "12:00"]
+    qm.save_schedule(session, {**cfg, "timezone": "America/New_York",
+                               "pipelines": {"Movie Clips": {"platforms": {"youtube": hours, "facebook": hours}}}})
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    slot = et(2026, 11, 7, 8)
+    (held,) = add(session, 1, source="Movie Clips / test", accounts=["Cinama:*"], video_path=str(video), status="review",
+                  notes="Delivery held: Provider reported media/copy changes or warnings")
+    held.scheduled_at, held.catchup = slot, {"slots": [slot.astimezone(UTC).isoformat()]}
+    held.publish_requests = [{"profile": "Cinama", "platforms": ["youtube", "facebook"], "state": "accepted",
+                              "submitted_at": (slot + datetime.timedelta(minutes=2)).isoformat()}]
+    rows = add(session, 2, source="Movie Clips / test", accounts=["Cinama:*"], video_path=str(video))
+    for minutes in (-1, 3, 5, 10, 15, 20, 25, 55):                      # 07:59, then the 08:00 hour tick by tick
+        Clock.at = slot + datetime.timedelta(minutes=minutes)
+        qm.run_scheduler_tick()
+    assert sent == [], sent                                             # the held post had the 08:00 slot
+    for minutes in (120, 125, 130, 145):                                # the 10:00 hour
+        Clock.at = slot + datetime.timedelta(minutes=minutes)
+        qm.run_scheduler_tick()
+    assert sent == [("10:00", ["youtube"]), ("10:00", ["facebook"])], sent       # one video, once per channel, at 10:00
+    for it in rows:
+        session.refresh(it)
+    assert [it.status for it in rows] == ["posting", "ready"]
+    waiting = next(it for it in rows if it.status == "ready")
+    assert waiting.scheduled_at.replace(tzinfo=UTC).astimezone(ET).minute == 0           # its next HH:00, not now
+    assert waiting.scheduled_at.replace(tzinfo=UTC) > Clock.at.astimezone(UTC)

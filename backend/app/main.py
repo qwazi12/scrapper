@@ -1687,6 +1687,9 @@ def update_schedule_config(req: ScheduleConfigIn, s: Session = Depends(get_sessi
             dumped["pipelines"] = req.pipeline_overrides
         if req.account_overrides and not dumped.get("accounts"):
             dumped["accounts"] = req.account_overrides
+        off = [] if req.reset else queue_manager.off_hour_times(dumped)
+        if off:   # every post goes out at HH:00 ET (owner, 2026-11-07)
+            raise ValueError(f"Posts go out at HH:00 ET; move these times to the hour: {', '.join(off)}")
         queue_manager.save_schedule(s, None if req.reset else dumped)
     except ValueError as exc:
         raise HTTPException(400, str(exc))

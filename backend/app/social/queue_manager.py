@@ -39,7 +39,7 @@ MOVIE_CLIPS_CHANNELS = [
 
 # A slot is still "due" this long after its time — covers a restart or a slow
 # tick without ever back-filling a whole day of missed slots at once.
-DUE_GRACE = datetime.timedelta(minutes=30)
+DUE_GRACE = datetime.timedelta(minutes=15)   # owner 2026-11-07: posts go at HH:00; a later row moves to its next free slot
 ARCHIVE_SWEEP_EVERY = datetime.timedelta(minutes=10)
 ARCHIVE_SWEEP_BATCH = 50  # scope limit per sweep
 
@@ -218,6 +218,19 @@ def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
 _schedule_cfg: dict[str, Any] = default_schedule()
 
 
+def off_hour_times(cfg: dict[str, Any]) -> list[str]:
+    """Every configured time that isn't on the hour ("DramaRama youtube 12:30")."""
+    out = []
+    for name, ov in {**(cfg.get("pipelines") or {}), **(cfg.get("accounts") or {})}.items():
+        ov = ov.model_dump() if hasattr(ov, "model_dump") else (ov or {})
+        for t in (ov or {}).get("times") or []:
+            if not str(t).endswith(":00"):
+                out.append(f"{name} {t}")
+        for net, lim in ((ov or {}).get("platforms") or {}).items():
+            out += [f"{name} {net} {t}" for t in (lim if isinstance(lim, list) else []) if not str(t).endswith(":00")]
+    return out
+
+
 def schedule_config() -> dict[str, Any]:
     return dict(_schedule_cfg)
 
@@ -361,14 +374,15 @@ def day_slots_for_pacing(
         if posts_per_day == 1:
             return [datetime.datetime.combine(day, datetime.time(start_hour), tzinfo=tz)]
         window_minutes = (end_hour - start_hour) * 60 if end_hour > start_hour else 1440
-        slots = []
+        # On the hour, at most one per hour (owner, 2026-11-07): a clash moves to the next free hour.
+        hours: set[int] = set()
         for i in range(posts_per_day):
             mins = round(i * window_minutes / (posts_per_day - 1))
-            total_mins = start_hour * 60 + mins
-            h = min(23, total_mins // 60)
-            m = total_mins % 60
-            slots.append(datetime.datetime.combine(day, datetime.time(h, m), tzinfo=tz))
-        return slots
+            h = min(23, round((start_hour * 60 + mins) / 60))
+            while h in hours and h < 23:
+                h += 1
+            hours.add(h)
+        return [datetime.datetime.combine(day, datetime.time(h), tzinfo=tz) for h in sorted(hours)]
     return [
         datetime.datetime.combine(day, datetime.time(h), tzinfo=tz)
         for h in range(start_hour, end_hour + 1, interval_hours)
@@ -574,13 +588,15 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         its own pacing (Movie Clips 3/day 10–22 → 16:00) never saw its slot as
         used and every 5-min tick handed the same slot to the next video —
         8 posts in one 16:00 slot, YouTube's daily upload limit hit at 22:00."""
+        # Bug fixed 2026-11-07: a posted video held in Review (provider warning) didn't count, so every tick
+        # handed the same 08:00 slot to the next video — 5 Screen Central posts in 26 minutes.
         if any(pipeline_group(it) == group and _slot_iso(cur) in ((it.catchup or {}).get("slots") or [])
-               for it in ready):
-            return True                           # a catch-up video posted in this slot, then went back to Ready
-        return any(pipeline_group(it) == group for it in (
+               for it in s.query(QueueItem).filter(QueueItem.catchup.isnot(None)).all()):
+            return True                           # a video posted in this slot (then went back to Ready or Review)
+        return any(pipeline_group(it) == group and (it.status != "review" or it.publish_requests) for it in (
             s.query(QueueItem)
             .filter(QueueItem.scheduled_at == cur)
-            .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived"]))
+            .filter(QueueItem.status.in_(["posting", "posted", "retry", "error", "archived", "review"]))
             .all()))
 
     from ..studio import momentum
@@ -656,6 +672,26 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
         changed += plan_dramarama(s, now)
     s.commit()  # Also release the reservation mutex when the plan is unchanged.
     return changed
+
+
+def channel_busy_this_hour(s: Session, profile: str, now: datetime.datetime) -> set[str]:
+    """Platforms of this Upload-Post profile that already got a post in this ET clock hour. One video per channel
+    (brand + platform) at a time, never two in the same hour (owner, 2026-11-07)."""
+    tz = ZoneInfo(_schedule_cfg["timezone"])
+    start = now.astimezone(tz).replace(minute=0, second=0, microsecond=0).astimezone(UTC)
+    busy: set[str] = set()
+    for (requests,) in s.query(QueueItem.publish_requests).filter(QueueItem.publish_requests.isnot(None)):
+        for e in requests or []:
+            if (not isinstance(e, dict) or e.get("profile") != profile or e.get("skipped")
+                    or e.get("state") in ("rejected", "confirmed_not_accepted") or e.get("transport_dispatched") is False):
+                continue
+            try:
+                at = _aware(datetime.datetime.fromisoformat(str(e.get("submitted_at")).replace("Z", "+00:00")))
+            except ValueError:
+                continue
+            if start <= at <= now + datetime.timedelta(hours=1):
+                busy.update(e.get("platforms") or [])
+    return busy
 
 
 def _hashtags(tags: str | None) -> list[str]:
@@ -1685,6 +1721,14 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
             x_profile = str(send_accounts[0]).partition(":")[0]
             if x_posts_last_day(s, x_profile, datetime.datetime.now(UTC)) >= X_DAILY_CAP:
                 allow = {**(allow or {}), "x": False}      # Upload-Post Basic cap: X waits for a later slot
+        if regular and not is_drama and not ick_release:
+            # One post per channel per hour; a channel already used this hour waits for its next free slot.
+            now_ = datetime.datetime.now(UTC)
+            for prof in {str(a).partition(":")[0] for a in send_accounts}:
+                busy = channel_busy_this_hour(s, prof, now_)
+                if busy:
+                    allow = {**(allow or {}), **{n: False for n in busy}}
+                    logbus.log("info", "queue_channel_busy", f"Item #{item.id}: {prof} {', '.join(sorted(busy))} already posted this hour — waits")
         yt_dialogue_path = None
         if (item.pipeline == DRAMARAMA and not is_drama and any(a.endswith(":youtube") for a in send_accounts)
                 and (allow or {}).get("youtube") is not False):
@@ -2261,7 +2305,9 @@ def start_scheduler_thread():
                 scheduler_status["last_error_at"] = datetime.datetime.now(UTC).isoformat()
             scheduler_status["last_tick_at"] = datetime.datetime.now(UTC).isoformat()
             scheduler_status["ticks"] += 1
-            _wake.wait(TICK_SECONDS)
+            now = datetime.datetime.now(UTC)
+            to_hour = 3600 - (now.minute * 60 + now.second + now.microsecond / 1e6) + 1   # HH:00:01
+            _wake.wait(min(TICK_SECONDS, to_hour))    # posts go out at HH:00 (owner, 2026-11-07)
             _wake.clear()
 
     t = threading.Thread(target=loop, daemon=True, name="posting_queue_scheduler")
