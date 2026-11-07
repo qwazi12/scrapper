@@ -718,6 +718,7 @@ async def submit_upload(
     facebook_video_path: pathlib.Path | None = None,
     facebook_receipt: dict | None = None,
     describe=None,
+    platform_copy: dict | None = None,
 ) -> list[dict[str, Any]]:
     """Send the video to Upload-Post: one async upload per profile.
     `allow` (network -> False) leaves out platforms that reached their daily number.
@@ -762,8 +763,19 @@ async def submit_upload(
             fb_route = {"facebook_media_type": mode, "duration_seconds": seconds, "rule": "R7 2026-11-06: <=90s Reels, >90s VIDEO"}
             intent["facebook_route"] = fb_route
         transport_title,transport_description=(queue_x_text,"") if queue_x_text is not None and network in ("x","twitter") else (title,description)
+        own = (platform_copy or {}).get("x" if network == "twitter" else network) or {}
+        x_own = network in ("x","twitter") and bool(own.get("text"))
+        if network == "youtube" and own:          # this platform's own words (owner, 2026-11-07)
+            transport_title, transport_description = own.get("title", transport_title), own.get("description", transport_description)
+        elif network == "instagram" and own.get("caption"):
+            transport_description = own["caption"]
+        elif x_own:
+            transport_title, transport_description = own["text"], ""
         if describe and network in CAP_NETWORKS:    # this platform's hashtag cut (owner, 2026-11-07)
-            if queue_x_text is not None and network in ("x","twitter"):
+            if x_own:
+                from . import platform_copy as copy_rules
+                transport_title=copy_rules.fit_x(own["text"],describe(profile,network,own["text"]))
+            elif queue_x_text is not None and network in ("x","twitter"):
                 transport_title=describe(profile,network,transport_title)
             else:
                 transport_description=describe(profile,network,transport_description)
@@ -1567,6 +1579,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     if drama_canary.current():drama_canary.current().transport_paths=((original_path,video_sha256),(video_path,transport['artifact_sha256']))
     artifact_key = hashlib.sha256(json.dumps({"video": video_sha256, "images": [file_hash(p) for p in images], "title": item.title,
         "description": item.description, "tags": item.tags, "accounts": sorted(send_accounts),
+        **({"platform_copy": item.platform_copy} if item.platform_copy and not is_drama and not ick_release else {}),
         "thumbnail": file_hash(pathlib.Path(item.thumb_path)) if item.thumb_path and pathlib.Path(item.thumb_path).is_file() else item.thumb_path,
         **({'drama_visible_payload': drama_payload,'drama_transport':transport} if is_drama else {})},
         sort_keys=True).encode()).hexdigest()
@@ -1751,6 +1764,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 **({'facebook_video_path': fb_cut_path} if fb_cut_path else {}),
                 **({'facebook_receipt': fb_receipt} if fb_receipt else {}),
                 **({'describe': describe} if describe else {}),
+                **({'platform_copy': item.platform_copy} if describe and item.platform_copy else {}),
             )
         finally:
             if x_video_path:

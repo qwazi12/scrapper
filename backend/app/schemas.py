@@ -141,6 +141,7 @@ class QueueItemUpdate(BaseModel):
     pinned_at: str | None = None     # ISO time to lock this video's post time; "" unpins
     notes: str | None = None
     media_url: str | None = None
+    platform_copy: dict | None = None    # {} clears; see QueueItem.platform_copy
 
 
 class QueueItemOut(BaseModel):
@@ -171,6 +172,7 @@ class QueueItemOut(BaseModel):
     research: dict | None = None
     momentum: dict | None = None
     media_url: str | None = None
+    platform_copy: dict | None = None
     created_at: UTCDateTime
 
     model_config = ConfigDict(from_attributes=True)

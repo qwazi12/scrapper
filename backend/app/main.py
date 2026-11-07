@@ -98,6 +98,8 @@ from .pending_metadata import router as pending_metadata_router
 app.include_router(pending_metadata_router)
 from .drama_routes import router as drama_router
 app.include_router(drama_router)
+from .posting_review import router as posting_review_router   # read-only Posting Review sheet (owner, 2026-11-07)
+app.include_router(posting_review_router)
 from .drama_canary_routes import router as drama_canary_router
 app.include_router(drama_canary_router)
 from .drama_media_routes import router as drama_media_router
@@ -874,10 +876,10 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         raise HTTPException(404, "queue item not found")
     _require_queue_editable(item)
     if (item.research or {}).get("native_export_id") and any(
-            getattr(req, key) is not None and getattr(req, key) != getattr(item, key) for key in ("title", "description", "tags")):
+            getattr(req, key) is not None and getattr(req, key) != getattr(item, key) for key in ("title", "description", "tags", "platform_copy")):
         raise HTTPException(409, "Native campaign copy is approved with its media; create a revised treatment before changing copy")
     from . import queue_sources
-    if any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','source','pipeline','media_url')):
+    if any(getattr(req,key) is not None and getattr(req,key)!=getattr(item,key) for key in ('title','description','tags','source','pipeline','media_url','platform_copy')):
         queue_sources.require_copy_editable(s,item)
     undo.record(s, "queue", f"Edit #{item.id} '{(item.title or '')[:40]}'", rows=[item])
 
@@ -887,6 +889,12 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
         item.description = req.description
     if req.tags is not None:
         item.tags = req.tags
+    if req.platform_copy is not None:
+        from .social import platform_copy
+        try:
+            item.platform_copy = platform_copy.clean(req.platform_copy)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     if req.source is not None:
         item.source = req.source
     if req.drive_link is not None:

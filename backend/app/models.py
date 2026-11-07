@@ -166,6 +166,9 @@ class QueueItem(Base):
     # "done": [[account, url], ...]} while the video still owes a platform whose slot it missed.
     catchup: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     media_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-platform text (owner, 2026-11-07): {"youtube": {"title","description"}, "instagram": {"caption"}, "x": {"text"}}.
+    # Facebook uses title/description. Hashtags are not stored here: each platform's cut is added at send.
+    platform_copy: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
 
