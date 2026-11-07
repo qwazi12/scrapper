@@ -7,6 +7,12 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-07 15:45 UTC — NEXT7 export + DONE markers live; launchd blind to the Drive mount
+- GET /api/ops/next7 (a9b0275, 8d13074; Railway 5c564b05 SUCCESS): per-platform slots for 7 days from the scheduler's own plan (drama_net_plans split out of plan_dramarama, behaviour unchanged; ICK releases at their reserved slot). Tests 1268 passed.
+- data/ops/daily_exports.sh: 05:45 READY+NEXT7+POSTED then EXPORTS_DONE_SCRAPPER_<date>.md last; `change <why>` = timestamped NEXT7+POSTED+DONE, triggered by ops_actions and by ops_watch when the next7 fingerprint changes. First hand run: EXPORTS_DONE_SCRAPPER_20261107T1519Z (NEXT7 342 rows, POSTED 148).
+- DEFECT (owner action): launchd jobs get PermissionError on the Drive mount (macOS TCC). The ops watch was blind since 13:05Z and now logs BLIND. Tomorrow's 05:45 export fails the same way until /bin/zsh and /usr/bin/python3 get Full Disk Access.
+- Pending: INSTR_SCRAPPER_20261107T1520Z (DramaRama FB rows queuing X/YT catch-up; LongForm 2 per slot) awaiting push decision; INSTR 1150Z + HEAD_RULES 1300Z unhandled.
+
 ## Log 2026-11-07 14:20 UTC — HH:00 rule live; Screen Central burst fixed and resumed
 - Owner rule (HEAD_RULES_20261107T1345Z): every post at HH:00 ET, one video per channel (brand+platform) per hour, no catch-up bursts. Pushed 87cfb58, Railway 3f440d13 SUCCESS 09:12 ET.
 - Burst cause: a posted row held in Review didn't count as using its slot, so every 5-min tick re-gave 08:00 to the next row (5 Screen Central posts 08:02–08:28; Nov 6 10:00 same, which used Movie Clips' daily 6 by noon, verified in logs). Fixed in slot_used + channel_busy_this_hour; test test_a_held_post_and_two_due_rows_post_once_per_channel_hour fails on old code.
