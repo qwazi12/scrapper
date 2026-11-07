@@ -7,6 +7,12 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-07 05:46 UTC — dr-yt-dialogue live; DramaRama X/YouTube catch-up data step (RESULT_SCRAPPER_20261107T0546Z)
+- Owner chat "Push, catch up": pushed 51be17f + 4d4c276 (98ebad5..4d4c276); Railway 881b23bc SUCCESS, /api/health ok.
+- Data step (PATCH 200, read back): #4882 #5399 #6417 #6418 #5398 #6415 -> ready [x, youtube]; #5397 [x, youtube]; #6416 -> ready [youtube]. Rollback snapshot data/ops/catchup_pre_20261107.json (local, gitignored).
+- YouTube still paused (DramaRama youtube: 0): un-pause to 12:30/19:00 ET was refused by the local permission guard; needs an explicit owner "un-pause". Assumed, not verified: Railway Drive SA can read the dialogue-only folder.
+- Pending: YouTube un-pause; hashtag rule (3 owner questions); ICK X opening cut.
+
 ## Log 2026-11-06 15:35 UTC — Drive for Desktop write path live (RESULT_SCRAPPER_20261106T1534Z)
 - ops path: ~/Library/CloudStorage/GoogleDrive-kyeboah@kymediamgmt.com/Shared drives/Flamingo Recap/Researcher/ops. Write method: stage in data/ops/out → `mv -n` → connector readback by name.
 - First direct export run: SCRAPPER_READY_20261106 (6,075 rows) and SCRAPPER_POSTED_20261106 (183 rows; 32/44 ICK+DramaRama durations from ffprobe of source files) landed and were read back.
