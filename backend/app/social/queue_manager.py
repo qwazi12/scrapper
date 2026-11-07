@@ -672,8 +672,8 @@ def platform_hashtags(s: Session, item: QueueItem):
         pool = queue_payloads.tags(item.tags)["public_hashtags"]
     except ValueError:
         pool = hashtag_rules.HASHTAG.findall(item.tags or "")
-    shorts = any(hashtag_rules.key(t) in hashtag_rules.SHORTS for t in pool)
-    lead = hashtag_rules.drama_lead(item.source, item.video_name) if item.pipeline == DRAMARAMA else []
+    shorts = item.pipeline == DRAMARAMA or any(hashtag_rules.key(t) in hashtag_rules.SHORTS for t in pool)
+    lead = hashtag_rules.drama_lead(item.source, pool) if item.pipeline == DRAMARAMA else []
     # Source channels are stored as "<channel> — <channel id>" pipelines: their names never go on our posts.
     others = [p.partition(" — ")[0] for (p,) in s.query(QueueItem.pipeline).filter(QueueItem.pipeline.like("% — %")).distinct()]
 

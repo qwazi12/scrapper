@@ -39,11 +39,12 @@ def test_ick_facebook_topic_plus_brand_and_x_brand_plus_topic():
     assert tags("x", pool, profile="TheIckRoom") == ["#theickroom", "#relationships"]
 
 
-def test_dramarama_series_short_drama_alternate_title_and_no_other_brand_tags():
-    lead = hr.drama_lead("DramaRama / I WOKE UP WITH MY PRIME SUSPECT [12]", "20261025_X_EP01_Waking Up Beside a Suspect - EP01 123")
-    assert lead == ["#IWokeUpWithMyPrimeSuspect", "#WakingUpBesideASuspect"]
-    yt = tags("youtube", "#DramaRama #FamilyDrama #movieclips #ScreenCentral".split(), profile="Dramarama", lead=lead)
-    assert yt == ["#IWokeUpWithMyPrimeSuspect", "#ShortDrama", "#WakingUpBesideASuspect", "#DramaRama", "#FamilyDrama"]
+def test_dramarama_series_short_drama_genre_and_no_other_brand_tags():
+    pool = "#DramaRama #ShortDrama #FamilyDrama #movieclips #ScreenCentral".split()
+    lead = hr.drama_lead("DramaRama / I WOKE UP WITH MY PRIME SUSPECT [12]", pool)
+    assert lead == ["#IWokeUpWithMyPrimeSuspect", "#FamilyDrama"]               # genre, not the alternate title
+    yt = tags("youtube", pool, profile="Dramarama", lead=lead, shorts=True)
+    assert yt == ["#IWokeUpWithMyPrimeSuspect", "#ShortDrama", "#FamilyDrama", "#DramaRama", "#shorts"]
     assert "#DramaRama" not in tags("youtube", ["#Vikings", "#DramaRama"])     # another brand's name, on Cinama
 
 

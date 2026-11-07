@@ -1,7 +1,7 @@
 """Per-platform hashtags (owner, 2026-11-07). One reviewed tag pool, a different cut per platform.
 
-YouTube: up to 10 — 1 series/film name, 2 the brand's niche tag, 3 alternate title / main character, then the rest;
-Shorts keep #shorts inside the 10. Instagram 5, Facebook 3, X 2. ICK: Facebook = 1 topic + #tonightsconversation
+YouTube: up to 10 — 1 series/film name, 2 the brand's niche tag, 3 alternate title / main character (DramaRama: a genre
+tag), then the rest; Shorts and every DramaRama upload keep #shorts inside the 10. Instagram 5, Facebook 3, X 2. ICK: Facebook = 1 topic + #tonightsconversation
 #theickroom, X = #theickroom + 1 topic. Removed everywhere: #shorts outside YouTube, generic reach tags, other
 channels'/brands' names (incl. another brand's niche tag). Reviewed words are never edited: hashtags inside the
 text stay and count toward the cap; only the trailing hashtag line is rebuilt."""
@@ -35,11 +35,12 @@ def camel(text: str) -> str | None:
     return "#" + "".join(fix(w) for w in words) if words else None
 
 
-def drama_lead(source: str | None, video_name: str | None) -> list[str]:
-    """DramaRama: the series name (source folder) and its alternate title (file name `_EP01_<alt> EP01`)."""
+def drama_lead(source: str | None, pool=()) -> list[str]:
+    """DramaRama: the series name (source folder), then a genre tag from the row's own tags (#FamilyDrama,
+    #ChristmasDrama...; owner 2026-11-07: no alternate-title tag)."""
     series = re.sub(r"\s*\[\d+\]\s*$", "", (source or "").partition(" / ")[2])
-    alt = re.search(r"_EP\d+_(.+?)\s*-?\s*EP\d+", video_name or "")
-    return [t for t in (camel(series) if series else None, camel(alt.group(1)) if alt else None) if t]
+    genre = next((t for t in pool if key(t).endswith("drama") and key(t) not in ("#shortdrama", "#dramarama")), None)
+    return [t for t in (camel(series) if series else None, genre) if t]
 
 
 def platform_tags(pool, network, *, brand, profile=None, lead=(), shorts=False, other_names=()):
