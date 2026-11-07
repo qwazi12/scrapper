@@ -1232,11 +1232,9 @@ def drama_lanes(rows: list[QueueItem], net: str, first: set[str] = frozenset()) 
     return lanes, held
 
 
-def plan_dramarama(s: Session, now: datetime.datetime) -> int:
-    """Give DramaRama's Ready episodes their slots: each platform's own times (schedule config), slot k of the day
-    belongs to active series k % DRAMA_ACTIVE_SERIES — so Facebook at 4/day posts 2 episodes of each of 2 series.
-    A row owing several platforms gets its earliest slot; that platform's later episodes wait their turn."""
-    global drama_held
+def drama_net_plans(s: Session, now: datetime.datetime):
+    """Each platform's own DramaRama sequence: {net: [(row, slot)]} before rows are given their earliest slot,
+    plus (rows, due ids, held reasons). plan_dramarama and the next-7-days export (owner, 2026-11-07) both use it."""
     tz = ZoneInfo(_schedule_cfg["timezone"])
     times = timed_platforms(DRAMARAMA)
     rows = s.query(QueueItem).filter(QueueItem.pipeline == DRAMARAMA).all()
@@ -1263,6 +1261,15 @@ def plan_dramarama(s: Session, now: datetime.datetime) -> int:
                     break                                       # this episode is going out now; the rest wait
                 plan.append((it, slot))
         plans[net] = plan
+    return rows, due, plans, held_by
+
+
+def plan_dramarama(s: Session, now: datetime.datetime) -> int:
+    """Give DramaRama's Ready episodes their slots: each platform's own times (schedule config), slot k of the day
+    belongs to active series k % DRAMA_ACTIVE_SERIES — so Facebook at 4/day posts 2 episodes of each of 2 series.
+    A row owing several platforms gets its earliest slot; that platform's later episodes wait their turn."""
+    global drama_held
+    rows, due, plans, held_by = drama_net_plans(s, now)
     chosen: dict[int, datetime.datetime] = {}
     for plan in plans.values():
         for it, slot in plan:

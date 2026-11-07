@@ -100,6 +100,8 @@ from .drama_routes import router as drama_router
 app.include_router(drama_router)
 from .posting_review import router as posting_review_router   # read-only Posting Review sheet (owner, 2026-11-07)
 app.include_router(posting_review_router)
+from .ops_next7 import router as ops_next7_router   # read-only next-7-days per-platform plan (owner, 2026-11-07)
+app.include_router(ops_next7_router)
 from .drama_canary_routes import router as drama_canary_router
 app.include_router(drama_canary_router)
 from .drama_media_routes import router as drama_media_router
