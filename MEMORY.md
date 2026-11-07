@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## PLAN 2026-11-07 ~00:20 UTC — DramaRama YouTube pause, X/YouTube own EP01 sequences, YouTube dialogue-only audio (owner chat)
+Done live (owner chat 2026-11-06): DramaRama youtube = 0/day (paused after AdRev claim on #6413; rollback data/ops/yt_pause_pre_20261106T1900Z.json); #5398/#6415 held in Review (X must never post an episode before the earlier ones). S-08 poller and S-23 Dec 1 vidIQ one-shot installed as launchd jobs (data/ops/poll_run.sh, vidiq_dec1_run.sh). Ops folder renamed "**Researcher**".
+To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stays paused):
+1. X and YouTube each run their own DramaRama sequence from EP01 per series; Facebook unchanged. Code: X no longer filtered by dot's frozen Ready targets (like YouTube). Data (after push): re-owe x/youtube on the 10 started rows (#4882 #5399 #5398 #5397 #5396 #6417 #6418 #6416 #6415 #6413), archived/review → ready.
+2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
+3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
+
 ## Log 2026-11-06 15:35 UTC — Drive for Desktop write path live (RESULT_SCRAPPER_20261106T1534Z)
 - ops path: ~/Library/CloudStorage/GoogleDrive-kyeboah@kymediamgmt.com/Shared drives/Flamingo Recap/Researcher/ops. Write method: stage in data/ops/out → `mv -n` → connector readback by name.
 - First direct export run: SCRAPPER_READY_20261106 (6,075 rows) and SCRAPPER_POSTED_20261106 (183 rows; 32/44 ICK+DramaRama durations from ffprobe of source files) landed and were read back.
