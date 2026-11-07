@@ -7,6 +7,11 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-07 12:23 UTC — hashtags live; claim watch + S-02 daily exports on launchd (RESULT_SCRAPPER_20261107T1223Z)
+- Pushed 9d72b8e + 704d415 (per-platform hashtags; DramaRama 3rd tag = row's genre tag, DramaRama YouTube ends #shorts). Railway d63f9b77 SUCCESS. 1258 passed.
+- launchd: com.kymedia.scrapper-yt-claim-watch (30 min, data/ops/yt_claim_watch.py) and com.kymedia.scrapper-daily-exports (05:45 ET, data/ops/daily_exports.sh: GET -> CSV -> mv -n -> Drive id + size read-back; READY includes Review with status column). Manual run: READY_20261107 10,474 rows, POSTED_20261107 165 rows, both confirmed via connector.
+- Pending: confirm claim watch after first 12:30 ET DramaRama YouTube upload.
+
 ## Log 2026-11-07 06:12 UTC — DramaRama YouTube restarted 1/day; Content ID watch; hashtag branch (RESULT_SCRAPPER_20261107T0612Z)
 - Owner chat: YouTube un-paused at ["12:30"] ET only (PUT 200, readback ok; rollback data/ops/yt_resume_pre_20261107T0555Z.json).
 - data/ops/yt_claim_watch.py (local): public playability check at >=30/>=90 min per upload; block -> pause + RESULT; 3 clean days -> 12:30+19:00 next day. launchd install needs owner (permission guard). Monetize-only claims not visible without Studio on the DramaRama channel.
