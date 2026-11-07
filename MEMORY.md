@@ -7,6 +7,11 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-07 06:12 UTC — DramaRama YouTube restarted 1/day; Content ID watch; hashtag branch (RESULT_SCRAPPER_20261107T0612Z)
+- Owner chat: YouTube un-paused at ["12:30"] ET only (PUT 200, readback ok; rollback data/ops/yt_resume_pre_20261107T0555Z.json).
+- data/ops/yt_claim_watch.py (local): public playability check at >=30/>=90 min per upload; block -> pause + RESULT; 3 clean days -> 12:30+19:00 next day. launchd install needs owner (permission guard). Monetize-only claims not visible without Studio on the DramaRama channel.
+- Branch dr-hashtags 557a9d7 (not pushed): per-platform hashtags (YT 10/IG 5/FB 3/X 2; ICK FB topic+brand, X #theickroom+topic). 1258 passed.
+
 ## Log 2026-11-07 05:46 UTC — dr-yt-dialogue live; DramaRama X/YouTube catch-up data step (RESULT_SCRAPPER_20261107T0546Z)
 - Owner chat "Push, catch up": pushed 51be17f + 4d4c276 (98ebad5..4d4c276); Railway 881b23bc SUCCESS, /api/health ok.
 - Data step (PATCH 200, read back): #4882 #5399 #6417 #6418 #5398 #6415 -> ready [x, youtube]; #5397 [x, youtube]; #6416 -> ready [youtube]. Rollback snapshot data/ops/catchup_pre_20261107.json (local, gitignored).
