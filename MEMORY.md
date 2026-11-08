@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-08 12:30 UTC — Review rows release their slots; LongForm #4825/#4829 pinned (queue only, no code)
+1. #836 (never posts) and #1355 (waits until December) stay Review with NO slot (scheduled_at cleared), so #929 (Mon Nov 9 7 PM ET) and #910 (Fri Nov 13 10 AM ET) post alone. December Movie Clips hours are all taken by Ready rows, so #1355 gets a December slot only when approved. Undo: data/ops/hold_pre_{836,1355}_20261108T122703Z.json.
+2. Archive was tried first for #836 and reverted via queue undo (7718-7715): archived rows are deleted by sweep_archive after ARCHIVE_DELETE_DAYS=4 and get published_at stamped — that's a delete, needs the owner.
+3. #4825 pinned Sun Nov 8 8 PM ET (next free LongForm 8 PM: #4830 left it). #4830 stays Thu (already pinned), #4829 pinned Fri Nov 13 8 PM ET. #4825 posts only once its sheet Decision is Approve (gate holds Edit; sync skips Edit rows) — NEEDS OWNER. Its 11-06 note says DROPPED for a voiceover calling past dates upcoming.
+4. APPLIED_SCRAPPER_20261108T122703Z.csv; EXPORTS_DONE_SCRAPPER_20261108T1227Z.
+
 ## Log 2026-11-08 04:40 UTC — results of the plan above (1637f97, Railway live 04:17Z)
 1. 10 rows Posted with Upload-Post's first upload_timestamp (PATCH published_at, new): #966 #904 #1162 #924 #1289 #4826 #11349 #11350 #11352, and #4841 corrected to 01:00:52Z. Undo files data/ops/posted_pre_<id>_*.json.
 2. DramaRama: X/YouTube strict episode order (episode not on that platform = wait, never skip); a blocked series doesn't use the platform's slot. X tags kept only within 280 (#4882 was 271 -> 282 after 9d72b8e). #4882 retry -> ready. Plan 04:23Z: X 11:00/18:00 alternating Prime Suspect (EP1, 2, 4… EP3 passed) and Christmas Home (EP1, 2, 3…). YouTube is 1/day (13:00, claim-watch rule) so only Prime Suspect (EP2, 3, 4, 6, 7, 8) — Christmas Home gets no YouTube slot until 19:00 is added (owner asked).
