@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-08 04:40 UTC — results of the plan above (1637f97, Railway live 04:17Z)
+1. 10 rows Posted with Upload-Post's first upload_timestamp (PATCH published_at, new): #966 #904 #1162 #924 #1289 #4826 #11349 #11350 #11352, and #4841 corrected to 01:00:52Z. Undo files data/ops/posted_pre_<id>_*.json.
+2. DramaRama: X/YouTube strict episode order (episode not on that platform = wait, never skip); a blocked series doesn't use the platform's slot. X tags kept only within 280 (#4882 was 271 -> 282 after 9d72b8e). #4882 retry -> ready. Plan 04:23Z: X 11:00/18:00 alternating Prime Suspect (EP1, 2, 4… EP3 passed) and Christmas Home (EP1, 2, 3…). YouTube is 1/day (13:00, claim-watch rule) so only Prime Suspect (EP2, 3, 4, 6, 7, 8) — Christmas Home gets no YouTube slot until 19:00 is added (owner asked).
+3. ICK Option B live: Approve rows skip the frozen release and are planned normally (FB 10/13/17/20, X 11/19). #5427/#5428/#5429 pinned Nov 8 12:00/14:00/15:00 ET (free on FB and X). #5425/#5426 NOT moved: not in the sheet (HEAD dropped them), so the gate + frozen check hold them.
+- Hung export: the launchd-started export of 01:38Z hung in publish_ops.sh (Drive mount) for 3 h holding the lock; killed, lock cleared, re-run by hand -> EXPORTS_DONE_SCRAPPER_20261108T0435Z. APPLIED_SCRAPPER_20261108T042436Z.csv in ops/requests.
+
 ## PLAN 2026-11-08 ~03:10 UTC — 9 held rows Posted, DramaRama episode-order catch-up, ICK sheet-approved rows skip the frozen check (owner chat)
 1. Mark #966 #904 #1162 #924 #1289 #4826 #11349 #11350 #11352 Posted with each post's real time (Upload-Post history); fix #4841 to its real 01:00Z too. Needs PATCH to accept published_at.
 2. DramaRama: don't clear. X and YouTube post each series' owed episodes strictly in episode order, skipping episodes already on that platform (X: Prime Suspect EP3, Christmas Home EP7; YouTube: Prime Suspect EP1, EP5), never reposting; a later episode never before the earlier ones. 2/day X and YouTube, on the hour. Show the next 6 X and YouTube posts. Push approved once tests pass.
