@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Plan 2026-11-08 12:45 UTC — owner: #4819 check, LongForm freshness hold, research-gate role fix, Sacrifice S4
+1. #4819 Tulsa King (Mon Nov 9 8 PM ET): check the voiceover for past dates framed as upcoming; if found, hold it (no post) and tell the owner before Mon 6 PM ET.
+2. LongForm freshness check before posting: a release date in the voiceover script that is already past but framed as upcoming -> row held, NEEDS OWNER. Tests, then push (approved).
+3. research_gate: a correct role name followed by any narrative words passes; a wrong role still fails. Tests: Outlander, Jailer 2, Hexed sentences pass; one wrong-role case fails. Push (approved).
+4. Sacrifice (#113): cut sentence 4 (screenplay credit unverifiable), re-run the check.
+
 ## Log 2026-11-08 12:35 UTC — #4825 Skip; stale-date check of LongForm #4829/#4830/#4824/#4840 (queue only)
 1. #4825: owner Skip (stale voiceover dates) — unpinned, no slot, stays Review. Sun Nov 8 8 PM LongForm is now empty. APPLIED_SCRAPPER_20261108T123115Z.csv, EXPORTS_DONE_SCRAPPER_20261108T1232Z.
 2. Stale-date check (project scripts; rendered audio not transcribed — renders Oct 18-26, scripts touched Oct 28-29): all four voiceovers frame past dates as upcoming — #4829 S7-8 (Sep 16 / Oct 21 2026), #4830 S7-8 (Oct 20 2026, "mark your calendar"), #4824 S4-5 (Oct 14 / Oct 21 2026, "lands"), #4840 S4 (Aug 5 2026, "mark their calendars"). Copy (sheet + platform_copy) has no dates; titles say "Release Date". #4824/#4830/#4840 are Ready and pinned (Tue/Thu/Wed 8 PM ET) — reported to owner, not changed.
