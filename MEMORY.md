@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-08 19:10 UTC — verified live; X sync switch built (5de0616, NOT pushed — awaiting owner)
+- #5427 (sheet-approved ICK, pinned 14:00 ET) accepted on Facebook and X at 19:00Z: the permit fix (7bd6271) works live. #6417 Prime Suspect Ep.1 posted to X at 18:00Z (13:00 ET); now on FB, YouTube and X.
+- 5de0616 (local only): drama_x_sync — each tick, when X has every episode Facebook has in each series Facebook is posting, DramaRama X times := Facebook's (log drama_x_synced). Tests: 2 new (fail on old code); suite 1302 passed, 1 skipped. PENDING: owner's go to push.
+
 ## Log 2026-11-08 17:55 UTC — DramaRama X/YouTube catch-up volume (owner answers, config only)
 - Owner: keep strict episode order; X 6/day until X is in sync with Facebook, then X posts the same episode as Facebook at Facebook's times; YouTube 4/day now (overrides the claim-watch 1/day).
 - Config: DramaRama X 09/11/13/15/18/21, YouTube 09/11/21/23 (= Facebook), posts_per_day 4 -> 7. Undo: PUT data/ops/dr_catchup_pre_20261108T174418Z.json. yt_watch_state.json: current = 4 times, stepped_up = true (watch still pauses YouTube to 0 on a claim, no step-up).
