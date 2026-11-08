@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-08 12:35 UTC — #4825 Skip; stale-date check of LongForm #4829/#4830/#4824/#4840 (queue only)
+1. #4825: owner Skip (stale voiceover dates) — unpinned, no slot, stays Review. Sun Nov 8 8 PM LongForm is now empty. APPLIED_SCRAPPER_20261108T123115Z.csv, EXPORTS_DONE_SCRAPPER_20261108T1232Z.
+2. Stale-date check (project scripts; rendered audio not transcribed — renders Oct 18-26, scripts touched Oct 28-29): all four voiceovers frame past dates as upcoming — #4829 S7-8 (Sep 16 / Oct 21 2026), #4830 S7-8 (Oct 20 2026, "mark your calendar"), #4824 S4-5 (Oct 14 / Oct 21 2026, "lands"), #4840 S4 (Aug 5 2026, "mark their calendars"). Copy (sheet + platform_copy) has no dates; titles say "Release Date". #4824/#4830/#4840 are Ready and pinned (Tue/Thu/Wed 8 PM ET) — reported to owner, not changed.
+3. Owner 2026-11-08: MEMORY.md-only commits may be pushed without asking.
+
 ## Log 2026-11-08 12:30 UTC — Review rows release their slots; LongForm #4825/#4829 pinned (queue only, no code)
 1. #836 (never posts) and #1355 (waits until December) stay Review with NO slot (scheduled_at cleared), so #929 (Mon Nov 9 7 PM ET) and #910 (Fri Nov 13 10 AM ET) post alone. December Movie Clips hours are all taken by Ready rows, so #1355 gets a December slot only when approved. Undo: data/ops/hold_pre_{836,1355}_20261108T122703Z.json.
 2. Archive was tried first for #836 and reverted via queue undo (7718-7715): archived rows are deleted by sweep_archive after ARCHIVE_DELETE_DAYS=4 and get published_at stamped — that's a delete, needs the owner.
