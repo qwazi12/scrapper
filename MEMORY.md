@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Plan 2026-11-08 13:15 UTC — owner: ICK dispatch permit, DramaRama catch-up off (S-28), Drive backup target
+1. ICK: sheet-approved ICK rows take the atomic dispatch permit (same path as normal ICK rows). Tests, push (approved). Then re-plan #5427 #5428 #5429 #5425 #5426 to the next free ICK hours, on the hour.
+2. DramaRama (S-28): Facebook rows post to Facebook only — no X/YouTube catch-up from them. Clear pending catch-ups on #5393, #5395 and any others (list them, keep snapshots). X/YouTube only from their own episode sequence. Leave the Ep. 8 X post up. Tests, push (approved).
+3. Backups: Drive backup -> shared drive Researcher/backups (service account can write there); confirm one backup lands.
+
 ## Log 2026-11-08 13:05 UTC — results of the 12:45 plan (00ebff1)
 1. #4819 Tulsa King (Ready, pinned Mon Nov 9 8 PM ET) HAS the problem: S7 "You will not have to wait long… episode two… arrives on October 23, 2026". Not posted: the freshness hold refuses it at send. Owner told 2026-11-08 ~13:05Z (before the Mon 6 PM ET deadline).
 2. Freshness check live in 00ebff1: backend/app/studio/freshness.py. A LongForm row whose project script has a date before the post day (ET) in a sentence with upcoming wording ("will", "arrives", "lands", "premieres", "begins", "airs", "scheduled", "mark your calendar", "wait"…) -> PayloadBlocked at send (status unchanged, note "Not posted at its slot: Freshness hold…"). GET /api/ops/longform-freshness lists upcoming held rows; data/ops/ops_watch.py (local) puts them under NEEDS OWNER (backup ops_watch.pre_20261108T1300.py). Today it would hold #4819 #4824 #4840 #4830 #4829. Past tense ("premiered on Oct 16") passes. No override: fixing the script + re-render, or Skip.
