@@ -1718,7 +1718,9 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         if captured!=pending_metadata.fingerprint(s,item):raise upload_post.PayloadBlocked("Guarded ICK state changed before claim")
         ick_readiness.admit(s,item,video_path,regular=regular,fresh_identity=current_ick_identity)
     # Every DramaRama dispatch takes dot's one-use DB permit (the posting trigger requires it): no double send.
-    if is_drama or ick_release or item.pipeline == DRAMARAMA:drama_controls.grant_dispatch(s,item,batch_key)
+    # A sheet-approved ICK row (no frozen release) takes it too: the trigger follows the receipt, not the check.
+    ick_permit=bool(ick_release) or (item.pipeline==ICK_ROOM and ick_readiness.needs_permit(s,item))
+    if is_drama or ick_permit or item.pipeline == DRAMARAMA:drama_controls.grant_dispatch(s,item,batch_key)
     # Claim and intent are ONE transaction: no posting-without-intent crash gap.
     # The version comparison also refuses metadata edited after it was hashed.
     claimed = s.execute(update(QueueItem).where(QueueItem.id == item_id,
@@ -1736,7 +1738,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
     if claimed:
         journal.record(s,item,intent[0],'batch_intent')
         drama_canary.claim(s,item,batch_key,artifact_key)
-    if (is_drama or ick_release or item.pipeline == DRAMARAMA) and not claimed:
+    if (is_drama or ick_permit or item.pipeline == DRAMARAMA) and not claimed:
         s.rollback()  # An unsuccessful claim must never commit an unused permit.
         raise upload_post.UploadPostError('Guarded publication changed at the atomic claim; refresh', status_code=409)
     s.commit()

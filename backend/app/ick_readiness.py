@@ -417,6 +417,12 @@ def sheet_approved(item):
     except Exception:return False
 
 
+def needs_permit(s,item):
+    """The ICK posting trigger wants a one-use dispatch permit for any row with a future-ready receipt (owner,
+    2026-11-08): a sheet-approved row skips the frozen release but still takes the permit like any guarded send."""
+    return any(r.data.get('scope')==VERSION for r in s.query(MetadataMutationReceipt).filter_by(queue_id=item.id))
+
+
 def sheet_approved_release(s,row):
     """This frozen reservation's row is sheet-approved (so the planner treats it as a normal row)."""
     item=s.get(QueueItem,row.queue_id) if row.queue_id else None

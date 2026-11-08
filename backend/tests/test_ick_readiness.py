@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from backend.app import ick_readiness as ir,pending_metadata as pm,publication_journal as journal,worker_leases as leases
 from backend.app.db import SessionLocal,engine
-from backend.app.models import QueueItem,MetadataMutationReceipt,PublicationEvent,AppSetting
+from backend.app.models import QueueItem,MetadataMutationReceipt,PublicationEvent,AppSetting,DramaDispatchPermit
 from backend.app.social import queue_manager as qm,queue_payloads as qp,upload_post
 from backend.tests.test_platform_payloads import multipart
 
@@ -480,3 +480,24 @@ def test_sheet_approved_row_posts_as_a_normal_ick_row_and_unapproved_keeps_the_f
     monkeypatch.setenv('POSTING_GATE','off')                                                          # switch off: as before
     with SessionLocal() as s:
         with pytest.raises(HTTPException,match='stale'):ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True)
+
+
+def test_sheet_approved_stale_release_posts_with_the_atomic_dispatch_permit(candidate,monkeypatch):
+    """Owner 2026-11-08: a sheet-approved ICK row skips the frozen release, but the posting trigger still wants the
+    one-use permit; without it the claim aborts ('ICK atomic dispatch permit required')."""
+    from backend.app import posting_gate
+    a=candidate;_,doc,_=release(a);a.clock[0]=dt.datetime.fromisoformat(doc['slot'])
+    with SessionLocal() as s:
+        s.get(QueueItem,a.qid).platform_copy={'facebook':{'caption':'sheet words'}};s.commit()     # frozen release now stale
+    monkeypatch.setenv('POSTING_GATE','sheet')
+    monkeypatch.setattr(posting_gate,'sheet_rows',lambda:{str(a.qid):{'Decision':'Approve'}})
+    calls=[];real=httpx.AsyncClient
+    def handler(request):
+        calls.append(multipart(request)['platform[]'][0].decode())
+        return httpx.Response(200,json={'request_id':'sheet-'+calls[-1]})
+    monkeypatch.setattr(upload_post.settings,'uploadpost_api_key','synthetic-test-key')
+    monkeypatch.setattr(upload_post.httpx,'AsyncClient',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
+    monkeypatch.setattr('backend.app.costs.record_free',lambda *a,**kw:None)
+    with SessionLocal() as s:asyncio.run(qm.publish_queue_item(a.qid,s,regular=True))
+    assert sorted(calls)==['facebook','x'] and snap(a.qid)['status']=='posting'
+    with SessionLocal() as s:assert not s.query(DramaDispatchPermit).filter_by(queue_id=a.qid).count()   # consumed
