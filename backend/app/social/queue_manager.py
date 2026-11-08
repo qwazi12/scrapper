@@ -668,10 +668,48 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             if _aware(it.scheduled_at) != slot:
                 it.scheduled_at = slot
                 changed += 1
+    changed += spread_review_slots(s, now)
     if not dot_plan:
         changed += plan_dramarama(s, now)
     s.commit()  # Also release the reservation mutex when the plan is unchanged.
     return changed
+
+
+def spread_review_slots(s: Session, now: datetime.datetime) -> int:
+    """One item per slot for Review rows too (INSTR_SCRAPPER_20261107T1520Z #2: LongForm #4825 + #4830 shared Nov 8
+    20:00). Approving a Review row in the Posting Review sheet makes it Ready at its slot, so a later Review row whose
+    future, unpinned slot is already in use by its pipeline moves to the pipeline's next free slot. DramaRama keeps its
+    own episode order and is left alone."""
+    s.flush()
+    tz = ZoneInfo(_schedule_cfg["timezone"])
+    hour = lambda t: _aware(t).astimezone(tz).replace(minute=0, second=0, microsecond=0)  # noqa: E731
+    rows = (s.query(QueueItem).filter(QueueItem.scheduled_at > now - datetime.timedelta(days=1), QueueItem.pipeline != DRAMARAMA)
+            .filter(QueueItem.status.in_(["ready", "posting", "posted", "review"]))
+            .order_by(QueueItem.scheduled_at, func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all())
+    used: dict[str, set] = {}
+    for it in rows:                                  # Ready/pinned/posting rows hold their hours first
+        if it.status != "review" or it.pinned_at is not None or _aware(it.scheduled_at) <= now:
+            used.setdefault(pipeline_group(it), set()).add(hour(it.scheduled_at))
+    movers = []
+    for it in rows:                                  # then each hour's first Review row keeps it
+        if it.status != "review" or it.pinned_at is not None or _aware(it.scheduled_at) <= now or it.publish_requests:
+            continue
+        mine = used.setdefault(pipeline_group(it), set())
+        if hour(it.scheduled_at) in mine:
+            movers.append(it)
+        else:
+            mine.add(hour(it.scheduled_at))
+    for it in movers:                                # the rest: the pipeline's next free slot
+        group = pipeline_group(it)
+        free = next((t for t in slots_after(_aware(it.scheduled_at), 400, pipeline=group, accounts=it.accounts)
+                     if hour(t) not in used[group]), None)
+        if free is None:
+            continue
+        logbus.log("info", "queue_review_slot_moved",
+                   f"Item #{it.id} (Review): {_slot_iso(it.scheduled_at)} was taken in {group} -> {_slot_iso(free)}")
+        it.scheduled_at = free
+        used[group].add(hour(free))
+    return len(movers)
 
 
 def channel_busy_this_hour(s: Session, profile: str, now: datetime.datetime) -> set[str]:
@@ -803,7 +841,7 @@ async def submit_upload(
         x_own = network in ("x","twitter") and bool(own.get("text"))
         if network == "youtube" and own:          # this platform's own words (owner, 2026-11-07)
             transport_title, transport_description = own.get("title", transport_title), own.get("description", transport_description)
-        elif network == "instagram" and own.get("caption"):
+        elif network in ("instagram", "facebook") and own.get("caption"):   # Facebook: sheet-approved words only
             transport_description = own["caption"]
         elif x_own:
             transport_title, transport_description = own["text"], ""
@@ -2185,6 +2223,13 @@ def run_scheduler_tick():
                     logger.warning('Drama slot held for #%s: %s', item.id, exc.detail)
                     continue
             if group in seen:
+                continue
+            from .. import posting_gate
+            wait = posting_gate.check(item.id, _aware(item.scheduled_at), now)
+            if wait:    # owner 2026-11-07: the sheet decides; the row waits where it is, status unchanged
+                if scheduler_status.get("gate_logged", {}).get(item.id) != (item.scheduled_at, wait):
+                    scheduler_status.setdefault("gate_logged", {})[item.id] = (item.scheduled_at, wait)
+                    logbus.log("warning", "queue_gate_wait", f"Item #{item.id} waits: {wait}")
                 continue
             seen.add(group)
             # Hard stop, whatever the planner did: never more scheduled posts in

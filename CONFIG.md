@@ -9,6 +9,7 @@ This document defines all configuration options, environment variables, default 
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATA_DIR` | `<repo>/data` (local) or `/data` (Railway) | Path to persistent storage volume (holds database, downloads, backups, cache, and studio projects). |
+| `POSTING_GATE` | `sheet` | `sheet`: a row posts only when the Posting Review sheet approves it (or its Decision is blank 2 h before the slot). `off`: no sheet check (pre-2026-11-07 behaviour). |
 | `DATABASE_URL` | `""` (uses `/data/scrapper.db`) | Database connection string. Unset uses persistent SQLite. |
 
 ---

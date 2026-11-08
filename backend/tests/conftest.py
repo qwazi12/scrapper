@@ -21,6 +21,7 @@ for _key in ("VIDIQ_API_KEY", "TMDB_API_KEY", "API_READ_ACCESS_TOKEN", "TMDB_REA
     os.environ[_key] = ""
 os.environ["SAFE_E2E_MODE"] = "false"
 os.environ["POST_POSTS_PER_DAY"] = "0"  # scheduler tests assume the every-2h slots; production default is 1/day
+os.environ["POSTING_GATE"] = "off"   # the sheet gate (on in production) is tested in test_posting_gate
 # The disk guard reads the real disk the tests run on (a nearly full laptop
 # blocked every render test). Tests of the guard set their own thresholds.
 os.environ["MAX_DISK_USAGE_PERCENT"] = "101"

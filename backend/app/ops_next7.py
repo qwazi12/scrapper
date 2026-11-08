@@ -115,10 +115,10 @@ def lane(it: QueueItem) -> str:
 
 def text_for(it: QueueItem, net: str) -> tuple[str, str]:
     """(title, caption) as stored for that platform; each platform's hashtags are added at send."""
-    own = (it.platform_copy or {}).get(net) or {} if net in ("youtube", "instagram", "x") else {}   # Facebook = the row
+    own = (it.platform_copy or {}).get(net) or {}
     if net == "x":
         return it.title or "", own.get("text") or it.description or ""
-    if net == "instagram":
+    if net in ("instagram", "facebook"):      # Facebook = the row unless the sheet approved its own caption
         return it.title or "", own.get("caption") or it.description or ""
     return own.get("title") or it.title or "", own.get("description") or it.description or ""
 

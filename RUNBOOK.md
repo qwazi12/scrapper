@@ -29,6 +29,11 @@ This document describes everyday operational procedures, failure mitigations, di
      -H "x-access-token: $ACCESS_TOKEN"
    ```
 
+### A2. Posting gate (Posting Review sheet) — owner, 2026-11-07
+- **On** by default (`POSTING_GATE` unset or `sheet`): a due row posts only if the Posting Review sheet lists it with Decision **Approve**, or the Decision is still blank 2 h before its slot. Skip / Edit / not in the sheet / sheet unreadable: it waits, status unchanged (log event `queue_gate_wait`).
+- **Turn it off**: Railway → scrapper service → Variables → `POSTING_GATE=off` → redeploy. Back on: delete the variable (or set `sheet`).
+- The Mac's `data/ops/ops_actions.py sheet` (every :05/:35 watch check) applies the sheet: Approve = sheet copy (`POST /api/ops/posting-review/{id}/apply-copy`, read back), edited Slot cells, Review -> Ready pinned at its slot; Skip / Edit = held in Review (Edit also NEEDS OWNER). Each change: `APPLIED_SCRAPPER_<UTC>.csv` in ops/requests + a re-export.
+
 ### B. Stop Running Jobs Mid-Flight
 1. **Via UI**: Click **"🛑 Stop"** in the top navigation or on any active job card.
 2. **Via API**:

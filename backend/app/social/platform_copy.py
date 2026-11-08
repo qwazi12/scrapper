@@ -1,12 +1,12 @@
-"""Per-platform text on a queue row (owner, 2026-11-07). Facebook keeps the row's title/description; YouTube,
-Instagram and X may each carry their own words. Hashtags are never stored here: the live caption code adds each
+"""Per-platform text on a queue row (owner, 2026-11-07). Facebook keeps the row's description unless the Posting
+Review sheet approved its own caption; YouTube, Instagram and X may each carry their own words. Hashtags are never stored here: the live caption code adds each
 platform's cut at send (hashtag_rules)."""
 from __future__ import annotations
 
 from . import hashtag_rules
 from .platform_payloads import weight_upper_bound
 
-FIELDS = {"youtube": ("title", "description"), "instagram": ("caption",), "x": ("text",)}
+FIELDS = {"youtube": ("title", "description"), "facebook": ("caption",), "instagram": ("caption",), "x": ("text",)}
 YOUTUBE_TITLE_MAX = 100
 X_MAX = 280
 
