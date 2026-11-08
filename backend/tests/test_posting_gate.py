@@ -11,6 +11,11 @@ from backend.app.social import queue_manager as qm, upload_post as up
 from backend.tests.test_queue import ET, UTC, add, et, reset_schedule  # noqa: F401 — fixture
 
 
+def fresh_sheet_cache(monkeypatch):
+    monkeypatch.setattr(posting_review, "_cache", {"at": 0.0, "tabs": None, "read_at": None, "backoff_until": 0.0,
+                                                   "backoff_s": 0, "error": None})
+
+
 def test_two_rows_only_the_approved_one_posts(session, reset_schedule, monkeypatch, tmp_path):
     class Clock(datetime.datetime):
         at = None
@@ -82,6 +87,7 @@ def test_apply_copy_sets_the_sheet_words_on_a_studio_bound_row(session, monkeypa
     row = {"Queue ID": str(it.id), "Decision": "Approve", "Proposed YouTube title": "T",
            "Proposed YouTube description": "Hook.\nNotice.\n#A #B", "Proposed Facebook caption": "FB words.\nWhy?\n#A #B",
            "Proposed Instagram caption": "Same as Facebook; tags: #A", "Proposed X post": "X words? #A #B"}
+    fresh_sheet_cache(monkeypatch)
     monkeypatch.setattr(posting_review, "read", lambda: {"Screen Central": [row]})
     client = TestClient(app, headers={"x-access-token": "test-token"})
     assert client.patch(f"/api/queue/{it.id}", json={"platform_copy": {"x": {"text": "y"}}}).status_code == 409   # still locked
@@ -106,3 +112,39 @@ def test_two_review_rows_never_share_a_slot(session, reset_schedule):
     qm.spread_review_slots(session, et(2026, 11, 7, 19))
     hours = [it.scheduled_at.replace(tzinfo=UTC).astimezone(ET).strftime("%d %H:%M") for it in (a, b, c)]
     assert hours == ["08 20:00", "10 20:00", "09 20:00"]      # first keeps it, others keep theirs, the clash moves on
+
+
+class RateLimited(Exception):
+    resp = types.SimpleNamespace(status=429)
+
+
+def test_fifty_changed_rows_one_sheet_read_and_a_rate_limit_keeps_the_last_good_copy(session, monkeypatch):
+    """02:36Z Nov 8: 40+ apply-copy calls each read the sheet -> Google 429 -> 502s. Now one read serves them all,
+    and a 429 later keeps serving the last good read (the gate still decides; nothing reads as "unreadable")."""
+    items = add(session, 50, source="LongForm Studio", accounts=["Cinama:*"])
+    rows = [{"Queue ID": str(it.id), "Decision": "Approve", "Proposed YouTube title": f"Title {it.id}",
+             "Proposed Facebook caption": f"Words for {it.id}.\n#A", "Proposed X post": f"X {it.id} #A"} for it in items]
+    reads = []
+
+    def read():
+        reads.append(1)
+        if len(reads) > 1:
+            raise RateLimited("<HttpError 429 when requesting sheets ... Quota exceeded>")
+        return {"Screen Central": rows}
+    fresh_sheet_cache(monkeypatch)
+    monkeypatch.setattr(posting_review, "read", read)
+    client = TestClient(app, headers={"x-access-token": "test-token"})
+    assert client.get("/api/ops/posting-review").json()["stale"] is None
+    out = [client.post(f"/api/ops/posting-review/{it.id}/apply-copy") for it in items]
+    assert [r.status_code for r in out] == [200] * 50 and all(r.json()["changed"] for r in out)
+    assert out[7].json()["platform_copy"]["x"] == {"text": f"X {items[7].id}"}
+    assert len(reads) == 1                                                       # one Google read for 50 rows
+    posting_review._cache["at"] -= posting_review.CACHE_S + 1                     # 5 min later: Google says 429
+    sheet = client.get("/api/ops/posting-review").json()
+    assert "429" in sheet["stale"] and len(sheet["tabs"]["Screen Central"]) == 50   # last good read, not a 502
+    again = client.post(f"/api/ops/posting-review/{items[0].id}/apply-copy")
+    assert again.status_code == 200 and again.json()["changed"] is False
+    monkeypatch.setenv("POSTING_GATE", "sheet")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    assert posting_gate.check(items[0].id, now, now) is None                     # still posts on the last good read
+    assert len(reads) == 2                                                       # backing off: no read per call

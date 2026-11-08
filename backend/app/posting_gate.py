@@ -1,17 +1,13 @@
 """Posting gate (owner, 2026-11-07): with POSTING_GATE=sheet (the default) a due row posts only when the Posting Review
 sheet lists it with Decision Approve, or with the Decision still blank 2 h before its slot. Skip / Edit / not in the
-sheet / sheet unreadable: the row waits where it is (status unchanged). POSTING_GATE=off restores the old behaviour."""
+sheet / sheet unreadable: the row waits where it is (status unchanged). POSTING_GATE=off restores the old behaviour.
+The sheet read is posting_review.cached(): one Google read per 5 min, and a rate limit keeps the last good read."""
 from __future__ import annotations
 
 import datetime
 import os
-import threading
-import time
 
 BLANK_AFTER = datetime.timedelta(hours=2)
-CACHE_S = 240
-_lock = threading.Lock()
-_cache: dict = {"at": 0.0, "rows": None, "error": None}
 
 
 def on() -> bool:
@@ -19,20 +15,10 @@ def on() -> bool:
 
 
 def sheet_rows() -> dict[str, dict]:
-    """{queue id: sheet row}, read at most every 4 minutes. Raises when the sheet can't be read."""
-    with _lock:
-        if _cache["rows"] is None or time.monotonic() - _cache["at"] > CACHE_S:
-            from . import posting_review
-            try:
-                tabs = posting_review.read()
-                _cache.update(rows={r.get("Queue ID", "").strip(): r for rows in tabs.values() for r in rows
-                                    if r.get("Queue ID", "").strip()}, error=None)
-            except Exception as exc:  # noqa: BLE001 — fail closed below
-                _cache.update(rows=None, error=str(exc)[:200])
-            _cache["at"] = time.monotonic()
-        if _cache["rows"] is None:
-            raise RuntimeError(f"Posting Review sheet unreadable: {_cache['error']}")
-        return _cache["rows"]
+    """{queue id: sheet row}. Raises RuntimeError when the sheet can't be read (a rate limit isn't that)."""
+    from . import posting_review
+    tabs, _ = posting_review.cached()
+    return {r.get("Queue ID", "").strip(): r for rows in tabs.values() for r in rows if r.get("Queue ID", "").strip()}
 
 
 def check(item_id: int, slot: datetime.datetime, now: datetime.datetime) -> str | None:

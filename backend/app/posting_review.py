@@ -1,10 +1,15 @@
 """The owner's "Posting Review (next 7 days)" sheet, every tab, full cell text (owner, 2026-11-07).
 The ops poller's approve action reads the Decision column and the proposed copy from here. One sheet only.
 apply-copy (owner, POSTING GATE 2026-11-07): a row whose Decision is Approve gets the sheet's per-platform copy, read
-by the server itself, so Studio-bound rows (whose title/description stay locked) post the approved words too."""
+by the server itself, so Studio-bound rows (whose title/description stay locked) post the approved words too.
+One Google read per 5 min (owner, 2026-11-08): the sync's GET, every apply-copy and the posting gate share it. A rate
+limit (429) keeps the last good read and backs off, so posts never stall on it; anything else is "unreadable"."""
 from __future__ import annotations
 
+import random
 import re
+import threading
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -14,6 +19,10 @@ from .db import get_session
 
 SHEET_ID = "1cTo8P43DiqqxV7oAtavHFOVBzm3vmYjEzVjA8q4CQsU"
 router = APIRouter(prefix="/api/ops", dependencies=[Depends(require_token)])
+CACHE_S = 300
+BACKOFF_S = (60, 600)                    # first wait after a 429, doubling up to the cap
+_lock = threading.Lock()
+_cache: dict = {"at": 0.0, "tabs": None, "read_at": None, "backoff_until": 0.0, "backoff_s": 0, "error": None}
 
 
 def rows_by_tab(values_by_tab: dict[str, list[list[str]]]) -> dict[str, list[dict[str, str]]]:
@@ -39,12 +48,41 @@ def read() -> dict[str, list[dict[str, str]]]:
     return rows_by_tab({t: v.get("values", []) for t, v in zip(tabs, got.get("valueRanges", []))})
 
 
+def rate_limited(exc: Exception) -> bool:
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    return str(status) == "429" or bool(re.search(r"\b429\b|rateLimitExceeded|RATE_LIMIT|Quota exceeded", str(exc)))
+
+
+def cached() -> tuple[dict[str, list[dict[str, str]]], dict]:
+    """(tabs, {"read_at", "stale"}): Google is read at most once per CACHE_S. On a 429 the last good read is served
+    ("stale" says why) and Google isn't asked again until the backoff ends. Raises when there is no usable read."""
+    with _lock:
+        now = time.monotonic()
+        due = _cache["tabs"] is None or now - _cache["at"] > CACHE_S
+        if due and now >= _cache["backoff_until"]:
+            try:
+                _cache.update(tabs=read(), at=now, read_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                              backoff_s=0, error=None)
+            except Exception as exc:  # noqa: BLE001
+                if not rate_limited(exc):
+                    _cache.update(tabs=None, error=str(exc)[:200], at=now)
+                    raise RuntimeError(f"Posting Review sheet unreadable: {str(exc)[:200]}")
+                wait = min(max(_cache["backoff_s"] * 2, BACKOFF_S[0]), BACKOFF_S[1])
+                _cache.update(backoff_s=wait, backoff_until=now + wait * random.uniform(1, 1.2),
+                              error=f"Google rate limit (429); next read in ~{wait} s")
+        if _cache["tabs"] is None:
+            raise RuntimeError(f"Posting Review sheet unreadable: {_cache['error']}")
+        stale = _cache["error"] if now - _cache["at"] > CACHE_S else None
+        return _cache["tabs"], {"read_at": _cache["read_at"], "stale": stale}
+
+
 @router.get("/posting-review")
 def posting_review() -> dict:
     try:
-        return {"sheet_id": SHEET_ID, "tabs": read()}
-    except Exception as exc:  # noqa: BLE001 — read-only; say why
-        raise HTTPException(502, f"Posting Review sheet unreadable: {str(exc)[:200]}")
+        tabs, info = cached()
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
+    return {"sheet_id": SHEET_ID, "tabs": tabs, **info}
 
 
 HASHTAG = re.compile(r"#(\w+)", re.UNICODE)
@@ -86,9 +124,9 @@ def apply_copy(item_id: int, s: Session = Depends(get_session)) -> dict:
     if any(e.get("state") in ("intent", "unknown", "accepted") for e in item.publish_requests or []):
         raise HTTPException(409, "Submission unresolved — reconcile with the provider before editing")
     try:
-        tabs = read()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(502, f"Posting Review sheet unreadable: {str(exc)[:200]}")
+        tabs, _ = cached()
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
     hits = [r for rows in tabs.values() for r in rows if r.get("Queue ID", "").strip() == str(item_id)]
     if len(hits) != 1:
         raise HTTPException(409, f"#{item_id} appears {len(hits)} times in the sheet")
