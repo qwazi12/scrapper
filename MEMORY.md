@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## Log 2026-11-08 17:55 UTC — DramaRama X/YouTube catch-up volume (owner answers, config only)
+- Owner: keep strict episode order; X 6/day until X is in sync with Facebook, then X posts the same episode as Facebook at Facebook's times; YouTube 4/day now (overrides the claim-watch 1/day).
+- Config: DramaRama X 09/11/13/15/18/21, YouTube 09/11/21/23 (= Facebook), posts_per_day 4 -> 7. Undo: PUT data/ops/dr_catchup_pre_20261108T174418Z.json. yt_watch_state.json: current = 4 times, stepped_up = true (watch still pauses YouTube to 0 on a claim, no step-up).
+- Math: Facebook +2 eps/series/day, X +3 -> X closes 1/series/day: Christmas Home ~6 days, Prime Suspect ~9 days. YouTube +2 = Facebook's rate, so it holds its gap (Prime ~7, Christmas ~8) — never syncs at 4/day.
+- PENDING: switch X to Facebook times (in-sync mode) when X's next episode = Facebook's per series — not automated yet.
+- Schedule-config change => any ICK guarded release NOT sheet-approved now refuses ("cadence changed"); sheet-approved rows unaffected (Option B).
+
 ## Log 2026-11-08 17:45 UTC — results of the 13:15 plan (7bd6271; Railway restarted 17:35:57Z and 17:40:37Z)
 1. ICK permit: sheet-approved ICK rows got no atomic dispatch permit (admit -> None), so the posting trigger aborted the claim. #5427 was refused that way at 12:00 ET today (nothing sent, still Ready). Fix 7bd6271: ick_readiness.needs_permit (any ick-future-ready-v1 receipt, like the trigger) -> grant_dispatch. Test test_sheet_approved_stale_release_posts_with_the_atomic_dispatch_permit fails on the old code with the live error. Suite 1300 passed, 1 skipped.
    Re-planned (pinned, next free ICK hours, nothing else ICK in those hours): #5427 Sun Nov 8 14:00 ET, #5428 15:00, #5429 16:00, #5425 18:00, #5426 Mon Nov 9 12:00. All five are Approve in the sheet now. APPLIED_SCRAPPER_20261108T173642Z.csv; undo move_pre_<id>_20261108T173642Z.json.
