@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## Plan 2026-11-08 19:20 UTC — owner: reconcile and report
+1. #917, #1354: live links but Review -> mark Posted with real Upload-Post times; no repost.
+2. ICK Facebook: 15 double-booked hours Wed-Sat in NEXT7 1735Z -> max 1 per hour on the hour; list moves.
+3. #5427 where now; #5425/#5426/#5428/#5429 queue slots vs sheet -> make them match.
+4. #6413/#6410: episode order wins over sheet-requested slots; clear those, report new slots.
+5. Explain posts landing minutes after HH:00; can Upload-Post scheduled time make them exact.
+
 ## Log 2026-11-08 19:10 UTC — verified live; X sync switch built (5de0616, NOT pushed — awaiting owner)
 - #5427 (sheet-approved ICK, pinned 14:00 ET) accepted on Facebook and X at 19:00Z: the permit fix (7bd6271) works live. #6417 Prime Suspect Ep.1 posted to X at 18:00Z (13:00 ET); now on FB, YouTube and X.
 - 5de0616 (local only): drama_x_sync — each tick, when X has every episode Facebook has in each series Facebook is posting, DramaRama X times := Facebook's (log drama_x_synced). Tests: 2 new (fail on old code); suite 1302 passed, 1 skipped. PENDING: owner's go to push.
