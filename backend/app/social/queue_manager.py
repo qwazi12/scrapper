@@ -1315,6 +1315,43 @@ def drama_net_plans(s: Session, now: datetime.datetime):
     return rows, due, plans, held_by
 
 
+def drama_next_episode(rows: list[QueueItem], net: str) -> dict[str, int]:
+    """Each series' first episode not yet on `net` (an episode not going there is passed over; a missing one isn't)."""
+    series: dict[str, dict[int, list[QueueItem]]] = {}
+    for it in rows:
+        name, n = drama_series_episode(it)
+        if n is not None:
+            series.setdefault(name, {}).setdefault(n, []).append(it)
+    return {name: next((n for n in range(1, max(eps) + 1)
+                        if n not in eps or drama_episode_state(eps[n], net) not in ("done", "skip")), max(eps) + 1)
+            for name, eps in series.items()}
+
+
+def drama_x_sync(s: Session, now: datetime.datetime) -> bool:
+    """Owner 2026-11-08: X catches up on its own (extra) times; once X has every episode Facebook has, in every series
+    Facebook is posting now, X switches to Facebook's times so each episode goes to both together. Logged; it only
+    fires while X's times differ from Facebook's (set X's catch-up times again to repeat it)."""
+    import copy
+    cfg = copy.deepcopy(schedule_config())
+    plats = ((cfg.get("pipelines") or {}).get(DRAMARAMA) or {}).get("platforms") or {}
+    fb, x = plats.get("facebook"), plats.get("x")
+    if not isinstance(fb, list) or not isinstance(x, list) or not x or sorted(x) == sorted(fb):
+        return False
+    rows, _, plans, _ = drama_net_plans(s, now)
+    active = sorted({drama_series_episode(it)[0] for it, _ in plans.get("facebook", [])})
+    if not active:
+        return False
+    fb_next, x_next = drama_next_episode(rows, "facebook"), drama_next_episode(rows, "x")
+    if any(x_next.get(name, 0) < fb_next[name] for name in active):
+        return False
+    plats["x"] = list(fb)
+    save_schedule(s, cfg)
+    logbus.log("info", "drama_x_synced",
+               f"DramaRama X caught up with Facebook ({'; '.join(f'{n} next EP{fb_next[n]}' for n in active)}): "
+               f"X times {', '.join(sorted(x))} -> Facebook's {', '.join(sorted(fb))}")
+    return True
+
+
 def plan_dramarama(s: Session, now: datetime.datetime) -> int:
     """Give DramaRama's Ready episodes their slots: each platform's own times (schedule config), slot k of the day
     belongs to active series k % DRAMA_ACTIVE_SERIES — so Facebook at 4/day posts 2 episodes of each of 2 series.
@@ -2222,6 +2259,11 @@ def run_scheduler_tick():
             start_ick_room_seo(s)
         except Exception as exc:  # noqa: BLE001
             logger.error("Error starting Ick Room SEO: %s", exc)
+        try:
+            drama_x_sync(s, now)
+        except Exception as exc:  # noqa: BLE001 — the switch must never stop posting
+            s.rollback()
+            logger.error("DramaRama X sync check failed: %s", exc)
         plan_schedule(s, now)
 
         due = (

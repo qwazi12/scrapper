@@ -469,3 +469,30 @@ def test_dialogue_copy_name_is_the_source_drive_id():
     assert drama_dialogue.copy_name(row) == "1AbC_def-GHIjkl012.mp4"
     assert drama_dialogue.copy_name(QueueItem(drive_link=None)) is None
     assert drama_dialogue.fetch(QueueItem(drive_link=None)) == (None, "no Drive source to match a dialogue-only copy")
+
+
+def test_x_switches_to_facebook_times_once_it_has_every_episode_facebook_has(session, drama):
+    """Owner 2026-11-08: X catches up on its own extra times, then posts at Facebook's times (one episode, both)."""
+    both = [["Dramarama:facebook", "f"], ["Dramarama:x", "x"]]
+    ep(session, "Alpha", 1, "archived", accounts=("Dramarama:facebook",), catchup={"done": both})
+    two = ep(session, "Alpha", 2, accounts=("Dramarama:x",), catchup={"done": both[:1]})   # on Facebook, not X yet
+    for n in (3, 4):
+        ep(session, "Alpha", n)
+    assert not qm.drama_x_sync(session, et(3, 7))                        # X next EP2, Facebook next EP3: behind
+    assert qm.timed_platforms("DramaRama")["x"] == X
+    two.status, two.catchup = "archived", {"done": both}
+    session.commit()
+    assert qm.drama_x_sync(session, et(3, 7))                            # X has EP1-2 like Facebook: switch
+    assert sorted(qm.timed_platforms("DramaRama")["x"]) == sorted(FB)
+    assert not qm.drama_x_sync(session, et(3, 7))                        # already on Facebook's times
+    qm.plan_schedule(session, et(3, 7))
+    _, _, plans, _ = qm.drama_net_plans(session, et(3, 7))
+    assert {qm._aware(t).astimezone(ET).strftime("%H:%M") for _, t in plans["x"]} <= set(FB)
+
+
+def test_a_series_facebook_isnt_posting_doesnt_hold_the_switch(session, drama):
+    fb_only = [["Dramarama:facebook", "f"]]
+    ep(session, "Alpha", 1, "archived", accounts=("Dramarama:facebook",), catchup={"done": fb_only + [["Dramarama:x", "x"]]})
+    ep(session, "Alpha", 2)                                               # Facebook's next; X is level
+    ep(session, "Old", 1, "archived", accounts=("Dramarama:facebook",), catchup={"done": fb_only})   # finished on FB
+    assert qm.drama_x_sync(session, et(3, 7))
