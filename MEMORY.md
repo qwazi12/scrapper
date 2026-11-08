@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## PLAN 2026-11-08 ~02:45 UTC — sheet sync at volume, #4841 posted, DramaRama catch-up clear, ICK misses (owner chat)
+1. Sync 502s at volume (02:36Z: 40+ apply-copy 502 = one sheet read per row -> Google 429). Read the sheet once per check, cache 5 min shared by apply-copy and the gate; sync applies only rows whose Decision or copy changed; back off on 429; a rate limit = use the last good copy (gate keeps deciding from it), not "unreadable". Test with 50 changed rows. Push approved once tests pass.
+2. #4841: owner confirmed live with the sheet copy. Mark it posted from its four links (not Skip). Rule: "Delivery held" with every platform link present = posted.
+3. DramaRama catch-up (1520Z #1) approved: Facebook-schedule rows post to Facebook only; X/YouTube take episodes only from their own EP01 sequence; clear pending X/YouTube catch-ups from Facebook rows (rollback snapshot) and list them.
+4. ICK: investigate #5429 and #5425 ("stale/manual/missed release"; 2 missed slots today).
+
 ## PLAN 2026-11-07 ~00:20 UTC — DramaRama YouTube pause, X/YouTube own EP01 sequences, YouTube dialogue-only audio (owner chat)
 Done live (owner chat 2026-11-06): DramaRama youtube = 0/day (paused after AdRev claim on #6413; rollback data/ops/yt_pause_pre_20261106T1900Z.json); #5398/#6415 held in Review (X must never post an episode before the earlier ones). S-08 poller and S-23 Dec 1 vidIQ one-shot installed as launchd jobs (data/ops/poll_run.sh, vidiq_dec1_run.sh). Ops folder renamed "**Researcher**".
 To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stays paused):
