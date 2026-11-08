@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## PLAN 2026-11-08 ~03:10 UTC — 9 held rows Posted, DramaRama episode-order catch-up, ICK sheet-approved rows skip the frozen check (owner chat)
+1. Mark #966 #904 #1162 #924 #1289 #4826 #11349 #11350 #11352 Posted with each post's real time (Upload-Post history); fix #4841 to its real 01:00Z too. Needs PATCH to accept published_at.
+2. DramaRama: don't clear. X and YouTube post each series' owed episodes strictly in episode order, skipping episodes already on that platform (X: Prime Suspect EP3, Christmas Home EP7; YouTube: Prime Suspect EP1, EP5), never reposting; a later episode never before the earlier ones. 2/day X and YouTube, on the hour. Show the next 6 X and YouTube posts. Push approved once tests pass.
+3. ICK Option B: rows the owner approved in the Posting Review sheet skip the frozen-release check and post as normal ICK rows; anything not approved in the sheet keeps the frozen check. Move #5425–#5429 to the next free ICK hours, one per hour, on the hour. Push approved once tests pass.
+
 ## Log 2026-11-08 02:55 UTC — results of the plan above
 1. Pushed ce8e5a5: posting_review.cached() = one Google read per 5 min shared by the sync GET, apply-copy and the gate; 429 serves the last good read (`stale` in GET) with 60 s→10 min backoff + jitter; other errors = unreadable. Test: 50 changed rows = 1 read; after a 429 copy applies and the gate posts. Suite 1273 passed, 1 skipped. Railway live 02:53Z. Local sync (data/ops, gitignored): apply-copy only when a row's Decision/copy cells changed (sheet_copy_seen.json); first 429/502 stops copy calls for that check. Hand run 02:53Z: 5 changes, 0 copy errors (02:36Z had 78), APPLIED_SCRAPPER_20261108T025348Z.csv in ops/requests.
 2. #4841 marked Posted (archived) with its 4 links; published_at says 02:44Z (PATCH stamps now; real post 01:00Z). Undo file data/ops/posted_pre_4841_*.json. 9 more rows sit in Review with "Delivery held" + 4 links (#966 #904 #1162 #924 #1289 #4826 #11349 #11350 #11352): not changed, asked owner.
