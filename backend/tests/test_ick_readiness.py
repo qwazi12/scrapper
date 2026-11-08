@@ -456,3 +456,27 @@ def test_missed_slot_is_visible_and_only_explicit_unsent_withdrawal_allows_new_f
     assert a.client.get('/api/ick-readiness/receipts/'+response['receipt_id']).json()['reservation_state']=='withdrawn'
     a.body['operation_id']=str(uuid4());_,later,_=release(a)
     assert dt.datetime.fromisoformat(later['slot'])>a.clock[0]
+
+
+def test_sheet_approved_row_posts_as_a_normal_ick_row_and_unapproved_keeps_the_frozen_check(candidate,monkeypatch):
+    """Owner Option B, 2026-11-08: the 54xx releases went stale after unrelated changes (new column, HH:00 schedule).
+    A row the owner approved in the Posting Review sheet skips the frozen release; anything else is still checked."""
+    from backend.app import posting_gate
+    a=candidate;_,doc,_=release(a);a.clock[0]=dt.datetime.fromisoformat(doc['slot'])
+    with SessionLocal() as s:
+        s.get(QueueItem,a.qid).platform_copy={'facebook':{'caption':'sheet words'}};s.commit()     # contract now differs
+    monkeypatch.setenv('POSTING_GATE','sheet')
+    sheet={}
+    monkeypatch.setattr(posting_gate,'sheet_rows',lambda:sheet)
+    with SessionLocal() as s:
+        with pytest.raises(HTTPException,match='stale'):ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True)   # not in the sheet
+    sheet[str(a.qid)]={'Decision':'Skip'}
+    with SessionLocal() as s:
+        with pytest.raises(HTTPException,match='stale'):ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True)
+    sheet[str(a.qid)]={'Decision':'Approve'}
+    with SessionLocal() as s:
+        assert ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True) is None                       # a normal ICK row
+        assert all(not ir.sheet_approved_release(s,r) or r.queue_id==a.qid for r in ir.reservations(s))
+    monkeypatch.setenv('POSTING_GATE','off')                                                          # switch off: as before
+    with SessionLocal() as s:
+        with pytest.raises(HTTPException,match='stale'):ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True)

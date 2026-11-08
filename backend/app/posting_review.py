@@ -64,8 +64,8 @@ def cached() -> tuple[dict[str, list[dict[str, str]]], dict]:
                 _cache.update(tabs=read(), at=now, read_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                               backoff_s=0, error=None)
             except Exception as exc:  # noqa: BLE001
-                if not rate_limited(exc):
-                    _cache.update(tabs=None, error=str(exc)[:200], at=now)
+                if not rate_limited(exc):          # unreadable; not asked again for a minute
+                    _cache.update(tabs=None, error=str(exc)[:200], at=now, backoff_until=now + BACKOFF_S[0])
                     raise RuntimeError(f"Posting Review sheet unreadable: {str(exc)[:200]}")
                 wait = min(max(_cache["backoff_s"] * 2, BACKOFF_S[0]), BACKOFF_S[1])
                 _cache.update(backoff_s=wait, backoff_until=now + wait * random.uniform(1, 1.2),

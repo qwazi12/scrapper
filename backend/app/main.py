@@ -942,6 +942,17 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
 
     if req.media_url is not None:
         item.media_url = req.media_url
+    if req.published_at is not None:
+        # The real post time (owner, 2026-11-08): only on a Posted row, never in the future.
+        try:
+            at = datetime.datetime.fromisoformat(req.published_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "published_at must be an ISO date-time")
+        if at.tzinfo is None or at > datetime.datetime.now(datetime.timezone.utc):
+            raise HTTPException(400, "published_at needs a timezone and can't be in the future")
+        if item.status not in ("posted", "archived"):
+            raise HTTPException(409, "published_at is set only on a Posted row")
+        item.published_at = at
 
     s.commit()
     s.refresh(item)

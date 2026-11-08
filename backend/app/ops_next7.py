@@ -73,7 +73,8 @@ def plan(s: Session, now: datetime.datetime, connected: dict[str, list[str]], da
         taken: dict[str, set] = {}
         for it in items:
             try:
-                release = ick_readiness.guard(s, it) if group == qm.ICK_ROOM else None
+                release = (ick_readiness.guard(s, it) if group == qm.ICK_ROOM and not ick_readiness.sheet_approved(it)
+                           else None)
             except Exception:  # noqa: BLE001 — an unreconciled release has no slot to report
                 release = None
             if release is not None:                 # dot's ICK release: its reserved slot, its exact targets

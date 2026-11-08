@@ -79,3 +79,25 @@ def test_post_sends_each_platform_its_own_tags(session, monkeypatch):
     assert sent["x"] == ("A title\n\nBody.\n\n#Disturbia #MovieClips", "")
     yt = sent["youtube"][1].split("\n\n")[-1].split()
     assert len(yt) == 10 and yt[-1] == "#shorts" and "#ArliStoryTime" not in yt
+
+
+def test_x_keeps_its_own_copy_when_platform_tags_would_go_over_280(session, monkeypatch):
+    """#4882, 2026-11-07 23:00Z: X copy at 271 became 282 once the series tag replaced #DramaRama -> refused. X keeps its
+    platform tags only while the post stays within 280."""
+    from backend.app.social.platform_payloads import weight_upper_bound
+    sent = {}
+
+    async def list_accounts():
+        return [{"id": "Cinama:x", "profile": "Cinama"}]
+
+    async def upload_video(path, *, profile, platforms, title, description, **kw):
+        sent[platforms[0]] = title
+        return "r"
+    monkeypatch.setattr(up, "list_accounts", list_accounts)
+    monkeypatch.setattr(up, "upload_video", upload_video)
+    it = QueueItem(pipeline="Movie Clips", source="Movie Clips / test", status="ready", accounts=["Cinama:x"],
+                   title="T", description="w" * 261, tags="#Ab #Cd", video_path=__file__)
+    session.add(it)
+    session.commit()
+    asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+    assert sent["x"] and weight_upper_bound(sent["x"]) <= 280

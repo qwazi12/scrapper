@@ -52,8 +52,40 @@ def test_four_facebook_a_day_two_series_two_each_in_episode_order(session, drama
     assert [local(x) for x in c] == [None, None]                        # Beta isn't delivered yet: Gamma waits
     assert local(a[6]) is None                                          # EP7 still in review
     assert qm.drama_held["facebook"] == {"Alpha": "waiting for EP7"}    # Ready ran out: waiting, not finished
-    assert qm.drama_held["x"] == {"Alpha": "waiting for EP1 on Facebook first", "Beta": "waiting for EP1 on Facebook first"}
+    assert qm.drama_held["x"] == {"Alpha": "waiting for EP1 on Facebook first", "Beta": "waiting for EP1 on Facebook first",
+                                  "Gamma": "waiting for EP1 on Facebook first"}   # every blocked series is listed (2026-11-08)
     assert all(local(x) not in [f"03 {h}" for h in X] for x in a + b)   # X waits for Facebook first
+
+
+def test_x_and_youtube_go_strictly_in_episode_order_passing_only_what_is_already_there(session, drama):
+    """Owner, 2026-11-08: X/YouTube post each series' owed episodes Ep.1, 2, 3…; only an episode already on that
+    platform is passed over (Prime Suspect Ep.3 on X); one that isn't there holds every later one."""
+    fb = {"done": [["Dramarama:facebook", "f"]]}
+    p = [ep(session, "Prime", 1, accounts=("Dramarama:x", "Dramarama:youtube"), catchup=fb),
+         ep(session, "Prime", 2, accounts=("Dramarama:x", "Dramarama:youtube"), catchup=fb),
+         ep(session, "Prime", 3, accounts=("Dramarama:youtube",), catchup={"done": fb["done"] + [["Dramarama:x", "x3"]]}),
+         ep(session, "Prime", 4, accounts=("Dramarama:x", "Dramarama:youtube"), catchup=fb)]
+    held = ep(session, "Xmas", 1, accounts=("Dramarama:youtube",),                        # EP1 never reached X
+              catchup={**fb, "held": {"Dramarama:x": "X text too long"}})
+    later = ep(session, "Xmas", 2, accounts=("Dramarama:x", "Dramarama:youtube"), catchup=fb)
+    qm.plan_schedule(session, et(3, 7))
+    _, _, plans, held_by = qm.drama_net_plans(session, et(3, 7))
+    x = [it.id for it, _ in plans["x"]]
+    assert [i for i in x if i in {q.id for q in p}] == [p[0].id, p[1].id, p[3].id]       # EP3 already on X: passed over
+    assert later.id not in x and held_by["x"]["Xmas"] == "waiting for EP1"                # EP2 never before EP1 on X
+    yt = [it.id for it, _ in plans["youtube"]]
+    assert yt.index(held.id) < yt.index(later.id) and [i for i in yt if i in {q.id for q in p}] == [q.id for q in p]
+
+
+def test_a_series_held_on_x_doesnt_take_an_x_slot_from_a_ready_one(session, drama):
+    fb = {"done": [["Dramarama:facebook", "f"]]}
+    ep(session, "Aaa", 1, "archived", accounts=("Dramarama:facebook",), catchup={**fb, "held": {"Dramarama:x": "held"}})
+    ep(session, "Aaa", 2, accounts=("Dramarama:x",), catchup=fb)
+    b = [ep(session, "Bbb", n, accounts=("Dramarama:x",), catchup=fb) for n in (1, 2)]
+    c = [ep(session, "Ccc", n, accounts=("Dramarama:x",), catchup=fb) for n in (1, 2)]
+    qm.plan_schedule(session, et(3, 7))
+    assert sorted(local(x) for x in b + c) == ["03 11:40", "03 18:20", "04 11:40", "04 18:20"]   # still 2 a day
+    assert [local(x) for x in b] == sorted(local(x) for x in b) and [local(x) for x in c] == sorted(local(x) for x in c)
 
 
 def test_missing_episode_holds_only_that_series(session, drama):

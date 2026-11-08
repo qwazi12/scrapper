@@ -148,3 +148,12 @@ def test_fifty_changed_rows_one_sheet_read_and_a_rate_limit_keeps_the_last_good_
     now = datetime.datetime.now(datetime.timezone.utc)
     assert posting_gate.check(items[0].id, now, now) is None                     # still posts on the last good read
     assert len(reads) == 2                                                       # backing off: no read per call
+
+
+def test_a_posted_row_gets_its_real_post_time(session):
+    (it,) = add(session, 1)
+    client = TestClient(app, headers={"x-access-token": "test-token"})
+    assert client.patch(f"/api/queue/{it.id}", json={"published_at": "2026-11-08T01:00:00Z"}).status_code == 409   # not Posted
+    r = client.patch(f"/api/queue/{it.id}", json={"status": "archived", "published_at": "2026-11-08T01:00:00Z"})
+    assert r.status_code == 200 and r.json()["published_at"].startswith("2026-11-08T01:00:00")
+    assert client.patch(f"/api/queue/{it.id}", json={"published_at": "2999-01-01T00:00:00Z"}).status_code == 400

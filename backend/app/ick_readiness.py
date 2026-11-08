@@ -408,9 +408,24 @@ def ready(qid:int,req:Ready,s:Session=Depends(get_session)):
     except leases.LeaseLost:s.rollback();fail('publisher already owns this item; inspect before retrying')
 
 
+def sheet_approved(item):
+    """Owner Option B (2026-11-08): a row the owner approved in the Posting Review sheet posts as a normal ICK row,
+    without its frozen release. Anything else (not in the sheet, other Decision, sheet unreadable) keeps the frozen check."""
+    from . import posting_gate
+    if not posting_gate.on():return False      # POSTING_GATE=off: every frozen release is checked, as before
+    try:return (posting_gate.sheet_rows().get(str(item.id)) or {}).get('Decision','').strip().lower()=='approve'
+    except Exception:return False
+
+
+def sheet_approved_release(s,row):
+    """This frozen reservation's row is sheet-approved (so the planner treats it as a normal row)."""
+    item=s.get(QueueItem,row.queue_id) if row.queue_id else None
+    return bool(item) and journal.identity(item)==row.queue_identity and sheet_approved(item)
+
+
 def admit(s,item,path,*,regular,claimed=False,fresh_identity=None):
     row=guard(s,item)
-    if not row:return None
+    if not row or sheet_approved(item):return None
     if not claimed:pm.require_pending(s,item)
     doc=row.data['document'];now=leases.clock(s)
     if (not regular or not dt.datetime.fromisoformat(doc['slot'])<=now<dt.datetime.fromisoformat(doc['expires_at'])

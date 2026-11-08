@@ -541,7 +541,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     # Serialize reservation admission with planning; refresh snapshots after waits.
     s.expire_all()
     load_schedule(s)
-    reserved=ick_readiness.reservations(s)
+    reserved=[row for row in ick_readiness.reservations(s) if not ick_readiness.sheet_approved_release(s,row)]
     guarded={row.queue_identity for row in reserved}
     reserved_slots={datetime.datetime.fromisoformat(row.data["document"]["slot"]) for row in reserved}
     ready = (
@@ -850,7 +850,8 @@ async def submit_upload(
                 from . import platform_copy as copy_rules
                 transport_title=copy_rules.fit_x(own["text"],describe(profile,network,own["text"]))
             elif queue_x_text is not None and network in ("x","twitter"):
-                transport_title=describe(profile,network,transport_title)
+                from . import platform_copy as copy_rules
+                transport_title=copy_rules.fit_x(transport_title,describe(profile,network,transport_title))
             else:
                 transport_description=describe(profile,network,transport_description)
         if not media_files:
@@ -1219,8 +1220,9 @@ def drama_episode_state(rows: list[QueueItem], net: str) -> str:
     if any(it.status not in ("archived", "posted") and (net in drama_owes(it) or (net == "facebook" and it.status != "ready"))
            for it in rows):
         return "wait"          # in review, posting, retry or error — or owed but not playable/reviewed yet
-    # (X/YouTube: only rows that go there count; Facebook leads, so any unfinished row holds it)
-    return "skip"
+    # X/YouTube (owner, 2026-11-08): strict episode order — only an episode already on that platform is passed over;
+    # one that isn't there (held, never sent) holds the later ones.
+    return "skip" if net == "facebook" else "wait"
 
 
 def drama_lanes(rows: list[QueueItem], net: str, first: set[str] = frozenset()) -> tuple[list[list[QueueItem]], dict[str, str]]:
@@ -1239,8 +1241,9 @@ def drama_lanes(rows: list[QueueItem], net: str, first: set[str] = frozenset()) 
         first_id[name] = min(first_id.get(name, it.id), it.id)
     open_series = []
     for name, eps in series.items():
-        if net != "facebook" and not any(net in drama_owes(it) for rows_ in eps.values() for it in rows_):
-            continue                                           # nothing in this series goes to that platform
+        if net != "facebook" and not any(net in drama_owes(it) and it.status not in ("archived", "posted")
+                                         for rows_ in eps.values() for it in rows_):
+            continue                                           # nothing in this series still goes to that platform
         states = {}
         for n in range(1, max(eps) + 1):
             st = drama_episode_state(eps[n], net) if n in eps else "wait"    # a missing episode is never skipped
@@ -1252,7 +1255,17 @@ def drama_lanes(rows: list[QueueItem], net: str, first: set[str] = frozenset()) 
         started = any(st == "done" for st in states.values())
         open_series.append((not started, name not in first, first_id[name], name, states))
     open_series.sort()
-    lanes, held = [], {}
+    held = {}
+    if net != "facebook":
+        # X/YouTube (owner, 2026-11-08): a series whose next episode can't go yet doesn't take one of the platform's
+        # daily slots; the next series with a ready episode does (each still in strict episode order).
+        for *_, name, states in open_series:
+            n, st = next((n, st) for n, st in states.items() if st not in ("done", "skip"))
+            if st != "ready":
+                held[name] = (f"waiting for EP{n}" + (" on Facebook first" if st == "after facebook" else "")
+                              + ("" if n in series[name] else " (not in the queue)"))
+        open_series = [o for o in open_series if o[3] not in held]
+    lanes = []
     for *_, name, states in open_series[:DRAMA_ACTIVE_SERIES]:
         lane = []
         for n, st in states.items():

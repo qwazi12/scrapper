@@ -142,6 +142,7 @@ class QueueItemUpdate(BaseModel):
     notes: str | None = None
     media_url: str | None = None
     platform_copy: dict | None = None    # {} clears; see QueueItem.platform_copy
+    published_at: str | None = None      # ISO time it really went out (a Posted row, e.g. from Upload-Post history)
 
 
 class QueueItemOut(BaseModel):
