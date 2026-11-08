@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-08 17:45 UTC — results of the 13:15 plan (7bd6271; Railway restarted 17:35:57Z and 17:40:37Z)
+1. ICK permit: sheet-approved ICK rows got no atomic dispatch permit (admit -> None), so the posting trigger aborted the claim. #5427 was refused that way at 12:00 ET today (nothing sent, still Ready). Fix 7bd6271: ick_readiness.needs_permit (any ick-future-ready-v1 receipt, like the trigger) -> grant_dispatch. Test test_sheet_approved_stale_release_posts_with_the_atomic_dispatch_permit fails on the old code with the live error. Suite 1300 passed, 1 skipped.
+   Re-planned (pinned, next free ICK hours, nothing else ICK in those hours): #5427 Sun Nov 8 14:00 ET, #5428 15:00, #5429 16:00, #5425 18:00, #5426 Mon Nov 9 12:00. All five are Approve in the sheet now. APPLIED_SCRAPPER_20261108T173642Z.csv; undo move_pre_<id>_20261108T173642Z.json.
+2. DramaRama S-28: NOT done as written — every DramaRama X/YouTube post is a catch-up from a row that posted on Facebook (2518 Ready rows are Dramarama:*), so Facebook-only would stop X/YouTube entirely. Owner answer (13:4xZ): keep strict order, post more on X/YouTube until caught up, then post each episode everywhere in sync. Needs numbers (X cap 10/24h; YouTube claim-watch 1/day) — asked.
+3. Backups: BACKUP_DRIVE_FOLDER_ID 14z17C-cYIqUK8teqeOOVtnITx0GHHl8E (My Drive: SA has no quota) -> 1it0O4MZ9Z1KEFREsH519dGtTGpe83MZD (Researcher/backups on shared drive Flamingo Recap, created 17:37Z). Manual backup 17:41Z uploaded and checksum-verified: file 195bBH_O4fNXmA_7gNyLqXFJYhRsCuyHT (33.4 MB). Undo: railway variable set back.
+
 ## Plan 2026-11-08 13:15 UTC — owner: ICK dispatch permit, DramaRama catch-up off (S-28), Drive backup target
 1. ICK: sheet-approved ICK rows take the atomic dispatch permit (same path as normal ICK rows). Tests, push (approved). Then re-plan #5427 #5428 #5429 #5425 #5426 to the next free ICK hours, on the hour.
 2. DramaRama (S-28): Facebook rows post to Facebook only — no X/YouTube catch-up from them. Clear pending catch-ups on #5393, #5395 and any others (list them, keep snapshots). X/YouTube only from their own episode sequence. Leave the Ep. 8 X post up. Tests, push (approved).
