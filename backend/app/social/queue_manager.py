@@ -1507,6 +1507,13 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
             raise upload_post.PayloadBlocked("DramaRama posts only from Ready (or Retry for what is still owed); review it first")
         if not drama_copy_reviewed(item):
             raise upload_post.PayloadBlocked("DramaRama copy is not reviewed SEO yet (title is still the file name)")
+    elif item.pipeline == "LongForm":
+        # Owner 2026-11-08: a voiceover that calls a past release date upcoming doesn't post (NEEDS OWNER).
+        from ..studio import freshness
+        stale = freshness.for_item(s, item)
+        if stale:
+            raise upload_post.PayloadBlocked("Freshness hold: the voiceover calls a past release date upcoming — "
+                                             + "; ".join(stale)[:600])
     from .. import publication_journal as journal
     from ..models import PublicationEvent
     if s.query(PublicationEvent.id).filter_by(queue_id=item.id, queue_identity=journal.identity(item),

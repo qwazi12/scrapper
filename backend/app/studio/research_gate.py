@@ -14,9 +14,15 @@ def _name(value):
 
 
 def _roles(value):
-    # Parenthetical performance labels do not change the character identity.
-    return {_name(re.sub(r'\s*\((?:voice|uncredited|archive footage)\)\s*','',v,flags=re.I))
-            for v in re.split(r'\s*/\s*|\s+aka\s+',value,flags=re.I) if v.strip()}
+    # Parenthetical performance labels do not change the character identity. A credit that is only a label
+    # ("(voice)", Hexed 2026-11-08) names no role, so it can't claim one. "Lord Lovat (Simon Fraser)" is one
+    # character under either name, or both run together.
+    out=set()
+    for v in re.split(r'\s*/\s*|\s+aka\s+',value,flags=re.I):
+        v=_name(re.sub(r'\s*\((?:voice|uncredited|archive footage)\)\s*','',v,flags=re.I))
+        also=re.fullmatch(r'(.+?)\s*\((.+)\)',v)
+        out|={v,also[1],also[2],f'{also[1]} {also[2]}'} if also else {v}
+    return out-{''}
 
 
 def _credit_title(value, facts):
@@ -40,6 +46,7 @@ def _credit_value(raw, allowed, facts):
     # must not be truncated by a generic prose/period splitter. This is bounded
     # credit grammar, not semantic verification of the rest of the sentence.
     value=_name(re.sub(r'\s*\((?:voice|uncredited|archive footage)\)\s*','',raw,flags=re.I))
+    others={r for c in facts.get('cast',[]) for r in _roles(c.get('character') or '')}-set(allowed)
     def matches(candidate):
         for name in allowed:
             if candidate==name:return True
@@ -47,9 +54,13 @@ def _credit_value(raw, allowed, facts):
             tail=candidate[len(name):].strip()
             context=re.fullmatch(r'(?:in|from)\s+(.+)',tail)
             if context and _credit_title(context[1],facts):return True
-            # Preserve the existing handling of following narrative clauses;
-            # their factual coverage remains the separate storyboard gate.
-            if re.match(r'^(?:and|while|who)\b',tail):return True
+            # Owner (2026-11-08): the correct role followed by any narrative words passes ("as Ellen MacKenzie
+            # sharing a passionate embrace"); the words' factual coverage is the separate storyboard gate. Still
+            # failing: an explicit title qualifier that isn't this title, an added alias, a longer other role.
+            if re.match(r'^(?:in|from)\s+(?:(?:the\s+)?(?:film|movie|tv series|series|show)\b|[^,]*\(\d{4}\))',tail):continue
+            if re.match(r'^(?:/|aka\b)',tail):continue
+            if any(len(other)>len(name) and (candidate==other or candidate.startswith(other+' ')) for other in others):continue
+            return True
         return False
     if matches(value):return True
     # "stars as a lonely fisherwoman": an article plus up to three describing words before the
