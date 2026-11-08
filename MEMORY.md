@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-08 19:55 UTC — pushed 2273954 (X sync switch) + 511d731 (pinned hours); HH:00 test blocked on a code change
+- Owner approved both pushes; on origin/main.
+- scheduled_date test: NOT run. Upload-Post docs: a scheduled send returns 202 + job_id (no request_id); status via GET /api/uploadposts/status?job_id= ("pending" until it runs); cancel DELETE /api/uploadposts/schedule/<job_id>. Media is stored at Upload-Post at submit; docs don't say whether platforms get it before HH:00. Our server only handles request_id (claim/journal/reconcile), the API key is only on Railway, so the test needs a server change: asked owner.
+
 ## Log 2026-11-08 19:40 UTC — results of the 19:20 plan
 1. #917 Posted (published_at 17:02:44Z), #1354 Posted (15:00:35Z): Delivery held with all 4 links; no repost. Undo posted_pre_{917,1354}_20261108T192905Z.json.
 2. ICK FB doubles: 15 hours Wed Nov 11 - Sat Nov 14 = pinned (old release slot, sheet-approved) + planned row. Cause: Option B dropped those rows' reservations and the planner ignored pinned rows' hours. Fix 7fc8672 (LOCAL, needs owner's push): pinned slots join the group's taken set. test_pinned_slot_taken.py (fails on old code); suite 1303 passed, 1 skipped. Unpinned rows re-plan on the first tick after deploy.
