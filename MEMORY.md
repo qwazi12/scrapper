@@ -7,6 +7,14 @@ To build (branch, diff/tests/rollback to owner, NO push without OK; YouTube stay
 2. YouTube-only dialogue-only audio (owner approved 3 Demucs tests): Mac launchd job makes copies (htdemucs vocals stem, H.264/AAC) named <source drive id>.mp4 in a Drive folder; backend uploads that copy to YouTube, and if none exists YouTube waits (never the original audio). Facebook/X keep original audio.
 3. S-18 (≤2 X hashtags) should land before X restarts, or X posts dot's 3-tag variants.
 
+## Log 2026-11-08 00:35 UTC — Posting gate + sheet control live (c231d8b)
+- Owner (chat): POSTING_GATE=sheet default on — a due row posts only if the Posting Review sheet has it with Decision Approve (or blank 2 h before its slot); else it waits, status unchanged. Off: Railway variable POSTING_GATE=off.
+- POST /api/ops/posting-review/{id}/apply-copy: server reads the sheet, stores the Approve row's per-platform copy (YT/FB/IG/X, no hashtags). Works on Studio-bound rows (#4841 was refused 409 before). Facebook now has its own caption field.
+- spread_review_slots: one Review row per pipeline slot (INSTR 1520Z #2, LongForm doubles). INSTR 1520Z #1 (clear DramaRama FB rows' X/YT catch-up) NOT done: those rows are the X/YT sequence; clearing them drops the episodes from X/YT. NEEDS OWNER.
+- Mac: ops_actions.py sheet (+ skip) runs from ops_watch every :05/:35; slot moves only for Slot cells edited after the 00:24Z baseline; DramaRama slot edits refused. First run: 132 rows' copy applied + read back, 3 Review->Ready (pinned), 2 skips, 4 NEEDS OWNER; APPLIED_SCRAPPER_20261108T002402Z.csv.
+- #4841: sheet copy applied, back at 20:00 ET Nov 7. Tests 1272 passed. Deploy live 00:23Z (verified by endpoint response).
+- Pending: S-35 every ICK 54xx release refused (guard says stale) — not investigated; Full Disk Access still blocks launchd Drive writes (APPLIED/export publish from the watch will fail until fixed).
+
 ## Log 2026-11-07 15:45 UTC — NEXT7 export + DONE markers live; launchd blind to the Drive mount
 - GET /api/ops/next7 (a9b0275, 8d13074; Railway 5c564b05 SUCCESS): per-platform slots for 7 days from the scheduler's own plan (drama_net_plans split out of plan_dramarama, behaviour unchanged; ICK releases at their reserved slot). Tests 1268 passed.
 - data/ops/daily_exports.sh: 05:45 READY+NEXT7+POSTED then EXPORTS_DONE_SCRAPPER_<date>.md last; `change <why>` = timestamped NEXT7+POSTED+DONE, triggered by ops_actions and by ops_watch when the next7 fingerprint changes. First hand run: EXPORTS_DONE_SCRAPPER_20261107T1519Z (NEXT7 342 rows, POSTED 148).
