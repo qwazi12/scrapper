@@ -552,6 +552,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     )
     groups: dict[str, list[QueueItem]] = {}
     due_groups: set[str] = set()
+    pinned_slots: dict[str, set] = {}     # a pinned row's hour is taken for the rest of its pipeline (owner, 2026-11-08)
     changed = 0
     from ..models import DramaEpisode
     from .. import publication_journal as journal
@@ -576,6 +577,7 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
             if _aware(it.scheduled_at) != _aware(it.pinned_at):
                 it.scheduled_at = it.pinned_at
                 changed += 1
+            pinned_slots.setdefault(pipeline_group(it), set()).add(_aware(it.pinned_at))
             continue
         if _is_due(it, now):
             due_groups.add(pipeline_group(it))
@@ -630,6 +632,9 @@ def plan_schedule(s: Session, now: datetime.datetime) -> int:
     for group, items in sorted(groups.items(), key=lambda g: g[0] in SHARED_SLOTS):
         taken = taken_by(SHARED_SLOTS[group]) if group in SHARED_SLOTS else set()
         if group==ICK_ROOM:taken |= reserved_slots
+        # ICK Facebook 2026-11-08: sheet-approved rows pinned at their old release slots no longer reserve them
+        # (Option B), and 15 hours got a second post; a pinned row's hour is never handed to another row.
+        taken |= pinned_slots.get(group, set())
         if group == "LongForm" or any(bool(momentum.extract_release_date(it, session=s)) for it in items):
             items.sort(key=_momentum_order_key)
 
