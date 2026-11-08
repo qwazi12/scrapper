@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## Log 2026-11-08 19:40 UTC — results of the 19:20 plan
+1. #917 Posted (published_at 17:02:44Z), #1354 Posted (15:00:35Z): Delivery held with all 4 links; no repost. Undo posted_pre_{917,1354}_20261108T192905Z.json.
+2. ICK FB doubles: 15 hours Wed Nov 11 - Sat Nov 14 = pinned (old release slot, sheet-approved) + planned row. Cause: Option B dropped those rows' reservations and the planner ignored pinned rows' hours. Fix 7fc8672 (LOCAL, needs owner's push): pinned slots join the group's taken set. test_pinned_slot_taken.py (fails on old code); suite 1303 passed, 1 skipped. Unpinned rows re-plan on the first tick after deploy.
+3. #5427 POSTED 14:00 ET (FB 19:00:50Z, X 19:01:38Z). #5428 15:00, #5429 16:00, #5425 18:00 ET today, #5426 Mon 12:00 ET (pinned). Sheet Slot cells are stale (older export); RESULT_SCRAPPER_20261108T1935Z.md asks HEAD to rebuild them from NEXT7 — Scrapper can't write the sheet; the sync never moves rows to old cells.
+4. #6413 (Prime Ep.5) X Mon Nov 9 13:00; #6410 (Prime Ep.9) X Tue Nov 10 18:00, YouTube Wed Nov 11 21:00 — episode order; sync refused the sheet's requested slots (18:05Z) and nothing is pinned. HEAD asked to clear the requested cells.
+5. Timing: tick wakes at HH:00 (sends left :00:01-:00:24 today); platforms go live 0.5-7 min later (Upload-Post upload + platform processing: YT ~0.5-3 min, FB ~1-4, X ~1-6, IG ~4-7). Upload-Post scheduled_date exists in our client (upload_post.py) but queue posts never pass it. Not verified whether Upload-Post pre-uploads for native scheduling.
+- Unpushed code: b53e17f (X sync switch), 7fc8672 (pinned hours) — awaiting owner.
+
 ## Plan 2026-11-08 19:20 UTC — owner: reconcile and report
 1. #917, #1354: live links but Review -> mark Posted with real Upload-Post times; no repost.
 2. ICK Facebook: 15 double-booked hours Wed-Sat in NEXT7 1735Z -> max 1 per hour on the hour; list moves.
