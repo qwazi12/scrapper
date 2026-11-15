@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## Plan 2026-11-15 21:35 UTC — owner (Scrapper chat): "I approve DramaRama YouTube posting" = INSTR_SCRAPPER_20261115T2100Z
+1. DramaRama youtube slots -> 09:00/11:00/21:00/23:00 ET; yt_watch_state paused=false; claim-watch stays ON. Snapshot before.
+2. Clear stale DramaRama YouTube catch-ups (13 Christmas Home, 12 Prime Suspect) and re-slot YouTube-only, one per hour on the hour, alternating series, strict episode order. Prime Suspect: Ep2 #6418, Ep3 #6416 (add YT catch-up), Ep4 #6415, Ep6+ (Ep5 live). Christmas Home: Ep1 #4882 (Ready, YouTube only), Ep3 #5398, Ep4 #5397, Ep5 #5396, Ep6 #5392, Ep7 #5395, Ep8 #5393, Ep9+ (Ep2 live).
+3. Facebook/X unchanged; nothing to DramaRama X (incl. retries).
+4. Each row's approved YouTube title/description.
+5. Claim-watch: on pause -> RESULT flagged URGENT; re-check removed video daily, report if live again (no auto-resume).
+6. RESULT_SCRAPPER: config before/after, YouTube sequence through Wed Nov 18 11 PM ET, first post URL (9 PM ET tonight); NEXT7 + POSTED exports + EXPORTS_DONE.
+
 ## Log 2026-11-08 19:55 UTC — pushed 2273954 (X sync switch) + 511d731 (pinned hours); HH:00 test blocked on a code change
 - Owner approved both pushes; on origin/main.
 - scheduled_date test: NOT run. Upload-Post docs: a scheduled send returns 202 + job_id (no request_id); status via GET /api/uploadposts/status?job_id= ("pending" until it runs); cancel DELETE /api/uploadposts/schedule/<job_id>. Media is stored at Upload-Post at submit; docs don't say whether platforms get it before HH:00. Our server only handles request_id (claim/journal/reconcile), the API key is only on Railway, so the test needs a server change: asked owner.
