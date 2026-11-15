@@ -1,5 +1,16 @@
 # Scrapper Memory
 
+## Log 2026-11-15 21:45 UTC — DramaRama YouTube resumed (RESULT_SCRAPPER_20261115T2145Z)
+- Config: DramaRama youtube 0 -> 09/11/21/23 ET (PUT 200, readback ok; FB/X/others unchanged). Undo: PUT data/ops/yt_resume_pre_20261115T213442Z.json. yt_watch_state paused=false.
+- e8ElJxM37CI (#5399 CH Ep2) verified live 21:35Z (public playability OK).
+- Rows: #5396 #5392 #5389 #5385 #5375 #6411 #6412 #6410 accounts x+youtube -> youtube only; #4882 Review -> Ready (youtube). #6416 already owed YouTube. Snapshots data/ops/yt_only_pre_*, ready_pre_4882_*.
+- Planner slotted them by itself: Sun 9 PM #6418 PS Ep2, 11 PM #4882 CH Ep1, then 2 eps/series/day alternating; CH stops after Ep6 (Tue 11 PM) — Ep7 #5395/Ep8 #5393 in Review (sheet Edit); PS Ep9 #6410 (Wed 9 PM) has no dialogue copy (prep fails: picture 22.2 s vs 37 s) -> YouTube waits.
+- Guard (verified, not designed): FB '*' rows at the same hours don't reach YouTube because they have no dialogue-only copy (prep makes copies only for each series' next 7 YouTube-owed eps).
+- yt_claim_watch.py: pause RESULT named *_URGENT_yt_claim; removed videos re-checked daily -> yt_restored report, no auto-resume. Backup yt_claim_watch.pre_20261115.py.
+- Exports: ops/exports/ folder is gone from the shared drive -> NEXT7/POSTED 20261115T2136Z built but not published, no EXPORTS_DONE. Asked HEAD.
+- Framework python3 (/Library/Frameworks 3.13) has no CA certs -> use /usr/bin/python3 for API scripts.
+- PENDING: first post URL after 02:00Z Nov 16 (separate RESULT); owner decisions in RESULT NEEDS OWNER 1-4.
+
 ## Plan 2026-11-15 21:35 UTC — owner (Scrapper chat): "I approve DramaRama YouTube posting" = INSTR_SCRAPPER_20261115T2100Z
 1. DramaRama youtube slots -> 09:00/11:00/21:00/23:00 ET; yt_watch_state paused=false; claim-watch stays ON. Snapshot before.
 2. Clear stale DramaRama YouTube catch-ups (13 Christmas Home, 12 Prime Suspect) and re-slot YouTube-only, one per hour on the hour, alternating series, strict episode order. Prime Suspect: Ep2 #6418, Ep3 #6416 (add YT catch-up), Ep4 #6415, Ep6+ (Ep5 live). Christmas Home: Ep1 #4882 (Ready, YouTube only), Ep3 #5398, Ep4 #5397, Ep5 #5396, Ep6 #5392, Ep7 #5395, Ep8 #5393, Ep9+ (Ep2 live).
