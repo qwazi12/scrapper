@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-16 21:37 UTC — INSTR_SCRAPPER_20261116T1740Z; ICK #5481/#5478 moved (RESULT_SCRAPPER_20261116T2136Z)
+- API reachable again (DNS cleared). INSTR 1740Z: only S-ICK-MOVE actionable; everything else unchanged / PENDING_OWNER.
+- #5481 409 at 21Z -> moved 03:00Z Nov 17 (10 PM ET); #5478 409 again at 20Z -> moved 04:00Z (11 PM ET). Both HTTP 200, readback OK. Undo: PATCH pinned_at "". No free ICK hour left in Mon ET day.
+- NEEDS OWNER: Approve/Skip ICK #5482 (23Z), #5483 (01Z), #5479 (02Z), #5481 (03Z), #5478 (04Z) — blank = 409. publish_ops rc=3 -> Drive connector (1Xctsw466iz4vBM35-71o_oQ68wr02kVT). Owner notified.
+
 ## Log 2026-11-16 21:05 UTC — DNS SERVFAIL, 4th hour (RESULT_SCRAPPER_20261116T2105Z)
 - ops_watch Errno 8 again. Local resolver SERVFAIL; 1.1.1.1 -> 153.52.255.60; ro_get rc=6. No actions. publish_ops rc=3 -> Drive connector upload (1iN22Ki7MLhKYHKoNY-ozMx2wvYDPN9Az). Owner notified.
 - NEEDS OWNER: fix Mac DNS; #5479 Approve/Skip by 01:30Z.
