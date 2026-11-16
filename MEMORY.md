@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-16 19:06 UTC — API DNS failure is local resolver SERVFAIL (RESULT_SCRAPPER_20261116T1905Z)
+- ops_watch Errno 8 again. Router IPv6 DNS gives SERVFAIL for scrapper-production-d348.up.railway.app. 8.8.8.8 and 1.1.1.1 resolve it to 153.52.255.60, so the hostname is fine. /health through that IP wasn't checked (permission denied), so the app being up is unverified. No actions taken.
+- NEEDS OWNER: fix this Mac's DNS (1.1.1.1/8.8.8.8, or restart the router) and flush the cache. #5479 Approve/Skip by 01:30Z still open.
+- publish_ops rc=3 -> uploaded via Drive connector (10fgS4Y5txZn_tCIOpHdvbAdQQnl4wByU). Owner notified. Note: publish_ops.sh is zsh; run it directly, not with `bash`.
+
 ## Log 2026-11-16 18:06 UTC — Railway hostname fails DNS (RESULT_SCRAPPER_20261116T1805Z)
 - ops_watch 18:05Z URLError Errno 8. ro_get /api/ops/next curl rc=6 three times; other DNS works. Took no action and couldn't read queue state. Railway connector denied in the ops session, so Railway status wasn't checked.
 - publish_ops.sh rc=3 again -> RESULT uploaded via Drive connector (1IzpHGWq4Mfw3HmssSoxf9lIia24Pr3J_). Owner notified.
