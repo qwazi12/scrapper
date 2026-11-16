@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-16 02:16 UTC — first DramaRama YouTube post after resume
+- #6418 PS Ep2 live https://www.youtube.com/watch?v=UK7orC0vfvg (9 PM ET slot, playability OK 02:15Z). #6397 PS Ep22: FB posted, X locked/held, YouTube skipped as designed (re-owed, Nov 25). RESULT_SCRAPPER_20261116T0216Z.
+- Watch next: #4882 CH Ep1 at 11 PM ET — notes still show "Posting Review: Edit"; sheet must say Approve or the gate holds it.
+
 ## Log 2026-11-15 21:45 UTC — DramaRama YouTube resumed (RESULT_SCRAPPER_20261115T2145Z)
 - Config: DramaRama youtube 0 -> 09/11/21/23 ET (PUT 200, readback ok; FB/X/others unchanged). Undo: PUT data/ops/yt_resume_pre_20261115T213442Z.json. yt_watch_state paused=false.
 - e8ElJxM37CI (#5399 CH Ep2) verified live 21:35Z (public playability OK).
@@ -3541,3 +3545,9 @@ implementation or follow-up automation; resume only on a new owner instruction.
 ## LOG — 2026-11-04 — Five requested Shorts archived to Screen Central/test test
 
 Owner-requested IDs 8wqNRBp7Le4, ErxHKmxBwyE, C5GkC73Gnb4, m7tuadQCvF8, kaRCJa3Ednw: all 5 uploaded and independently read back with matching Drive size/MD5 plus original-ID appProperties. Each local video passed ffprobe and full FFmpeg decode before upload. Destination: Screen Central (1zUxET2b59XTILnDfwOF9-5lgjPPc9NLY) / test test (13T8u17-tSfdV4HgX4IwjYeATO-nRIhZq). Total 38,149,627 bytes. Public request required sign-in; the previously owner-authorized local Brave Personal session worked without a new login. All owned temporary media/metadata removed after verified Drive copies. No queue imports, schedules, publishing, deployment or application code changes. Private receipts/logs: artifacts/shorts-test-test-20261104/{manifest.json,final-verification.json}; credentials not logged.
+
+## Run — 2026-11-15 17:07
+
+- ⏭️ already saved: https://youtu.be/pv1N0a1buaI
+- ⏭️ already saved: https://youtu.be/avtkDKfqCOM
+- ⏭️ already saved: https://youtu.be/xYH8Yd5qExY
