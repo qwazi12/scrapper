@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-16 18:06 UTC — Railway hostname fails DNS (RESULT_SCRAPPER_20261116T1805Z)
+- ops_watch 18:05Z URLError Errno 8. ro_get /api/ops/next curl rc=6 three times; other DNS works. Took no action and couldn't read queue state. Railway connector denied in the ops session, so Railway status wasn't checked.
+- publish_ops.sh rc=3 again -> RESULT uploaded via Drive connector (1IzpHGWq4Mfw3HmssSoxf9lIia24Pr3J_). Owner notified.
+- Watch: 18:35Z tick; #5479 Approve/Skip deadline 01:30Z.
+
 ## Log 2026-11-16 17:36 UTC — ICK #5479 missed slot (RESULT_SCRAPPER_20261116T1736Z)
 - #5479 got a 409 at 17Z (12 PM ET) because its Decision was blank, the same cause as #5478. Moved it to 02:00Z Nov 17 (9 PM ET), the first hour free on both FB and X (00Z has X #5457). HTTP 200, readback OK. Undo: PATCH pinned_at "".
 - NEEDS OWNER: Approve/Skip #5479 by 01:30Z. Also #5478 (20Z), #5480-#5483, and #5474-#5477.
