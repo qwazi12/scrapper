@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## Log 2026-11-16 12:08 UTC — INSTR_SCRAPPER_20261116T1150Z (RESULT_SCRAPPER_20261116T1208Z)
+- DramaRama X paused: x 09/11/13/15/18/21 -> 0 (ops_actions pause, HTTP 200; undo PUT data/ops/pause_pre_20261116T120746Z.json). Reason: nothing blocked X before the send (Upload-Post did the refusing); #6396 `*` was due 9 AM ET with X. Block = queue_manager publish_queue_item `allow[x]=False` for int 0 (regular sends only; Post Now/retry still include X -> owner asked for a hard block).
+- Exports cause: local Drive mount has no `**Researcher**/ops/exports` (mv: No such file); Drive folder 1NQzxNpidDQmcC7F7HqcfWuI0fFaxm6Zq exists. Not fixed (NEEDS OWNER). Ops sessions can't read the CloudStorage mount (TCC) -> RESULT uploaded via Drive connector to results/ (1pJ01ezpKH1Kwy48-aK5x_lRAyhzfxx37).
+- Gate rule: blank Decision posts at slot-2h for all brands; ICK blank then fails the frozen release (409 stale) -> only Approve posts ICK. #5474-5477 stuck Ready (Nov 15 slots).
+- Claim-watch title comes from the queue row (yt_claim_watch.py:110), not live.
+- Watch: 14:00Z #6396 FB (no X) + #6416 YT PS Ep3.
+
 ## Log 2026-11-16 02:16 UTC — first DramaRama YouTube post after resume
 - #6418 PS Ep2 live https://www.youtube.com/watch?v=UK7orC0vfvg (9 PM ET slot, playability OK 02:15Z). #6397 PS Ep22: FB posted, X locked/held, YouTube skipped as designed (re-owed, Nov 25). RESULT_SCRAPPER_20261116T0216Z.
 - Watch next: #4882 CH Ep1 at 11 PM ET — notes still show "Posting Review: Edit"; sheet must say Approve or the gate holds it.
