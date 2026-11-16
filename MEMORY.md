@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-16 17:36 UTC — ICK #5479 missed slot (RESULT_SCRAPPER_20261116T1736Z)
+- #5479 got a 409 at 17Z (12 PM ET) because its Decision was blank, the same cause as #5478. Moved it to 02:00Z Nov 17 (9 PM ET), the first hour free on both FB and X (00Z has X #5457). HTTP 200, readback OK. Undo: PATCH pinned_at "".
+- NEEDS OWNER: Approve/Skip #5479 by 01:30Z. Also #5478 (20Z), #5480-#5483, and #5474-#5477.
+- publish_ops.sh still exits 3 (Drive mount), so I uploaded the RESULT through the Drive connector (1XD9kcdP4tX1AHLLXU7af9117qGtpfCGI). Notified the owner.
+
 ## Log 2026-11-16 12:08 UTC — INSTR_SCRAPPER_20261116T1150Z (RESULT_SCRAPPER_20261116T1208Z)
 - DramaRama X paused: x 09/11/13/15/18/21 -> 0 (ops_actions pause, HTTP 200; undo PUT data/ops/pause_pre_20261116T120746Z.json). Reason: nothing blocked X before the send (Upload-Post did the refusing); #6396 `*` was due 9 AM ET with X. Block = queue_manager publish_queue_item `allow[x]=False` for int 0 (regular sends only; Post Now/retry still include X -> owner asked for a hard block).
 - Exports cause: local Drive mount has no `**Researcher**/ops/exports` (mv: No such file); Drive folder 1NQzxNpidDQmcC7F7HqcfWuI0fFaxm6Zq exists. Not fixed (NEEDS OWNER). Ops sessions can't read the CloudStorage mount (TCC) -> RESULT uploaded via Drive connector to results/ (1pJ01ezpKH1Kwy48-aK5x_lRAyhzfxx37).
