@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-16 20:05 UTC — DNS SERVFAIL continues (RESULT_SCRAPPER_20261116T2005Z)
+- ops_watch Errno 8, 3rd hour. host -> SERVFAIL for the Railway hostname; google.com OK; ro_get rc=6. No actions. publish_ops rc=3 -> uploaded via Drive connector (1wUf2MkvMsztwd3_Oe5mrf3O1G7QijY16). Owner notified.
+- NEEDS OWNER: fix Mac DNS; #5479 Approve/Skip by 01:30Z.
+
 ## Log 2026-11-16 19:06 UTC — API DNS failure is local resolver SERVFAIL (RESULT_SCRAPPER_20261116T1905Z)
 - ops_watch Errno 8 again. Router IPv6 DNS gives SERVFAIL for scrapper-production-d348.up.railway.app. 8.8.8.8 and 1.1.1.1 resolve it to 153.52.255.60, so the hostname is fine. /health through that IP wasn't checked (permission denied), so the app being up is unverified. No actions taken.
 - NEEDS OWNER: fix this Mac's DNS (1.1.1.1/8.8.8.8, or restart the router) and flush the cache. #5479 Approve/Skip by 01:30Z still open.
