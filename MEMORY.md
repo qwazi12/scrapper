@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-16 21:05 UTC — DNS SERVFAIL, 4th hour (RESULT_SCRAPPER_20261116T2105Z)
+- ops_watch Errno 8 again. Local resolver SERVFAIL; 1.1.1.1 -> 153.52.255.60; ro_get rc=6. No actions. publish_ops rc=3 -> Drive connector upload (1iN22Ki7MLhKYHKoNY-ozMx2wvYDPN9Az). Owner notified.
+- NEEDS OWNER: fix Mac DNS; #5479 Approve/Skip by 01:30Z.
+
 ## Log 2026-11-16 20:05 UTC — DNS SERVFAIL continues (RESULT_SCRAPPER_20261116T2005Z)
 - ops_watch Errno 8, 3rd hour. host -> SERVFAIL for the Railway hostname; google.com OK; ro_get rc=6. No actions. publish_ops rc=3 -> uploaded via Drive connector (1wUf2MkvMsztwd3_Oe5mrf3O1G7QijY16). Owner notified.
 - NEEDS OWNER: fix Mac DNS; #5479 Approve/Skip by 01:30Z.
