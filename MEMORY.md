@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-17 17:36 UTC — ICK #5485 missed 17Z, moved to 02Z Nov 18 (RESULT_SCRAPPER_20261117T1736Z)
+- #5485 was still Ready after its 17Z slot, with no notes and no re-plan. Moved it to 02:00Z Nov 18 (9 PM ET Tue), the first free ICK hour that ET day (18Z-01Z taken): HTTP 200, readback OK. Undo: PATCH pinned_at "". Not retried.
+- publish_ops rc=3 -> Drive connector (1A3vu_PSLasgYnoLYKfj5dLXfYWwAqgp-). Owner notified.
+- NEEDS OWNER: Approve/Skip #5485 before 02Z, plus #5437/#5486/#5484/#5487/#5439/#5488/#5489. Skip/carry #5481/#5483/#5478. Check the #5479 file.
+
 ## Log 2026-11-17 15:36 UTC — ICK #5484 missed 15Z, moved to 20Z (RESULT_SCRAPPER_20261117T1536Z)
 - #5484 was still Ready after its 15Z slot, with no error and no re-plan. Moved it to 20:00Z (3 PM ET), the first free ICK hour that ET day: HTTP 200, readback OK. Undo: PATCH pinned_at "". Not retried.
 - ops_actions.py needs /usr/bin/python3 -I (the default python3 fails the SSL check). publish_ops rc=3 -> Drive connector (1VtiJOWPF9pD5Y_37FOkbbwYoRnl-DYBm). Owner notified.
