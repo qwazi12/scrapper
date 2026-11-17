@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-17 04:35 UTC — ICK #5478 missed 04Z, last hour of Mon ET day (RESULT_SCRAPPER_20261117T0435Z)
+- #5478 got a 409 at 04Z (blank Decision). Still ready, pinned 04Z. Not moved: no HH:00 left in the Mon ET day. Not retried. No action.
+- Sheet apply 04:35:09Z: 36 rows went to NEEDS OWNER, none applied. publish_ops rc=3 ("ops folder not found") -> Drive connector (104uxA5asGJz6FbhIjG8vm2j1QT1b4I52). Owner notified.
+- NEEDS OWNER: Skip/carry #5478/#5481/#5482/#5483; check the #5479 Drive file.
+
 ## Log 2026-11-17 03:36 UTC — ICK #5481 missed 03Z, no free same-day hour (RESULT_SCRAPPER_20261117T0336Z)
 - #5481 got a 409 at 03Z (blank Decision). Still pinned to 03Z. Not moved: 04Z is the only hour left in the Mon ET day and #5478 holds it. No action.
 - #5479 is now status=error "Video file not found..." after its 02Z slot. Not retried (slot passed).
