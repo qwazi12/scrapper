@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-17 12:07 UTC — INSTR_SCRAPPER_20261117T1140Z report-only (RESULT_SCRAPPER_20261117T1207Z)
+- S-DR12a: no DramaRama FB row at Mon 9 PM ET; #6415 there was YT-only (FB/X done earlier). DR's 4 shared slots/day are taken by YT-only catch-up rows, so FB hours go empty. Next FB: #4949 16Z, #4950 04Z Nov 18.
+- S-DR12b: CH Ep.2 #5399 posted to YT on Nov 9 (e8ElJxM37CI; removed for ToS, appeal won, live again). Not re-queued, correctly. Watch: #4949/#5397 both at 16Z and #4950/#5396 both at 04Z; is `*` YT-free? Unverified.
+- S-ICK-FILE #5479: server fetch OK at 17:04Z Nov 16, failed at 02:00Z. Same shared drive as #5457, which posted at 00:06Z -> not permissions, not the S-DR6 Mac mount. Cause only in Railway stdout. S-ICK-480: #5480 got a 409 at 19Z Nov 16, still ready -> cross-day carry PENDING_OWNER.
+- No actions. publish_ops rc=3 -> Drive connector (1ZdCigEsgKNmjBdfRLie51Vb37weLMh5m). Owner notified.
+
 ## Log 2026-11-17 04:35 UTC — ICK #5478 missed 04Z, last hour of Mon ET day (RESULT_SCRAPPER_20261117T0435Z)
 - #5478 got a 409 at 04Z (blank Decision). Still ready, pinned 04Z. Not moved: no HH:00 left in the Mon ET day. Not retried. No action.
 - Sheet apply 04:35:09Z: 36 rows went to NEEDS OWNER, none applied. publish_ops rc=3 ("ops folder not found") -> Drive connector (104uxA5asGJz6FbhIjG8vm2j1QT1b4I52). Owner notified.
