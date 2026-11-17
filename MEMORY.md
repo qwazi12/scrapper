@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-17 23:36 UTC — ICK #5488 missed 23Z (gate), no free same-day hour (RESULT_SCRAPPER_20261117T2336Z)
+- #5488 (TheIckRoom:*) was still Ready and unpinned after its 23Z slot. /api/logs #11761 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved: at 00Z #5443 still holds the ICK X channel (X catch-up pending), and 01Z-04Z are taken (#5489/#5485/#5486/#5484). Not retried. No action. #5439 was re-planned to 16Z Nov 20.
+- publish_ops rc=3 -> Drive connector (17hwOBLz-1KqBad46MA6f7_HjyN_uB9P7). Owner notified. The instructions folder gave EPERM again, so no INSTR check.
+- NEEDS OWNER: fix the Drive export, OR set POSTING_GATE=off, OR Approve the ICK rows in the sheet (otherwise 01Z-04Z are held too); Skip or carry #5487/#5488.
+
 ## Log 2026-11-17 21:37 UTC — ICK #5487 missed 21Z (gate), no free same-day hour (RESULT_SCRAPPER_20261117T2137Z)
 - #5487 was still Ready and unpinned after its 21Z slot. /api/logs #11754 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved: ICK 22Z-04Z are all taken (#5439/#5488/#5443/#5489/#5485/#5486/#5484). Not retried. No action.
 - publish_ops rc=3 -> Drive connector (1YCdFh3UxiRhfSrzA6zYvUuM433WDlC0j). Owner notified. The Mac-mounted instructions folder gave EPERM, so no INSTR check.
