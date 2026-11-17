@@ -1,5 +1,9 @@
 # Scrapper Memory
 
+## Log 2026-11-17 01:37 UTC — ICK #5483 missed 01Z, no free same-day hour (RESULT_SCRAPPER_20261117T0137Z)
+- #5483 got a 409 at 01Z (8 PM ET) because its Decision was blank. Not re-planned (pinned_at null). Not moved: 02Z/03Z/04Z are all taken (#5479/#5481/#5478, FB+X). No action taken.
+- NEEDS OWNER: Skip or carry #5482/#5483; Approve/Skip #5479 (~01:50Z deadline), #5481, #5478. Owner notified. publish_ops.sh hung again (stopped) -> Drive connector upload (1L0nWHwcsft2YcwtohVzy86fONXtED3_O).
+
 ## Log 2026-11-16 23:36 UTC — ICK #5482 missed 23Z, no same-day hour (RESULT_SCRAPPER_20261116T2336Z)
 - #5482 409 at 23Z (blank Decision). Not re-planned (pinned_at null). No move: ICK 00Z-04Z all taken (#5457 X, #5483, #5479, #5481, #5478). No action.
 - NEEDS OWNER: Skip or carry #5482; Approve/Skip #5483/#5479/#5481/#5478 tonight. Owner notified. publish_ops.sh hung >10 min (stopped) -> Drive connector upload (1Qp-VsFG6oK-DxEmx1wyocZwku0IRvalx).
