@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-17 15:36 UTC — ICK #5484 missed 15Z, moved to 20Z (RESULT_SCRAPPER_20261117T1536Z)
+- #5484 was still Ready after its 15Z slot, with no error and no re-plan. Moved it to 20:00Z (3 PM ET), the first free ICK hour that ET day: HTTP 200, readback OK. Undo: PATCH pinned_at "". Not retried.
+- ops_actions.py needs /usr/bin/python3 -I (the default python3 fails the SSL check). publish_ops rc=3 -> Drive connector (1VtiJOWPF9pD5Y_37FOkbbwYoRnl-DYBm). Owner notified.
+- NEEDS OWNER: Approve #5484 before 20Z, plus today's ICK rows #5485/#5437/#5486/#5487/#5439/#5488/#5489.
+
 ## Log 2026-11-17 12:07 UTC — INSTR_SCRAPPER_20261117T1140Z report-only (RESULT_SCRAPPER_20261117T1207Z)
 - S-DR12a: no DramaRama FB row at Mon 9 PM ET; #6415 there was YT-only (FB/X done earlier). DR's 4 shared slots/day are taken by YT-only catch-up rows, so FB hours go empty. Next FB: #4949 16Z, #4950 04Z Nov 18.
 - S-DR12b: CH Ep.2 #5399 posted to YT on Nov 9 (e8ElJxM37CI; removed for ToS, appeal won, live again). Not re-queued, correctly. Watch: #4949/#5397 both at 16Z and #4950/#5396 both at 04Z; is `*` YT-free? Unverified.
