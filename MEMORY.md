@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-17 03:36 UTC — ICK #5481 missed 03Z, no free same-day hour (RESULT_SCRAPPER_20261117T0336Z)
+- #5481 got a 409 at 03Z (blank Decision). Still pinned to 03Z. Not moved: 04Z is the only hour left in the Mon ET day and #5478 holds it. No action.
+- #5479 is now status=error "Video file not found..." after its 02Z slot. Not retried (slot passed).
+- /api/ops/next curl rc=56 x3; /api/queue OK. publish_ops rc=3 -> Drive connector (1aMCZnErNoBKNQTRgwPQypD7YfdJxgU5A). Owner notified.
+- NEEDS OWNER: Skip/carry #5481/#5482/#5483; Approve/Skip #5478 before 04Z; check the #5479 Drive file.
+
 ## Log 2026-11-17 01:37 UTC — ICK #5483 missed 01Z, no free same-day hour (RESULT_SCRAPPER_20261117T0137Z)
 - #5483 got a 409 at 01Z (8 PM ET) because its Decision was blank. Not re-planned (pinned_at null). Not moved: 02Z/03Z/04Z are all taken (#5479/#5481/#5478, FB+X). No action taken.
 - NEEDS OWNER: Skip or carry #5482/#5483; Approve/Skip #5479 (~01:50Z deadline), #5481, #5478. Owner notified. publish_ops.sh hung again (stopped) -> Drive connector upload (1L0nWHwcsft2YcwtohVzy86fONXtED3_O).
