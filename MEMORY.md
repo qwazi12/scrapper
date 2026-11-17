@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-17 19:36 UTC — ICK #5486 missed 19Z, moved to 03Z Nov 18 (RESULT_SCRAPPER_20261117T1935Z)
+- #5486 was still Ready after its 19Z slot, with no notes and no re-plan. Moved it to 03:00Z Nov 18 (10 PM ET Tue), the first free ICK hour that ET day (20Z-02Z taken): HTTP 200, readback OK. Undo: PATCH pinned_at "". Not retried.
+- publish_ops rc=3 -> Drive connector (1G7XT9oLCAkZbZNRsVT2eAgkMaXIBt8ix). Owner notified.
+- NEEDS OWNER: Approve/Skip #5486 before 03Z, plus #5484/#5487/#5439/#5488/#5489/#5485. Only 04Z is left free for ICK today.
+
 ## Log 2026-11-17 18:10 UTC — S-SC-GAP root cause: posting gate + stale Review sheet (RESULT_SCRAPPER_20261117T1810Z)
 - INSTR 1738Z. Screen Central #1144 logged `queue_gate_wait ... not in the Posting Review sheet` at 13, 15 and 17Z. The planner re-plans it forward each time (now 22Z). The sheet's SC tab ends at #879 (03Z Nov 17) because the exports to Drive are down (S-DR6). DR #4949 was held the same way at 04Z and 16Z (now 04Z Nov 18); #4950 is at 16Z Nov 18, also not in the sheet.
 - ops_watch missed it: an unpinned gated row is re-planned before the :35 poll and has no "slot passed" age. /api/logs (ro_get) shows the gate waits.
