@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-18 00:07 UTC — INSTR 2338Z handled: ICK X catch-ups reported (RESULT_SCRAPPER_20261118T0007Z)
+- The INSTR was read through the Drive connector because the Mac mount gives EPERM, even on the Flamingo Recap root. #5443's X catch-up posted at 00Z (archived). #5437's X catch-up is at 00Z Nov 20 and #5439's is at 16Z Nov 20 (X only; its FB post went out at 22Z Nov 17, X skipped for the daily cap). This corrects the 2336Z note that said #5439 was moved.
+- #1144 SC was gate-held again at 00Z (log #11762). #5487/#5488 have no free same-day ICK hour: not moved, not retried. #4950 is to be reported after its 16Z Nov 18 slot (S-DR14).
+- publish_ops rc=3 -> Drive connector (1fyzTgyI1I3cxGS4YxaZuh3kSxHE76gn2). Owner notified. last_instr.txt = 2338Z.
+- NEEDS OWNER: Drive export or POSTING_GATE=off; carry/Skip #5487/#5488 (+#5474-#5483); approve S-OPSWATCH (code).
+
 ## Log 2026-11-17 23:36 UTC — ICK #5488 missed 23Z (gate), no free same-day hour (RESULT_SCRAPPER_20261117T2336Z)
 - #5488 (TheIckRoom:*) was still Ready and unpinned after its 23Z slot. /api/logs #11761 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved: at 00Z #5443 still holds the ICK X channel (X catch-up pending), and 01Z-04Z are taken (#5489/#5485/#5486/#5484). Not retried. No action. #5439 was re-planned to 16Z Nov 20.
 - publish_ops rc=3 -> Drive connector (17hwOBLz-1KqBad46MA6f7_HjyN_uB9P7). Owner notified. The instructions folder gave EPERM again, so no INSTR check.
