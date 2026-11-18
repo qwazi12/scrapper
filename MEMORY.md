@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-18 17:36 UTC — ICK #5491 missed 17Z (gate), moved to 02Z Nov 19 (RESULT_SCRAPPER_20261118T1736Z)
+- #5491 was still Ready and unpinned after its 17Z slot. /api/logs #11804 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Moved it to 02Z Nov 19 (9 PM ET Wed), the next free ICK hour that ET day (actions.log 17:35:49Z, HTTP 200; undo: PATCH pinned_at ""). Not retried. 03Z-04Z are still free.
+- No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (14UTxBY9RuqhwZmBqXg9JBlPpWgwyy9Wg). Owner notified.
+- NEEDS OWNER: sheet Approve / POSTING_GATE=off / Drive export fix for today's ICK rows (#5453 18Z ... #5495 01Z, #5491 02Z).
+
 ## Log 2026-11-18 15:37 UTC — ICK #5490 missed 15Z (gate), moved to 20Z (RESULT_SCRAPPER_20261118T1537Z)
 - #5490 was still Ready and unpinned after its 15Z slot. /api/logs #11791 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Moved it to 20Z, the next free ICK hour that ET day (actions.log 15:35:58Z, HTTP 200; undo: PATCH pinned_at ""). Not retried. #1144 SC was gate-held at 13Z and 15Z.
 - ops_actions.py needs /usr/bin/python3: the 3.13 framework python fails SSL verification. No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (19qCcgATaWAQdBW3noI_4pkzYXGroidlm). Owner notified.
