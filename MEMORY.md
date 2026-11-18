@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-18 15:37 UTC — ICK #5490 missed 15Z (gate), moved to 20Z (RESULT_SCRAPPER_20261118T1537Z)
+- #5490 was still Ready and unpinned after its 15Z slot. /api/logs #11791 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Moved it to 20Z, the next free ICK hour that ET day (actions.log 15:35:58Z, HTTP 200; undo: PATCH pinned_at ""). Not retried. #1144 SC was gate-held at 13Z and 15Z.
+- ops_actions.py needs /usr/bin/python3: the 3.13 framework python fails SSL verification. No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (19qCcgATaWAQdBW3noI_4pkzYXGroidlm). Owner notified.
+- NEEDS OWNER: sheet Approve / POSTING_GATE=off / Drive export fix for today's ICK rows (#5490 20Z, #5491, #5453, #5492, #5493, #5454, #5494, #5495).
+
 ## Log 2026-11-18 12:06 UTC — INSTR 1145Z handled: S-DR15/S-DR14 reported (RESULT_SCRAPPER_20261118T1206Z)
 - I read the INSTR through the Drive connector because the mount gives EPERM. S-DR15: PS Ep. 5 #6413 was not skipped. It posted to DR YouTube on 2026-11-09 at 23:06Z (tYgZSXlNys8), before the Nov 16-18 run. DR YT slots left: #6412 Ep. 8 at 14Z Nov 18 and #6410 Ep. 9 at 02Z Nov 19 (S-DR9 is still open).
 - S-DR14: #4949 is next at 16Z Nov 18. #4950 was re-planned to 04Z Nov 19, so report it after that slot. Both are likely gate-held (not in the sheet).
