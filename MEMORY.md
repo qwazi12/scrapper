@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-18 02:36 UTC — ICK #5485 missed 02Z (gate), no free same-day hour (RESULT_SCRAPPER_20261118T0236Z)
+- #5485 was still Ready, pinned 02Z, after its slot. /api/logs #11771 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved: ICK 03Z/04Z are taken (#5486/#5484). Not retried. No action.
+- No new INSTR (mount EPERM; Drive search empty after 2338Z). publish_ops rc=3 -> Drive connector (1M0DvF58dB7Jd_bF2L0QL4Pon-RhD9iWd). Owner notified.
+- NEEDS OWNER: POSTING_GATE=off / sheet Approve for #5486/#5484 before 03Z/04Z / Drive export fix; Skip or carry #5485/#5487/#5488/#5489.
+
 ## Log 2026-11-18 01:36 UTC — ICK #5489 missed 01Z (gate), no free same-day hour (RESULT_SCRAPPER_20261118T0136Z)
 - #5489 was still Ready and unpinned after its 01Z slot. /api/logs #11769 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved: ICK 02Z-04Z are taken (#5485/#5486/#5484). Not retried. No action.
 - No new INSTR (mount EPERM; Drive search empty after 2338Z). publish_ops rc=3 -> Drive connector (1sx9GwYup5lRbreK7iwPhBIZYyUMmjYKZ). Owner notified.
