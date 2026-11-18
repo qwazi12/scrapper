@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-18 12:06 UTC — INSTR 1145Z handled: S-DR15/S-DR14 reported (RESULT_SCRAPPER_20261118T1206Z)
+- I read the INSTR through the Drive connector because the mount gives EPERM. S-DR15: PS Ep. 5 #6413 was not skipped. It posted to DR YouTube on 2026-11-09 at 23:06Z (tYgZSXlNys8), before the Nov 16-18 run. DR YT slots left: #6412 Ep. 8 at 14Z Nov 18 and #6410 Ep. 9 at 02Z Nov 19 (S-DR9 is still open).
+- S-DR14: #4949 is next at 16Z Nov 18. #4950 was re-planned to 04Z Nov 19, so report it after that slot. Both are likely gate-held (not in the sheet).
+- No actions. publish_ops rc=3 -> uploaded through the Drive connector (1IU0p99vtW6COqAMCqvyHobGwsx8iRMdr). Owner notified. last_instr.txt = 1145Z.
+- NEEDS OWNER: export fix / POSTING_GATE=off / sheet Approve for #6412, #4949, #6410, #4950; S-DR9 decision; ICK carries.
+
 ## Log 2026-11-18 04:36 UTC — ICK #5484 missed 04Z (gate), no ET-day hour left (RESULT_SCRAPPER_20261118T0436Z)
 - #5484 was still Ready, pinned 04Z (11 PM ET Tue, the last hour of that ET day), after its slot. /api/logs #11783 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved, not retried. No action. DR #4949 was gate-held at 04Z too (#11778).
 - No new INSTR (Drive search empty after 2338Z). publish_ops rc=3 -> Drive connector (1GcvAp1LYMv9IP2W8s14sCWIZ55iQADuE). Owner notified.
