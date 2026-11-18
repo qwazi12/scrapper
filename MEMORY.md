@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-18 18:10 UTC — INSTR 1740Z handled: S-DR14 #4949 held/re-planned; Railway CLI access lost (RESULT_SCRAPPER_20261118T1810Z)
+- INSTR read through the Drive connector (mount EPERM). #4949 gate-held at 16Z (/api/logs #11793) and re-planned by the scheduler to 04Z Nov 19 (same ET day). #4950 is now 16Z Nov 19. #6410 is still 02Z Nov 19. ICK #5453 submitted at 18Z (#11807). No actions.
+- ops_watch: `railway` deployment list -> "You do not have access to this resource"; API reads still work. An 18:05Z sheet apply logged 36 NEEDS OWNER (not run by this session).
+- publish_ops rc=3 -> uploaded through the Drive connector (1jFlyfiKNURDrXLBDQLTkQYvqs_8CYF2e). Owner notified. last_instr.txt = 1740Z.
+- NEEDS OWNER: railway login; sheet Approve / POSTING_GATE=off / export fix; S-DR9 before 02Z; the 36 sheet-apply rows.
+
 ## Log 2026-11-18 17:36 UTC — ICK #5491 missed 17Z (gate), moved to 02Z Nov 19 (RESULT_SCRAPPER_20261118T1736Z)
 - #5491 was still Ready and unpinned after its 17Z slot. /api/logs #11804 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Moved it to 02Z Nov 19 (9 PM ET Wed), the next free ICK hour that ET day (actions.log 17:35:49Z, HTTP 200; undo: PATCH pinned_at ""). Not retried. 03Z-04Z are still free.
 - No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (14UTxBY9RuqhwZmBqXg9JBlPpWgwyy9Wg). Owner notified.
