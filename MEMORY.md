@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-18 19:40 UTC — INSTR 1830Z (POST_ALL) not run, needs owner confirm; ICK #5492 moved 19Z->03Z (RESULT_SCRAPPER_20261118T1940Z)
+- #5492 missed 19Z (gate, /api/logs #11810). Moved it to 03Z Nov 19, the next free ICK hour that ET day (actions.log 19:36:04Z, HTTP 200). Not retried.
+- INSTR 1830Z (gate off, carries, Skip #5479, DR fill plan) is outside the pre-approved list and is waiting for confirmation in chat, so nothing was run. Finding: gate-off also turns off the ICK sheet-approve bypass of the frozen release (ick_readiness.sheet_approved). Next 6 slots per account are listed in the RESULT.
+- publish_ops rc=3 -> Drive connector (1ioW0OOHYoz5tav0ptNVtpnuqV5mzjsJI). Owner notified. last_instr.txt = 1830Z.
+- NEEDS OWNER: POSTING_GATE=off (Railway); ICK carries + Skip #5479; DR fill plan (#5395/#5393 have no slot); confirm the 1830Z approval.
+
 ## Log 2026-11-18 18:10 UTC — INSTR 1740Z handled: S-DR14 #4949 held/re-planned; Railway CLI access lost (RESULT_SCRAPPER_20261118T1810Z)
 - INSTR read through the Drive connector (mount EPERM). #4949 gate-held at 16Z (/api/logs #11793) and re-planned by the scheduler to 04Z Nov 19 (same ET day). #4950 is now 16Z Nov 19. #6410 is still 02Z Nov 19. ICK #5453 submitted at 18Z (#11807). No actions.
 - ops_watch: `railway` deployment list -> "You do not have access to this resource"; API reads still work. An 18:05Z sheet apply logged 36 NEEDS OWNER (not run by this session).
