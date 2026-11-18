@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-18 01:36 UTC — ICK #5489 missed 01Z (gate), no free same-day hour (RESULT_SCRAPPER_20261118T0136Z)
+- #5489 was still Ready and unpinned after its 01Z slot. /api/logs #11769 shows `queue_gate_wait` "not in the Posting Review sheet" (S-SC-GAP). Not moved: ICK 02Z-04Z are taken (#5485/#5486/#5484). Not retried. No action.
+- No new INSTR (mount EPERM; Drive search empty after 2338Z). publish_ops rc=3 -> Drive connector (1sx9GwYup5lRbreK7iwPhBIZYyUMmjYKZ). Owner notified.
+- NEEDS OWNER: POSTING_GATE=off / sheet Approve for #5485/#5486/#5484 before 02Z / Drive export fix; Skip or carry #5487/#5488/#5489.
+
 ## Log 2026-11-18 00:07 UTC — INSTR 2338Z handled: ICK X catch-ups reported (RESULT_SCRAPPER_20261118T0007Z)
 - The INSTR was read through the Drive connector because the Mac mount gives EPERM, even on the Flamingo Recap root. #5443's X catch-up posted at 00Z (archived). #5437's X catch-up is at 00Z Nov 20 and #5439's is at 16Z Nov 20 (X only; its FB post went out at 22Z Nov 17, X skipped for the daily cap). This corrects the 2336Z note that said #5439 was moved.
 - #1144 SC was gate-held again at 00Z (log #11762). #5487/#5488 have no free same-day ICK hour: not moved, not retried. #4950 is to be reported after its 16Z Nov 18 slot (S-DR14).
