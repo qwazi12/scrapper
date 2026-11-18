@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-18 21:37 UTC — ICK #5493 missed 21Z (gate), no free ICK hour left today (RESULT_SCRAPPER_20261118T2137Z)
+- #5493 was still Ready and unpinned after its 21Z slot. /api/logs #11812 shows `queue_gate_wait` "not in the Posting Review sheet". Not moved: ICK 22Z-04Z are all taken (#5454, #5494, #5466 X, #5495, #5491, #5492, #5490). Not retried. No action.
+- No new INSTR (Drive search). publish_ops rc=3 ("ops folder not found") -> uploaded through the Drive connector (1B6G869vK-QwYHiSYpKnx-B0v-ioMFSMz). Owner notified.
+- NEEDS OWNER: carry or Skip #5493; sheet Approve / POSTING_GATE=off / export fix for tonight's ICK rows; confirm INSTR 1830Z; the 36 sheet-apply rows.
+
 ## Log 2026-11-18 20:36 UTC — ICK #5490 missed 20Z (gate) again, moved to 04Z Nov 19 (RESULT_SCRAPPER_20261118T2036Z)
 - #5490 (moved 15Z->20Z earlier) was gate-held at 20Z (/api/logs #11811, not in the Posting Review sheet). Moved it to 04Z Nov 19 (11 PM ET Wed), the last free ICK hour that ET day (actions.log 20:36:24Z, HTTP 200). Not retried. ICK 21Z-04Z are now all taken, so a row that misses after this can't be moved again today.
 - ro_get /api/ops/next gave curl rc=56 three times; /api/queue and /api/ops/next7 worked. No new INSTR (Drive search). publish_ops rc=3 -> Drive connector (1ZdcSQiuS_8j3pag6HTUAqkKY9Ectv_Cn). Owner notified.
