@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-19 04:05 UTC — INSTR 0400Z (SEO/analytics plan) read, waits for owner confirm (RESULT_SCRAPPER_20261119T0405Z)
+- INSTR 0400Z adds to 1830Z: gate off, ICK FB backlog first, Screen Central named-show/moment title rule, Doctor Who to back, DR Christmas Home before Prime Suspect, X unchanged. It says nothing runs until the owner confirms, and items 1-5 are outside the pre-approved list. Nothing run.
+- ICK #5490 and DR #4949 gate-held at 04Z (/api/logs #11836/#11835). 04Z is the last ET-day hour, so not moved, not retried.
+- publish_ops rc=3 -> uploaded through the Drive connector (1m5xCjL4u-te6J-JJZLEuP6yUfCvZbX9F). Owner notified. last_instr.txt = 0400Z.
+- NEEDS OWNER: confirm INSTR 0400Z/1830Z; POSTING_GATE=off; approve re-titles and queue re-order; check SC Facebook Page quality; carry or Skip #5490-#5495, #4949; the 36 sheet-apply rows.
+
 ## Log 2026-11-19 03:37 UTC — ICK #5492 missed 03Z (gate), no free ICK hour left today (RESULT_SCRAPPER_20261119T0337Z)
 - #5492 (pinned 03Z) was held by the gate at 03Z (/api/logs #11834, not in the Posting Review sheet). Not moved: ICK 04Z, the last Wed ET hour, is taken by #5490. Not retried. No action. DR #6410 02Z: YT waits (0 dialogue-only copies) and platforms at today's number, so it was not sent.
 - No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1hdo5UdWmsl0HI6OPJgcTn_IwS5_ihtwT). Owner notified.
