@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-19 23:37 UTC — ICK #5500 missed 23Z (gate), no free ICK hour left today (RESULT_SCRAPPER_20261119T2337Z)
+- #5500 gate-held at 23Z (/api/logs #11862, not in the Posting Review sheet). Not moved: ICK 00Z-04Z are all taken (#5437 X, #5501, #5496, #5498, #5497). Not retried. No action.
+- No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1xIO93nAeOn-9K2R4kY-k7IJT_bkISkRN). Owner notified.
+- NEEDS OWNER: carry or Skip #5499/#5500; sheet Approve / POSTING_GATE=off for tonight's 5 ICK rows; confirm INSTR 0400Z/1830Z; #5449 source; carry or Skip #5490-#5495; the 36 sheet-apply rows; fix publish_ops.sh.
+
 ## Log 2026-11-19 21:37 UTC — ICK #5499 missed 21Z (gate), no free ICK hour left today (RESULT_SCRAPPER_20261119T2137Z)
 - #5499 gate-held at 21Z (/api/logs #11856, not in the Posting Review sheet). Not moved: ICK 22Z-04Z are all taken (#5448, #5500, #5437 X, #5501, #5496, #5498, #5497). Not retried. No action.
 - No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1vt0V6qkDA2aQ2HD50Y78qVq877rhqAh7). Owner notified.
