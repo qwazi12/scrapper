@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-19 03:37 UTC — ICK #5492 missed 03Z (gate), no free ICK hour left today (RESULT_SCRAPPER_20261119T0337Z)
+- #5492 (pinned 03Z) was held by the gate at 03Z (/api/logs #11834, not in the Posting Review sheet). Not moved: ICK 04Z, the last Wed ET hour, is taken by #5490. Not retried. No action. DR #6410 02Z: YT waits (0 dialogue-only copies) and platforms at today's number, so it was not sent.
+- No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1hdo5UdWmsl0HI6OPJgcTn_IwS5_ihtwT). Owner notified.
+- NEEDS OWNER: carry or Skip #5491-#5495; sheet Approve / POSTING_GATE=off / export fix for #5490 04Z; confirm INSTR 1830Z; the 36 sheet-apply rows.
+
 ## Log 2026-11-19 02:37 UTC — ICK #5491 missed 02Z (gate), no free ICK hour left today (RESULT_SCRAPPER_20261119T0237Z)
 - #5491 (pinned 02Z) was gate-held at 02Z (/api/logs #11828, not in the Posting Review sheet). Not moved: ICK 03Z (#5492) and 04Z (#5490) are taken. Not retried. No action.
 - No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1H8chyIrGsmi3_HH8sEkfqRhZZqR8as3b). Owner notified.
