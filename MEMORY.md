@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-19 17:36 UTC — ICK #5497 17Z->20Z, #5496 15Z->02Z (gate), moved (RESULT_SCRAPPER_20261119T1735Z)
+- #5497 and #5496 were both gate-held ("not in the Posting Review sheet", /api/logs #11849/#11844). The 15:35Z session for #5496 exited 1 and did nothing. Moved #5497 to 20Z and #5496 to 02Z Nov 20 (actions.log 17:35:49Z / 17:35:52Z, HTTP 200). Not retried. ICK 03Z/04Z are still free today.
+- ICK #5449 (X, 16Z) is in error: video file not found. Not retried. No new INSTR/HEAD_RULES (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1h6nV6hWr0bKvA783O08uXulIpiYBm3Jp). Owner notified.
+- NEEDS OWNER: sheet Approve / POSTING_GATE=off for today's ICK rows; #5449 source file; confirm INSTR 0400Z/1830Z; carry or Skip #5490-#5495; the 36 sheet-apply rows; fix publish_ops.sh; the 15:35Z session exit 1.
+
 ## Log 2026-11-19 04:36 UTC — ICK #5490 missed 04Z (gate), last ET hour, no move (RESULT_SCRAPPER_20261119T0436Z)
 - #5490 is still Ready after its 04Z slot. The gate held it (/api/logs #11836, not in the Posting Review sheet). 04Z is the last hour of the Wed ET day, so it was not moved and not retried. No action. DR #4949 was re-planned to 16Z Nov 19.
 - No new INSTR (Drive search). publish_ops.sh now fails with rc=1 "line 6: t: unbound variable" (it was rc=3 before) -> uploaded through the Drive connector (1UIFqfp3_qOYq_v7pQLmDbnKrjhu8sbZx). Owner notified.
