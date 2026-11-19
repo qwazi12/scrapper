@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-19 19:36 UTC — ICK #5498 19Z->03Z Nov 20 (gate), moved (RESULT_SCRAPPER_20261119T1936Z)
+- #5498 was gate-held at 19Z (/api/logs #11854, not in the Posting Review sheet). Moved to 03Z Nov 20 (actions.log 19:35:56Z, HTTP 200). Not retried. Only ICK 04Z is still free today.
+- `python3 data/ops/ops_actions.py` fails with SSL CERTIFICATE_VERIFY_FAILED (python.org 3.13 has no certs). Run it as `data/ops/ops_actions.py` (shebang /usr/bin/python3). This may explain the 15:35Z exit 1.
+- No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1iV15jreEHssLPj62GT6ta6IVW8ihWRMt). Owner notified.
+- NEEDS OWNER: sheet Approve / POSTING_GATE=off for today's ICK rows; confirm INSTR 0400Z/1830Z; #5449 source; carry or Skip #5490-#5495; the 36 sheet-apply rows; fix publish_ops.sh.
+
 ## Log 2026-11-19 17:36 UTC — ICK #5497 17Z->20Z, #5496 15Z->02Z (gate), moved (RESULT_SCRAPPER_20261119T1735Z)
 - #5497 and #5496 were both gate-held ("not in the Posting Review sheet", /api/logs #11849/#11844). The 15:35Z session for #5496 exited 1 and did nothing. Moved #5497 to 20Z and #5496 to 02Z Nov 20 (actions.log 17:35:49Z / 17:35:52Z, HTTP 200). Not retried. ICK 03Z/04Z are still free today.
 - ICK #5449 (X, 16Z) is in error: video file not found. Not retried. No new INSTR/HEAD_RULES (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1h6nV6hWr0bKvA783O08uXulIpiYBm3Jp). Owner notified.
