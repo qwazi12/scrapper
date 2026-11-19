@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-19 20:36 UTC — ICK #5497 20Z->04Z Nov 20 (gate-held again), moved (RESULT_SCRAPPER_20261119T2036Z)
+- #5497 gate-held at 20Z (/api/logs #11855, not in the Posting Review sheet). Moved to 04Z Nov 20, the last free ICK hour of the ET day (actions.log 20:35:44Z, HTTP 200). Not retried. ICK 21Z-04Z now all taken.
+- No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1HAUKM8bF7M6f6mN5MIdYmezJ0GGjDNrk). Owner notified.
+- NEEDS OWNER: sheet Approve / POSTING_GATE=off for tonight's 7 ICK rows; confirm INSTR 0400Z/1830Z; #5449 source; carry or Skip #5490-#5495; the 36 sheet-apply rows; fix publish_ops.sh.
+
 ## Log 2026-11-19 19:36 UTC — ICK #5498 19Z->03Z Nov 20 (gate), moved (RESULT_SCRAPPER_20261119T1936Z)
 - #5498 was gate-held at 19Z (/api/logs #11854, not in the Posting Review sheet). Moved to 03Z Nov 20 (actions.log 19:35:56Z, HTTP 200). Not retried. Only ICK 04Z is still free today.
 - `python3 data/ops/ops_actions.py` fails with SSL CERTIFICATE_VERIFY_FAILED (python.org 3.13 has no certs). Run it as `data/ops/ops_actions.py` (shebang /usr/bin/python3). This may explain the 15:35Z exit 1.
