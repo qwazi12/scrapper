@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## Log 2026-11-19 04:36 UTC — ICK #5490 missed 04Z (gate), last ET hour, no move (RESULT_SCRAPPER_20261119T0436Z)
+- #5490 is still Ready after its 04Z slot. The gate held it (/api/logs #11836, not in the Posting Review sheet). 04Z is the last hour of the Wed ET day, so it was not moved and not retried. No action. DR #4949 was re-planned to 16Z Nov 19.
+- No new INSTR (Drive search). publish_ops.sh now fails with rc=1 "line 6: t: unbound variable" (it was rc=3 before) -> uploaded through the Drive connector (1UIFqfp3_qOYq_v7pQLmDbnKrjhu8sbZx). Owner notified.
+- NEEDS OWNER: carry or Skip #5490-#5495; sheet Approve / POSTING_GATE=off; confirm INSTR 0400Z/1830Z; the 36 sheet-apply rows; fix publish_ops.sh.
+
 ## Log 2026-11-19 04:05 UTC — INSTR 0400Z (SEO/analytics plan) read, waits for owner confirm (RESULT_SCRAPPER_20261119T0405Z)
 - INSTR 0400Z adds to 1830Z: gate off, ICK FB backlog first, Screen Central named-show/moment title rule, Doctor Who to back, DR Christmas Home before Prime Suspect, X unchanged. It says nothing runs until the owner confirms, and items 1-5 are outside the pre-approved list. Nothing run.
 - ICK #5490 and DR #4949 gate-held at 04Z (/api/logs #11836/#11835). 04Z is the last ET-day hour, so not moved, not retried.
