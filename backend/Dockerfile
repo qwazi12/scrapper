@@ -42,7 +42,7 @@ RUN pip install --no-cache-dir -U yt-dlp
 # Chrome refuses to start sandboxed as root, so its binary is wrapped with --no-sandbox.
 COPY backend/hyperframes/package.json backend/hyperframes/package-lock.json /srv/backend/hyperframes/
 RUN cd /srv/backend/hyperframes \
-    && npm ci --omit=dev --no-audit --no-fund \
+    && npm ci --omit=dev --no-audit --no-fund --onnxruntime-node-install-cuda=skip \
     && ./node_modules/.bin/hyperframes --version
 ENV HYPERFRAMES_BIN=/srv/backend/hyperframes/node_modules/.bin/hyperframes
 RUN timeout 900 "$HYPERFRAMES_BIN" browser ensure \
