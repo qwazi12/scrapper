@@ -6,6 +6,11 @@
 - (c) est. ~150-250 lines backend + tests; needs Railway build fix first. publish_ops rc=3 -> uploaded via Drive connector (1Cgp6rKCTUPN_JpD45Ij8pnMbfQey1V-P). last_instr.txt updated. Owner notified.
 - NEEDS OWNER: server-side export code OK; Dockerfile onnxruntime fix + deploy; optional SA write test; or Drive reconnect.
 
+## Log 2026-11-20 20:15 UTC — 3-slot report: SC posting again; ICK refused by frozen-release check
+- 19Z SC #1144 posted YT https://www.youtube.com/watch?v=vTg-warFFrs + FB/IG/X; delivery-hold false alarm again -> set archived (undo data/ops/heldfix_pre_1144_*). Next SC 21Z, 23Z, 01Z.
+- ICK #5446 18Z, #5504 19Z, #5502 20Z refused: "409: ICK Ready: exact guarded future cadence release is stale, manual, missed or changed; no catch-up" (gate off -> ick_readiness.sheet_approved() returns False -> frozen check). Rows still Ready, not retried. ICK posts nothing until fixed.
+- NEEDS OWNER (code): (1) ick_readiness.py:415 gate-off -> treat Ready ICK rows as approved (or dot re-releases each row); (2) queue_manager.py:2037 delivery-hold on changes/warnings -> archive with a note instead of Review.
+
 ## Log 2026-11-20 17:52 UTC — Screen Central 8/day; YouTube cap 8/day per owner
 - Owner: "8 shorts a day please for screen central and all other YouTube's nothing should exceed that".
 - Movie Clips (SC shorts) hourly(15) -> 8/day at 08,10,12,14,16,18,20,22 ET on youtube/facebook/instagram. Undo: PUT data/ops/sc_8day_pre_*.json.
