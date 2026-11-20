@@ -6,6 +6,11 @@
 - (c) est. ~150-250 lines backend + tests; needs Railway build fix first. publish_ops rc=3 -> uploaded via Drive connector (1Cgp6rKCTUPN_JpD45Ij8pnMbfQey1V-P). last_instr.txt updated. Owner notified.
 - NEEDS OWNER: server-side export code OK; Dockerfile onnxruntime fix + deploy; optional SA write test; or Drive reconnect.
 
+## Log 2026-11-20 17:52 UTC — Screen Central 8/day; YouTube cap 8/day per owner
+- Owner: "8 shorts a day please for screen central and all other YouTube's nothing should exceed that".
+- Movie Clips (SC shorts) hourly(15) -> 8/day at 08,10,12,14,16,18,20,22 ET on youtube/facebook/instagram. Undo: PUT data/ops/sc_8day_pre_*.json.
+- Other YouTube per day: DramaRama 4, LongForm 1, Countdowns 1 (both long-form on the SC channel, not shorts). All <= 8. Rule: never set any YouTube above 8/day.
+
 ## Log 2026-11-20 17:40 UTC — back to direct posting (no Drive/sheet); Screen Central hourly; gate OFF live
 - Owner: "stop using the drive and go back to just posting" + "Let's go back please and begin posting 1 short per hour".
 - 6776ec2 backend/Dockerfile: npm ci --onnxruntime-node-install-cuda=skip (onnxruntime GPU tgz 404 broke every build). Deployed 2ba47d50 SUCCESS 17:36Z = main HEAD; POSTING_GATE=off now live.
