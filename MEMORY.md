@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-20 17:06 UTC — INSTR 1700Z answered (RESULT_SCRAPPER_20261120T1706Z)
+- (a) export = daily_exports.sh/.py -> READY/NEXT7/POSTED CSV + EXPORTS_DONE (columns listed in RESULT). 17:05Z change run built OK, mv to ops/exports failed ENOENT; mount gives EPERM to this session.
+- (b) Read-only: exports folder 1NQzxNpidDQmcC7F7HqcfWuI0fFaxm6Zq grants omnistream-bot (server SA) fileOrganizer, head-ops-sheets writer. Write+delete test not done (not pre-approved).
+- (c) est. ~150-250 lines backend + tests; needs Railway build fix first. publish_ops rc=3 -> uploaded via Drive connector (1Cgp6rKCTUPN_JpD45Ij8pnMbfQey1V-P). last_instr.txt updated. Owner notified.
+- NEEDS OWNER: server-side export code OK; Dockerfile onnxruntime fix + deploy; optional SA write test; or Drive reconnect.
+
 ## Log 2026-11-20 17:10 UTC — gate-off BLOCKED by Railway build; ICK carried; 56 SC held rows archived
 - POSTING_GATE=off set on Railway (variable saved), but BOTH deploys FAILED in build: backend/Dockerfile `npm ci` -> onnxruntime-node 1.21.1 install script downloads onnxruntime-linux-x64-gpu-1.21.1.tgz from GitHub -> 404. Redeploy of 8714dc69 (Nov 8, 511d731) also rebuilds and fails. Live = Nov 8 deploy, gate still ON (17Z: #1144, #5503 gate-held). Fix needs code OK: add `--onnxruntime-node-install-cuda=skip` to the npm ci line.
 - Carried 12 ICK rows (oldest slot first) via pinned_at, undo data/ops/carry_pre_20261120T165611Z.json: 5493 02Z/21, 5494 03Z/21, 5495 04Z/21, 5491 20Z/21, 5492 02Z/22, 5490 03Z/22, 5499 04Z/22, 5500 20Z/22, 5501 00Z/23, 5496 02Z/23, 5498 03Z/23, 5497 04Z/23. #5479 is status error (not Ready) -> skipped, untouched. DR #4949 already at the next free DR FB hour (04Z Nov 21), not moved.
