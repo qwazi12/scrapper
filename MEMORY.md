@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## Log 2026-11-20 17:10 UTC — gate-off BLOCKED by Railway build; ICK carried; 56 SC held rows archived
+- POSTING_GATE=off set on Railway (variable saved), but BOTH deploys FAILED in build: backend/Dockerfile `npm ci` -> onnxruntime-node 1.21.1 install script downloads onnxruntime-linux-x64-gpu-1.21.1.tgz from GitHub -> 404. Redeploy of 8714dc69 (Nov 8, 511d731) also rebuilds and fails. Live = Nov 8 deploy, gate still ON (17Z: #1144, #5503 gate-held). Fix needs code OK: add `--onnxruntime-node-install-cuda=skip` to the npm ci line.
+- Carried 12 ICK rows (oldest slot first) via pinned_at, undo data/ops/carry_pre_20261120T165611Z.json: 5493 02Z/21, 5494 03Z/21, 5495 04Z/21, 5491 20Z/21, 5492 02Z/22, 5490 03Z/22, 5499 04Z/22, 5500 20Z/22, 5501 00Z/23, 5496 02Z/23, 5498 03Z/23, 5497 04Z/23. #5479 is status error (not Ready) -> skipped, untouched. DR #4949 already at the next free DR FB hour (04Z Nov 21), not moved.
+- "post failed" = queue_manager.py:2037 delivery hold: Upload-Post status had 'changes'/'warnings' on a facebook-x-visible-v1 send -> status review, logged queue_post_failed. 56 SC rows (Nov 6-17) with ✓ on all 4 platforms set review -> archived + published_at = log time (undo data/ops/heldfix_pre_20261120T165715Z.json); 4 oldest then pruned by archive retention (history kept).
+- Drive export root cause (fork diagnosis): Drive for Desktop lost local copy of ops/exports (DriveFS 'ProcessRename failed NOT_FOUND: 180' at 2026-11-14T21:35:52Z); folder exists online (1NQzxNpidDQmcC7F7HqcfWuI0fFaxm6Zq). Fix: disconnect/reconnect the Drive account (or rename the folder on the web and back), or move the export to the server (INSTR 1700Z proposal, code). publish_ops.sh must run with zsh.
+- INSTR_SCRAPPER_20261120T1700Z (HEAD) read: asks for a service-account write test to the exports folder; not done (needs owner OK).
+- NEEDS OWNER: OK the 1-line Dockerfile fix + deploy (deploy would also ship main ab3cc62 vs live 511d731 — check diff); Drive reconnect; server-side export (code).
+
 ## PLAN 2026-11-20 ~16:30 UTC — gate off + restart + Drive export diagnosis (owner approved Option 1)
 1. Set POSTING_GATE=off on Railway (keep off until the Drive export is fixed and EXPORTS_DONE lands, then set back to sheet and tell owner).
 2. Screen Central restarts at its next slot with #1144; ICK + DR Facebook/YouTube from Ready. DR X stays paused.
