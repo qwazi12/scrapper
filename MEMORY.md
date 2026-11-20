@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## PLAN 2026-11-20 ~16:30 UTC — gate off + restart + Drive export diagnosis (owner approved Option 1)
+1. Set POSTING_GATE=off on Railway (keep off until the Drive export is fixed and EXPORTS_DONE lands, then set back to sheet and tell owner).
+2. Screen Central restarts at its next slot with #1144; ICK + DR Facebook/YouTube from Ready. DR X stays paused.
+3. Carry ICK #5490-#5501 and DR #4949 to the next free hours, oldest first; skip #5479.
+4. Option 2: find exactly why the Drive export fails and what fix it needs (diagnose only; fix needs owner OK).
+5. "post failed" on SC rows: show the exact log line; correct status if wrong (Upload-Post shows 62 SC uploads Nov 14-17 OK on YT/FB/IG/X).
+6. Report after the next 3 slots.
+
 ## Log 2026-11-20 15:36 UTC — ICK #5502 15Z->20Z (gate), moved (RESULT_SCRAPPER_20261120T1536Z)
 - #5502 gate-held at 15Z (/api/logs #11887, not in the Posting Review sheet). Moved to 20Z, the next free ICK hour of the ET day (actions.log 15:35:47Z, HTTP 200). Not retried.
 - No new INSTR (Drive search). publish_ops rc=3 -> uploaded through the Drive connector (1DgHBS_jDz18VbiQ2AWXvuaGyDh43ERvi). Owner notified.
