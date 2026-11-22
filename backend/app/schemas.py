@@ -143,6 +143,7 @@ class QueueItemUpdate(BaseModel):
     media_url: str | None = None
     platform_copy: dict | None = None    # {} clears; see QueueItem.platform_copy
     published_at: str | None = None      # ISO time it really went out (a Posted row, e.g. from Upload-Post history)
+    skip_platforms: list[str] | None = None   # owner skip: this episode won't go to these platforms (catchup.skip)
 
 
 class QueueItemOut(BaseModel):

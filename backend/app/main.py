@@ -944,6 +944,15 @@ def update_queue_item(item_id: int, req: QueueItemUpdate, s: Session = Depends(g
 
     if req.media_url is not None:
         item.media_url = req.media_url
+    if req.skip_platforms is not None:
+        # Owner 2026-11-22: an episode that can't go to a platform (e.g. a broken source with no YouTube copy) is
+        # skipped there explicitly, so strict episode order moves on. Undo: the queue undo point recorded above.
+        bad = set(req.skip_platforms) - {"facebook", "x", "youtube", "instagram"}
+        if bad:
+            raise HTTPException(400, f"unknown platform(s): {', '.join(sorted(bad))}")
+        cu = dict(item.catchup or {})
+        cu["skip"] = sorted(set(cu.get("skip") or []) | set(req.skip_platforms))
+        item.catchup = cu
     if req.published_at is not None:
         # The real post time (owner, 2026-11-08): only on a Posted row, never in the future.
         try:

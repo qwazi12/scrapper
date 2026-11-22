@@ -69,3 +69,16 @@ def test_each_platform_gets_its_own_words_plus_its_hashtags(session, monkeypatch
     assert sent["facebook"] == ("FB title", "FB words.\n\n#Disturbia #MovieClips #ShiaLaBeouf")
     assert sent["instagram"][1] == "IG words.\n\n#Disturbia #MovieClips #ShiaLaBeouf #Thriller"
     assert sent["x"] == ("X words.\n\n#Disturbia #MovieClips", "")
+
+
+def test_patch_skip_platforms_records_an_owner_skip(client, session):
+    """Owner 2026-11-22: a DramaRama episode with a broken source is skipped on YouTube so later episodes go on."""
+    it = QueueItem(pipeline="DramaRama", source="DramaRama / t", status="ready", title="t", description="d",
+                   video_path=__file__, accounts=["Dramarama:youtube"], catchup={"done": [["Dramarama:facebook", "f"]]})
+    session.add(it)
+    session.commit()
+    assert client.patch(f"/api/queue/{it.id}", json={"skip_platforms": ["tiktok"]}).status_code == 400
+    assert client.patch(f"/api/queue/{it.id}", json={"skip_platforms": ["youtube"]}).status_code == 200
+    session.refresh(it)
+    assert it.catchup == {"done": [["Dramarama:facebook", "f"]], "skip": ["youtube"]}
+    assert qm.drama_episode_state([it], "youtube") == "skip"
