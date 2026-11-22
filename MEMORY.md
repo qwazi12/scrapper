@@ -6,6 +6,13 @@
 - (c) est. ~150-250 lines backend + tests; needs Railway build fix first. publish_ops rc=3 -> uploaded via Drive connector (1Cgp6rKCTUPN_JpD45Ij8pnMbfQey1V-P). last_instr.txt updated. Owner notified.
 - NEEDS OWNER: server-side export code OK; Dockerfile onnxruntime fix + deploy; optional SA write test; or Drive reconnect.
 
+## PLAN 2026-11-22 — owner: "make the fixes ... all of the 3 should get 8 posts a day"
+1. Code: ick_readiness.sheet_approved() with POSTING_GATE=off -> Ready ICK rows post as normal rows (no frozen-release refusal).
+2. Code: queue_manager delivery hold (Upload-Post changes/warnings with every platform ✓) -> Posted (archived) with a note, not Review/"post failed".
+3. Find why DramaRama isn't posting; fix.
+4. Schedules: DramaRama, ICK Room, Screen Central = 8 posts/day each (YouTube <= 8). DR X stays paused; ICK X unchanged.
+5. Tests, push, deploy, verify next slots, report.
+
 ## Log 2026-11-20 20:15 UTC — 3-slot report: SC posting again; ICK refused by frozen-release check
 - 19Z SC #1144 posted YT https://www.youtube.com/watch?v=vTg-warFFrs + FB/IG/X; delivery-hold false alarm again -> set archived (undo data/ops/heldfix_pre_1144_*). Next SC 21Z, 23Z, 01Z.
 - ICK #5446 18Z, #5504 19Z, #5502 20Z refused: "409: ICK Ready: exact guarded future cadence release is stale, manual, missed or changed; no catch-up" (gate off -> ick_readiness.sheet_approved() returns False -> frozen check). Rows still Ready, not retried. ICK posts nothing until fixed.
