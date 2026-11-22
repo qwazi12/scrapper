@@ -411,7 +411,10 @@ def ready(qid:int,req:Ready,s:Session=Depends(get_session)):
 def sheet_approved(item):
     """Owner Option B (2026-11-08): a row the owner approved in the Posting Review sheet posts as a normal ICK row,
     without its frozen release. Anything else (not in the sheet, other Decision, sheet unreadable) keeps the frozen check."""
+    import os
     from . import posting_gate
+    if os.environ.get('ICK_RELEASE_CHECK','on').strip().lower()=='off':
+        return True    # owner 2026-11-22: no sheet any more — a Ready ICK row posts as a normal row on the ICK schedule
     if not posting_gate.on():return False      # POSTING_GATE=off: every frozen release is checked, as before
     try:return (posting_gate.sheet_rows().get(str(item.id)) or {}).get('Decision','').strip().lower()=='approve'
     except Exception:return False

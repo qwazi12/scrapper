@@ -480,6 +480,10 @@ def test_sheet_approved_row_posts_as_a_normal_ick_row_and_unapproved_keeps_the_f
     monkeypatch.setenv('POSTING_GATE','off')                                                          # switch off: as before
     with SessionLocal() as s:
         with pytest.raises(HTTPException,match='stale'):ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True)
+    monkeypatch.setenv('ICK_RELEASE_CHECK','off')            # owner 2026-11-22: no sheet — Ready ICK rows post normally
+    with SessionLocal() as s:
+        assert ir.admit(s,s.get(QueueItem,a.qid),a.media,regular=True) is None
+        assert all(ir.sheet_approved_release(s,r) for r in ir.reservations(s) if r.queue_id==a.qid)
 
 
 def test_sheet_approved_stale_release_posts_with_the_atomic_dispatch_permit(candidate,monkeypatch):

@@ -123,7 +123,7 @@ def test_facebook_video_transport_preserves_real_long_duration_tail_and_audio(tm
     subprocess.run(['ffmpeg','-v','error','-i',str(delivered),'-f','null','-'],check=True)
 
 
-def test_new_delivery_warning_is_held_without_reposting_but_old_receipts_are_unchanged(session, monkeypatch, tmp_path):
+def test_new_delivery_warning_posts_with_a_note_without_reposting_and_old_receipts_are_unchanged(session, monkeypatch, tmp_path):
     now=dt.datetime.now(dt.timezone.utc)
     entry={'profile':'synthetic','platforms':['facebook'],'request_id':'synthetic-fb-result',
         'client_request_id':'synthetic-attempt','state':'accepted','submitted_at':now.isoformat(),
@@ -137,7 +137,8 @@ def test_new_delivery_warning_is_held_without_reposting_but_old_receipts_are_unc
     monkeypatch.setattr(qm,'_fetch_statuses',lambda entries:{'synthetic-fb-result':status})
     assert qm.reconcile_posting(session,now)==1
     session.refresh(row)
-    assert row.status=='review' and row.published_at is None
+    assert row.status=='archived' and row.published_at is not None                 # owner 2026-11-20: posted, with a note
+    assert '⚠ Provider note:' in row.notes and 'Delivery held' not in row.notes
     assert row.catchup['done']==[['synthetic:facebook','https://example.invalid/published']]
     assert session.query(PublicationEvent).filter_by(queue_id=qid,kind='delivery_hold').count()==1
     assert qm.reconcile_posting(session,now)==0

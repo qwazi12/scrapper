@@ -1219,6 +1219,8 @@ def drama_episode_state(rows: list[QueueItem], net: str) -> str:
     """One episode on one platform: done (delivered), skip (not going there), ready, or wait."""
     if any(any(str(a).endswith(":" + net) for a, _ in ((it.catchup or {}).get("done") or [])) for it in rows):
         return "done"
+    if any(net in ((it.catchup or {}).get("skip") or []) for it in rows):
+        return "skip"          # owner skipped this episode on this platform (2026-11-22); later episodes go on
     if any(it.status == "ready" and net in drama_owes(it) and has_video_source(it) and drama_copy_reviewed(it)
            for it in rows):
         return "ready"
@@ -1261,15 +1263,15 @@ def drama_lanes(rows: list[QueueItem], net: str, first: set[str] = frozenset()) 
         open_series.append((not started, name not in first, first_id[name], name, states))
     open_series.sort()
     held = {}
-    if net != "facebook":
-        # X/YouTube (owner, 2026-11-08): a series whose next episode can't go yet doesn't take one of the platform's
-        # daily slots; the next series with a ready episode does (each still in strict episode order).
-        for *_, name, states in open_series:
-            n, st = next((n, st) for n, st in states.items() if st not in ("done", "skip"))
-            if st != "ready":
-                held[name] = (f"waiting for EP{n}" + (" on Facebook first" if st == "after facebook" else "")
-                              + ("" if n in series[name] else " (not in the queue)"))
-        open_series = [o for o in open_series if o[3] not in held]
+    # X/YouTube (owner, 2026-11-08), Facebook too (owner, 2026-11-22: "DramaRama needs to post"): a series whose
+    # next episode can't go yet doesn't take one of the platform's daily slots; the next series with a ready
+    # episode does (each still in strict episode order).
+    for *_, name, states in open_series:
+        n, st = next((n, st) for n, st in states.items() if st not in ("done", "skip"))
+        if st != "ready":
+            held[name] = (f"waiting for EP{n}" + (" on Facebook first" if st == "after facebook" else "")
+                          + ("" if n in series[name] else " (not in the queue)"))
+    open_series = [o for o in open_series if o[3] not in held]
     lanes = []
     for *_, name, states in open_series[:DRAMA_ACTIVE_SERIES]:
         lane = []
@@ -2081,10 +2083,11 @@ def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -
                 parts.append(f"⏸ {a} held (not retried)")
         res = {**res, "failed": failed}
     if res.get('delivery_holds'):
-        item.status = 'review'
-        item.published_at = None
-        parts += ['Delivery held: ' + reason for reason in res['delivery_holds'].values()]
-    elif res["failed"]:
+        # Owner 2026-11-20: a provider warning on a post every platform confirmed is a note, not a failure — the row
+        # follows the normal outcome below (Posted when nothing failed). The journal keeps the evidence and a resend
+        # of these requests is still refused.
+        parts += ['⚠ Provider note: ' + reason for reason in sorted(set(res['delivery_holds'].values()))]
+    if res["failed"]:
         # Retry only what failed (and what's still owed), so a retry never double-posts.
         item.status = "retry"
         item.accounts = list(res["failed"]) + [a for a in skipped if a not in res["failed"]]

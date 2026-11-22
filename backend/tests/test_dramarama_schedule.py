@@ -496,3 +496,28 @@ def test_a_series_facebook_isnt_posting_doesnt_hold_the_switch(session, drama):
     ep(session, "Alpha", 2)                                               # Facebook's next; X is level
     ep(session, "Old", 1, "archived", accounts=("Dramarama:facebook",), catchup={"done": fb_only})   # finished on FB
     assert qm.drama_x_sync(session, et(3, 7))
+
+
+def test_a_series_stuck_on_its_next_episode_doesnt_take_a_facebook_lane(session, drama):
+    """Owner 2026-11-22 ("DramaRama needs to post"): Christmas Home stuck at EP18 in review left half of Facebook's
+    slots empty. A series whose next episode can't go now gives its lane to the next series with a ready one."""
+    fb = {"done": [["Dramarama:facebook", "f"]]}
+    ep(session, "Stuck", 1, "archived", accounts=("Dramarama:facebook",), catchup=fb)
+    ep(session, "Stuck", 2, "review")
+    a = [ep(session, "Aaa", n) for n in (1, 2)]
+    b = [ep(session, "Bbb", n) for n in (1, 2)]
+    qm.plan_schedule(session, et(3, 7))
+    assert sorted(local(x) for x in a + b) == ["03 10:00", "03 13:20", "03 16:40", "03 20:00"]   # all 4 slots used
+    assert qm.drama_held["facebook"] == {"Stuck": "waiting for EP2"}
+
+
+def test_an_episode_skipped_on_youtube_lets_the_next_one_go(session, drama):
+    """Owner 2026-11-22: an episode whose source can't make a YouTube copy is skipped there explicitly
+    (catchup.skip); strict order otherwise holds every later episode behind it."""
+    fb = {"done": [["Dramarama:facebook", "f"]]}
+    ep(session, "Prime", 9, "archived", accounts=(), catchup={**fb, "skip": ["youtube"]})
+    ten = ep(session, "Prime", 10, accounts=("Dramarama:youtube",), catchup=fb)
+    for n in range(1, 9):
+        ep(session, "Prime", n, "archived", accounts=(), catchup={"done": [["Dramarama:facebook", "f"], ["Dramarama:youtube", "y"]]})
+    lanes, held = qm.drama_lanes(session.query(QueueItem).all(), "youtube")
+    assert lanes and lanes[0][0].id == ten.id and "Prime" not in held
