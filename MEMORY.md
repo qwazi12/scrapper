@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## Log 2026-11-23 02:05 UTC — next 200 videos checked (SC 67, ICK 71, DR 62; slots to Dec 1)
+- Copy/payload rules (queue_payloads.preview, YT title<=100, IG<=2200, media present, no dupes/already-posted): all SC + ICK pass. 01Z SC #855 + ICK #5563 posted fine.
+- Only gap: 42 DR rows had no YouTube dialogue copy -> making them now (driver = scripts/drama_dialogue_prep.py with targets limited to those ids); then 27 more (CH EP14-17, PS EP16-23, Sunblade EP1-15, Raining riches EP1-8).
+- YouTube lane fix: Christmas Home EP7 #5395 + EP8 #5393 (review, owner "Edit" Nov 9) skip_platforms youtube -> CH EP9-17 now in the YouTube lane. #5080 Divorced Today EP1 ready->review (EP2+ all review; would start and stall). Undo data/ops/n200_pre_*.json.
+- Plan projection shows DR 4/day from Nov 27 only because it projects the 2 current series; live planner starts the next ready series (Sunblade Returns, Raining riches) when Heiress ends.
+- Left alone (not in the next 200): old X-only retry rows (LongForm 4832/4833/4839, ICK 4857-4864, MC 11351), ICK error rows missing video (5430, 5445, 5449, 5479). Heiress/CH EP18+ and Divorced Today series are in review (unapproved).
+
 ## PLAN 2026-11-23 — owner: "Check the next 200 videos and make the fixes if they need it"
 1. Pull the next 200 upcoming rows (by planned slot) across SC, DramaRama, ICK (+LongForm/Countdowns).
 2. Check each: media file present, caption/title present + within platform limits, platforms right, YouTube dialogue copy for DR, no stuck/held/review blockers, no duplicates.
