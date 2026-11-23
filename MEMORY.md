@@ -6,6 +6,15 @@
 - (c) est. ~150-250 lines backend + tests; needs Railway build fix first. publish_ops rc=3 -> uploaded via Drive connector (1Cgp6rKCTUPN_JpD45Ij8pnMbfQey1V-P). last_instr.txt updated. Owner notified.
 - NEEDS OWNER: server-side export code OK; Dockerfile onnxruntime fix + deploy; optional SA write test; or Drive reconnect.
 
+## Log 2026-11-23 00:10 UTC — fixes live: ICK posts, DramaRama uses every slot, all three 8/day
+- Owner 2026-11-22: "DramaRama needs to post so make the fixes and for ick room too ... all of the 3 should get 8 posts a day".
+- Found: ICK refused every slot Nov 20-22 (frozen release stale); DR got ~2/day (FB lane held by Christmas Home stuck at EP18; YT lane stuck on PS Ep.9 #6410, no dialogue copy); SC posted each slot but marked post_failed.
+- 27c266f: ICK_RELEASE_CHECK=off (Railway var, default on) -> Ready ICK rows post as normal rows; provider warning with all platforms ✓ -> Posted + "⚠ Provider note"; drama_lanes: stuck series no longer takes a Facebook lane; catchup.skip=[net] = owner skip. 22200c4: PATCH skip_platforms. Full suite 1305 passed. Live deploy d3a387b7 = 22200c4.
+- Data: #6410 YouTube skipped + archived (undo data/ops/skip_pre_6410_*). 21 pinned ICK rows unpinned so the planner fits them into the 8 slots (undo data/ops/ick_unpin_pre_*).
+- Schedules (undo data/ops/eight_pre_*): DramaRama FB+YT 09,11,13,15,17,19,21,23 ET (X stays 0); ICK FB 08-22 even hours (X 11/19 unchanged); SC 08-22 even hours. YouTube daily limit = slot count, so <= 8.
+- Verified 00Z: DR #5010 (My Ex Never Filed Ep1) and ICK #5453 (X) submitted, no refusals.
+- Dialogue-prep launchd job has made 0 copies since Nov 9: launchd can't read the Drive mount (TCC); same ffmpeg works interactively. Ran it manually (--series 4) for 23 episodes. NEEDS OWNER: grant Full Disk Access to /bin/zsh (or move the job off the Drive mount), else YouTube stalls when copies run out.
+
 ## PLAN 2026-11-22 — owner: "make the fixes ... all of the 3 should get 8 posts a day"
 1. Code: ick_readiness.sheet_approved() with POSTING_GATE=off -> Ready ICK rows post as normal rows (no frozen-release refusal).
 2. Code: queue_manager delivery hold (Upload-Post changes/warnings with every platform ✓) -> Posted (archived) with a note, not Review/"post failed".
