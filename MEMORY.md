@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## PLAN 2026-11-23 — owner: "Dramarama videos checked and fixed for the next 30 days at 8 videos a day"
+1. Simulate the DR planner 30 days ahead (8/day FB + 8/day YT = ~240 episodes each) to see which series/episodes post and where it stalls.
+2. Check every one of those rows (media, copy, accounts, episode gaps, review holds); fix data issues with undo snapshots.
+3. Make YouTube dialogue copies for all of them.
+4. Log, push, report what needs the owner.
+
 ## Log 2026-11-23 02:05 UTC — next 200 videos checked (SC 67, ICK 71, DR 62; slots to Dec 1)
 - Copy/payload rules (queue_payloads.preview, YT title<=100, IG<=2200, media present, no dupes/already-posted): all SC + ICK pass. 01Z SC #855 + ICK #5563 posted fine.
 - Copies done 02:47Z: 42 + 27 made, 0 failed.
