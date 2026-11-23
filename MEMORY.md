@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-23 17:35 UTC — DramaRama 30 days at 8/day checked
+- Live schedule confirmed: DR FB + YT 09-23 odd hours ET (8/day each), X 0; scheduler running, no errors.
+- Simulated the planner (drama_lanes, 2 lanes, 30 days): 240 FB + 240 YT posts, 0 empty slots. FB: Heiress EP7-17, My Ex EP4-60, Sunblade EP1-60, Raining riches EP1-50, Wife They Cast Aside EP1-49, My Dead Mom Came Back EP1-13. YT also CH EP9-17, PS EP10-23.
+- 264 rows checked (media link, reviewed title <=100, description, tags, no URLs, no duplicates/already posted): 0 problems.
+- YouTube dialogue copies: 150 needed, 149 made. FAIL #5101 Sunblade EP42 (copy picture ends 56.97s vs source 58.83s; retried once, same). Not fixed: YT Sunblade waits at EP42 (~day 17), the other lane keeps posting. NEEDS OWNER: skip EP42 on YouTube or leave it.
+
 ## PLAN 2026-11-23 — owner: "Dramarama videos checked and fixed for the next 30 days at 8 videos a day"
 1. Simulate the DR planner 30 days ahead (8/day FB + 8/day YT = ~240 episodes each) to see which series/episodes post and where it stalls.
 2. Check every one of those rows (media, copy, accounts, episode gaps, review holds); fix data issues with undo snapshots.
