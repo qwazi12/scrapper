@@ -1,5 +1,10 @@
 # Scrapper Memory
 
+## PLAN 2026-11-23 — owner: "Check the next 200 videos and make the fixes if they need it"
+1. Pull the next 200 upcoming rows (by planned slot) across SC, DramaRama, ICK (+LongForm/Countdowns).
+2. Check each: media file present, caption/title present + within platform limits, platforms right, YouTube dialogue copy for DR, no stuck/held/review blockers, no duplicates.
+3. Fix data issues (undo snapshot first); code issues -> report. Log + push.
+
 ## Log 2026-11-20 17:06 UTC — INSTR 1700Z answered (RESULT_SCRAPPER_20261120T1706Z)
 - (a) export = daily_exports.sh/.py -> READY/NEXT7/POSTED CSV + EXPORTS_DONE (columns listed in RESULT). 17:05Z change run built OK, mv to ops/exports failed ENOENT; mount gives EPERM to this session.
 - (b) Read-only: exports folder 1NQzxNpidDQmcC7F7HqcfWuI0fFaxm6Zq grants omnistream-bot (server SA) fileOrganizer, head-ops-sheets writer. Write+delete test not done (not pre-approved).
