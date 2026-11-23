@@ -14,6 +14,7 @@
 - Schedules (undo data/ops/eight_pre_*): DramaRama FB+YT 09,11,13,15,17,19,21,23 ET (X stays 0); ICK FB 08-22 even hours (X 11/19 unchanged); SC 08-22 even hours. YouTube daily limit = slot count, so <= 8.
 - Verified 00Z: DR #5010 (My Ex Never Filed Ep1) and ICK #5453 (X) submitted, no refusals.
 - Dialogue-prep launchd job has made 0 copies since Nov 9: launchd can't read the Drive mount (TCC); same ffmpeg works interactively. Ran it manually (--series 4) for 23 episodes. NEEDS OWNER: grant Full Disk Access to /bin/zsh (or move the job off the Drive mount), else YouTube stalls when copies run out.
+- Manual dialogue prep 00:05-00:18Z: 23 made, 0 failed (CH EP9-13, Heiress EP8-11, PS EP9-15, My Ex EP1-7). PS Ep.9 copy was made too, but its source picture is short (22s vs 37s audio) so the YouTube skip stays unless the owner wants it posted.
 
 ## PLAN 2026-11-22 — owner: "make the fixes ... all of the 3 should get 8 posts a day"
 1. Code: ick_readiness.sheet_approved() with POSTING_GATE=off -> Ready ICK rows post as normal rows (no frozen-release refusal).
