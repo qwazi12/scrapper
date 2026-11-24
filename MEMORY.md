@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## PLAN 2026-11-24 12:00Z — owner: "Apply INSTR_SCRAPPER_20261123T1530Z_SEO_30DAY to every post for the next 30 days, send next 24h copy by noon, increase Dramarama to 8/day"
+1. URGENT (INSTR 1136Z S-DR-DAILY): DR posted nothing since Mon 15:02 ET; find why, fix, get DR to 8/day FB+YT (config already 8/day).
+2. S-DR-YT-EP1: My Ex Ep.1 to YouTube; explain why Ep.2-4 went first; YouTube episode-order guard for every series.
+3. SEO rules (1530Z) on next-30-day rows: DR titles/desc/hashtags/FB question; SC titles/desc/hashtags/remove streaming lines/Doctor Who to back; ICK hashtags + debate-first order. Check guards (DR/ICK copy fingerprints) before editing; code changes need owner OK.
+4. RESULT_SCRAPPER_<UTC>.md with next-24h copy (all 3 accounts) by 17:00Z via Drive connector; cover open task IDs.
+5. Log, push.
+
 ## Log 2026-11-23 17:35 UTC — DramaRama 30 days at 8/day checked
 - Live schedule confirmed: DR FB + YT 09-23 odd hours ET (8/day each), X 0; scheduler running, no errors.
 - Simulated the planner (drama_lanes, 2 lanes, 30 days): 240 FB + 240 YT posts, 0 empty slots. FB: Heiress EP7-17, My Ex EP4-60, Sunblade EP1-60, Raining riches EP1-50, Wife They Cast Aside EP1-49, My Dead Mom Came Back EP1-13. YT also CH EP9-17, PS EP10-23.
