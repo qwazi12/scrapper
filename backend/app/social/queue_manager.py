@@ -458,6 +458,10 @@ def posted_today(s: Session, group: str, now: datetime.datetime) -> int:
         for iso in (it.catchup or {}).get("slots") or []:
             if start <= datetime.datetime.fromisoformat(iso) < end:
                 used.add((it.id, iso))
+    if group == DRAMARAMA:
+        # Owner 2026-11-24 ("Dramarama to 8 posts a day"): Facebook rows and YouTube-only rows share the same
+        # hours, so DramaRama counts posting hours, not rows (rows stopped it at 4 per platform).
+        return len({iso for _, iso in used})
     return len(used)
 
 
@@ -1681,6 +1685,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
         targets, drama_x_variant = drama_approval(s, item)
         if targets is not None:   # dot's frozen targets; YouTube (2026-11-05) and X (2026-11-06: own sequence from EP01) added by the owner
             send_accounts = [a for a in send_accounts if a in targets or a.endswith((":youtube", ":x"))]
+        if not regular and platform_limits(DRAMARAMA).get("x") == 0:
+            send_accounts = [a for a in send_accounts if not a.endswith(":x")]   # X paused (0/day): a pinned post skips it too
         if not send_accounts:
             raise upload_post.PayloadBlocked("No approved DramaRama destination is still owed")
         if any(a.endswith(":x") for a in send_accounts) and x_due_now(item, regular):
@@ -1840,6 +1846,18 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 if busy:
                     allow = {**(allow or {}), **{n: False for n in busy}}
                     logbus.log("info", "queue_channel_busy", f"Item #{item.id}: {prof} {', '.join(sorted(busy))} already posted this hour — waits")
+        if item.pipeline == DRAMARAMA and not is_drama:
+            # Owner/HEAD 2026-11-24: YouTube and X take a series in episode order. A row sent at its Facebook slot
+            # doesn't carry Ep. N there while Ep. N-1 is missing; that platform waits (catch-up) in its own lane.
+            name, ep = drama_series_episode(item)
+            if ep is not None:
+                series_rows = [it for it in s.query(QueueItem).filter(QueueItem.pipeline == DRAMARAMA).all()
+                               if drama_series_episode(it)[0] == name]
+                for net in sorted({a.partition(":")[2] for a in send_accounts} - {"facebook"}):
+                    if (allow or {}).get(net) is not False and drama_next_episode(series_rows, net).get(name, ep) < ep:
+                        allow = {**(allow or {}), net: False}
+                        logbus.log("info", "queue_episode_order_waits",
+                                   f"Item #{item.id}: {net} waits — {name[:40]} Ep. {drama_next_episode(series_rows, net)[name]} isn't there yet")
         yt_dialogue_path = None
         if (item.pipeline == DRAMARAMA and not is_drama and any(a.endswith(":youtube") for a in send_accounts)
                 and (allow or {}).get("youtube") is not False):

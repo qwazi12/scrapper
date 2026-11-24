@@ -521,3 +521,47 @@ def test_an_episode_skipped_on_youtube_lets_the_next_one_go(session, drama):
         ep(session, "Prime", n, "archived", accounts=(), catchup={"done": [["Dramarama:facebook", "f"], ["Dramarama:youtube", "y"]]})
     lanes, held = qm.drama_lanes(session.query(QueueItem).all(), "youtube")
     assert lanes and lanes[0][0].id == ten.id and "Prime" not in held
+
+
+def test_youtube_waits_while_the_previous_episode_isnt_there(session, drama, monkeypatch, tmp_path):
+    # HEAD 2026-11-24: My Ex Ep. 2-4 reached YouTube with Ep. 1 missing (sent with their Facebook slot).
+    from backend.app import drama_dialogue
+    files, video = _paths(monkeypatch, tmp_path)
+    copy = tmp_path / "dialogue.mp4"
+    copy.write_bytes(b"vocals")
+    monkeypatch.setattr(drama_dialogue, "fetch", lambda item: (copy, None))
+    ep(session, "Alpha", 1, accounts=("Dramarama:youtube",), video_path=video,
+       catchup={"done": [["Dramarama:facebook", "https://fb/1"]]})
+    two = ep(session, "Alpha", 2, accounts=("Dramarama:facebook", "Dramarama:youtube"), video_path=video)
+    asyncio.run(qm.publish_queue_item(two.id, session, regular=False))
+    assert files == {"facebook": video}                                 # Ep. 2 waits for Ep. 1 on YouTube
+    qm.apply_result(two, {"ok": [("Dramarama:facebook", "https://fb/2")], "failed": {}}, et(3, 10, 10))
+    assert two.status == "ready" and two.accounts == ["Dramarama:youtube"]
+
+
+def test_pinned_post_skips_x_while_x_is_paused(session, monkeypatch, tmp_path):
+    cfg = qm.load_schedule(session)
+    qm.save_schedule(session, {**cfg, "timezone": "America/New_York", "pipelines": {
+        "DramaRama": {"posts_per_day": 8, "platforms": {"facebook": FB, "x": 0, "youtube": YT}}}})
+    try:
+        from backend.app import drama_dialogue
+        files, video = _paths(monkeypatch, tmp_path)
+        copy = tmp_path / "dialogue.mp4"
+        copy.write_bytes(b"vocals")
+        monkeypatch.setattr(drama_dialogue, "fetch", lambda item: (copy, None))
+        monkeypatch.setattr(qm, "x_text_problem", lambda item, variant: None)       # X itself would take it
+        monkeypatch.setattr(qm, "x_media_copy", lambda path: (None, None))
+        it = ep(session, "Alpha", 1, accounts=("Dramarama:x", "Dramarama:youtube"), video_path=video,
+                catchup={"done": [["Dramarama:facebook", "https://fb/1"]]})
+        asyncio.run(qm.publish_queue_item(it.id, session, regular=False))
+        assert set(files) == {"youtube"}
+    finally:
+        qm.save_schedule(session, None)
+
+
+def test_dramarama_daily_limit_counts_hours_not_rows(session, drama):
+    for n, h in ((1, 10), (2, 13), (3, 16)):
+        a = ep(session, "Alpha", n, status="archived"); a.scheduled_at = et(3, h)
+        b = ep(session, "Beta", n, status="archived", accounts=("Dramarama:youtube",)); b.scheduled_at = et(3, h)
+    session.commit()
+    assert qm.posted_today(session, "DramaRama", et(3, 17)) == 3       # 6 rows, 3 posting hours
