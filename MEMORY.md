@@ -1,5 +1,13 @@
 # Scrapper Memory
 
+## Log 2026-11-24 12:25 UTC — DR back to 8/day, SEO 1530Z applied, RESULT_SCRAPPER_20261124T1223Z sent
+- DR posted only 4/day per platform since Nov 23: posted_today counted rows (FB rows + YT-only rows share hours) -> "today's 8 already went out" from 17:00 ET. 490fdcf (live 12:04Z): DR counts hours; send-time episode-order check for YouTube/X (My Ex Ep.2-4 went to YT before Ep.1); pinned DR post skips X while X=0. Suite 1309 passed.
+- #5010 My Ex Ep.1 pinned 2026-11-24T14:00Z, YouTube only, first in queue.
+- SEO 1530Z applied via 7 copy agents + validation: DR 262 rows (title/desc/tags/platform_copy.facebook.caption), SC 306 rows. Undo data/ops/seo_*_pre_*.json.
+- SC order: Doctor Who (1,002) to back; 130 strong-show rows alternate 1:1 in next 260 slots (undo sc_order_pre_*). ICK: 86 debate rows ahead of 14 sex-topic rows (undo ick_order_pre_*).
+- RESULT uploaded to ops/results (Drive id 1jIcl8lnoiLADgRAoc_d4KdS-RJsLjzRp), with the next 24 h of copy and statuses for every open task ID. last_instr = 1136Z.
+- NEEDS OWNER: ICK hashtags (#relationships #theickroom would drop #tonightsconversation; code change); DR playlists (no YouTube playlist access); SC channel ~10 YT uploads/day (8 Shorts + LongForm + Countdowns) -> rate limits (#1263, #1161 failed after 8 in 24h); Trash Studio check; 19 SC rows with no named source; Sunblade EP42 #5101 YT copy; /bin/zsh Full Disk Access.
+
 ## PLAN 2026-11-24 12:00Z — owner: "Apply INSTR_SCRAPPER_20261123T1530Z_SEO_30DAY to every post for the next 30 days, send next 24h copy by noon, increase Dramarama to 8/day"
 1. URGENT (INSTR 1136Z S-DR-DAILY): DR posted nothing since Mon 15:02 ET; find why, fix, get DR to 8/day FB+YT (config already 8/day).
 2. S-DR-YT-EP1: My Ex Ep.1 to YouTube; explain why Ep.2-4 went first; YouTube episode-order guard for every series.
