@@ -1,5 +1,12 @@
 # Scrapper Memory
 
+## PLAN 2026-11-26 17:50Z — owner: "if a posted short is blocked we post another one in its place, the recent post was blocked"
+- Found (public watch page, US): SC #953 Rock Movie csRKTg7ACaA (17:16Z today) + #2654 Ai Plot YNjPRLGa1qI (Nov 25 17:17Z) "Video unavailable"; older #880, #890 too. yt_claim_watch.py only watched DramaRama.
+- Owner choices: Screen Central only, replacement = next Ready video on YouTube only (its FB/IG/X keep their normal slot; owner accepted that a later YouTube slot goes empty); DramaRama = alert only (existing watcher behaviour unchanged).
+1. Code (branch yt-block-replace): POST /api/queue/{id}/youtube-blocked — Movie Clips only, idempotent per blocked row, max 2 replacements/ET day; pins the next not-yet-due Ready SC row for now; publish sends it to YouTube only (other platforms -> catch-up, pin cleared). Tests.
+2. Watcher: yt_claim_watch.py also checks SC YouTube uploads (>=30 min, <=6 h old); on a block calls the endpoint + Mac notification + RESULT file. DR path unchanged.
+3. Owner OK -> push/deploy; replace #953 (today) via the endpoint; verify; log.
+
 ## Log 2026-11-26 02:25 UTC — unattended ops: INSTR 1730Z_SEO_FIXES + 1125T1136Z answered (RESULT_SCRAPPER_20261126T0220Z)
 - ops_watch flagged 8 INSTR files as new: ops_watch.log has no lines Nov 20 17:05Z to Nov 26 02:05Z. Six were already handled in owner chats; the new ones were 1124T1730Z_SEO_FIXES and 1125T1136Z.
 - Read-only (next7, queue, logs). DR Nov 24 = 8 FB + 8 YT. Heiress YT stalled: #4944 is ready, scheduled_at None, YT catch-up (lost its slot to pinned #5010), and the episode-order guard holds Ep.9+. #5394 CH Ep.9 YT planned Nov 25 23:00 ET. Lateness: the scheduler posts serially and waits ~5 min after each upload. 18 unnamed SC rows left (next #1272 Thu 14:00 ET). SC FB: no warnings in logs; 15 Reel / 9 VIDEO links in 7 days.
