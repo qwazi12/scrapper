@@ -753,6 +753,92 @@ def channel_busy_this_hour(s: Session, profile: str, now: datetime.datetime) -> 
     return busy
 
 
+# Owner 2026-11-26: a Screen Central short that YouTube blocks gets a replacement — the next Ready video goes to
+# YouTube only, right away (an extra, pinned post). Its other platforms keep their normal turn. DramaRama: alert only.
+YT_REPLACE_GROUP = "Movie Clips"
+YT_REPLACE_DAILY_CAP = 2
+
+
+class ReplaceRefused(Exception):
+    def __init__(self, message: str, status_code: int = 409):
+        super().__init__(message)
+        self.message, self.status_code = message, status_code
+
+
+class _YouTubeOnly(dict):
+    """`allow` map of a replacement post: every network except YouTube is left out (it goes to catch-up)."""
+    def __init__(self):
+        super().__init__(youtube=True)
+
+    def get(self, key, default=None):
+        return key == "youtube"
+
+
+def _youtube_ids(item: QueueItem) -> set[str]:
+    out = set()
+    for acc, url in (item.catchup or {}).get("done") or []:
+        m = re.search(r"(?:v=|youtu\.be/|shorts/)([\w-]{11})", url or "")
+        if str(acc).endswith(":youtube") and m:
+            out.add(m.group(1))
+    return out
+
+
+def replace_blocked_youtube(s: Session, blocked_id: int, video_id: str, now: datetime.datetime) -> dict[str, Any]:
+    """Record that `video_id` (posted by row `blocked_id`) is blocked on YouTube and pin the next Ready Screen
+    Central video for a YouTube-only post now. Idempotent per blocked row; at most YT_REPLACE_DAILY_CAP a day."""
+    from .. import undo
+    item = s.get(QueueItem, blocked_id)
+    if not item:
+        raise ReplaceRefused("queue item not found", 404)
+    if pipeline_group(item) != YT_REPLACE_GROUP:
+        raise ReplaceRefused("Only Screen Central shorts get an automatic YouTube replacement")
+    if video_id not in _youtube_ids(item):
+        raise ReplaceRefused(f"#{item.id} has no YouTube upload {video_id}")
+    cu = dict(item.catchup or {})
+    prev = cu.get("yt_blocked") or {}
+    if prev.get("video") == video_id:
+        return {"replaced": prev.get("replacement") is not None, "replacement_id": prev.get("replacement"),
+                "already": True, "reason": prev.get("reason")}
+    tz = ZoneInfo(_schedule_cfg["timezone"])
+    today = now.astimezone(tz).date()
+    used = sum(1 for (c,) in s.query(QueueItem.catchup).filter(QueueItem.catchup.isnot(None))
+               if (b := (c or {}).get("yt_blocked")) and b.get("replacement") is not None
+               and datetime.datetime.fromisoformat(b["at"]).astimezone(tz).date() == today)
+    rep, reason = None, None
+    if used >= YT_REPLACE_DAILY_CAP:
+        reason = f"today's {YT_REPLACE_DAILY_CAP} replacements already went out"
+    else:
+        rows = [it for it in s.query(QueueItem).filter(QueueItem.status == "ready", QueueItem.pinned_at.is_(None))
+                .order_by(func.coalesce(QueueItem.position, QueueItem.id), QueueItem.id).all()
+                if pipeline_group(it) == YT_REPLACE_GROUP and has_video_source(it)
+                and any(str(a).endswith((":youtube", ":*")) for a in it.accounts or [])
+                and not _in_flight(it.publish_requests)
+                and not (_aware(it.scheduled_at) and _aware(it.scheduled_at) <= now)   # a due row keeps its own slot
+                and not (it.catchup or {}).get("yt_replacement_for")]
+        # Next in line = the planner's order (earliest planned slot first, unplanned after).
+        rows.sort(key=lambda it: (it.scheduled_at is None, _aware(it.scheduled_at) or now))
+        rep = rows[0] if rows else None
+        if rep is None:
+            reason = "no Ready Screen Central video to post"
+    undo.record(s, "queue", f"YouTube replacement for #{item.id}", rows=[item] + ([rep] if rep else []))
+    at = now.replace(microsecond=0)
+    item.catchup = {**cu, "yt_blocked": {"video": video_id, "at": at.isoformat(),
+                                         "replacement": rep.id if rep else None, "reason": reason}}
+    item.notes = (f"⛔ YouTube blocked ({video_id}) — " + (f"replaced by #{rep.id}" if rep else f"not replaced: {reason}")
+                  + " | " + (item.notes or ""))[:1000]
+    if rep:
+        rep.pinned_at = rep.scheduled_at = at
+        rep.catchup = {**(rep.catchup or {}), "yt_replacement_for": item.id}
+        rep.notes = (f"↻ YouTube replacement for #{item.id} (blocked): YouTube now, other platforms at their normal slot"
+                     + (" | " + rep.notes if rep.notes else ""))[:1000]
+    s.commit()
+    logbus.log("warning", "queue_youtube_blocked",
+               f"#{item.id} blocked on YouTube ({video_id}) — " + (f"#{rep.id} posts to YouTube now" if rep else f"not replaced: {reason}"))
+    if rep:
+        wake()
+    return {"replaced": rep is not None, "replacement_id": rep.id if rep else None, "already": False, "reason": reason}
+
+
 def _hashtags(tags: str | None) -> list[str]:
     return [t.lstrip("#") for t in (tags or "").split() if t.lstrip("#")]
 
@@ -1933,6 +2019,8 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                 saved = [e for e in saved if (e.get("profile"), e.get("platforms")) != (entry.get("profile"), entry.get("platforms"))]
             item.publish_requests = [*saved, entry]
             s.commit()
+        if not regular and (item.catchup or {}).get("yt_replacement_for"):
+            allow = _YouTubeOnly()      # replacement for a blocked YouTube short: YouTube only (owner 2026-11-26)
         fb_cut_path, fb_receipt = None, None
         arm = ick_test_arm(item.scheduled_at) if item.pipeline == ICK_ROOM and regular and not images else None
         if arm and any(a.endswith(":facebook") or a.endswith(":*") for a in send_accounts):
@@ -2145,6 +2233,12 @@ def apply_result(item: QueueItem, res: dict[str, Any], now: datetime.datetime) -
         item.published_at = now
     if done or skipped:
         item.catchup = {**cu, "done": done}
+    rep_for = (item.catchup or {}).get("yt_replacement_for")
+    if rep_for is not None:
+        # The YouTube replacement went out: the pin ends, its other platforms follow the normal plan.
+        item.pinned_at = None
+        item.catchup = {**{k: v for k, v in (item.catchup or {}).items() if k != "yt_replacement_for"},
+                        "yt_replaced": rep_for}
     item.notes = " | ".join(parts)[:1000]
 
 

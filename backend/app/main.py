@@ -1089,6 +1089,24 @@ def queue_post_next(item_id: int, s: Session = Depends(get_session)) -> dict:
     return {"id": item.id, "position": item.position, "scheduled_at": item.scheduled_at}
 
 
+class YouTubeBlockedReport(BaseModel):
+    video_id: str
+
+
+@app.post("/api/queue/{item_id}/youtube-blocked", dependencies=_AUTH)
+def queue_youtube_blocked(item_id: int, req: YouTubeBlockedReport, s: Session = Depends(get_session)) -> dict:
+    """A Screen Central short is blocked on YouTube: the next Ready video posts to YouTube only, now
+    (owner, 2026-11-26). Safe to call again for the same video; at most 2 replacements a day."""
+    import re
+    if not re.fullmatch(r"[\w-]{11}", req.video_id or ""):
+        raise HTTPException(400, "video_id must be an 11-character YouTube id")
+    try:
+        return queue_manager.replace_blocked_youtube(s, item_id, req.video_id,
+                                                     datetime.datetime.now(datetime.timezone.utc))
+    except queue_manager.ReplaceRefused as exc:
+        raise HTTPException(exc.status_code, exc.message)
+
+
 # --- thumbnail of a queue row (owner, 2026-10-05: change it from Edit) ---------
 QUEUE_THUMB_MAX = 5_000_000          # upload limit; stored as JPEG <= 2 MB (Upload-Post's limit)
 
