@@ -1,5 +1,11 @@
 # Scrapper Memory
 
+## Log 2026-11-26 02:25 UTC — unattended ops: INSTR 1730Z_SEO_FIXES + 1125T1136Z answered (RESULT_SCRAPPER_20261126T0220Z)
+- ops_watch flagged 8 INSTR files as new: ops_watch.log has no lines Nov 20 17:05Z to Nov 26 02:05Z. Six were already handled in owner chats; the new ones were 1124T1730Z_SEO_FIXES and 1125T1136Z.
+- Read-only (next7, queue, logs). DR Nov 24 = 8 FB + 8 YT. Heiress YT stalled: #4944 is ready, scheduled_at None, YT catch-up (lost its slot to pinned #5010), and the episode-order guard holds Ep.9+. #5394 CH Ep.9 YT planned Nov 25 23:00 ET. Lateness: the scheduler posts serially and waits ~5 min after each upload. 18 unnamed SC rows left (next #1272 Thu 14:00 ET). SC FB: no warnings in logs; 15 Reel / 9 VIDEO links in 7 days.
+- No actions taken. Drive mount hangs (ls and publish_ops >120 s) -> RESULT uploaded via Drive connector (1diHLBNMOMfMwMVG7U163rzJe2BTB4lrV). last_instr = 1125T1136Z. Owner notified (rc 0). Not committed/pushed (not pre-approved in ops session).
+- NEEDS OWNER: #4944 YT slot + code to re-plan catch-ups with no slot; serial-posting lateness fix; SC unnamed reorder; DR stakes-first titles; Sunblade #5101 as-is; ops_watch launchd/FDA; 8 stale sheet Decision Edit rows.
+
 ## Log 2026-11-24 12:25 UTC — DR back to 8/day, SEO 1530Z applied, RESULT_SCRAPPER_20261124T1223Z sent
 - DR posted only 4/day per platform since Nov 23: posted_today counted rows (FB rows + YT-only rows share hours) -> "today's 8 already went out" from 17:00 ET. 490fdcf (live 12:04Z): DR counts hours; send-time episode-order check for YouTube/X (My Ex Ep.2-4 went to YT before Ep.1); pinned DR post skips X while X=0. Suite 1309 passed.
 - #5010 My Ex Ep.1 pinned 2026-11-24T14:00Z, YouTube only, first in queue.
