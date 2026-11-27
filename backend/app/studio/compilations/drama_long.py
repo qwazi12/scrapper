@@ -35,7 +35,7 @@ logger = logging.getLogger("scrapper.drama_long")
 KIND = "drama_long"
 PART_SECONDS = 45 * 60
 TAIL_SECONDS = 10 * 60          # a last bit shorter than this joins the part before it
-MIN_FREE_BYTES = 12 * 1024 ** 3
+MIN_FREE_BYTES = 3 * 1024 ** 3   # episodes are 5-15 MB, so a 60-episode series peaks near 2.8 GB (measured 2026-11-27)
 RETRY_AFTER = datetime.timedelta(hours=6)
 SCOPE = "drama_long"
 DONE = ("posted", "archived")
