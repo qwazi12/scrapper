@@ -1,5 +1,15 @@
 # Scrapper Memory
 
+## Log 2026-11-27 22:15 UTC — DramaRama Long + SC blocked-short replacement DEPLOYED (owner: "Build it all")
+- main = aea688b (5bf5a5c DramaRama Long, afec586 CONFIG.md, 375bb40 SC youtube-blocked replacement, aea688b disk floor). Full suite before push: 1327 passed, 1 skipped. Mac checkout fast-forwarded to aea688b so the launchd dialogue-prep job has long_targets.
+- Schedule set via PUT /api/schedule/config: pipelines["DramaRama Long"] = {platforms: {facebook: ["20:00"], youtube: ["22:00"]}, every_days: 2}; all other queue overrides verified unchanged (before-copy: session scratchpad schedule_before.json). Next slots: 2026-11-29T01:00Z FB / 03:00Z YT, then every 2 days.
+- Fix aea688b: MIN_FREE_BYTES 12 GB -> 3 GB. Volume /data is 18.25 GB total, so 12 GB could never pass. Measured: episodes 5-14 MB each; one 86-episode series' cache + Part 1 took ~1 GB.
+- First render VERIFIED: #11354 "A Christmas Home for Dad — Part 1 (Episodes 1–29)" 43:19, Dramarama:facebook, Ready, slot 2026-11-29T01:00Z (Sat Nov 28 8 PM ET). 12.7 min to make (86 episodes fetched to measure, 29 joined).
+- YouTube Part 1 WAITS as designed: Ep. 18-29 have no dialogue-only copy yet (shorts are at Ep. 17). Dry run of drama_dialogue_prep.py lists exactly those 12; next real run 05:00 Mac time Nov 28. Backend retries every 6 h. NOT yet verified: a real YouTube long row, any real post.
+- DISK is the constraint: /data 81% used, 3.4 GB free after this (was 75% / 4.5 GB). Existing >80% auto-cleanup already fired once (space_freed 22:07Z). At 90% the app blocks operations. Planner will not start a job under 3 GB free. NEEDS OWNER: grow the Railway volume (dashboard) or OK to clear old studio files.
+- Not done: #2654 replacement (owner never answered; it is from Nov 25).
+- Rollback: DRAMA_LONG=off on Railway (stops making); remove the "DramaRama Long" schedule entry (stops planning); revert 5bf5a5c/375bb40.
+
 ## Log 2026-11-27 02:10 UTC — DramaRama Long built (4d93c06 on branch dr-compilations, NOT pushed)
 - New queue "DramaRama Long" (Dramarama profile, explicit Dramarama:facebook / Dramarama:youtube rows; X and :* refused at send). Separate pipeline, so the shorts' DB trigger, dot permits, episode order, 8/day count and #shorts don't touch it.
 - Part N = Ep. 1 through ~N x 45 min (whole episodes, tail < 10 min joins, last = full series), chapters in the description, title "<Series> — Part N (Episodes 1–K)" / "— Full Series (All K Episodes)". All episodes of a series, any status. Series in arrival order; one Facebook part ahead (next starts when the last FB part posted); one render at a time; 12 GB free-disk guard; DRAMA_LONG=off; posted files deleted after 2 days; episode cache deleted when the series' final parts posted.
