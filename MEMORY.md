@@ -1,5 +1,15 @@
 # Scrapper Memory
 
+## Log 2026-11-27 02:10 UTC — DramaRama Long built (4d93c06 on branch dr-compilations, NOT pushed)
+- New queue "DramaRama Long" (Dramarama profile, explicit Dramarama:facebook / Dramarama:youtube rows; X and :* refused at send). Separate pipeline, so the shorts' DB trigger, dot permits, episode order, 8/day count and #shorts don't touch it.
+- Part N = Ep. 1 through ~N x 45 min (whole episodes, tail < 10 min joins, last = full series), chapters in the description, title "<Series> — Part N (Episodes 1–K)" / "— Full Series (All K Episodes)". All episodes of a series, any status. Series in arrival order; one Facebook part ahead (next starts when the last FB part posted); one render at a time; 12 GB free-disk guard; DRAMA_LONG=off; posted files deleted after 2 days; episode cache deleted when the series' final parts posted.
+- YouTube part = dialogue-only copies (owner rule 2026-11-06); waits (retry 6 h) until every episode has one. scripts/drama_dialogue_prep.py now also makes copies for waiting long parts (--long-max 30 per run, runs 05:00/17:00).
+- Schedule: new per-queue every_days (1-7). Planner makes nothing until "DramaRama Long" has every_days >= 2. To set after deploy: pipelines["DramaRama Long"] = {"platforms": {"facebook": ["20:00"], "youtube": ["22:00"]}, "every_days": 2} (even hours: DR shorts use odd hours).
+- Tests: 12 new (test_dramarama_long.py; named after test_drama_media because Dramarama journal events are append-only); full suite 1321 passed, 1 skipped. Dry run of dialogue prep OK.
+- Rollback: revert 4d93c06, or DRAMA_LONG=off on Railway.
+- Risks told to owner: YouTube >15 min needs a verified channel; cumulative parts repeat footage (reused content / Content ID); ~1-2 GB uploads per part.
+- NEEDS OWNER: OK to push 4d93c06 (and 1d783bf); then set the schedule above.
+
 ## PLAN 2026-11-26 18:30Z — owner: "For dramarama can we start doing compilations for the episodes for each series and posting the full videos?"
 - Owner answers: Part 1 = first ~45 min of a series; each next part adds the next ~45 min on top of everything before it (Part 2 = Part 1 + next 45 min, ...) until the last part is the full series. Long-form; DR shorts keep posting as now (8/day). Facebook + YouTube (DramaRama). 1 compilation every other day. Use every episode we have (incl. Review rows).
 - Reading taken: Part N is cumulative (starts at Ep. 1). Risk noted to owner: YouTube may treat repeated footage across parts as reused content / Content ID; 88 series x ~2 parts each.
