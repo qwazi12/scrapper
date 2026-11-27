@@ -177,6 +177,13 @@ def validate_schedule(cfg: dict[str, Any]) -> dict[str, Any]:
                 entry["interval_hours"] = ih
             if v.get("times"):
                 entry["times"] = clean_times(v["times"], k)
+            if v.get("every_days") is not None and v.get("every_days") != "":
+                # Post only every Nth day (owner 2026-11-26: DramaRama Long = 1 compilation every other day).
+                ed = int(v["every_days"])
+                if not (1 <= ed <= 7):
+                    raise ValueError(f"Override for {k}: every_days must be 1-7")
+                if ed > 1:
+                    entry["every_days"] = ed
             if isinstance(v.get("platforms"), dict):
                 # Owner (2026-10-13): different daily numbers per platform, e.g. YouTube 1, Facebook 3, Instagram 3.
                 # A number = that many of the queue's posts a day (the first ones); a list of times
@@ -350,6 +357,7 @@ def resolve_pacing(
         "interval_hours": step,
         "posts_per_day": len(times) if times else ppd,
         "times": times,
+        "every_days": int((override or {}).get("every_days") or 1),
     }
 
 
@@ -409,7 +417,11 @@ def slots_after(
     local = t.astimezone(tz)
     day = local.date()
     out: list[datetime.datetime] = []
+    every = max(1, int(pacing.get("every_days") or 1))
     while len(out) < n:
+        if every > 1 and day.toordinal() % every:
+            day += datetime.timedelta(days=1)   # not one of this queue's posting days
+            continue
         for slot in day_slots_for_pacing(
             day, tz,
             pacing["start_hour"], pacing["end_hour"],
@@ -756,7 +768,7 @@ def platform_hashtags(s: Session, item: QueueItem):
     except ValueError:
         pool = hashtag_rules.HASHTAG.findall(item.tags or "")
     shorts = item.pipeline == DRAMARAMA or any(hashtag_rules.key(t) in hashtag_rules.SHORTS for t in pool)
-    lead = hashtag_rules.drama_lead(item.source, pool) if item.pipeline == DRAMARAMA else []
+    lead = hashtag_rules.drama_lead(item.source, pool) if item.pipeline in (DRAMARAMA, DRAMARAMA_LONG) else []
     # Source channels are stored as "<channel> — <channel id>" pipelines: their names never go on our posts.
     others = [p.partition(" — ")[0] for (p,) in s.query(QueueItem.pipeline).filter(QueueItem.pipeline.like("% — %")).distinct()]
 
@@ -986,7 +998,11 @@ ICK_ROOM_PROFILES = {"TheIckRoom"}
 # "DramaRama" works the same way with its own profile (owner, 2026-10-31).
 DRAMARAMA = "DramaRama"
 DRAMARAMA_PROFILES = {"Dramarama"}   # the Upload-Post profile name, exactly
-OWN_PROFILES = {ICK_ROOM: ICK_ROOM_PROFILES, DRAMARAMA: DRAMARAMA_PROFILES}   # section -> the only profiles it uses
+# Long-form compilations of each DramaRama series (owner, 2026-11-26): same profile, Facebook + YouTube only,
+# its own queue so none of the shorts' rules (episode order, permits, 8/day, #shorts) apply to it.
+DRAMARAMA_LONG = "DramaRama Long"
+DRAMARAMA_LONG_NETS = {"facebook", "youtube"}
+OWN_PROFILES = {ICK_ROOM: ICK_ROOM_PROFILES, DRAMARAMA: DRAMARAMA_PROFILES, DRAMARAMA_LONG: DRAMARAMA_PROFILES}   # section -> the only profiles it uses
 LOCKED_PROFILES = ICK_ROOM_PROFILES | DRAMARAMA_PROFILES                     # never used by any other queue
 DRAMA_ACTIVE_SERIES = 2   # DramaRama series posting at a time; the next starts when one runs out (owner, 2026-11-03)
 X_MAX_SECONDS = 140       # Scrapper's conservative X video guard: longer X uploads not yet proven on these accounts
@@ -1555,6 +1571,12 @@ async def _publish_queue_item_owned(item_id: int, s: Session, regular: bool = Fa
             raise upload_post.PayloadBlocked("DramaRama posts only from Ready (or Retry for what is still owed); review it first")
         if not drama_copy_reviewed(item):
             raise upload_post.PayloadBlocked("DramaRama copy is not reviewed SEO yet (title is still the file name)")
+    elif item.pipeline == DRAMARAMA_LONG:
+        # Facebook and YouTube only, one explicit destination each (owner, 2026-11-26) — never X, never a whole profile.
+        bad = [a for a in item.accounts or [] if _profile(a) not in DRAMARAMA_PROFILES
+               or str(a).partition(":")[2] not in DRAMARAMA_LONG_NETS]
+        if bad or not item.accounts:
+            raise upload_post.PayloadBlocked(f"DramaRama Long posts only to Dramarama:facebook / Dramarama:youtube (got {', '.join(bad) or 'none'})")
     elif item.pipeline == "LongForm":
         # Owner 2026-11-08: a voiceover that calls a past release date upcoming doesn't post (NEEDS OWNER).
         from ..studio import freshness
@@ -1711,7 +1733,7 @@ async def _submit_owned_media(item,s,video_path,images,regular,derivative=None):
                     return item
                 s.commit()
                 logbus.log("warning", "queue_x_held", f"Item #{item.id}: X held — {reason}; other platforms go ahead")
-    if (not is_drama and not ick_release and item.pipeline != DRAMARAMA and not queue_sources.controlled(s,item)
+    if (not is_drama and not ick_release and item.pipeline not in (DRAMARAMA, DRAMARAMA_LONG) and not queue_sources.controlled(s,item)
             and needs_auto_seo(item) and auto_seo_enabled(s)):
         await auto_seo(item, s)  # every clip goes out SEO-optimised
 
@@ -2238,7 +2260,7 @@ def sweep_archive(s: Session, now: datetime.datetime) -> int:
     # DramaRama rows stay (owner, 2026-11-03): they are each series' record of what was posted — episode order,
     # duplicate protection and dot's history checks all read them.
     expired = (s.query(QueueItem).filter(QueueItem.status.in_(["posted", "archived"]))
-        .filter(QueueItem.pipeline != DRAMARAMA)
+        .filter(QueueItem.pipeline.notin_([DRAMARAMA, DRAMARAMA_LONG]))
         .filter(QueueItem.published_at.isnot(None), QueueItem.published_at < cutoff)
         .order_by(QueueItem.published_at).limit(ARCHIVE_SWEEP_BATCH).all())
     removed = 0
@@ -2290,6 +2312,12 @@ def run_scheduler_tick():
         except Exception as exc:  # noqa: BLE001 — the switch must never stop posting
             s.rollback()
             logger.error("DramaRama X sync check failed: %s", exc)
+        try:
+            from ..studio.compilations import drama_long
+            drama_long.maybe_start(s, now)
+        except Exception as exc:  # noqa: BLE001 — compilations must never stop posting
+            s.rollback()
+            logger.error("DramaRama Long planner failed: %s", exc)
         plan_schedule(s, now)
 
         due = (

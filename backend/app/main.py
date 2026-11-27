@@ -1375,7 +1375,8 @@ def shuffle_queue(req: QueueShuffleRequest, s: Session = Depends(get_session)) -
             q = q.filter(QueueItem.pipeline == req.pipeline)
     else:
         # LongForm, Countdowns, The ICK Room and DramaRama have their own sections; "all" means all clips
-        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA]))
+        q = q.filter(QueueItem.pipeline.notin_(["LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA,
+                                             queue_manager.DRAMARAMA_LONG]))
     if req.status and req.status != "all":
         q = q.filter(QueueItem.status == req.status)
 
@@ -1931,7 +1932,7 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
     per_day = queue_manager.slots_per_day()
     pacing_summary = {
         name: queue_manager.slots_per_day(pipeline=name)
-        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA]
+        for name in list(pipelines.keys()) + ["Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA, queue_manager.DRAMARAMA_LONG]
     }
     return {
         "timezone": cfg["timezone"],
@@ -1944,7 +1945,8 @@ def get_schedule(s: Session = Depends(get_session)) -> dict:
         "pipeline_slots_per_day": pacing_summary,
         # Each queue's own next post times (Posting Queue = "Movie Clips", LongForm).
         "pipeline_next_slots": {name: queue_manager.slots_after(now, 5, pipeline=name)
-                                for name in ("Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA)},
+                                for name in ("Movie Clips", "LongForm", "Countdowns", queue_manager.ICK_ROOM, queue_manager.DRAMARAMA,
+                                             queue_manager.DRAMARAMA_LONG)},
         "defaults": queue_manager.default_schedule(),
         "customized": cfg != queue_manager.default_schedule(),
         "slots_per_day": per_day,

@@ -75,6 +75,35 @@ def targets(rows: list[dict], n_series: int, per_series: int) -> list[dict]:
     return picked
 
 
+def long_targets(all_rows: list[dict], limit: int) -> list[dict]:
+    """Episodes of DramaRama Long parts whose YouTube version waits for dialogue copies (owner, 2026-11-26): the
+    Facebook part lists its episodes; the row per episode is picked the way the backend picks it
+    (studio/compilations/drama_long.episodes: has a Drive file, a posted/archived row wins)."""
+    longs = [r for r in all_rows if r.get("pipeline") == "DramaRama Long"]
+    have = {r.get("video_name") for r in longs}
+    best: dict[tuple[str, int], dict] = {}
+    for r in all_rows:
+        if r.get("pipeline") != "DramaRama" or not source_id(r):
+            continue
+        n = series_episode(r)[1]
+        k = (r.get("source"), n)
+        if n is not None and (k not in best or (r.get("status") in ("posted", "archived")
+                                                and best[k].get("status") not in ("posted", "archived"))):
+            best[k] = r
+    picked = []
+    for fb in sorted(longs, key=lambda r: r["id"]):
+        rs = fb.get("research") or {}
+        if rs.get("kind") != "drama_long" or rs.get("net") != "facebook":
+            continue
+        if str(fb.get("video_name", "")).replace("|facebook", "|youtube") in have:
+            continue
+        for n in rs.get("episodes") or []:
+            r = best.get((rs.get("series"), n))
+            if r:
+                picked.append(r)
+    return picked[:limit]
+
+
 def make_copy(src: pathlib.Path, dest: pathlib.Path, model) -> str | None:
     """Write the checked dialogue-only copy to `dest`; returns why it failed, or None."""
     import numpy as np
@@ -116,6 +145,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--series", type=int, default=3)
     ap.add_argument("--per-series", type=int, default=7)
+    ap.add_argument("--long-max", type=int, default=30, help="episodes per run for DramaRama Long YouTube parts")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     if not OUT.is_dir() or not SOURCES.is_dir():
@@ -126,10 +156,17 @@ def main() -> int:
         log("STOP: queue read failed")
         return 2
     data = json.loads(q.stdout)
-    rows = [r for r in (data["items"] if isinstance(data, dict) else data) if r.get("pipeline") == "DramaRama"]
+    every = data["items"] if isinstance(data, dict) else data
+    rows = [r for r in every if r.get("pipeline") == "DramaRama"]
     want = {source_id(r): r for r in targets(rows, a.series, a.per_series)}
     todo = {sid: r for sid, r in want.items() if not (OUT / f"{sid}.mp4").exists()}
     log(f"plan: {len(want)} upcoming YouTube episodes, {len(todo)} without a copy")
+    # Long-form parts: only episodes still without a copy count toward --long-max.
+    long_want = [r for r in long_targets(every, 10 ** 6) if not (OUT / f"{source_id(r)}.mp4").exists()]
+    for r in long_want[:a.long_max]:
+        todo.setdefault(source_id(r), r)
+    if long_want:
+        log(f"plan: DramaRama Long YouTube needs {len(long_want)} more copies; this run takes {min(len(long_want), a.long_max)}")
     if a.dry_run or not todo:
         for sid, r in todo.items():
             log(f"  would make #{r['id']} {'/'.join(map(str, series_episode(r)))} -> {sid}.mp4")

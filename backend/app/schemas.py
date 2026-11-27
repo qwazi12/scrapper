@@ -200,6 +200,7 @@ class PacingRuleIn(BaseModel):
     times: list[str] | None = None      # exact posting times "HH:MM" (win over posts_per_day)
     # Per platform: posts/day (int) or its own times (["11:00", "19:00"]) — owner, 2026-10-13
     platforms: dict[str, int | list[str] | str] | None = None
+    every_days: int | None = None       # post only every Nth day (1-7); DramaRama Long = 2
 
 
 class ScheduleConfigIn(BaseModel):
