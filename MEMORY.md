@@ -1,5 +1,19 @@
 # Scrapper Memory
 
+## PLAN 2026-11-26 18:30Z — owner: "For dramarama can we start doing compilations for the episodes for each series and posting the full videos?"
+- Owner answers: Part 1 = first ~45 min of a series; each next part adds the next ~45 min on top of everything before it (Part 2 = Part 1 + next 45 min, ...) until the last part is the full series. Long-form; DR shorts keep posting as now (8/day). Facebook + YouTube (DramaRama). 1 compilation every other day. Use every episode we have (incl. Review rows).
+- Reading taken: Part N is cumulative (starts at Ep. 1). Risk noted to owner: YouTube may treat repeated footage across parts as reused content / Content ID; 88 series x ~2 parts each.
+1. Investigate: episode files (Drive links), durations, existing stitch code (studio/compilations/stitch.py), LongForm/Countdowns long-form posting path, DramaRama send gates (dot permit / DB trigger), Upload-Post size limits, every-other-day scheduling.
+2. Build (branch dr-compilations): series -> part planner (45-min boundaries on whole episodes), ffmpeg concat render, queue rows for Dramarama facebook+youtube long-form, every-other-day slot outside the 8 shorts and outside the YouTube Shorts cap. Tests.
+3. Owner OK -> push/deploy; first render + post; verify; log.
+
+## Log 2026-11-26 17:45 UTC — blocked SC YouTube short -> replacement (built, NOT pushed)
+- Correction: #953 is NOT blocked. Fresh uploads show "Video unavailable" for the first minutes while processing; at ~25 min it was OK. Still blocked: #2654 Ai Plot YNjPRLGa1qI (Nov 25 17:17Z), #880 1YwZlB07PR0, #890 NRv9CRAgNd8.
+- Code 1d783bf on branch yt-block-replace (not pushed, needs owner OK): POST /api/queue/{id}/youtube-blocked {video_id} -> Movie Clips only, idempotent, max 2/ET day; pins next not-yet-due Ready SC row now; pinned publish sends YouTube only (_YouTubeOnly allow map -> FB/IG/X skipped -> catch-up); apply_result clears the pin (catchup.yt_replaced). 6 new tests; full suite 1315 passed, 1 skipped.
+- Watcher data/ops/yt_claim_watch.py (backup yt_claim_watch.pre_20261126.py; launchd every 30 min, live now): SC uploads <=6 h old checked from 30 min to 3 h; block = 2 checks in a row UNPLAYABLE/ERROR -> calls the endpoint, RESULT sc_yt_blocked_<id>, Mac notification. Until deploy the call 404s and retries (no harm). DR path unchanged (alert + pause, owner rule).
+- Rollback: revert 1d783bf; cp data/ops/yt_claim_watch.pre_20261126.py data/ops/yt_claim_watch.py.
+- NEEDS OWNER: OK to push 1d783bf; replace #2654 now (from yesterday) or not.
+
 ## PLAN 2026-11-26 17:50Z — owner: "if a posted short is blocked we post another one in its place, the recent post was blocked"
 - Found (public watch page, US): SC #953 Rock Movie csRKTg7ACaA (17:16Z today) + #2654 Ai Plot YNjPRLGa1qI (Nov 25 17:17Z) "Video unavailable"; older #880, #890 too. yt_claim_watch.py only watched DramaRama.
 - Owner choices: Screen Central only, replacement = next Ready video on YouTube only (its FB/IG/X keep their normal slot; owner accepted that a later YouTube slot goes empty); DramaRama = alert only (existing watcher behaviour unchanged).
